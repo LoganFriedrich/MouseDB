@@ -1,12 +1,12 @@
 # Conda environment for Connectome Data Entry
 #
 # Create with:
-#   conda env create -f environment.yml -p "Y:/2_Connectome/envs/connectome_data"
+#   conda env create -f environment.yml -p "Y:/2_Connectome/envs/MouseDB"
 #
 # Activate with:
-#   conda activate "Y:/2_Connectome/envs/connectome_data"
+#   conda activate "Y:/2_Connectome/envs/MouseDB"
 
-name: connectome_data
+name: MouseDB
 channels:
   - conda-forge
   - defaults
@@ -19,4 +19,4 @@ dependencies:
   - sqlalchemy>=2.0
   - pyqt>=5.15
   - pip:
-    - -e "Y:/2_Connectome/Behavior/connectome_data"
+    - -e "Y:/2_Connectome/Unified_Data/unified_data/MouseDB"
