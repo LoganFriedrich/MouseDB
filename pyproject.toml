@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mousedb"
+version = "0.1.0"
+description = "Database and data management tools for Connectomics Grant research"
+readme = "README.md"
+authors = [
+    {name = "Logan Friedrich", email = "logan@example.com"}
+]
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "pandas>=1.5",
+    "openpyxl>=3.0",
+    "pyarrow>=10.0",
+    "matplotlib>=3.5",
+    "scipy>=1.9",
+    "mousereach",
+]
+
+[project.optional-dependencies]
+gui = [
+    "PyQt5>=5.15",
+    "qtpy>=2.0",
+]
+dev = [
+    "pytest>=7.0",
+    "black",
+    "ruff",
+]
+
+[project.scripts]
+mousedb = "unified_data.cli:main"
+mousedb-status = "unified_data.cli:unified_data_status"
+mousedb-init = "unified_data.cli:unified_data_init"
+mousedb-new-cohort = "unified_data.cli:unified_data_new_cohort"
+mousedb-import = "unified_data.cli:unified_data_import"
+mousedb-export = "unified_data.cli:unified_data_export"
+mousedb-entry = "unified_data.cli:unified_data_entry"
+mousedb-browse = "unified_data.cli:unified_data_browse"
+mousedb-check = "unified_data.cli:unified_data_check"
+mousedb-make-sheets = "unified_data.cohort_tools.make_sheets:main"
+mousedb-update-sheets = "unified_data.cohort_tools.update_sheets:main"
+mousedb-reorganize = "unified_data.utils.reorganize:main"
+mousedb-quick-export = "unified_data.exporters.quick_export:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]
