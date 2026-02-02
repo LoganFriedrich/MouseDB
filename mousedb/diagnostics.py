@@ -9,17 +9,17 @@ all subjects in a cohort, then flags outliers (0 when expected = CRITICAL,
 <50% of median = WARNING).
 
 Usage:
-    from unified_data.diagnostics import check_all_cohorts, print_completeness_report
+    from mousedb.diagnostics import check_all_cohorts, print_completeness_report
 
     with db.session() as session:
         report = check_all_cohorts(session)
         print_completeness_report(report)
 
 CLI:
-    unified-data check                    # All cohorts, hide INFO
-    unified-data check --verbose          # Show everything
-    unified-data check --cohort CNT_04    # Single cohort
-    unified-data check --json             # JSON output
+    mousedb check                    # All cohorts, hide INFO
+    mousedb check --verbose          # Show everything
+    mousedb check --cohort CNT_04    # Single cohort
+    mousedb check --json             # JSON output
 """
 
 from enum import Enum

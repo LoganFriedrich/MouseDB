@@ -91,7 +91,7 @@ def main():
     tray_merged['Timepoint'] = tray_merged['Test_Phase'].apply(get_timepoint)
 
     # Export
-    out = base_dir / 'generated' / 'unified_data.xlsx'
+    out = base_dir / 'generated' / 'mousedb_export.xlsx'
     with pd.ExcelWriter(out, engine='openpyxl') as w:
         tray_merged.to_excel(w, 'Tray_with_Surgery', index=False)
         surgery_df.to_excel(w, 'Surgery_Metadata', index=False)

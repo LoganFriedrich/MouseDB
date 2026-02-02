@@ -1,12 +1,12 @@
 """
-Command-line interface for Unified Data Entry.
+Command-line interface for MouseDB.
 
 Commands:
-    unified-data-entry           # Launch PyQt GUI
-    unified-data-new-cohort      # Create new cohort
-    unified-data-import          # Import Excel files
-    unified-data-export          # Export to Excel/Parquet
-    unified-data-status          # Show database stats
+    mousedb-entry           # Launch PyQt GUI
+    mousedb-new-cohort      # Create new cohort
+    mousedb-import          # Import Excel files
+    mousedb-export          # Export to Excel/Parquet
+    mousedb-status          # Show database stats
 """
 
 import argparse
@@ -22,7 +22,7 @@ def cmd_status(args):
     db = init_database()
     stats = db.get_stats()
 
-    print("\n=== Unified Data Database Status ===")
+    print("\n=== MouseDB Database Status ===")
     print(f"Database: {stats['db_path']}")
     print(f"Size: {stats['db_size_mb']:.2f} MB")
     print()
@@ -260,7 +260,7 @@ def cmd_browse(args):
             for name, (model, cols) in TABLES.items():
                 count = session.query(model).count()
                 print(f"  {name:15} {count:>6,} records")
-        print("\nUse: unified-data browse <table_name> [--limit N]")
+        print("\nUse: mousedb browse <table_name> [--limit N]")
         return
 
     if table_name not in TABLES:
@@ -337,7 +337,7 @@ def cmd_dump(args):
     db = init_database()
 
     # Output directory
-    output_dir = Path(args.output) if args.output else Path("Y:/2_Connectome/Unified_Data/database_dump")
+    output_dir = Path(args.output) if args.output else Path("Y:/2_Connectome/MouseDB/database_dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Tables to export
@@ -397,27 +397,27 @@ def cmd_dump(args):
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
-        prog='unified-data',
-        description='Unified Data Entry System'
+        prog='mousedb',
+        description='MouseDB - Data Management for Connectomics Grant'
     )
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # unified-data-status
+    # mousedb-status
     status_parser = subparsers.add_parser('status', help='Show database status')
     status_parser.set_defaults(func=cmd_status)
 
-    # unified-data-init
+    # mousedb-init
     init_parser = subparsers.add_parser('init', help='Initialize database')
     init_parser.set_defaults(func=cmd_init)
 
-    # unified-data-new-cohort
+    # mousedb-new-cohort
     new_cohort_parser = subparsers.add_parser('new-cohort', help='Create new cohort')
     new_cohort_parser.add_argument('cohort', help='Cohort ID (e.g., CNT_05)')
     new_cohort_parser.add_argument('--start-date', required=True, help='Start date (YYYY-MM-DD)')
     new_cohort_parser.add_argument('--mice', type=int, default=16, help='Number of mice (default: 16)')
     new_cohort_parser.set_defaults(func=cmd_new_cohort)
 
-    # unified-data-import
+    # mousedb-import
     import_parser = subparsers.add_parser('import', help='Import Excel files')
     import_parser.add_argument('--file', help='Single Excel file to import')
     import_parser.add_argument('--all', action='store_true', help='Import all cohorts from directory')
@@ -426,7 +426,7 @@ def main():
     import_parser.add_argument('--dry-run', action='store_true', help='Validate without importing')
     import_parser.set_defaults(func=cmd_import)
 
-    # unified-data-export
+    # mousedb-export
     export_parser = subparsers.add_parser('export', help='Export data')
     export_parser.add_argument('--cohort', help='Cohort to export')
     export_parser.add_argument('--unified', action='store_true', help='Export unified reaches parquet')
@@ -435,11 +435,11 @@ def main():
     export_parser.add_argument('--output', '-o', help='Output path (file or directory)')
     export_parser.set_defaults(func=cmd_export)
 
-    # unified-data-entry
+    # mousedb-entry
     entry_parser = subparsers.add_parser('entry', help='Launch data entry GUI')
     entry_parser.set_defaults(func=cmd_entry)
 
-    # unified-data-browse
+    # mousedb-browse
     browse_parser = subparsers.add_parser('browse', help='Browse database tables')
     browse_parser.add_argument('table', nargs='?', help='Table name to browse')
     browse_parser.add_argument('--list', '-l', action='store_true', help='List all tables')
@@ -447,17 +447,17 @@ def main():
     browse_parser.add_argument('--filter', '-f', help='Filter by column=value (e.g., cohort_id=CNT_01)')
     browse_parser.set_defaults(func=cmd_browse)
 
-    # unified-data-check
+    # mousedb-check
     check_parser = subparsers.add_parser('check', help='Run data completeness diagnostics')
     check_parser.add_argument('--cohort', '-c', help='Check specific cohort (e.g., CNT_04)')
     check_parser.add_argument('--verbose', '-v', action='store_true', help='Show INFO-level findings too')
     check_parser.add_argument('--json', '-j', action='store_true', help='Output as JSON')
     check_parser.set_defaults(func=cmd_check)
 
-    # unified-data-dump
+    # mousedb-dump
     dump_parser = subparsers.add_parser('dump', help='Dump database tables to CSV files')
     dump_parser.add_argument('table', nargs='?', help='Specific table to dump (default: all tables)')
-    dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/2_Connectome/Unified_Data/database_dump)')
+    dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/2_Connectome/MouseDB/database_dump)')
     dump_parser.set_defaults(func=cmd_dump)
 
     args = parser.parse_args()
@@ -470,42 +470,42 @@ def main():
 
 
 # Entry points for pyproject.toml
-def unified_data_status():
-    sys.argv = ['unified-data', 'status'] + sys.argv[1:]
+def mousedb_status():
+    sys.argv = ['mousedb', 'status'] + sys.argv[1:]
     main()
 
-def unified_data_init():
-    sys.argv = ['unified-data', 'init'] + sys.argv[1:]
+def mousedb_init():
+    sys.argv = ['mousedb', 'init'] + sys.argv[1:]
     main()
 
-def unified_data_new_cohort():
-    sys.argv = ['unified-data', 'new-cohort'] + sys.argv[1:]
+def mousedb_new_cohort():
+    sys.argv = ['mousedb', 'new-cohort'] + sys.argv[1:]
     main()
 
-def unified_data_import():
-    sys.argv = ['unified-data', 'import'] + sys.argv[1:]
+def mousedb_import():
+    sys.argv = ['mousedb', 'import'] + sys.argv[1:]
     main()
 
-def unified_data_export():
-    sys.argv = ['unified-data', 'export'] + sys.argv[1:]
+def mousedb_export():
+    sys.argv = ['mousedb', 'export'] + sys.argv[1:]
     main()
 
-def unified_data_entry():
-    sys.argv = ['unified-data', 'entry'] + sys.argv[1:]
+def mousedb_entry():
+    sys.argv = ['mousedb', 'entry'] + sys.argv[1:]
     main()
 
-def unified_data_browse():
-    sys.argv = ['unified-data', 'browse'] + sys.argv[1:]
-    main()
-
-
-def unified_data_check():
-    sys.argv = ['unified-data', 'check'] + sys.argv[1:]
+def mousedb_browse():
+    sys.argv = ['mousedb', 'browse'] + sys.argv[1:]
     main()
 
 
-def unified_data_dump():
-    sys.argv = ['unified-data', 'dump'] + sys.argv[1:]
+def mousedb_check():
+    sys.argv = ['mousedb', 'check'] + sys.argv[1:]
+    main()
+
+
+def mousedb_dump():
+    sys.argv = ['mousedb', 'dump'] + sys.argv[1:]
     main()
 
 

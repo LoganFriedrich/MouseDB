@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Quick test script for Unified Data Entry System.
+Quick test script for MouseDB.
 
 Run with:
     python test_setup.py
@@ -23,16 +23,16 @@ sys.path.insert(0, str(package_dir))
 
 def main():
     print("=" * 60)
-    print("Unified Data Entry System - Setup Test")
+    print("MouseDB - Setup Test")
     print("=" * 60)
 
     # Step 1: Check imports
     print("\n[1] Checking imports...")
     try:
-        from unified_data.database import init_database, get_db
-        from unified_data.schema import Project, Cohort, Subject, PelletScore
-        from unified_data.exporters import QueryExporter
-        from unified_data.importers import ExcelImporter, import_all_cohorts
+        from mousedb.database import init_database, get_db
+        from mousedb.schema import Project, Cohort, Subject, PelletScore
+        from mousedb.exporters import QueryExporter
+        from mousedb.importers import ExcelImporter, import_all_cohorts
         print("    All imports successful!")
     except ImportError as e:
         print(f"    Import error: {e}")
@@ -115,8 +115,9 @@ def main():
     try:
         from PyQt5.QtWidgets import QApplication
         print("    PyQt5 is installed!")
-        print("    To launch GUI, run: unified-data entry")
-        print("    Or: python -c \"from unified_data.gui.app import main; main()\"")
+        print("    To launch GUI, run: mousedb entry")
+        print("    Or: python -c \"from mousedb.gui.app import main; main()\"")
+
     except ImportError:
         print("    PyQt5 not installed. Install with: pip install PyQt5")
 

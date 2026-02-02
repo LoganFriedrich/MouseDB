@@ -1,25 +1,25 @@
-# Unified Data Entry - Installation & Usage
+# MouseDB - Installation & Usage
 
 ## Quick Setup
 
 ```bash
 # 1. Create the conda environment
-conda env create -f "Y:/2_Connectome/Unified_Data/unified_data/environment.yml" -p "Y:/2_Connectome/envs/unified_data"
+conda env create -f "Y:/2_Connectome/MouseDB/mousedb/environment.yml" -p "Y:/2_Connectome/envs/MouseDB"
 
 # 2. Activate it
-conda activate "Y:/2_Connectome/envs/unified_data"
+conda activate "Y:/2_Connectome/envs/MouseDB"
 
 # 3. Initialize the database
-unified-data init
+mousedb init
 
 # 4. Import existing Excel data (preview first)
-unified-data import --all --dry-run
+mousedb import --all --dry-run
 
 # 5. Import for real
-unified-data import --all
+mousedb import --all
 
 # 6. Launch the GUI
-unified-data entry
+mousedb entry
 ```
 
 ## GUI Features
@@ -58,17 +58,17 @@ The GUI has three tabs:
 
 | Command | Description |
 |---------|-------------|
-| `unified-data status` | Show database stats |
-| `unified-data init` | Initialize/create database |
-| `unified-data new-cohort CNT_06 --start-date 2025-02-01 --mice 16` | Create new cohort |
-| `unified-data import --all` | Import all Excel files |
-| `unified-data import --file path/to/file.xlsx` | Import single file |
-| `unified-data import --all --dry-run` | Validate without importing |
-| `unified-data export --cohort CNT_05` | Export to legacy Excel format |
-| `unified-data export --cohort CNT_05 --odc` | Export ODC format (calculated stats) |
-| `unified-data export --cohort CNT_05 --all-formats` | Export all formats |
-| `unified-data export --unified` | Export unified reaches parquet |
-| `unified-data entry` | Launch GUI |
+| `mousedb status` | Show database stats |
+| `mousedb init` | Initialize/create database |
+| `mousedb new-cohort CNT_06 --start-date 2025-02-01 --mice 16` | Create new cohort |
+| `mousedb import --all` | Import all Excel files |
+| `mousedb import --file path/to/file.xlsx` | Import single file |
+| `mousedb import --all --dry-run` | Validate without importing |
+| `mousedb export --cohort CNT_05` | Export to legacy Excel format |
+| `mousedb export --cohort CNT_05 --odc` | Export ODC format (calculated stats) |
+| `mousedb export --cohort CNT_05 --all-formats` | Export all formats |
+| `mousedb export --unified` | Export unified reaches parquet |
+| `mousedb entry` | Launch GUI |
 
 ## Export Formats
 
@@ -96,9 +96,9 @@ All subjects with session summaries for analysis:
 
 | Location | Purpose |
 |----------|---------|
-| `Y:/2_Connectome/Unified_Data/connectome.db` | SQLite database (single source of truth) |
-| `Y:/2_Connectome/Unified_Data/logs/` | Audit trail (JSONL) |
-| `Y:/2_Connectome/Unified_Data/exports/` | Generated exports |
+| `Y:/2_Connectome/MouseDB/connectome.db` | SQLite database (single source of truth) |
+| `Y:/2_Connectome/MouseDB/logs/` | Audit trail (JSONL) |
+| `Y:/2_Connectome/MouseDB/exports/` | Generated exports |
 
 ## Validation Rules
 
@@ -121,24 +121,24 @@ If you modify the package code:
 
 If you add new CLI commands to pyproject.toml:
 ```bash
-conda activate "Y:/2_Connectome/envs/unified_data"
-pip install -e "Y:/2_Connectome/Unified_Data/unified_data"
+conda activate "Y:/2_Connectome/envs/MouseDB"
+pip install -e "Y:/2_Connectome/MouseDB/mousedb"
 ```
 
 ## Troubleshooting
 
 ### "PyQt5 not found"
 ```bash
-conda activate "Y:/2_Connectome/envs/unified_data"
+conda activate "Y:/2_Connectome/envs/MouseDB"
 pip install PyQt5
 ```
 
-### "Module not found: unified_data"
+### "Module not found: mousedb"
 ```bash
-pip install -e "Y:/2_Connectome/Unified_Data/unified_data"
+pip install -e "Y:/2_Connectome/MouseDB/mousedb"
 ```
 
 ### Database locked
-- Only one user should run `unified-data import` at a time
+- Only one user should run `mousedb import` at a time
 - GUI can have multiple users reading simultaneously
 - Writes are serialized automatically
