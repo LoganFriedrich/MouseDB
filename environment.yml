@@ -1,4 +1,4 @@
-# Conda environment for Connectome Data Entry
+# Conda environment for MouseDB
 #
 # Create with:
 #   conda env create -f environment.yml -p "Y:/LAB_ROOT/envs/MouseDB"
@@ -19,4 +19,4 @@ dependencies:
   - sqlalchemy>=2.0
   - pyqt>=5.15
   - pip:
-    - -e "Y:/LAB_ROOT/Unified_Data/unified_data/MouseDB"
+    - -e "Y:/LAB_ROOT/MouseDB/mousedb"

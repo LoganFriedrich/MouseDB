@@ -34,19 +34,19 @@ dev = [
 ]
 
 [project.scripts]
-mousedb = "unified_data.cli:main"
-mousedb-status = "unified_data.cli:unified_data_status"
-mousedb-init = "unified_data.cli:unified_data_init"
-mousedb-new-cohort = "unified_data.cli:unified_data_new_cohort"
-mousedb-import = "unified_data.cli:unified_data_import"
-mousedb-export = "unified_data.cli:unified_data_export"
-mousedb-entry = "unified_data.cli:unified_data_entry"
-mousedb-browse = "unified_data.cli:unified_data_browse"
-mousedb-check = "unified_data.cli:unified_data_check"
-mousedb-make-sheets = "unified_data.cohort_tools.make_sheets:main"
-mousedb-update-sheets = "unified_data.cohort_tools.update_sheets:main"
-mousedb-reorganize = "unified_data.utils.reorganize:main"
-mousedb-quick-export = "unified_data.exporters.quick_export:main"
+mousedb = "mousedb.cli:main"
+mousedb-status = "mousedb.cli:mousedb_status"
+mousedb-init = "mousedb.cli:mousedb_init"
+mousedb-new-cohort = "mousedb.cli:mousedb_new_cohort"
+mousedb-import = "mousedb.cli:mousedb_import"
+mousedb-export = "mousedb.cli:mousedb_export"
+mousedb-entry = "mousedb.cli:mousedb_entry"
+mousedb-browse = "mousedb.cli:mousedb_browse"
+mousedb-check = "mousedb.cli:mousedb_check"
+mousedb-make-sheets = "mousedb.cohort_tools.make_sheets:main"
+mousedb-update-sheets = "mousedb.cohort_tools.update_sheets:main"
+mousedb-reorganize = "mousedb.utils.reorganize:main"
+mousedb-quick-export = "mousedb.exporters.quick_export:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
