@@ -6,7 +6,7 @@ Reads file once, makes all edits, writes once.
 
 import re
 
-APP_PY = r"y:\LAB_ROOT\MouseDB\mousedb\mousedb\gui\app.py"
+APP_PY = r"y:\LAB_ROOT\Databases\mousedb\mousedb\gui\app.py"
 
 def main():
     with open(APP_PY, 'r', encoding='utf-8') as f:
