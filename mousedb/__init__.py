@@ -20,7 +20,7 @@ import os
 from pathlib import Path
 
 # Default paths - use environment variable or fallback to default
-MOUSEDB_ROOT = Path(os.environ.get("MOUSEDB_ROOT", "Y:/2_Connectome/MouseDB"))
+MOUSEDB_ROOT = Path(os.environ.get("MOUSEDB_ROOT", "Y:/2_Connectome/Databases"))
 DEFAULT_DB_PATH = MOUSEDB_ROOT / "connectome.db"
 DEFAULT_EXPORT_PATH = MOUSEDB_ROOT / "exports"
 DEFAULT_LOG_PATH = MOUSEDB_ROOT / "logs"

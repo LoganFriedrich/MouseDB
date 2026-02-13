@@ -19,4 +19,4 @@ dependencies:
   - sqlalchemy>=2.0
   - pyqt>=5.15
   - pip:
-    - -e "Y:/2_Connectome/MouseDB/mousedb"
+    - -e "Y:/2_Connectome/Databases/mousedb"

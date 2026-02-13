@@ -24,7 +24,7 @@ class Database:
         Initialize database connection.
 
         Args:
-            db_path: Path to SQLite database file. Defaults to Y:/2_Connectome/MouseDB/connectome.db
+            db_path: Path to SQLite database file. Defaults to Y:/2_Connectome/Databases/connectome.db
         """
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.log_path = DEFAULT_LOG_PATH

@@ -337,7 +337,7 @@ def cmd_dump(args):
     db = init_database()
 
     # Output directory
-    output_dir = Path(args.output) if args.output else Path("Y:/2_Connectome/MouseDB/database_dump")
+    output_dir = Path(args.output) if args.output else Path("Y:/2_Connectome/Databases/database_dump")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Tables to export
@@ -580,7 +580,7 @@ def main():
     # mousedb-dump
     dump_parser = subparsers.add_parser('dump', help='Dump database tables to CSV files')
     dump_parser.add_argument('table', nargs='?', help='Specific table to dump (default: all tables)')
-    dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/2_Connectome/MouseDB/database_dump)')
+    dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/2_Connectome/Databases/database_dump)')
     dump_parser.set_defaults(func=cmd_dump)
 
     # mousedb-video-status

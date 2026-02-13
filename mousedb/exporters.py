@@ -266,7 +266,7 @@ def export_unified_to_parquet(db: Database, output_path: Optional[Path] = None) 
     from . import DEFAULT_EXPORT_PATH
 
     if output_path is None:
-        output_path = Path("Y:/2_Connectome/MouseDB/unified_reaches.parquet")
+        output_path = DEFAULT_EXPORT_PATH / "unified_reaches.parquet"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
