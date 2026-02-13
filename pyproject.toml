@@ -19,14 +19,11 @@ dependencies = [
     "pyarrow>=10.0",
     "matplotlib>=3.5",
     "scipy>=1.9",
-    "mousereach",
-]
-
-[project.optional-dependencies]
-gui = [
     "PyQt5>=5.15",
     "qtpy>=2.0",
 ]
+
+[project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "black",
@@ -47,6 +44,7 @@ mousedb-make-sheets = "mousedb.cohort_tools.make_sheets:main"
 mousedb-update-sheets = "mousedb.cohort_tools.update_sheets:main"
 mousedb-reorganize = "mousedb.utils.reorganize:main"
 mousedb-quick-export = "mousedb.exporters.quick_export:main"
+mousedb-video-status = "mousedb.cli:mousedb_video_status"
 
 [tool.setuptools.packages.find]
 where = ["."]

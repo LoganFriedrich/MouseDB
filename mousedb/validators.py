@@ -7,7 +7,7 @@ to provide consistent, user-friendly error messages.
 
 import re
 from datetime import date
-from typing import Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List
 
 
 class ValidationError(Exception):
@@ -65,6 +65,111 @@ def validate_project_code(value: str) -> Tuple[bool, str]:
     if not PROJECT_CODE_PATTERN.match(value):
         return False, f"Project code must be uppercase letters only (e.g., CNT), got: {value}"
     return True, ""
+
+
+# Compact animal ID format: letters followed by 4+ digits (e.g., CNT0115)
+_COMPACT_ID_PATTERN = re.compile(r'^([A-Za-z]+)(\d{2})(\d{2})$')
+
+
+def compact_id_to_subject_id(animal_id: str) -> Optional[str]:
+    """
+    Convert compact animal ID (CNT0115) to database format (CNT_01_15).
+
+    Returns None if the ID cannot be parsed.
+    """
+    if not animal_id:
+        return None
+    animal_id = animal_id.strip()
+
+    # Already in database format?
+    if SUBJECT_ID_PATTERN.match(animal_id.upper()):
+        return animal_id.upper()
+
+    match = _COMPACT_ID_PATTERN.match(animal_id)
+    if match:
+        return f"{match.group(1).upper()}_{match.group(2)}_{match.group(3)}"
+
+    return None
+
+
+def validate_animal_ids(animal_ids: List[str],
+                        db_path=None) -> Dict[str, dict]:
+    """
+    Check which animal IDs exist in the subjects table.
+
+    Called by mousereach.watcher during video validation (Hook 2).
+    Gracefully handles database unavailability.
+
+    Args:
+        animal_ids: List of IDs in any format (CNT0115 or CNT_01_15)
+        db_path: Optional database path override
+
+    Returns:
+        Dict mapping each input ID to:
+        {'exists': bool, 'subject_id': str or None, 'message': str}
+    """
+    results = {}
+
+    # Convert all IDs to database format first
+    for raw_id in animal_ids:
+        subject_id = compact_id_to_subject_id(raw_id)
+        if subject_id is None:
+            results[raw_id] = {
+                'exists': False,
+                'subject_id': None,
+                'message': f"Cannot parse animal ID: {raw_id}",
+            }
+        else:
+            valid, msg = validate_subject_id(subject_id)
+            if not valid:
+                results[raw_id] = {
+                    'exists': False,
+                    'subject_id': subject_id,
+                    'message': msg,
+                }
+            else:
+                results[raw_id] = {
+                    'exists': False,  # Will be updated below
+                    'subject_id': subject_id,
+                    'message': '',
+                }
+
+    # Query database for existence
+    ids_to_check = [
+        r['subject_id'] for r in results.values()
+        if r['subject_id'] is not None and r['message'] == ''
+    ]
+
+    if not ids_to_check:
+        return results
+
+    try:
+        from .database import init_database
+        from .schema import Subject
+
+        db = init_database(db_path)
+        with db.session() as session:
+            existing = set(
+                row.subject_id for row in
+                session.query(Subject.subject_id)
+                .filter(Subject.subject_id.in_(ids_to_check))
+                .all()
+            )
+
+        for raw_id, info in results.items():
+            sid = info['subject_id']
+            if sid and sid in existing:
+                info['exists'] = True
+                info['message'] = f"Subject {sid} found"
+            elif sid and info['message'] == '':
+                info['message'] = f"Subject {sid} not found in database"
+
+    except Exception as e:
+        for raw_id, info in results.items():
+            if info['subject_id'] and info['message'] == '':
+                info['message'] = f"Database check failed: {e}"
+
+    return results
 
 
 # =============================================================================

@@ -56,6 +56,21 @@ from .styles import STYLESHEET, COLORS, SCORE_COLORS, SCORE_LABELS
 from .timeline_gantt import TimelineGanttWidget, MiniTimelineWidget
 
 
+class HelpButton(QPushButton):
+    """Small '?' button that shows a help dialog on click."""
+
+    def __init__(self, title: str, help_text: str, parent=None):
+        super().__init__("?", parent)
+        self.setObjectName("help_button")
+        self.setToolTip(f"Click for help: {title}")
+        self._title = title
+        self._help_text = help_text
+        self.clicked.connect(self._show_help)
+
+    def _show_help(self):
+        QMessageBox.information(self, self._title, self._help_text)
+
+
 class PelletButton(QPushButton):
     """Single pellet score button that cycles through 0/1/2."""
 
@@ -193,17 +208,29 @@ class PelletEntryTab(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(15)
 
+        # Help button at top
+        help_layout = QHBoxLayout()
+        help_btn = HelpButton("Single Animal Entry",
+            "Enter pellet scores for a single animal on a specific date. "
+            "Use this for makeup sessions or corrections. For routine entry, "
+            "use the 'Testing Entry' tab instead.")
+        help_layout.addWidget(help_btn)
+        help_layout.addStretch()
+        main_layout.addLayout(help_layout)
+
         # Step 1: Select Animal
         step1_group = self._create_step_group("Step 1: Select Animal")
         step1_layout = QHBoxLayout()
 
         step1_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
+        self.cohort_combo.setToolTip("Select the cohort containing the animal to score")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         step1_layout.addWidget(self.cohort_combo)
 
         step1_layout.addWidget(QLabel("Animal:"))
         self.animal_combo = QComboBox()
+        self.animal_combo.setToolTip("Select the individual animal to enter pellet scores for")
         self.animal_combo.currentIndexChanged.connect(self._on_animal_changed)
         step1_layout.addWidget(self.animal_combo)
 
@@ -217,6 +244,7 @@ class PelletEntryTab(QWidget):
 
         step2_layout.addWidget(QLabel("Date:"))
         self.date_combo = QComboBox()
+        self.date_combo.setToolTip("Select the testing session date")
         self.date_combo.currentIndexChanged.connect(self._on_date_changed)
         step2_layout.addWidget(self.date_combo)
 
@@ -240,6 +268,7 @@ class PelletEntryTab(QWidget):
         self.weight_spin.setSuffix(" g")
         self.weight_spin.setSpecialValueText("-")
         self.weight_spin.setValue(self.weight_spin.minimum())
+        self.weight_spin.setToolTip("Body weight recorded at the time of testing (grams)")
         step3_layout.addWidget(self.weight_spin)
 
         self.weight_status = QLabel("")
@@ -274,6 +303,7 @@ class PelletEntryTab(QWidget):
 
         self.prev_btn = QPushButton("← Previous Animal")
         self.prev_btn.setObjectName("secondary_button")
+        self.prev_btn.setToolTip("Go to the previous animal in this cohort")
         self.prev_btn.clicked.connect(self._previous_animal)
         nav_layout.addWidget(self.prev_btn)
 
@@ -281,6 +311,7 @@ class PelletEntryTab(QWidget):
 
         self.save_btn = QPushButton("Save & Next Animal →")
         self.save_btn.setObjectName("success_button")
+        self.save_btn.setToolTip("Save all entered pellet scores and advance to next animal")
         self.save_btn.clicked.connect(self._save_and_next)
         nav_layout.addWidget(self.save_btn)
 
@@ -552,15 +583,24 @@ class SurgeryEntryTab(QWidget):
 
         select_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
+        self.cohort_combo.setToolTip("Select the cohort for surgery records")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         select_layout.addWidget(self.cohort_combo)
 
         select_layout.addWidget(QLabel("Animal:"))
         self.animal_combo = QComboBox()
+        self.animal_combo.setToolTip("Select the animal that underwent surgery")
         self.animal_combo.currentIndexChanged.connect(self._on_animal_changed)
         select_layout.addWidget(self.animal_combo)
 
         select_layout.addStretch()
+
+        help_btn = HelpButton("Surgery Entry",
+            "Record surgery details for each subject. Supports contusion injury, "
+            "tracing injection, and perfusion records. Select cohort and animal first, "
+            "then fill in the appropriate surgery subtab.")
+        select_layout.addWidget(help_btn)
+
         select_group.setLayout(select_layout)
         main_layout.addWidget(select_group)
 
@@ -873,16 +913,25 @@ class VirusPrepTab(QWidget):
 
         select_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
+        self.cohort_combo.setToolTip("Select cohort this virus prep is associated with")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         select_layout.addWidget(self.cohort_combo)
 
         select_layout.addWidget(QLabel("Prep Date:"))
         self.prep_date = QDateEdit()
+        self.prep_date.setToolTip("Date the virus preparation was made")
         self.prep_date.setCalendarPopup(True)
         self.prep_date.setDate(QDate.currentDate())
         select_layout.addWidget(self.prep_date)
 
         select_layout.addStretch()
+
+        help_btn = HelpButton("Virus Preparation",
+            "Plan and record virus preparation details for tracing injections. "
+            "Enter stock information, target parameters, and the calculator will "
+            "compute dilution volumes and total working solution needed.")
+        select_layout.addWidget(help_btn)
+
         select_group.setLayout(select_layout)
         main_layout.addWidget(select_group)
 
@@ -1350,9 +1399,18 @@ class DashboardTab(QWidget):
 
         # Cohort Selection Header
         header_layout = QHBoxLayout()
+
+        # Help button
+        help_btn = HelpButton("Dashboard",
+            "View real-time statistics for the selected cohort: pellet retrieval "
+            "rates by phase, per-animal performance, weight tracking, and BrainGlobe "
+            "detection progress. Click 'Generate Analysis' to refresh.")
+        header_layout.addWidget(help_btn)
+
         header_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
         self.cohort_combo.setMinimumWidth(150)
+        self.cohort_combo.setToolTip("Select cohort to view statistics for")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         header_layout.addWidget(self.cohort_combo)
 
@@ -1373,6 +1431,7 @@ class DashboardTab(QWidget):
                 background-color: #0D47A1;
             }
         """)
+        self.refresh_btn.setToolTip("Recalculate all statistics from the database")
         self.refresh_btn.clicked.connect(self._refresh_stats)
         header_layout.addWidget(self.refresh_btn)
 
@@ -1513,6 +1572,7 @@ class DashboardTab(QWidget):
         self.phase_table.setHorizontalHeaderLabels([
             'Phase', 'Sessions', 'Pellets', 'Retrieved %', 'Contacted %', 'Mean ± SD', 'N Animals'
         ])
+        self.phase_table.setToolTip("Pellet retrieval and contact rates broken down by experimental phase")
 
         # Better column sizing - stretch Phase column, fixed widths for data
         header = self.phase_table.horizontalHeader()
@@ -1635,6 +1695,7 @@ class DashboardTab(QWidget):
             'Baseline %', 'Post-Injury %', 'Change',
             'Injury (kDyn)', 'Disp (µm)', 'Weight %', 'Status'
         ])
+        self.subjects_table.setToolTip("Per-animal performance summary with pre/post injury comparison")
         self.subjects_table.horizontalHeader().setStretchLastSection(True)
         self.subjects_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.subjects_table.setMaximumHeight(250)
@@ -1652,6 +1713,7 @@ class DashboardTab(QWidget):
             'Date', 'Phase', 'DPI', 'Weight (g)', 'Weight %',
             'Miss', 'Displaced', 'Retrieved', 'Retrieved %', 'Contacted %'
         ])
+        self.sessions_table.setToolTip("Detailed per-session pellet score metrics")
         self.sessions_table.horizontalHeader().setStretchLastSection(True)
         self.sessions_table.setMaximumHeight(200)
         sessions_layout.addWidget(self.sessions_table)
@@ -1743,6 +1805,7 @@ class DashboardTab(QWidget):
             'Subject', 'Brain ID', 'Status', 'Cells Detected',
             'Regions', 'Best Run', 'Mag/Z-step'
         ])
+        self.brains_table.setToolTip("BrainGlobe detection status and cell counts per brain")
         self.brains_table.horizontalHeader().setStretchLastSection(True)
         self.brains_table.setMaximumHeight(150)
         brainglobe_layout.addWidget(self.brains_table)
@@ -1757,6 +1820,7 @@ class DashboardTab(QWidget):
         self.regions_table.setHorizontalHeaderLabels([
             'Region', 'Acronym', 'Hemisphere', 'Cell Count', 'Density'
         ])
+        self.regions_table.setToolTip("Cell counts per brain region from BrainGlobe analysis")
         self.regions_table.horizontalHeader().setStretchLastSection(True)
         self.regions_table.setMaximumHeight(150)
         brainglobe_layout.addWidget(self.regions_table)
@@ -2575,10 +2639,18 @@ class BulkTrayEntryTab(QWidget):
         # Header controls - Row 1
         header_layout = QHBoxLayout()
 
+        # Help button
+        help_btn = HelpButton("Testing Entry",
+            "Score pellet retrieval for up to 8 mice at once. Click pellet buttons "
+            "to cycle through scores: 0 (miss), 1 (displaced), 2 (retrieved). "
+            "Use keyboard 0/1/2 for fast entry. Arrow keys or Tab to navigate.")
+        header_layout.addWidget(help_btn)
+
         # Cohort selection
         header_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
         self.cohort_combo.setMinimumWidth(120)
+        self.cohort_combo.setToolTip("Select the cohort for pellet scoring")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         header_layout.addWidget(self.cohort_combo)
 
@@ -2586,6 +2658,7 @@ class BulkTrayEntryTab(QWidget):
         header_layout.addWidget(QLabel("Date:"))
         self.date_combo = QComboBox()
         self.date_combo.setMinimumWidth(200)
+        self.date_combo.setToolTip("Select the testing session date")
         self.date_combo.currentIndexChanged.connect(self._on_date_changed)
         header_layout.addWidget(self.date_combo)
 
@@ -2610,6 +2683,7 @@ class BulkTrayEntryTab(QWidget):
         header_layout.addWidget(QLabel("Mice:"))
         self.mouse_group_combo = QComboBox()
         self.mouse_group_combo.setMinimumWidth(100)
+        self.mouse_group_combo.setToolTip("Choose which group of mice to display (for cohorts with more than 8 mice)")
         self.mouse_group_combo.currentIndexChanged.connect(self._on_mouse_group_changed)
         header_layout.addWidget(self.mouse_group_combo)
 
@@ -2673,6 +2747,7 @@ class BulkTrayEntryTab(QWidget):
         # Save button
         self.save_btn = QPushButton("Save All")
         self.save_btn.setObjectName("success_button")
+        self.save_btn.setToolTip("Save all entered pellet scores for this session")
         self.save_btn.clicked.connect(self._save_all)
         self.save_btn.setMinimumWidth(120)
         bottom_layout.addWidget(self.save_btn)
@@ -3344,10 +3419,18 @@ class BulkWeightEntryTab(QWidget):
         # Header controls
         header_layout = QHBoxLayout()
 
+        # Help button
+        help_btn = HelpButton("Weight Entry",
+            "Enter body weights for all mice in a cohort on a specific date. "
+            "Baseline weights are calculated from the first 3 days of the baseline phase. "
+            "Weight percentages are color-coded: green (healthy), orange (warning), red (critical).")
+        header_layout.addWidget(help_btn)
+
         # Cohort selection
         header_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
         self.cohort_combo.setMinimumWidth(120)
+        self.cohort_combo.setToolTip("Select the cohort for weight entry")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         header_layout.addWidget(self.cohort_combo)
 
@@ -3356,6 +3439,7 @@ class BulkWeightEntryTab(QWidget):
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDate(QDate.currentDate())
+        self.date_edit.setToolTip("Select the date these weights were recorded")
         self.date_edit.dateChanged.connect(self._on_date_changed)
         header_layout.addWidget(self.date_edit)
 
@@ -3401,6 +3485,7 @@ class BulkWeightEntryTab(QWidget):
         # Save button
         self.save_btn = QPushButton("Save All Weights")
         self.save_btn.setObjectName("success_button")
+        self.save_btn.setToolTip("Save all entered weights to the database")
         self.save_btn.clicked.connect(self._save_all)
         self.save_btn.setMinimumWidth(150)
         bottom_layout.addWidget(self.save_btn)
@@ -3752,6 +3837,13 @@ class RampEntryTab(QWidget):
         info_label.setStyleSheet("font-weight: bold; color: #2196F3; font-size: 9pt;")
         header_layout.addWidget(info_label)
 
+        # Help button
+        help_btn = HelpButton("Ramp Entry",
+            "Enter body weights and food consumption during the food deprivation "
+            "ramp phase (Days 0-3). Weights are recorded daily and food consumed "
+            "is calculated from tray start and end weights.")
+        header_layout.addWidget(help_btn)
+
         # Protocol info (shown when cohort has protocol assigned)
         self.protocol_info_label = QLabel("")
         self.protocol_info_label.setStyleSheet(
@@ -3772,6 +3864,7 @@ class RampEntryTab(QWidget):
         controls_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
         self.cohort_combo.setMinimumWidth(120)
+        self.cohort_combo.setToolTip("Select the cohort for ramp phase data entry")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         controls_layout.addWidget(self.cohort_combo)
 
@@ -3779,6 +3872,7 @@ class RampEntryTab(QWidget):
         controls_layout.addWidget(QLabel("Ramp Day:"))
         self.day_combo = QComboBox()
         self.day_combo.addItems(["Day 0 (First FD)", "Day 1", "Day 2", "Day 3"])
+        self.day_combo.setToolTip("Select the ramp day (0-3) to enter data for")
         self.day_combo.currentIndexChanged.connect(self._on_day_changed)
         controls_layout.addWidget(self.day_combo)
 
@@ -3826,6 +3920,7 @@ class RampEntryTab(QWidget):
         # Save button
         self.save_btn = QPushButton("Save All")
         self.save_btn.setObjectName("success_button")
+        self.save_btn.setToolTip("Save all ramp data for this day")
         self.save_btn.clicked.connect(self._save_all)
         self.save_btn.setMinimumWidth(150)
         bottom_layout.addWidget(self.save_btn)
@@ -4277,12 +4372,14 @@ class CohortSetupTab(QWidget):
         self.project_combo = QComboBox()
         self.project_combo.addItems(['CNT', 'ENCR', 'SCI'])
         self.project_combo.setEditable(True)
+        self.project_combo.setToolTip("Project code prefix (e.g. CNT for Connectome)")
         create_layout.addRow("Project Code:", self.project_combo)
 
         # Cohort number
         self.cohort_num_spin = QSpinBox()
         self.cohort_num_spin.setRange(1, 99)
         self.cohort_num_spin.setValue(1)
+        self.cohort_num_spin.setToolTip("Cohort number (auto-padded to 2 digits)")
         create_layout.addRow("Cohort Number:", self.cohort_num_spin)
 
         # Preview of cohort ID
@@ -4299,12 +4396,14 @@ class CohortSetupTab(QWidget):
         self.start_date_edit = QDateEdit()
         self.start_date_edit.setCalendarPopup(True)
         self.start_date_edit.setDate(QDate.currentDate())
+        self.start_date_edit.setToolTip("First day of food deprivation for this cohort")
         create_layout.addRow("Start Date:", self.start_date_edit)
 
         # Number of mice
         self.num_mice_spin = QSpinBox()
         self.num_mice_spin.setRange(1, 999)  # No upper limit per user request
         self.num_mice_spin.setValue(16)
+        self.num_mice_spin.setToolTip("Total number of subjects to create in this cohort")
         create_layout.addRow("Number of Mice:", self.num_mice_spin)
 
         # Protocol selection
@@ -4328,6 +4427,7 @@ class CohortSetupTab(QWidget):
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setMaximumHeight(80)
         self.notes_edit.setPlaceholderText("Optional notes about this cohort...")
+        self.notes_edit.setToolTip("Optional notes about this cohort")
         create_layout.addRow("Notes:", self.notes_edit)
 
         create_group.setLayout(create_layout)
@@ -4372,6 +4472,7 @@ class CohortSetupTab(QWidget):
         self.create_btn.setObjectName("success_button")
         self.create_btn.clicked.connect(self._create_cohort)
         self.create_btn.setMinimumHeight(40)
+        self.create_btn.setToolTip("Create the cohort and all subjects in the database")
         left_layout.addWidget(self.create_btn)
 
         left_layout.addStretch()
@@ -4380,6 +4481,15 @@ class CohortSetupTab(QWidget):
         # Right panel - Existing cohorts
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
+
+        # Help button at top
+        help_header = QHBoxLayout()
+        help_btn = HelpButton("Cohort Setup",
+            "Create new cohorts, manage subjects, set initial weights, and assign "
+            "protocols. Select a cohort in the table to view and edit its subjects below.")
+        help_header.addWidget(help_btn)
+        help_header.addStretch()
+        right_layout.addLayout(help_header)
 
         # Mini timeline view
         timeline_group = QGroupBox("Timeline Overview")
@@ -4404,18 +4514,21 @@ class CohortSetupTab(QWidget):
         self.cohorts_table.horizontalHeader().setStretchLastSection(True)
         self.cohorts_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.cohorts_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.cohorts_table.setToolTip("Click a cohort to view its subjects below")
         self.cohorts_table.itemSelectionChanged.connect(self._on_cohort_selected)
         existing_layout.addWidget(self.cohorts_table)
 
         # Cohort actions row
         cohort_actions = QHBoxLayout()
         self.show_archived_cb = QCheckBox("Show Archived")
+        self.show_archived_cb.setToolTip("Include archived cohorts in the table above")
         self.show_archived_cb.stateChanged.connect(lambda: self._refresh_cohorts())
         cohort_actions.addWidget(self.show_archived_cb)
         cohort_actions.addStretch()
         self.archive_cohort_btn = QPushButton("Archive Cohort...")
         self.archive_cohort_btn.setEnabled(False)
         self.archive_cohort_btn.setStyleSheet("background-color: #D32F2F; color: white;")
+        self.archive_cohort_btn.setToolTip("Archive the selected cohort (hides it from views but preserves data)")
         self.archive_cohort_btn.clicked.connect(self._archive_cohort)
         cohort_actions.addWidget(self.archive_cohort_btn)
         existing_layout.addLayout(cohort_actions)
@@ -4429,6 +4542,7 @@ class CohortSetupTab(QWidget):
 
         # Subjects list for selected cohort
         self.subjects_table = QTableWidget()
+        self.subjects_table.setToolTip("Double-click a subject to edit its properties")
         self.subjects_table.setColumnCount(10)
         self.subjects_table.setHorizontalHeaderLabels([
             "Subject ID", "Sex", "Active", "DoD", "Sessions",
@@ -4440,33 +4554,50 @@ class CohortSetupTab(QWidget):
         # Subject action buttons
         subject_actions = QHBoxLayout()
 
+        self.edit_subject_btn = QPushButton("Edit...")
+        self.edit_subject_btn.clicked.connect(self._edit_subject)
+        self.edit_subject_btn.setEnabled(False)
+        self.edit_subject_btn.setToolTip("Edit selected subject's sex, ear tag, DOB, and notes")
+        subject_actions.addWidget(self.edit_subject_btn)
+
         self.mark_deceased_btn = QPushButton("Mark Deceased...")
         self.mark_deceased_btn.clicked.connect(self._mark_subject_deceased)
         self.mark_deceased_btn.setEnabled(False)
+        self.mark_deceased_btn.setToolTip("Record date of death and mark subject inactive")
         subject_actions.addWidget(self.mark_deceased_btn)
 
         self.mark_removed_btn = QPushButton("Mark Removed")
         self.mark_removed_btn.clicked.connect(self._mark_subject_removed)
         self.mark_removed_btn.setEnabled(False)
+        self.mark_removed_btn.setToolTip("Mark subject as removed from study (inactive, no death date)")
         subject_actions.addWidget(self.mark_removed_btn)
 
         self.reactivate_btn = QPushButton("Reactivate")
         self.reactivate_btn.clicked.connect(self._reactivate_subject)
         self.reactivate_btn.setEnabled(False)
         self.reactivate_btn.setStyleSheet("background-color: #4CAF50;")
+        self.reactivate_btn.setToolTip("Re-enable a deceased or removed subject for data entry")
         subject_actions.addWidget(self.reactivate_btn)
 
         subject_actions.addStretch()
+
+        self.add_subjects_btn = QPushButton("Add Subjects...")
+        self.add_subjects_btn.clicked.connect(self._add_subjects)
+        self.add_subjects_btn.setStyleSheet("background-color: #2196F3; color: white;")
+        self.add_subjects_btn.setToolTip("Add new subjects to the selected cohort")
+        subject_actions.addWidget(self.add_subjects_btn)
 
         details_layout.addLayout(subject_actions)
 
         # Connect selection to enable/disable buttons
         self.subjects_table.itemSelectionChanged.connect(self._on_subject_table_selection)
+        self.subjects_table.itemDoubleClicked.connect(lambda: self._edit_subject())
 
         # Action buttons
         actions_layout = QHBoxLayout()
 
         self.refresh_btn = QPushButton("Refresh")
+        self.refresh_btn.setToolTip("Reload cohort and subject data from the database")
         self.refresh_btn.clicked.connect(self._refresh_cohorts)
         actions_layout.addWidget(self.refresh_btn)
 
@@ -4971,6 +5102,7 @@ class CohortSetupTab(QWidget):
         """Enable/disable subject action buttons based on selection."""
         items = self.subjects_table.selectedItems()
         if not items:
+            self.edit_subject_btn.setEnabled(False)
             self.mark_deceased_btn.setEnabled(False)
             self.mark_removed_btn.setEnabled(False)
             self.reactivate_btn.setEnabled(False)
@@ -4979,6 +5111,7 @@ class CohortSetupTab(QWidget):
         row = items[0].row()
         is_active = self.subjects_table.item(row, 0).data(Qt.UserRole + 1)
 
+        self.edit_subject_btn.setEnabled(True)
         self.mark_deceased_btn.setEnabled(is_active)
         self.mark_removed_btn.setEnabled(is_active)
         self.reactivate_btn.setEnabled(not is_active)
@@ -4990,6 +5123,107 @@ class CohortSetupTab(QWidget):
             return None
         row = items[0].row()
         return self.subjects_table.item(row, 0).data(Qt.UserRole)
+
+    def _edit_subject(self):
+        """Edit properties of the selected subject."""
+        subject_id = self._get_selected_subject_id()
+        if not subject_id:
+            return
+
+        from PyQt5.QtWidgets import QDialog, QDialogButtonBox
+
+        with self.db.session() as session:
+            subj = session.query(Subject).filter_by(subject_id=subject_id).first()
+            if not subj:
+                return
+
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Edit Subject: {subject_id}")
+            dialog.setMinimumWidth(350)
+            layout = QVBoxLayout(dialog)
+
+            layout.addWidget(QLabel(f"Subject ID: {subject_id}"))
+
+            form = QFormLayout()
+
+            sex_combo = QComboBox()
+            sex_combo.addItems(["- (unset)", "M", "F"])
+            sex_combo.setToolTip("Biological sex of the subject")
+            if subj.sex == 'M':
+                sex_combo.setCurrentIndex(1)
+            elif subj.sex == 'F':
+                sex_combo.setCurrentIndex(2)
+            form.addRow("Sex:", sex_combo)
+
+            ear_tag_edit = QLineEdit()
+            ear_tag_edit.setText(subj.ear_tag or "")
+            ear_tag_edit.setPlaceholderText("e.g. L1, R2, etc.")
+            ear_tag_edit.setToolTip("Physical ear tag identifier")
+            form.addRow("Ear Tag:", ear_tag_edit)
+
+            dob_edit = QDateEdit()
+            dob_edit.setCalendarPopup(True)
+            dob_edit.setToolTip("Date of birth (uncheck to clear)")
+            dob_check = QCheckBox("Set DOB")
+            dob_check.setToolTip("Enable to set a date of birth")
+            if subj.date_of_birth:
+                dob_edit.setDate(QDate(
+                    subj.date_of_birth.year,
+                    subj.date_of_birth.month,
+                    subj.date_of_birth.day
+                ))
+                dob_check.setChecked(True)
+            else:
+                dob_edit.setDate(QDate.currentDate())
+                dob_check.setChecked(False)
+            dob_edit.setEnabled(dob_check.isChecked())
+            dob_check.toggled.connect(dob_edit.setEnabled)
+            dob_row = QHBoxLayout()
+            dob_row.addWidget(dob_edit)
+            dob_row.addWidget(dob_check)
+            form.addRow("Date of Birth:", dob_row)
+
+            notes_edit = QPlainTextEdit()
+            notes_edit.setPlainText(subj.notes or "")
+            notes_edit.setMaximumHeight(80)
+            notes_edit.setToolTip("Free-text notes about this subject")
+            form.addRow("Notes:", notes_edit)
+
+            layout.addLayout(form)
+
+            buttons = QDialogButtonBox(
+                QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+            )
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            with self.db.session() as session:
+                subj = session.query(Subject).filter_by(subject_id=subject_id).first()
+                if not subj:
+                    return
+
+                # Sex
+                sex_idx = sex_combo.currentIndex()
+                subj.sex = ['M', 'F'][sex_idx - 1] if sex_idx > 0 else None
+
+                # Ear tag
+                ear_val = ear_tag_edit.text().strip()
+                subj.ear_tag = ear_val if ear_val else None
+
+                # DOB
+                if dob_check.isChecked():
+                    subj.date_of_birth = dob_edit.date().toPyDate()
+                else:
+                    subj.date_of_birth = None
+
+                # Notes
+                subj.notes = notes_edit.toPlainText().strip() or None
+
+                session.commit()
+
+            self._on_cohort_selected()
 
     def _mark_subject_deceased(self):
         """Mark selected subject as deceased with date."""
@@ -5099,6 +5333,130 @@ class CohortSetupTab(QWidget):
             QMessageBox.information(self, "Updated", f"{subject_id} reactivated")
             self._on_cohort_selected()
 
+    def _add_subjects(self):
+        """Add new subjects to the currently selected cohort."""
+        selected_items = self.cohorts_table.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "No Cohort", "Select a cohort first.")
+            return
+
+        row = selected_items[0].row()
+        cohort_id = self.cohorts_table.item(row, 0).data(Qt.UserRole)
+
+        # Find existing subject numbers to determine next available
+        with self.db.session() as session:
+            existing = session.query(Subject).filter_by(
+                cohort_id=cohort_id
+            ).order_by(Subject.subject_id).all()
+            existing_nums = set()
+            for s in existing:
+                parts = s.subject_id.rsplit('_', 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    existing_nums.add(int(parts[1]))
+
+        next_num = max(existing_nums) + 1 if existing_nums else 1
+
+        # Dialog
+        from PyQt5.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Add Subjects to {cohort_id}")
+        dialog.setMinimumWidth(350)
+        layout = QVBoxLayout(dialog)
+
+        layout.addWidget(QLabel(f"Cohort: {cohort_id}"))
+        layout.addWidget(QLabel(f"Existing subjects: {len(existing_nums)} "
+                                f"(IDs: {sorted(existing_nums) if existing_nums else 'none'})"))
+
+        form = QFormLayout()
+
+        num_spin = QSpinBox()
+        num_spin.setRange(1, 32)
+        num_spin.setValue(1)
+        form.addRow("Number to add:", num_spin)
+
+        start_spin = QSpinBox()
+        start_spin.setRange(1, 99)
+        start_spin.setValue(next_num)
+        form.addRow("Starting ID number:", start_spin)
+
+        # Preview label
+        preview_label = QLabel()
+        preview_label.setStyleSheet("color: #666; font-style: italic;")
+
+        def update_preview():
+            start = start_spin.value()
+            count = num_spin.value()
+            ids = [f"{cohort_id}_{i:02d}" for i in range(start, start + count)]
+            # Check for conflicts
+            conflicts = [i for i in range(start, start + count) if i in existing_nums]
+            if conflicts:
+                preview_label.setText(
+                    f"Will create: {ids[0]} ... {ids[-1]}\n"
+                    f"WARNING: IDs {conflicts} already exist and will be skipped"
+                )
+                preview_label.setStyleSheet("color: #D32F2F; font-style: italic;")
+            else:
+                preview_label.setText(f"Will create: {ids[0]} ... {ids[-1]}")
+                preview_label.setStyleSheet("color: #666; font-style: italic;")
+
+        num_spin.valueChanged.connect(lambda: update_preview())
+        start_spin.valueChanged.connect(lambda: update_preview())
+        update_preview()
+
+        layout.addLayout(form)
+        layout.addWidget(preview_label)
+
+        sex_combo = QComboBox()
+        sex_combo.addItems(["- (set later)", "M", "F"])
+        form.addRow("Sex:", sex_combo)
+
+        notes_edit = QPlainTextEdit()
+        notes_edit.setMaximumHeight(50)
+        notes_edit.setPlaceholderText("Optional notes for new subjects...")
+        layout.addWidget(notes_edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            start = start_spin.value()
+            count = num_spin.value()
+            sex_val = sex_combo.currentText() if sex_combo.currentIndex() > 0 else None
+            notes_val = notes_edit.toPlainText().strip() or None
+
+            created = []
+            skipped = []
+            with self.db.session() as session:
+                for i in range(start, start + count):
+                    subject_id = f"{cohort_id}_{i:02d}"
+                    # Skip if already exists
+                    if session.query(Subject).filter_by(subject_id=subject_id).first():
+                        skipped.append(subject_id)
+                        continue
+                    subject = Subject(
+                        subject_id=subject_id,
+                        cohort_id=cohort_id,
+                        sex=sex_val,
+                        is_active=1,
+                        notes=notes_val,
+                    )
+                    session.add(subject)
+                    created.append(subject_id)
+                session.commit()
+
+            msg = f"Created {len(created)} subjects: {', '.join(created)}"
+            if skipped:
+                msg += f"\nSkipped {len(skipped)} (already exist): {', '.join(skipped)}"
+            QMessageBox.information(self, "Subjects Added", msg)
+
+            self._refresh_cohorts()
+            self._on_cohort_selected()
+
     def _refresh_protocol_combo(self):
         """Refresh the protocol dropdown with available protocols."""
         self.protocol_combo.clear()
@@ -5189,12 +5547,22 @@ class VisualizationTab(QWidget):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(10)
 
+        # Help button at top
+        help_header = QHBoxLayout()
+        help_btn = HelpButton("Visualizations",
+            "Generate publication-quality charts from cohort data. Choose a chart type, "
+            "toggle individual animal traces and confidence intervals, then export plots as images.")
+        help_header.addWidget(help_btn)
+        help_header.addStretch()
+        main_layout.addLayout(help_header)
+
         # Controls row
         controls_layout = QHBoxLayout()
 
         # Cohort selection
         controls_layout.addWidget(QLabel("Cohort:"))
         self.cohort_combo = QComboBox()
+        self.cohort_combo.setToolTip("Select the cohort to visualize")
         self.cohort_combo.currentIndexChanged.connect(self._on_cohort_changed)
         controls_layout.addWidget(self.cohort_combo)
 
@@ -5208,17 +5576,20 @@ class VisualizationTab(QWidget):
             "Weight Tracking",
             "Pellet Heatmap",
         ])
+        self.chart_combo.setToolTip("Choose the type of chart to generate")
         self.chart_combo.currentIndexChanged.connect(self._update_chart)
         controls_layout.addWidget(self.chart_combo)
 
         # Options
         self.show_individual_cb = QCheckBox("Show Individual Animals")
         self.show_individual_cb.setChecked(True)
+        self.show_individual_cb.setToolTip("Overlay individual animal data points on the chart")
         self.show_individual_cb.stateChanged.connect(self._update_chart)
         controls_layout.addWidget(self.show_individual_cb)
 
         self.show_ci_cb = QCheckBox("Show 95% CI")
         self.show_ci_cb.setChecked(True)
+        self.show_ci_cb.setToolTip("Show 95% confidence interval shading around the mean")
         self.show_ci_cb.stateChanged.connect(self._update_chart)
         controls_layout.addWidget(self.show_ci_cb)
 
@@ -5243,15 +5614,18 @@ class VisualizationTab(QWidget):
             }
         """)
         self.generate_btn.clicked.connect(self._generate_current_chart)
+        self.generate_btn.setToolTip("Render the selected chart with current settings")
         controls_layout.addWidget(self.generate_btn)
 
         # Export button
         self.export_btn = QPushButton("Export Plot")
         self.export_btn.clicked.connect(self._export_plot)
+        self.export_btn.setToolTip("Save the current chart as a PNG image")
         controls_layout.addWidget(self.export_btn)
 
         self.export_all_btn = QPushButton("Export All Plots")
         self.export_all_btn.clicked.connect(self._export_all_plots)
+        self.export_all_btn.setToolTip("Export all available chart types for this cohort")
         controls_layout.addWidget(self.export_all_btn)
 
         main_layout.addLayout(controls_layout)
@@ -5612,6 +5986,15 @@ class DatabaseBrowserTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
+        # Header with help button
+        header_layout = QHBoxLayout()
+        help_btn = HelpButton("Database Browser",
+            "Browse raw database tables directly. Select a table, optionally filter "
+            "rows, and export to CSV. Useful for verifying data or debugging.")
+        header_layout.addWidget(help_btn)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+
         # Header
         header = QLabel("Database Browser")
         header.setObjectName("section_header")
@@ -5629,6 +6012,7 @@ class DatabaseBrowserTab(QWidget):
         controls_layout.addWidget(QLabel("Table:"))
         self.table_combo = QComboBox()
         self.table_combo.setMinimumWidth(200)
+        self.table_combo.setToolTip("Select which database table to browse")
         self.table_combo.currentTextChanged.connect(self._on_table_changed)
         controls_layout.addWidget(self.table_combo)
 
@@ -5637,6 +6021,7 @@ class DatabaseBrowserTab(QWidget):
         controls_layout.addWidget(QLabel("Filter:"))
         self.filter_edit = QLineEdit()
         self.filter_edit.setPlaceholderText("Type to filter rows...")
+        self.filter_edit.setToolTip("Type to filter rows (searches all columns)")
         self.filter_edit.textChanged.connect(self._apply_filter)
         self.filter_edit.setMinimumWidth(200)
         controls_layout.addWidget(self.filter_edit)
@@ -5645,10 +6030,12 @@ class DatabaseBrowserTab(QWidget):
 
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self._refresh_data)
+        self.refresh_btn.setToolTip("Reload the table data from the database")
         controls_layout.addWidget(self.refresh_btn)
 
         self.export_btn = QPushButton("Export to CSV")
         self.export_btn.clicked.connect(self._export_to_csv)
+        self.export_btn.setToolTip("Export the current table view to a CSV file")
         controls_layout.addWidget(self.export_btn)
 
         layout.addLayout(controls_layout)
@@ -5663,6 +6050,7 @@ class DatabaseBrowserTab(QWidget):
         self.data_table.setAlternatingRowColors(True)
         self.data_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.data_table.setSortingEnabled(True)
+        self.data_table.setToolTip("Database contents for the selected table")
         self.data_table.horizontalHeader().setStretchLastSection(True)
         self.data_table.setStyleSheet("""
             QTableWidget {
@@ -5904,6 +6292,14 @@ class DataEntryWindow(QMainWindow):
         # 8. DATABASE BROWSER - View raw data (great for showing PIs)
         self.browser_tab = DatabaseBrowserTab(self.db)
         self.tabs.addTab(self.browser_tab, "8. Database Browser")
+
+        # 9. VIDEO PIPELINE - Video processing status from watcher
+        try:
+            from .video_pipeline_tab import VideoStatusTab
+            self.video_tab = VideoStatusTab(self.db)
+            self.tabs.addTab(self.video_tab, "9. Video Pipeline")
+        except Exception:
+            pass  # Graceful if watcher_bridge not available
 
         # LEGACY TABS - kept for backward compatibility
         # Weight entry tab (for general weight tracking outside ramp)

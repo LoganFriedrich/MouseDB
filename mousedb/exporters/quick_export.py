@@ -2,11 +2,10 @@
 import pandas as pd
 from pathlib import Path
 
-# Import from mousereach package (installed as dependency)
+# Optional: mousereach is a separate package/env - not a dependency of mousedb
 try:
     from mousereach.analysis.data import load_all_surgery_metadata
 except ImportError:
-    print("Warning: mousereach package not available, surgery metadata will be skipped")
     load_all_surgery_metadata = None
 
 

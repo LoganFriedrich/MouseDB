@@ -394,6 +394,129 @@ def cmd_dump(args):
     print(f"Location: {output_dir}")
 
 
+def cmd_video_status(args):
+    """Show video pipeline status from watcher.db."""
+    from .watcher_bridge import (
+        WatcherBridge, STATE_DISPLAY, PIPELINE_STATES, ERROR_STATES, DONE_STATES,
+    )
+
+    bridge = WatcherBridge()
+
+    if not bridge.is_available:
+        print(f"\n  Video pipeline status unavailable.")
+        print(f"  {bridge.status.message}")
+        print(f"\n  The watcher tracks video processing state in watcher.db.")
+        print(f"  It will become available after the watcher processes its first video.")
+        return
+
+    summary = bridge.get_pipeline_summary()
+
+    # JSON output
+    if getattr(args, 'json', False):
+        import json
+        output = {
+            'watcher_db': str(bridge.status.db_path),
+            'summary': {
+                'total_videos': summary.total_videos,
+                'total_collages': summary.total_collages,
+                'by_state': summary.by_state,
+                'fully_processed_pct': round(summary.fully_processed_pct, 1),
+            },
+            'cohorts': bridge.get_cohort_rollup(),
+        }
+        if getattr(args, 'by_animal', False):
+            animals = bridge.get_animal_rollup()
+            if getattr(args, 'cohort', None):
+                animals = [a for a in animals
+                           if a.cohort_id == args.cohort.upper()]
+            output['animals'] = [
+                {
+                    'subject_id': a.subject_id,
+                    'cohort_id': a.cohort_id,
+                    'total_videos': a.total_videos,
+                    'by_state': a.by_state,
+                    'failed_videos': a.failed_videos,
+                    'latest_activity': a.latest_activity,
+                } for a in animals
+            ]
+        if getattr(args, 'show_errors', False):
+            output['failed_videos'] = bridge.get_failed_videos()
+        print(json.dumps(output, indent=2, default=str))
+        return
+
+    # Text output
+    print(f"\n=== Video Pipeline Status ===")
+    print(f"Source: {bridge.status.db_path}")
+
+    done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
+    in_progress = (summary.total_videos - done
+                   - summary.failed_count - summary.quarantined_count)
+
+    print(f"\nOverall: {summary.total_videos} videos, "
+          f"{summary.total_collages} collages")
+    print(f"Completed: {summary.fully_processed_pct:.1f}%  "
+          f"({done} done, {in_progress} in progress, "
+          f"{summary.failed_count} failed)")
+
+    if summary.by_state:
+        print(f"\nBy state:")
+        for state in PIPELINE_STATES + ERROR_STATES:
+            count = summary.by_state.get(state, 0)
+            if count > 0:
+                label = STATE_DISPLAY.get(state, {}).get('label', state)
+                print(f"  {label:15s} {count:>5d}")
+
+    # Per-cohort rollup (default view)
+    cohorts = bridge.get_cohort_rollup()
+    if cohorts:
+        print(f"\nBy cohort:")
+        print(f"  {'Cohort':<12} {'Animals':>8} {'Videos':>8} "
+              f"{'Done':>8} {'Failed':>8} {'Pct':>6}")
+        print(f"  {'-' * 54}")
+        for cid, data in sorted(cohorts.items()):
+            pct = (data['fully_processed'] / data['total_videos'] * 100
+                   if data['total_videos'] > 0 else 0)
+            print(f"  {cid:<12} {data['animals']:>8} "
+                  f"{data['total_videos']:>8} "
+                  f"{data['fully_processed']:>8} "
+                  f"{data['failed']:>8} {pct:>5.1f}%")
+
+    # Per-animal breakdown (if requested)
+    if getattr(args, 'by_animal', False):
+        animals = bridge.get_animal_rollup()
+        if getattr(args, 'cohort', None):
+            animals = [a for a in animals
+                       if a.cohort_id == args.cohort.upper()]
+
+        if animals:
+            print(f"\nBy animal:")
+            print(f"  {'Subject':<12} {'Total':>6} {'Done':>6} "
+                  f"{'In Progress':>12} {'Failed':>8}")
+            print(f"  {'-' * 48}")
+            for a in animals:
+                a_done = sum(a.by_state.get(s, 0) for s in DONE_STATES)
+                a_in_progress = a.total_videos - a_done - a.failed_videos
+                print(f"  {a.subject_id:<12} {a.total_videos:>6} "
+                      f"{a_done:>6} {a_in_progress:>12} "
+                      f"{a.failed_videos:>8}")
+
+    # Failed/quarantined details (if requested)
+    if getattr(args, 'show_errors', False):
+        failed = bridge.get_failed_videos()
+        if failed:
+            print(f"\nFailed/Quarantined videos ({len(failed)}):")
+            for v in failed[:20]:
+                sid = v.get('animal_id', '?')
+                print(f"  {v['video_id']}  ({sid})  "
+                      f"state={v['state']}  errors={v.get('error_count', 0)}")
+                if v.get('error_message'):
+                    print(f"    {v['error_message'][:80]}")
+            if len(failed) > 20:
+                print(f"  ... and {len(failed) - 20} more")
+        else:
+            print(f"\nNo failed or quarantined videos.")
+
+
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -460,6 +583,18 @@ def main():
     dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/2_Connectome/MouseDB/database_dump)')
     dump_parser.set_defaults(func=cmd_dump)
 
+    # mousedb-video-status
+    video_parser = subparsers.add_parser('video-status',
+        help='Show video pipeline processing status')
+    video_parser.add_argument('--by-animal', '-a', action='store_true',
+        help='Show per-animal breakdown')
+    video_parser.add_argument('--cohort', help='Filter to specific cohort (e.g., CNT_01)')
+    video_parser.add_argument('--show-errors', '-e', action='store_true',
+        help='Show failed/quarantined video details')
+    video_parser.add_argument('--json', '-j', action='store_true',
+        help='Output as JSON')
+    video_parser.set_defaults(func=cmd_video_status)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -506,6 +641,11 @@ def mousedb_check():
 
 def mousedb_dump():
     sys.argv = ['mousedb', 'dump'] + sys.argv[1:]
+    main()
+
+
+def mousedb_video_status():
+    sys.argv = ['mousedb', 'video-status'] + sys.argv[1:]
     main()
 
 

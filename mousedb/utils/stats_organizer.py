@@ -536,12 +536,11 @@ def get_pipeline_data(pipeline_dir=None, force_rebuild=False):
     Returns:
         pandas DataFrame with reach-level pipeline data, or None if unavailable
     """
-    # Try to import MouseReach analysis module
+    # Optional: mousereach is a separate package/env - not a dependency of mousedb
     try:
         from mousereach.analysis import load_all_data
         from mousereach.config import Paths
     except ImportError:
-        print("MouseReach package not available - pipeline data skipped")
         return None
 
     if pipeline_dir is None:
