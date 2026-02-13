@@ -167,9 +167,10 @@ class TimelineGanttWidget(QWidget):
         self._cohort_schedules = {}
 
         with self.db.session() as session:
-            # Get all cohorts with start dates
+            # Get all active cohorts with start dates
             cohorts = session.query(Cohort).filter(
-                Cohort.start_date.isnot(None)
+                Cohort.start_date.isnot(None),
+                Cohort.is_archived == 0
             ).order_by(Cohort.start_date.desc()).all()
 
             for cohort in cohorts:
@@ -571,9 +572,10 @@ class MiniTimelineWidget(QWidget):
         self._cohort_schedules = {}
 
         with self.db.session() as session:
-            # Get recent cohorts (limit to 8 for mini view)
+            # Get recent active cohorts (limit to 8 for mini view)
             cohorts = session.query(Cohort).filter(
-                Cohort.start_date.isnot(None)
+                Cohort.start_date.isnot(None),
+                Cohort.is_archived == 0
             ).order_by(Cohort.start_date.desc()).limit(8).all()
 
             for cohort in cohorts:

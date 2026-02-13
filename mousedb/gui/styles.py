@@ -240,4 +240,30 @@ QScrollArea {
     border: none;
     background-color: white;
 }
+
+QToolTip {
+    background-color: #424242;
+    color: white;
+    border: 1px solid #616161;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 9pt;
+}
+
+QPushButton#help_button {
+    background-color: #90CAF9;
+    color: #0D47A1;
+    font-weight: bold;
+    font-size: 10pt;
+    min-width: 24px;
+    max-width: 24px;
+    min-height: 24px;
+    max-height: 24px;
+    border-radius: 12px;
+    padding: 0;
+}
+
+QPushButton#help_button:hover {
+    background-color: #64B5F6;
+}
 """

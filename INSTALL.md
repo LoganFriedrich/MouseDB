@@ -4,7 +4,7 @@
 
 ```bash
 # 1. Create the conda environment
-conda env create -f "Y:/LAB_ROOT/MouseDB/mousedb/environment.yml" -p "Y:/LAB_ROOT/envs/MouseDB"
+conda env create -f "Y:/LAB_ROOT/Databases/mousedb/environment.yml" -p "Y:/LAB_ROOT/envs/MouseDB"
 
 # 2. Activate it
 conda activate "Y:/LAB_ROOT/envs/MouseDB"
@@ -96,9 +96,9 @@ All subjects with session summaries for analysis:
 
 | Location | Purpose |
 |----------|---------|
-| `Y:/LAB_ROOT/MouseDB/connectome.db` | SQLite database (single source of truth) |
-| `Y:/LAB_ROOT/MouseDB/logs/` | Audit trail (JSONL) |
-| `Y:/LAB_ROOT/MouseDB/exports/` | Generated exports |
+| `Y:/LAB_ROOT/Databases/connectome.db` | SQLite database (single source of truth) |
+| `Y:/LAB_ROOT/Databases/logs/` | Audit trail (JSONL) |
+| `Y:/LAB_ROOT/Databases/exports/` | Generated exports |
 
 ## Validation Rules
 
@@ -122,7 +122,7 @@ If you modify the package code:
 If you add new CLI commands to pyproject.toml:
 ```bash
 conda activate "Y:/LAB_ROOT/envs/MouseDB"
-pip install -e "Y:/LAB_ROOT/MouseDB/mousedb"
+pip install -e "Y:/LAB_ROOT/Databases/mousedb"
 ```
 
 ## Troubleshooting
@@ -135,7 +135,7 @@ pip install PyQt5
 
 ### "Module not found: mousedb"
 ```bash
-pip install -e "Y:/LAB_ROOT/MouseDB/mousedb"
+pip install -e "Y:/LAB_ROOT/Databases/mousedb"
 ```
 
 ### Database locked
