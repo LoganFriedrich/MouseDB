@@ -13,7 +13,7 @@ def list_sheets(file_path):
         xl_file = pd.ExcelFile(file_path)
         return xl_file.sheet_names
     except PermissionError:
-        print(f"\n✗ ERROR: Cannot access {file_path}")
+        print(f"\n[FAIL] ERROR: Cannot access {file_path}")
         print("  The file is likely open in Excel or another program.")
         print("  Please close it and try again.\n")
         return None
@@ -50,7 +50,7 @@ def reorganize_sheet(df):
     # Check if all expected columns exist
     missing_cols = [col for col in meta_cols if col not in df.columns]
     if missing_cols:
-        print(f"  ✗ Missing expected columns: {missing_cols}")
+        print(f"  [FAIL] Missing expected columns: {missing_cols}")
         return None
     
     # Identify pellet columns - anything after the metadata columns
@@ -71,11 +71,11 @@ def reorganize_sheet(df):
             pass
     
     if len(numeric_pellet_cols) < 20:
-        print(f"  ⚠️  Warning: Only found {len(numeric_pellet_cols)} pellet columns")
+        print(f"  [!] Warning: Only found {len(numeric_pellet_cols)} pellet columns")
         print(f"      Using these columns: {numeric_pellet_cols}")
     
     if len(numeric_pellet_cols) == 0:
-        print(f"  ✗ Could not identify pellet columns (expected columns labeled 1-20)")
+        print(f"  [FAIL] Could not identify pellet columns (expected columns labeled 1-20)")
         print(f"      Non-metadata columns found: {pellet_cols[:10]}...")
         return None
     
@@ -109,7 +109,7 @@ def main():
     print("=" * 60)
     print("DATA REORGANIZATION SCRIPT")
     print("=" * 60)
-    print("\n⚠️  IMPORTANT: Close all Excel files before running this script!")
+    print("\n[!] IMPORTANT: Close all Excel files before running this script!")
     print("=" * 60)
     
     # Find Excel files
@@ -161,12 +161,12 @@ def main():
                     long_df['Source_File'] = file_path
                     long_df['Source_Sheet'] = sheet_name
                     all_data.append(long_df)
-                    print(f"  ✓ Reshaped {len(df)} rows into {len(long_df)} rows")
+                    print(f"  [OK] Reshaped {len(df)} rows into {len(long_df)} rows")
                 else:
-                    print(f"  ✗ Failed to reshape {sheet_name}")
+                    print(f"  [FAIL] Failed to reshape {sheet_name}")
                     
             except Exception as e:
-                print(f"  ✗ Error processing {sheet_name}: {e}")
+                print(f"  [FAIL] Error processing {sheet_name}: {e}")
     
     # Combine all data
     if all_data:

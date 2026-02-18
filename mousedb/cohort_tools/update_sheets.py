@@ -781,7 +781,7 @@ def process_file(input_path, output_dir=None):
     
     print(f"\n{'='*60}")
     print(f"[OK] Successfully processed {input_path.name}")
-    print(f"     ODC sheet: {len(odc_rows)} rows × {len(ODC_COLUMNS)} columns")
+    print(f"     ODC sheet: {len(odc_rows)} rows x {len(ODC_COLUMNS)} columns")
     print(f"     Output: {output_path}")
     print(f"{'='*60}")
     
