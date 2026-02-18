@@ -64,20 +64,20 @@ def summarize_json(path):
 
 def print_file(f, prefix, output, is_last=False):
     """Print a single file with metadata."""
-    connector = "└── " if is_last else "├── "
+    connector = "\-- " if is_last else "+-- "
     info = get_file_info(f)
-    
+
     # Icons by extension
-    icons = {'.ims': '[IMS]', '.tif': '[TIF]', '.tiff': '[TIF]', '.json': '[JSON]', 
+    icons = {'.ims': '[IMS]', '.tif': '[TIF]', '.tiff': '[TIF]', '.json': '[JSON]',
              '.txt': '[TXT]', '.py': '[PY]', '.ijm': '[IJM]', '.md': '[MD]', '.bat': '[BAT]'}
     icon = icons.get(f.suffix.lower(), '[FILE]')
-    
+
     output.append(f"{prefix}{connector}{icon} {f.name}")
-    output.append(f"{prefix}{'    ' if is_last else '│   '}   {info['size_human']} | {info['modified']}")
-    
+    output.append(f"{prefix}{'    ' if is_last else '|   '}   {info['size_human']} | {info['modified']}")
+
     # Show JSON contents
     if f.suffix.lower() == '.json':
-        extension = "    " if is_last else "│   "
+        extension = "    " if is_last else "|   "
         json_content = summarize_json(f)
         for line in json_content.split('\n'):
             output.append(f"{prefix}{extension}   {line}")
@@ -112,9 +112,9 @@ def list_dir_contents(path, prefix, output, max_depth=2, current_depth=0, verbos
     
     for i, item in enumerate(all_items):
         is_last = (i == len(all_items) - 1)
-        connector = "└── " if is_last else "├── "
-        extension = "    " if is_last else "│   "
-        
+        connector = "\-- " if is_last else "+-- "
+        extension = "    " if is_last else "|   "
+
         if item.is_dir():
             # Count items
             try:
@@ -122,7 +122,7 @@ def list_dir_contents(path, prefix, output, max_depth=2, current_depth=0, verbos
                 subinfo = f" ({subcount} items)"
             except:
                 subinfo = ""
-            
+
             output.append(f"{prefix}{connector}[DIR] {item.name}/{subinfo}")
             list_dir_contents(item, prefix + extension, output, max_depth, current_depth + 1, f"{verbose_path}/{item.name}")
         else:
@@ -277,8 +277,8 @@ Examples:
         
         for i, item in enumerate(items):
             is_last = (i == len(items) - 1)
-            connector = "└── " if is_last else "├── "
-            
+            connector = "\-- " if is_last else "+-- "
+
             if item.is_dir():
                 try:
                     count = len(list(item.iterdir()))
@@ -331,31 +331,31 @@ Examples:
         
         for i, item in enumerate(all_items):
             is_last = (i == len(all_items) - 1)
-            connector = "└── " if is_last else "├── "
-            extension = "    " if is_last else "│   "
-            
+            connector = "\-- " if is_last else "+-- "
+            extension = "    " if is_last else "|   "
+
             if item.is_dir():
                 try:
                     subcount = len(list(item.iterdir()))
                     subinfo = f" ({subcount} items)"
                 except:
                     subinfo = ""
-                
+
                 write_line(f"{prefix}{connector}[DIR] {item.name}/{subinfo}")
                 list_dir_to_file(item, prefix + extension, max_depth, current_depth + 1)
             else:
                 # Print file with metadata
                 info = get_file_info(item)
-                icons = {'.ims': '[IMS]', '.tif': '[TIF]', '.tiff': '[TIF]', '.json': '[JSON]', 
+                icons = {'.ims': '[IMS]', '.tif': '[TIF]', '.tiff': '[TIF]', '.json': '[JSON]',
                          '.txt': '[TXT]', '.py': '[PY]', '.ijm': '[IJM]', '.md': '[MD]', '.bat': '[BAT]'}
                 icon = icons.get(item.suffix.lower(), '[FILE]')
-                
+
                 write_line(f"{prefix}{connector}{icon} {item.name}")
-                write_line(f"{prefix}{'    ' if is_last else '│   '}   {info['size_human']} | {info['modified']}")
-                
+                write_line(f"{prefix}{'    ' if is_last else '|   '}   {info['size_human']} | {info['modified']}")
+
                 # Show JSON contents
                 if item.suffix.lower() == '.json':
-                    ext = "    " if is_last else "│   "
+                    ext = "    " if is_last else "|   "
                     json_content = summarize_json(item)
                     for line in json_content.split('\n'):
                         write_line(f"{prefix}{ext}   {line}")

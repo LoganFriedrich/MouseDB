@@ -203,7 +203,7 @@ def main():
     with open(APP_PY, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    print("✓ All tooltips and HelpButtons added successfully")
+    print("[OK] All tooltips and HelpButtons added successfully")
 
 if __name__ == '__main__':
     main()
