@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+
+{% block title %}Reach Trajectories - MouseDB{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Reach Trajectory Spaghetti Plot</h1>
+    <p class="subtitle">Overlay reach paths across experimental phases for a single subject</p>
+</div>
+
+<div class="plot-layout">
+    <div class="controls-panel card">
+        <h3>Configuration</h3>
+
+        <div class="form-group">
+            <label for="cohort-select">Cohort</label>
+            <select id="cohort-select"
+                    hx-get=""
+                    hx-trigger="change"
+                    hx-target="#subject-select"
+                    onchange="updateSubjects(this.value)">
+                <option value="">Select cohort...</option>
+                {% for c in cohorts %}
+                <option value="{{ c.cohort_id }}" data-start="{{ c.start_date }}">
+                    {{ c.cohort_id }} ({{ c.subjects|length }} subjects)
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="subject-select">Subject</label>
+            <select id="subject-select">
+                <option value="">Select subject...</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Phase Groups</label>
+            <div class="checkbox-group">
+                {% for name, info in phase_groups.items() %}
+                <label class="checkbox-label">
+                    <input type="checkbox" name="phases" value="{{ name }}" checked>
+                    <span class="phase-dot" style="background: {{ info.color }}"></span>
+                    {{ name }}
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="outcome-select">Outcome Filter</label>
+            <select id="outcome-select">
+                <option value="retrieved">Retrieved (successful) only</option>
+                <option value="all">All outcomes</option>
+                <option value="displaced_sa">Displaced (scoring area)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="align-check" checked>
+                Align to start position
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label class="checkbox-label">
+                <input type="checkbox" id="mean-check" checked>
+                Show mean trajectory
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="alpha-range">Transparency: <span id="alpha-value">0.3</span></label>
+            <input type="range" id="alpha-range" min="0.05" max="1.0" step="0.05" value="0.3"
+                   oninput="document.getElementById('alpha-value').textContent = this.value">
+        </div>
+
+        <button class="btn btn-primary" onclick="generatePlot()">Generate Plot</button>
+
+        <p class="text-muted" style="margin-top: 12px; font-size: 11px;">
+            Use Plotly toolbar (top-right of plot) to download as PNG/SVG.
+        </p>
+    </div>
+
+    <div class="plot-panel">
+        <div id="plot-container" class="card">
+            <div class="plot-placeholder">
+                <p>Select a subject and click "Generate Plot" to view reach trajectories.</p>
+            </div>
+        </div>
+
+        <div id="stats-panel" class="card" style="margin-top: 16px;">
+            <h3>Statistics</h3>
+            <div id="stats-content">
+                <p class="text-muted">Generate a plot to see reach statistics.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Cohort data from server
+const cohortData = {{ cohorts | tojson }};
+
+function updateSubjects(cohortId) {
+    const select = document.getElementById('subject-select');
+    select.innerHTML = '<option value="">Select subject...</option>';
+
+    const cohort = cohortData.find(c => c.cohort_id === cohortId);
+    if (!cohort) return;
+
+    cohort.subjects.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.subject_id;
+        opt.textContent = `${s.subject_id} (${s.sex})`;
+        select.appendChild(opt);
+    });
+}
+
+function getSelectedPhases() {
+    const checked = document.querySelectorAll('input[name="phases"]:checked');
+    return Array.from(checked).map(cb => cb.value).join(',');
+}
+
+function buildQueryParams() {
+    const subjectId = document.getElementById('subject-select').value;
+    if (!subjectId) {
+        alert('Please select a subject first.');
+        return null;
+    }
+
+    const params = new URLSearchParams({
+        subject_id: subjectId,
+        outcome: document.getElementById('outcome-select').value,
+        align: document.getElementById('align-check').checked,
+        show_mean: document.getElementById('mean-check').checked,
+        alpha: document.getElementById('alpha-range').value,
+    });
+
+    const phases = getSelectedPhases();
+    if (phases) params.set('phases', phases);
+
+    return params;
+}
+
+function generatePlot() {
+    const params = buildQueryParams();
+    if (!params) return;
+
+    const container = document.getElementById('plot-container');
+    container.innerHTML = '<div class="loading">Generating plot...</div>';
+
+    // Render interactive Plotly plot
+    fetch(`/plots/spaghetti/render?${params}`)
+        .then(r => r.text())
+        .then(html => {
+            container.innerHTML = html;
+        })
+        .catch(err => {
+            container.innerHTML = `<div class="error">Error: ${err.message}</div>`;
+        });
+
+    // Fetch stats
+    const statsParams = new URLSearchParams({
+        subject_id: params.get('subject_id'),
+        outcome: params.get('outcome'),
+    });
+    const phases = params.get('phases');
+    if (phases) statsParams.set('phases', phases);
+
+    fetch(`/plots/spaghetti/stats?${statsParams}`)
+        .then(r => r.json())
+        .then(data => {
+            renderStats(data);
+        })
+        .catch(() => {});
+}
+
+function renderStats(data) {
+    const el = document.getElementById('stats-content');
+    if (!data.by_phase || Object.keys(data.by_phase).length === 0) {
+        el.innerHTML = '<p class="text-muted">No matching reaches found.</p>';
+        if (data.errors && data.errors.length > 0) {
+            el.innerHTML += '<div class="error-list">' +
+                data.errors.map(e => `<p class="text-error">${e}</p>`).join('') +
+                '</div>';
+        }
+        return;
+    }
+
+    let html = `<p><strong>Total reaches:</strong> ${data.total_reaches}</p>`;
+    html += '<table class="data-table"><thead><tr>';
+    html += '<th>Phase</th><th>Reaches</th><th>Mean Duration (frames)</th></tr></thead><tbody>';
+
+    for (const [phase, stats] of Object.entries(data.by_phase)) {
+        html += `<tr>`;
+        html += `<td><span class="phase-dot" style="background:${stats.color}"></span>${phase}</td>`;
+        html += `<td>${stats.count}</td>`;
+        html += `<td>${stats.mean_duration.toFixed(1)}</td>`;
+        html += `</tr>`;
+    }
+
+    html += '</tbody></table>';
+    el.innerHTML = html;
+}
+
+</script>
+{% endblock %}

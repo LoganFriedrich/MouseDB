@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MouseDB Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/main.css">
+    <script src="/static/js/htmx.min.js"></script>
+</head>
+<body hx-boost="true">
+    <nav class="sidebar">
+        <div class="nav-header">
+            <h2>MouseDB</h2>
+            <span class="nav-version">v0.1.0</span>
+        </div>
+        <ul class="nav-links">
+            <li><a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a></li>
+            <li><a href="/plots/spaghetti" class="{% if '/plots' in request.url.path %}active{% endif %}">Visualizations</a></li>
+            <li><a href="/dashboard/" class="{% if '/dashboard' in request.url.path %}active{% endif %}">Pipeline Status</a></li>
+        </ul>
+        <div class="nav-footer">
+            <span class="nav-server">BISC_IC_AS3</span>
+        </div>
+    </nav>
+
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

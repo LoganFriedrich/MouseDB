@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}MouseDB Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Connectome Data Dashboard</h1>
+</div>
+
+<div class="card-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.subjects }}</div>
+        <div class="stat-label">Subjects</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.cohorts }}</div>
+        <div class="stat-label">Cohorts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.pellet_scores }}</div>
+        <div class="stat-label">Pellet Scores</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ stats.weights }}</div>
+        <div class="stat-label">Weights</div>
+    </div>
+</div>
+
+<div class="card-grid" style="margin-top: 24px;">
+    <a href="/plots/spaghetti" class="action-card">
+        <h3>Reach Trajectories</h3>
+        <p>Spaghetti plot overlays of reach paths across experimental phases</p>
+    </a>
+    <a href="/dashboard/" class="action-card">
+        <h3>Pipeline Status</h3>
+        <p>Video processing progress by animal and cohort</p>
+    </a>
+</div>
+
+<div class="card" style="margin-top: 24px;">
+    <h3>Database</h3>
+    <table class="data-table">
+        <tr><td>Path</td><td>{{ stats.db_path }}</td></tr>
+        <tr><td>Size</td><td>{{ "%.1f"|format(stats.db_size_mb) }} MB</td></tr>
+        <tr><td>Surgeries</td><td>{{ stats.surgeries }}</td></tr>
+        <tr><td>Ramp Entries</td><td>{{ stats.ramp_entries }}</td></tr>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Pipeline Status - MouseDB{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Pipeline Status</h1>
+</div>
+
+<div class="card-grid" hx-get="/dashboard/summary-cards" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "components/summary_cards.html" %}
+</div>
+
+<div class="card" style="margin-top: 24px;">
+    <h3>Per-Animal Status</h3>
+    {% if animals %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Animal</th>
+                <th>Cohort</th>
+                <th>Total</th>
+                <th>Progress</th>
+                <th>Failed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in animals %}
+            <tr hx-get="/dashboard/animal/{{ a.subject_id }}" hx-trigger="click"
+                hx-target="#detail-panel" hx-swap="innerHTML" style="cursor:pointer;">
+                <td>{{ a.subject_id }}</td>
+                <td>{{ a.cohort_id }}</td>
+                <td>{{ a.total_videos }}</td>
+                <td>
+                    <div class="progress-bar">
+                        {% set done = a.by_state.get('processed', 0) + a.by_state.get('archived', 0) %}
+                        {% set pct = (done / a.total_videos * 100) if a.total_videos > 0 else 0 %}
+                        {% for state, count in a.by_state.items() %}
+                        {% set seg_pct = (count / a.total_videos * 100) if a.total_videos > 0 else 0 %}
+                        <div class="progress-segment" style="width:{{ seg_pct }}%;background:{{ state_display.get(state, {}).get('color', '#999') }}" title="{{ state_display.get(state, {}).get('label', state) }}: {{ count }}"></div>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td>{% if a.failed_videos > 0 %}<span class="text-error">{{ a.failed_videos }}</span>{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No pipeline data available. Is the watcher running?</p>
+    {% endif %}
+</div>
+
+<div id="detail-panel" class="card" style="margin-top: 16px;"></div>
+{% endblock %}
