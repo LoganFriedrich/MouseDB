@@ -24,6 +24,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+web = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+    "jinja2>=3.0",
+    "python-multipart>=0.0.5",
+    "h5py>=3.0",
+    "tables>=3.7",
+    "plotly>=5.0",
+]
 dev = [
     "pytest>=7.0",
     "black",
@@ -45,6 +54,7 @@ mousedb-update-sheets = "mousedb.cohort_tools.update_sheets:main"
 mousedb-reorganize = "mousedb.utils.reorganize:main"
 mousedb-quick-export = "mousedb.exporters.quick_export:main"
 mousedb-video-status = "mousedb.cli:mousedb_video_status"
+mousedb-web = "mousedb.web.main:run_server"
 
 [tool.setuptools.packages.find]
 where = ["."]
