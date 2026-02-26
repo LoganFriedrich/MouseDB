@@ -517,6 +517,163 @@ def cmd_video_status(args):
             print(f"\nNo failed or quarantined videos.")
 
 
+def cmd_archive_status(args):
+    """Show archive processing and version compliance status."""
+    from .watcher_bridge import (
+        WatcherBridge, ARCHIVE_STATE_DISPLAY,
+    )
+
+    bridge = WatcherBridge()
+
+    if not bridge.is_available:
+        print("\n  Archive status unavailable.")
+        print(f"  {bridge.status.message}")
+        print("\n  The watcher tracks video processing state in watcher.db.")
+        print("  It will become available after the watcher processes its first video.")
+        return
+
+    summary = bridge.get_archive_summary()
+
+    # JSON output
+    if getattr(args, 'json', False):
+        import json
+        cohort_rollup = bridge.get_archive_cohort_rollup()
+        output = {
+            'watcher_db': str(bridge.status.db_path),
+            'versions_json': str(summary.versions_path) if summary.versions_path else None,
+            'versions': (summary.versions_info.get('versions', {})
+                         if summary.versions_info else {}),
+            'summary': {
+                'total_videos': summary.total_videos,
+                'archived': summary.archived,
+                'outdated': summary.outdated,
+                'crystallized': summary.crystallized,
+                'in_pipeline': summary.in_pipeline,
+                'failed': summary.failed,
+            },
+            'cohorts': [
+                {
+                    'cohort_id': c.cohort_id,
+                    'total_videos': c.total_videos,
+                    'archived': c.archived,
+                    'outdated': c.outdated,
+                    'crystallized': c.crystallized,
+                    'in_pipeline': c.in_pipeline,
+                    'failed': c.failed,
+                    'completion_pct': round(c.completion_pct, 1),
+                    'crystallized_label': c.crystallized_label,
+                }
+                for c in cohort_rollup
+            ],
+        }
+        if getattr(args, 'verbose', False) or getattr(args, 'cohort', None):
+            cohort_filter = getattr(args, 'cohort', None)
+            if cohort_filter:
+                cohort_filter = cohort_filter.upper()
+            animal_rollup = bridge.get_archive_animal_rollup(cohort=cohort_filter)
+            output['animals'] = [
+                {
+                    'subject_id': a.subject_id,
+                    'cohort_id': a.cohort_id,
+                    'total_videos': a.total_videos,
+                    'archived': a.archived,
+                    'outdated': a.outdated,
+                    'crystallized': a.crystallized,
+                    'in_pipeline': a.in_pipeline,
+                    'failed': a.failed,
+                    'crystallized_label': a.crystallized_label,
+                }
+                for a in animal_rollup
+            ]
+        print(json.dumps(output, indent=2, default=str))
+        return
+
+    # Text output
+    print("\n=== Archive Processing Status ===")
+    source_parts = [f"Source: {bridge.status.db_path}"]
+    if summary.versions_path:
+        source_parts.append(f"Versions: {summary.versions_path}")
+    print('  |  '.join(source_parts))
+
+    if summary.versions_info and summary.versions_info.get('versions'):
+        v = summary.versions_info['versions']
+        ver_str = ', '.join(f"{k}={val}" for k, val in v.items())
+        print(f"Current: {ver_str}")
+
+    print()
+
+    # Per-cohort progress bars
+    cohort_rollup = bridge.get_archive_cohort_rollup()
+    if cohort_rollup:
+        max_cid = max(len(c.cohort_id) for c in cohort_rollup)
+        max_total = max(c.total_videos for c in cohort_rollup)
+        total_digits = len(str(max_total))
+
+        for c in cohort_rollup:
+            bar_width = 16
+            if c.total_videos > 0:
+                filled = int(bar_width * c.complete_count / c.total_videos)
+            else:
+                filled = 0
+            bar = '=' * filled
+            if filled < bar_width and filled > 0:
+                bar = bar[:-1] + '>'
+            bar = bar.ljust(bar_width)
+
+            details = []
+            if c.outdated > 0:
+                details.append(f"{c.outdated} outdated")
+            if c.in_pipeline > 0:
+                details.append(f"{c.in_pipeline} in pipeline")
+            if c.failed > 0:
+                details.append(f"{c.failed} failed")
+            if c.crystallized > 0 and c.crystallized_label:
+                details.append(f"crystallized: {c.crystallized_label}")
+            elif c.crystallized > 0:
+                details.append(f"{c.crystallized} crystallized")
+
+            detail_str = f"  ({', '.join(details)})" if details else ""
+
+            print(f"{c.cohort_id:<{max_cid}}  [{bar}]  "
+                  f"{c.complete_count:>{total_digits}}/{c.total_videos:<{total_digits}} videos  "
+                  f"{c.completion_pct:>5.1f}%{detail_str}")
+
+    print()
+
+    # Overall summary
+    total_current = summary.archived + summary.crystallized
+    if summary.total_videos > 0:
+        overall_pct = total_current / summary.total_videos * 100
+    else:
+        overall_pct = 0
+    print(f"Version compliance: {summary.archived}/{summary.total_videos} "
+          f"current ({overall_pct:.0f}%)")
+    if summary.outdated > 0:
+        print(f"Outdated (need reprocess): {summary.outdated}")
+    if summary.crystallized > 0:
+        print(f"Crystallized: {summary.crystallized}")
+
+    # Per-animal breakdown (verbose or specific cohort)
+    if getattr(args, 'verbose', False) or getattr(args, 'cohort', None):
+        cohort_filter = getattr(args, 'cohort', None)
+        if cohort_filter:
+            cohort_filter = cohort_filter.upper()
+        animal_rollup = bridge.get_archive_animal_rollup(cohort=cohort_filter)
+
+        if animal_rollup:
+            header = "Per-animal breakdown"
+            if cohort_filter:
+                header += f" ({cohort_filter})"
+            print(f"\n{header}:")
+            print(f"  {'Subject':<12} {'Total':>6} {'Archived':>9} "
+                  f"{'Outdated':>9} {'Crystal':>8} {'Pipeline':>9} {'Failed':>7}")
+            print(f"  {'-' * 62}")
+            for a in animal_rollup:
+                print(f"  {a.subject_id:<12} {a.total_videos:>6} "
+                      f"{a.archived:>9} {a.outdated:>9} "
+                      f"{a.crystallized:>8} {a.in_pipeline:>9} {a.failed:>7}")
+
+
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -595,6 +752,17 @@ def main():
         help='Output as JSON')
     video_parser.set_defaults(func=cmd_video_status)
 
+    # mousedb-archive-status
+    archive_parser = subparsers.add_parser('archive-status',
+        help='Show archive processing and version compliance status')
+    archive_parser.add_argument('--cohort', '-c',
+        help='Filter to specific cohort (e.g., ENCR_01)')
+    archive_parser.add_argument('--verbose', '-v', action='store_true',
+        help='Show per-animal breakdown')
+    archive_parser.add_argument('--json', '-j', action='store_true',
+        help='Output as JSON')
+    archive_parser.set_defaults(func=cmd_archive_status)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -646,6 +814,11 @@ def mousedb_dump():
 
 def mousedb_video_status():
     sys.argv = ['mousedb', 'video-status'] + sys.argv[1:]
+    main()
+
+
+def mousedb_archive_status():
+    sys.argv = ['mousedb', 'archive-status'] + sys.argv[1:]
     main()
 
 
