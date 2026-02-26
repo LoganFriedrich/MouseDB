@@ -6301,6 +6301,14 @@ class DataEntryWindow(QMainWindow):
         except Exception:
             pass  # Graceful if watcher_bridge not available
 
+        # 10. ARCHIVE STATUS - Archive processing and version compliance
+        try:
+            from .archive_status_tab import ArchiveStatusTab
+            self.archive_tab = ArchiveStatusTab(self.db)
+            self.tabs.addTab(self.archive_tab, "10. Archive Status")
+        except Exception:
+            pass  # Graceful if watcher_bridge not available
+
         # LEGACY TABS - kept for backward compatibility
         # Weight entry tab (for general weight tracking outside ramp)
         self.bulk_weight_tab = BulkWeightEntryTab(self.db)

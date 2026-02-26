@@ -54,6 +54,7 @@ mousedb-update-sheets = "mousedb.cohort_tools.update_sheets:main"
 mousedb-reorganize = "mousedb.utils.reorganize:main"
 mousedb-quick-export = "mousedb.exporters.quick_export:main"
 mousedb-video-status = "mousedb.cli:mousedb_video_status"
+mousedb-archive-status = "mousedb.cli:mousedb_archive_status"
 mousedb-web = "mousedb.web.main:run_server"
 
 [tool.setuptools.packages.find]

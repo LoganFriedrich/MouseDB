@@ -44,6 +44,22 @@ STATE_DISPLAY = {
 
 DONE_STATES = frozenset(['processed', 'archiving', 'archived'])
 
+# Archive-relevant state groupings
+ARCHIVE_STATES = frozenset(['archived', 'outdated', 'crystallized'])
+IN_PIPELINE_STATES = frozenset([
+    'discovered', 'validated', 'dlc_queued', 'dlc_running', 'dlc_complete',
+    'processing', 'processed', 'archiving',
+])
+
+# Color scheme for archive status view
+ARCHIVE_STATE_DISPLAY = {
+    'current':       {'label': 'Current',       'color': '#4CAF50'},
+    'outdated':      {'label': 'Outdated',       'color': '#FF9800'},
+    'crystallized':  {'label': 'Crystallized',   'color': '#2196F3'},
+    'in_pipeline':   {'label': 'In Pipeline',    'color': '#9E9E9E'},
+    'failed':        {'label': 'Failed',         'color': '#F44336'},
+}
+
 
 @dataclass
 class WatcherStatus:
@@ -74,6 +90,56 @@ class AnimalVideoSummary:
     by_state: Dict[str, int] = field(default_factory=dict)
     failed_videos: int = 0
     latest_activity: Optional[str] = None
+
+
+@dataclass
+class ArchiveSummary:
+    """Overall archive processing summary."""
+    total_videos: int = 0
+    archived: int = 0
+    outdated: int = 0
+    crystallized: int = 0
+    in_pipeline: int = 0
+    failed: int = 0
+    versions_path: Optional[Path] = None
+    versions_info: Optional[dict] = None
+
+
+@dataclass
+class ArchiveCohortSummary:
+    """Per-cohort archive processing summary."""
+    cohort_id: str = ''
+    total_videos: int = 0
+    archived: int = 0
+    outdated: int = 0
+    crystallized: int = 0
+    in_pipeline: int = 0
+    failed: int = 0
+    crystallized_label: Optional[str] = None
+
+    @property
+    def complete_count(self) -> int:
+        return self.archived + self.crystallized
+
+    @property
+    def completion_pct(self) -> float:
+        if self.total_videos == 0:
+            return 0.0
+        return self.complete_count / self.total_videos * 100
+
+
+@dataclass
+class ArchiveAnimalSummary:
+    """Per-animal archive processing summary."""
+    subject_id: str = ''
+    cohort_id: str = ''
+    total_videos: int = 0
+    archived: int = 0
+    outdated: int = 0
+    crystallized: int = 0
+    in_pipeline: int = 0
+    failed: int = 0
+    crystallized_label: Optional[str] = None
 
 
 def find_watcher_db() -> WatcherStatus:
@@ -123,6 +189,50 @@ def find_watcher_db() -> WatcherStatus:
         False, None,
         "watcher.db not found. Set MOUSEDB_WATCHER_DB or run mousereach-setup."
     )
+
+
+def find_versions_json() -> Optional[Path]:
+    """
+    Locate pipeline_versions.json WITHOUT importing mousereach.
+
+    Discovery chain:
+    1. MOUSEDB_VERSIONS_JSON environment variable
+    2. ~/.mousereach/config.json -> nas_root/pipeline_versions.json
+    3. ~/.mousereach/config.json -> processing_root/pipeline_versions.json
+    4. Hardcoded fallback path
+    """
+    env_path = os.environ.get('MOUSEDB_VERSIONS_JSON')
+    if env_path:
+        p = Path(env_path)
+        if p.exists():
+            return p
+        return None
+
+    config_file = Path.home() / ".mousereach" / "config.json"
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+
+            nas_root = config.get('nas_root')
+            if nas_root:
+                p = Path(nas_root) / "pipeline_versions.json"
+                if p.exists():
+                    return p
+
+            processing_root = config.get('processing_root')
+            if processing_root:
+                p = Path(processing_root) / "pipeline_versions.json"
+                if p.exists():
+                    return p
+        except Exception:
+            pass
+
+    fallback = Path("Y:/2_Connectome/Behavior/MouseReach_Pipeline/pipeline_versions.json")
+    if fallback.exists():
+        return fallback
+
+    return None
 
 
 def _animal_id_to_subject_id(animal_id: str) -> Optional[str]:
@@ -343,5 +453,152 @@ class WatcherBridge:
                 LIMIT ?
             """, (limit,)).fetchall()
             return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def get_archive_summary(self) -> ArchiveSummary:
+        """Get overall archive processing and version compliance summary."""
+        summary = ArchiveSummary()
+        if not self.is_available:
+            return summary
+
+        versions_path = find_versions_json()
+        if versions_path:
+            summary.versions_path = versions_path
+            try:
+                with open(versions_path, 'r') as f:
+                    summary.versions_info = json.load(f)
+            except Exception:
+                pass
+
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT state, COUNT(*) as cnt FROM videos GROUP BY state"
+            ).fetchall()
+
+            for row in rows:
+                state = row['state']
+                count = row['cnt']
+                summary.total_videos += count
+
+                if state == 'archived':
+                    summary.archived += count
+                elif state == 'outdated':
+                    summary.outdated += count
+                elif state == 'crystallized':
+                    summary.crystallized += count
+                elif state in ('failed', 'quarantined'):
+                    summary.failed += count
+                else:
+                    summary.in_pipeline += count
+
+            return summary
+        finally:
+            conn.close()
+
+    def get_archive_cohort_rollup(self) -> List['ArchiveCohortSummary']:
+        """Get per-cohort archive processing summary."""
+        if not self.is_available:
+            return []
+
+        conn = self._connect()
+        try:
+            rows = conn.execute("""
+                SELECT animal_id, state, COUNT(*) as cnt,
+                       GROUP_CONCAT(DISTINCT crystallized_label) as labels
+                FROM videos
+                WHERE animal_id IS NOT NULL
+                GROUP BY animal_id, state
+            """).fetchall()
+
+            cohorts: Dict[str, ArchiveCohortSummary] = {}
+            for row in rows:
+                subject_id = _animal_id_to_subject_id(row['animal_id'])
+                if not subject_id:
+                    continue
+
+                cohort_id = '_'.join(subject_id.split('_')[:2])
+                if cohort_id not in cohorts:
+                    cohorts[cohort_id] = ArchiveCohortSummary(cohort_id=cohort_id)
+
+                c = cohorts[cohort_id]
+                state = row['state']
+                count = row['cnt']
+                c.total_videos += count
+
+                if state == 'archived':
+                    c.archived += count
+                elif state == 'outdated':
+                    c.outdated += count
+                elif state == 'crystallized':
+                    c.crystallized += count
+                    if row['labels']:
+                        c.crystallized_label = row['labels']
+                elif state in ('failed', 'quarantined'):
+                    c.failed += count
+                else:
+                    c.in_pipeline += count
+
+            return sorted(cohorts.values(), key=lambda c: c.cohort_id)
+        finally:
+            conn.close()
+
+    def get_archive_animal_rollup(
+        self, cohort: Optional[str] = None
+    ) -> List['ArchiveAnimalSummary']:
+        """Get per-animal archive processing summary.
+
+        Args:
+            cohort: Optional cohort filter (e.g. 'ENCR_01'). If None, all.
+        """
+        if not self.is_available:
+            return []
+
+        conn = self._connect()
+        try:
+            rows = conn.execute("""
+                SELECT animal_id, state, COUNT(*) as cnt,
+                       GROUP_CONCAT(DISTINCT crystallized_label) as labels
+                FROM videos
+                WHERE animal_id IS NOT NULL
+                GROUP BY animal_id, state
+            """).fetchall()
+
+            animals: Dict[str, ArchiveAnimalSummary] = {}
+            for row in rows:
+                subject_id = _animal_id_to_subject_id(row['animal_id'])
+                if not subject_id:
+                    continue
+
+                cohort_id = '_'.join(subject_id.split('_')[:2])
+                if cohort and cohort_id != cohort.upper():
+                    continue
+
+                if subject_id not in animals:
+                    animals[subject_id] = ArchiveAnimalSummary(
+                        subject_id=subject_id,
+                        cohort_id=cohort_id,
+                    )
+
+                a = animals[subject_id]
+                state = row['state']
+                count = row['cnt']
+                a.total_videos += count
+
+                if state == 'archived':
+                    a.archived += count
+                elif state == 'outdated':
+                    a.outdated += count
+                elif state == 'crystallized':
+                    a.crystallized += count
+                    if row['labels']:
+                        a.crystallized_label = row['labels']
+                elif state in ('failed', 'quarantined'):
+                    a.failed += count
+                else:
+                    a.in_pipeline += count
+
+            return sorted(animals.values(), key=lambda a: a.subject_id)
         finally:
             conn.close()
