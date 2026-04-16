@@ -10,7 +10,7 @@ from datetime import datetime, date
 from typing import Optional, List
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Date, DateTime,
-    Text, ForeignKey, CheckConstraint, UniqueConstraint, event
+    Text, ForeignKey, CheckConstraint, Computed, UniqueConstraint, event
 )
 from sqlalchemy.orm import declarative_base, relationship, validates, Session
 from sqlalchemy.engine import Engine
@@ -439,6 +439,14 @@ class PelletScore(Base):
     tray_number = Column(Integer, nullable=False)  # 1-4
     pellet_number = Column(Integer, nullable=False)  # 1-20
     score = Column(Integer, nullable=False)  # 0=miss, 1=displaced, 2=retrieved
+    # 'contacted' if score in (1, 2); 'missed' if score == 0. SQLite VIRTUAL generated column.
+    contact_group = Column(
+        String(10),
+        Computed(
+            "CASE WHEN score = 0 THEN 'missed' ELSE 'contacted' END",
+            persisted=False,
+        ),
+    )
     entered_by = Column(String(50))
     entered_at = Column(DateTime, default=datetime.now)
 
@@ -767,6 +775,17 @@ class ReachData(Base):
     interaction_frame = Column(Integer)  # Frame when pellet was touched
     distance_to_interaction = Column(Integer)  # Frames between apex and contact
 
+    # Per-reach binary contact: did THIS specific reach physically touch the pellet?
+    # 'contacted' iff interaction_frame is populated; 'missed' otherwise.
+    # SQLite VIRTUAL generated column.
+    contact_group = Column(
+        String(10),
+        Computed(
+            "CASE WHEN interaction_frame IS NOT NULL THEN 'contacted' ELSE 'missed' END",
+            persisted=False,
+        ),
+    )
+
     # Reach context
     is_first_reach = Column(Integer, nullable=False, default=0)
     is_last_reach = Column(Integer, nullable=False, default=0)
@@ -826,6 +845,18 @@ class ReachData(Base):
     segment_outcome_flagged = Column(Integer, default=0)
     attention_score = Column(Float)
     pellet_position_idealness = Column(Float)
+
+    # Per-segment binary contact: did the mouse touch this pellet at all (across all reaches
+    # in the segment)? 'contacted' iff segment_outcome in (retrieved, displaced_sa,
+    # displaced_outside); 'missed' for untouched / uncertain. SQLite VIRTUAL generated column.
+    segment_contact_group = Column(
+        String(10),
+        Computed(
+            "CASE WHEN segment_outcome IN ('retrieved', 'displaced_sa', 'displaced_outside') "
+            "THEN 'contacted' ELSE 'missed' END",
+            persisted=False,
+        ),
+    )
 
     # Metadata
     source_file = Column(String(500), nullable=False)
