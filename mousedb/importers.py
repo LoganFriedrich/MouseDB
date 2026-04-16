@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 from .database import Database, get_db
+from .phases import assign_phases_for_cohort
 from .schema import (
     Project, Cohort, Subject, Weight, PelletScore, Surgery, RampEntry,
     LadderEntry, ArchivedSummary, VirusPrep,
@@ -718,9 +719,9 @@ class ExcelImporter:
             except ValueError:
                 continue
 
-            test_phase = row.get('Test_Phase', '')
-            if pd.isna(test_phase):
-                test_phase = ''
+            # Test_Phase in the Excel sheet is unreliable (operator-entered, often blank
+            # or inconsistent). We derive test_phase/phase_group from the cohort's actual
+            # testing-day structure in _assign_pellet_phases below after all rows are inserted.
 
             # Ensure subject exists
             self._ensure_subject(session, subject_id, cohort_id, dry_run)
@@ -761,7 +762,6 @@ class ExcelImporter:
                 pellet_score = PelletScore(
                     subject_id=subject_id,
                     session_date=date_val,
-                    test_phase=str(test_phase),
                     tray_type=tray_type,
                     tray_number=tray_number,
                     pellet_number=pellet_num,
@@ -772,6 +772,40 @@ class ExcelImporter:
                 if not dry_run:
                     session.add(pellet_score)
                 self.imported_counts['pellet_scores'] += 1
+
+        if not dry_run:
+            session.flush()
+            self._assign_pellet_phases(session, cohort_id)
+
+    def _assign_pellet_phases(self, session, cohort_id: str):
+        """
+        Derive test_phase/phase_group for all pellet_scores rows in a cohort.
+
+        Uses gap-structure detection (:func:`mousedb.phases.assign_phases_for_cohort`)
+        over the union of session dates+tray types observed in pellet_scores. Always
+        overwrites any existing values so legacy inconsistent labels are normalized.
+        """
+        pairs = (
+            session.query(PelletScore.session_date, PelletScore.tray_type)
+            .join(Subject, Subject.subject_id == PelletScore.subject_id)
+            .filter(Subject.cohort_id == cohort_id)
+            .distinct()
+            .all()
+        )
+        if not pairs:
+            return
+
+        assignments = assign_phases_for_cohort(pairs)
+        for a in assignments:
+            session.query(PelletScore).filter(
+                PelletScore.session_date == a.session_date,
+                PelletScore.subject_id.in_(
+                    session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
+                ),
+            ).update(
+                {"test_phase": a.test_phase, "phase_group": a.phase_group},
+                synchronize_session=False,
+            )
 
     def _import_surgeries(self, xl: pd.ExcelFile, cohort_id: str,
                           session, surgery_type: str, dry_run: bool):

@@ -433,7 +433,8 @@ class PelletScore(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject_id = Column(String(20), ForeignKey('subjects.subject_id'), nullable=False)
     session_date = Column(Date, nullable=False)
-    test_phase = Column(String(50), nullable=False)
+    test_phase = Column(String(50), index=True)   # derived by mousedb.phases.assign_phases_for_cohort
+    phase_group = Column(String(50), index=True)  # stats bucket: Baseline, Post_Injury_2-4, Post_Rehab_Test, ...
     tray_type = Column(String(1), nullable=False)  # E=Easy, F=Flat, P=Pillar
     tray_number = Column(Integer, nullable=False)  # 1-4
     pellet_number = Column(Integer, nullable=False)  # 1-20
@@ -750,6 +751,10 @@ class ReachData(Base):
     session_date = Column(String(10), nullable=False)  # YYYY-MM-DD
     tray_type = Column(String(10))  # P, E, F, etc.
     run_number = Column(Integer)
+
+    # Protocol phase (derived by mousedb.phases.assign_phases_for_cohort at sync/backfill time)
+    test_phase = Column(String(50), index=True)   # e.g., 'Pillar', 'Post_Injury_2', 'Rehab_Pillar'
+    phase_group = Column(String(50), index=True)  # stats bucket: Baseline, Post_Injury_2-4, Post_Rehab_Test, ...
 
     # Reach identity
     segment_num = Column(Integer, nullable=False)
