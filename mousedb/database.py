@@ -41,8 +41,90 @@ class Database:
         )
         self.SessionLocal = sessionmaker(bind=self.engine)
 
+        # Auto-refresh phase_group / test_phase after any GUI/ORM write that
+        # could invalidate them (cohort start_date, subject cohort_id,
+        # pellet_scores session_date / tray_type).
+        self._register_phase_hooks()
+
         # Current user for audit logging
         self._current_user = os.environ.get('USERNAME', os.environ.get('USER', 'unknown'))
+
+    def _register_phase_hooks(self):
+        """Install SQLAlchemy session events that auto-refresh phase columns.
+
+        before_flush collects cohort IDs whose phase assignments could be
+        invalidated by the pending changes. after_commit runs a scoped
+        backfill for those cohorts so the GUI (and any other ORM writer)
+        never has to remember to call backfill_phases manually.
+
+        Raw-SQL writers that bypass the ORM (e.g. mousereach-sync) are not
+        covered here -- they have their own post-write hook.
+        """
+        from sqlalchemy import event, inspect as sa_inspect
+        from .schema import Cohort, Subject, PelletScore
+
+        def _collect_dirty_cohorts(session, flush_context, instances):
+            dirty = session.info.setdefault('_phases_dirty_cohorts', set())
+
+            for obj in list(session.new) + list(session.dirty) + list(session.deleted):
+                if isinstance(obj, Cohort):
+                    if obj in session.new or obj in session.deleted:
+                        if obj.cohort_id:
+                            dirty.add(obj.cohort_id)
+                    else:
+                        hist = sa_inspect(obj).attrs.start_date.history
+                        if hist.has_changes() and obj.cohort_id:
+                            dirty.add(obj.cohort_id)
+
+                elif isinstance(obj, Subject):
+                    if obj in session.new or obj in session.deleted:
+                        if obj.cohort_id:
+                            dirty.add(obj.cohort_id)
+                    else:
+                        hist = sa_inspect(obj).attrs.cohort_id.history
+                        if hist.has_changes():
+                            # Both old and new cohorts need re-assignment.
+                            for v in hist.deleted or ():
+                                if v:
+                                    dirty.add(v)
+                            if obj.cohort_id:
+                                dirty.add(obj.cohort_id)
+
+                elif isinstance(obj, PelletScore):
+                    insp = sa_inspect(obj)
+                    relevant_changed = (
+                        obj in session.new
+                        or obj in session.deleted
+                        or insp.attrs.session_date.history.has_changes()
+                        or insp.attrs.tray_type.history.has_changes()
+                        or insp.attrs.subject_id.history.has_changes()
+                    )
+                    if relevant_changed and obj.subject_id:
+                        # Resolve subject -> cohort via the in-flight session.
+                        subj = session.query(Subject).filter_by(
+                            subject_id=obj.subject_id
+                        ).first()
+                        if subj and subj.cohort_id:
+                            dirty.add(subj.cohort_id)
+
+        def _run_scoped_backfill(session):
+            dirty = session.info.pop('_phases_dirty_cohorts', None)
+            if not dirty:
+                return
+            # Local import to avoid circular-import at module load.
+            from .backfill import backfill_phases
+            for cid in dirty:
+                try:
+                    backfill_phases(db=self, cohort_id=cid)
+                except Exception as exc:
+                    # Don't raise -- the user's commit already succeeded.
+                    # Print so the GUI shell surfaces it.
+                    print(
+                        f"[!] Phase auto-refresh failed for cohort {cid}: {exc}"
+                    )
+
+        event.listen(self.SessionLocal, 'before_flush', _collect_dirty_cohorts)
+        event.listen(self.SessionLocal, 'after_commit', _run_scoped_backfill)
 
     def init_db(self):
         """Create all tables, run migrations, and seed default data."""
