@@ -201,8 +201,18 @@ def _apply_assignments(
     return pellet_count, reach_count
 
 
-def backfill_phases(db: Database | None = None, *, dry_run: bool = False) -> BackfillStats:
-    """Add columns and assign phases across the whole database."""
+def backfill_phases(
+    db: Database | None = None,
+    *,
+    dry_run: bool = False,
+    cohort_id: str | None = None,
+) -> BackfillStats:
+    """Add columns and assign phases across the whole database.
+
+    Args:
+        cohort_id: If provided, only re-assign phases for this one cohort.
+            Used by the GUI post-commit hook to keep per-edit latency low.
+    """
     db = db or get_db()
     stats = BackfillStats(
         columns_added=[],
@@ -222,15 +232,26 @@ def backfill_phases(db: Database | None = None, *, dry_run: bool = False) -> Bac
             if _ensure_column(conn, table, col):
                 stats.columns_added.append(f"{table}.{col}")
 
-        cohort_rows = conn.execute(
-            text(
-                """
-                SELECT cohort_id, start_date FROM cohorts
-                WHERE start_date IS NOT NULL
-                ORDER BY cohort_id
-                """
-            )
-        ).fetchall()
+        if cohort_id is not None:
+            cohort_rows = conn.execute(
+                text(
+                    """
+                    SELECT cohort_id, start_date FROM cohorts
+                    WHERE start_date IS NOT NULL AND cohort_id = :cid
+                    """
+                ),
+                {"cid": cohort_id},
+            ).fetchall()
+        else:
+            cohort_rows = conn.execute(
+                text(
+                    """
+                    SELECT cohort_id, start_date FROM cohorts
+                    WHERE start_date IS NOT NULL
+                    ORDER BY cohort_id
+                    """
+                )
+            ).fetchall()
 
         for cohort_id, start_date in cohort_rows:
             pairs = _collect_cohort_dates(conn, cohort_id)
