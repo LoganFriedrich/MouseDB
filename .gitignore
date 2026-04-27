@@ -30,3 +30,16 @@ Thumbs.db
 # Claude
 .claude/
 mousedb/utils/IDK.py
+
+# AI-agent tooling state (OMC, etc.) -- not part of the deliverable
+.omc/
+
+# Stray pytest cache directories on NAS (regenerated automatically; permission-quirky)
+pytest-cache-files-*/
+
+# Top-level paper-figure scratch scripts -- internal, not the package
+# (mousedb/figures/ is the shipped subpackage; this only excludes the repo-root folder)
+/figures/
+
+# Internal analysis design docs / scratch notes -- live in OneDrive, not the repo
+KinematicFeatureDecompositionAnalys.md
