@@ -24,3 +24,4 @@ MOUSEDB_ROOT = Path(os.environ.get("MOUSEDB_ROOT", "Y:/2_Connectome/Databases"))
 DEFAULT_DB_PATH = MOUSEDB_ROOT / "connectome.db"
 DEFAULT_EXPORT_PATH = MOUSEDB_ROOT / "exports"
 DEFAULT_LOG_PATH = MOUSEDB_ROOT / "logs"
+DEFAULT_FIGURES_PATH = MOUSEDB_ROOT / "figures"

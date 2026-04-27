@@ -914,6 +914,7 @@ class BrainSample(Base):
     # Relationships
     subject = relationship("Subject", back_populates="brain_samples")
     region_counts = relationship("RegionCount", back_populates="brain_sample")
+    elife_region_counts = relationship("ElifeRegionCount", back_populates="brain_sample")
     detected_cells = relationship("DetectedCell", back_populates="brain_sample")
     calibration_runs = relationship("CalibrationRun", back_populates="brain_sample")
 
@@ -963,6 +964,49 @@ class RegionCount(Base):
     # Relationships
     brain_sample = relationship("BrainSample", back_populates="region_counts")
     calibration_run = relationship("CalibrationRun", back_populates="region_counts")
+
+
+class ElifeRegionCount(Base):
+    """
+    eLife 25-group aggregated cell counts per brain sample.
+
+    Aggregates Allen Atlas region counts into the 25 functional groups
+    defined in Wang et al. (2022) eLife. DOI: 10.7554/eLife.76254
+
+    Each row represents the count of cells in one eLife group for one
+    brain sample and hemisphere.
+    """
+    __tablename__ = 'elife_region_counts'
+    __table_args__ = (
+        UniqueConstraint('brain_sample_id', 'group_name', 'hemisphere',
+                         name='unique_elife_count'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    brain_sample_id = Column(Integer, ForeignKey('brain_samples.id'), nullable=False)
+
+    # eLife group identification
+    group_name = Column(String(100), nullable=False)  # e.g., "Red Nucleus"
+    hemisphere = Column(String(5), default='both')     # 'left', 'right', 'both'
+
+    # Counts
+    cell_count = Column(Integer, nullable=False, default=0)
+
+    # Which Allen regions contributed to this group (JSON list of acronyms)
+    constituent_regions = Column(Text)
+
+    # Detection parameters used
+    calibration_run_id = Column(Integer, ForeignKey('calibration_runs.id'))
+
+    # Quality flags
+    is_final = Column(Integer, default=0)  # 1=final production count
+
+    # Metadata
+    source_file = Column(String(500))
+    imported_at = Column(DateTime, default=datetime.now)
+
+    # Relationships
+    brain_sample = relationship("BrainSample", back_populates="elife_region_counts")
 
 
 class DetectedCell(Base):
@@ -1087,6 +1131,84 @@ class AuditLog(Base):
     record_id = Column(String(50))
     old_values = Column(Text)  # JSON
     new_values = Column(Text)  # JSON
+
+
+# =============================================================================
+# FIGURE REGISTRY TABLES
+# =============================================================================
+
+class FigureRecord(Base):
+    """Registry of all generated figures with full provenance."""
+    __tablename__ = "figure_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    accession = Column(String(20), unique=True, nullable=False)
+    title = Column(Text, nullable=False)
+    category = Column(String(50))
+    recipe_name = Column(String(100))
+    file_path = Column(Text, nullable=False)
+    sidecar_path = Column(Text)
+    theme = Column(String(20), default="light")
+    mode = Column(String(20), default="presentation")
+    dpi = Column(Integer)
+    width_px = Column(Integer)
+    height_px = Column(Integer)
+    method_hash = Column(String(64))
+    is_current = Column(Integer, default=1)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_by = Column(String(100))
+    script_name = Column(String(200))
+    generation_ms = Column(Integer)
+
+    data_sources = relationship("FigureDataSource", back_populates="figure", cascade="all, delete-orphan")
+    tool_versions = relationship("FigureToolVersion", back_populates="figure", cascade="all, delete-orphan")
+    parameters = relationship("FigureParameter", back_populates="figure", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return (
+            f"<FigureRecord(accession='{self.accession}', "
+            f"title='{self.title}', is_current={self.is_current})>"
+        )
+
+
+class FigureDataSource(Base):
+    """Data sources used to generate a figure."""
+    __tablename__ = "figure_data_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    figure_id = Column(Integer, ForeignKey("figure_records.id"), nullable=False)
+    source_type = Column(String(20))
+    source_path = Column(Text, nullable=False)
+    source_hash = Column(String(64))
+    source_modified = Column(DateTime)
+    record_count = Column(Integer)
+    query_filter = Column(Text)
+
+    figure = relationship("FigureRecord", back_populates="data_sources")
+
+
+class FigureToolVersion(Base):
+    """Tool/library versions captured at figure generation time."""
+    __tablename__ = "figure_tool_versions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    figure_id = Column(Integer, ForeignKey("figure_records.id"), nullable=False)
+    tool_name = Column(String(100), nullable=False)
+    tool_version = Column(String(100), nullable=False)
+
+    figure = relationship("FigureRecord", back_populates="tool_versions")
+
+
+class FigureParameter(Base):
+    """Parameters used to generate a figure."""
+    __tablename__ = "figure_parameters"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    figure_id = Column(Integer, ForeignKey("figure_records.id"), nullable=False)
+    param_key = Column(String(200), nullable=False)
+    param_value = Column(Text, nullable=False)
+
+    figure = relationship("FigureRecord", back_populates="parameters")
 
 
 # =============================================================================

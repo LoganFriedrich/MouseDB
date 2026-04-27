@@ -20,3 +20,12 @@
 - The data this tool manages lives in `Databases/` (connectome.db, exports/, figures/, logs/).
 - Analysis outputs from other tools flow here via `mousebrain.analysis_registry.AnalysisRegistry`.
 - mousedb consumes from `Databases/exports/` and `Databases/figures/` -- it does NOT reach into Pipeline directories directly (except for legacy BrainGlobeImporter which pulls from 3D Pipeline CSVs).
+
+### Figure Production Rules (CRITICAL)
+The `mousedb/figures/` module enforces 39 rules for figure quality. See `mousedb/mousedb/AGENTS.md` for the full enforced rule set. Key non-negotiables:
+- **Every figure answers ONE question and tells a complete story** (FigureLegend with 7 components)
+- **Pillar trays only** for performance/kinematic comparison. Flat/Easy = engagement only.
+- **Effect sizes (Cohen's d) mandatory** for every significant result
+- **Recursive QA**: generate -> visually inspect output -> fix -> regenerate -> inspect again
+- **No figure ships without visual confirmation** that it obeys the rules
+- Full rules: `mousedb/figures/FIGURE_REVIEW_LESSONS.md`

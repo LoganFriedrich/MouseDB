@@ -819,7 +819,8 @@ class ExcelImporter:
             return
 
         for _, row in df.iterrows():
-            subject_id = row.get('Animal') or row.get('SubjectID')
+            subject_id = (row.get('Subject_ID') or row.get('Animal')
+                          or row.get('SubjectID') or row.get('Mouse ID'))
             if not subject_id or pd.isna(subject_id):
                 continue
 
@@ -827,7 +828,7 @@ class ExcelImporter:
             if not subject_id:
                 continue
 
-            date_val = self._parse_date(row.get('Date') or row.get('Surgery_Date'))
+            date_val = self._parse_date(row.get('Surgery_Date') or row.get('Date'))
             if not date_val:
                 continue
 
@@ -852,14 +853,48 @@ class ExcelImporter:
 
             # Add type-specific fields
             if surgery_type == 'contusion':
-                surgery.force_kdyn = self._parse_float(row.get('Force_kDyn') or row.get('Force'))
-                surgery.displacement_um = self._parse_float(row.get('Displacement_um') or row.get('Displacement'))
-                surgery.velocity_mm_s = self._parse_float(row.get('Velocity_mm_s') or row.get('Velocity'))
+                surgery.force_kdyn = self._parse_float(row.get('Force_kDyn') or row.get('Force')
+                                                       or row.get('Actual_kd'))
+                surgery.displacement_um = self._parse_float(row.get('Displacement_um')
+                                                            or row.get('Displacement')
+                                                            or row.get('Actual_displacement'))
+                surgery.velocity_mm_s = self._parse_float(row.get('Velocity_mm_s')
+                                                          or row.get('Velocity')
+                                                          or row.get('Actual_Velocity'))
                 surgery.surgeon = row.get('Surgeon') if pd.notna(row.get('Surgeon')) else None
             elif surgery_type == 'tracing':
-                surgery.virus_name = row.get('Virus_Name') if pd.notna(row.get('Virus_Name')) else None
-                surgery.volume_nl = self._parse_float(row.get('Volume_nL') or row.get('Volume'))
-                surgery.injection_site = row.get('Injection_Site') if pd.notna(row.get('Injection_Site')) else None
+                # Map Excel column names from 5_SC_Injection_Details
+                surgery.virus_name = (row.get('Injected_Virus') or row.get('Virus_Name')
+                                      if pd.notna(row.get('Injected_Virus') or row.get('Virus_Name'))
+                                      else None)
+                surgery.virus_lot = (row.get('Virus_Titer')
+                                     if pd.notna(row.get('Virus_Titer')) else None)
+                surgery.volume_nl = self._parse_float(
+                    row.get('Volume_nL') or row.get('Volume')
+                    or row.get('Injection_Volume_nL'))
+                surgery.injection_site = (
+                    row.get('Injection_Target') or row.get('Injection_Site')
+                    if pd.notna(row.get('Injection_Target') or row.get('Injection_Site'))
+                    else None)
+                surgery.pre_surgery_weight_grams = self._parse_float(
+                    row.get('Subject_Weight (g)'))
+                surgery.anesthesia = (row.get('Anesthetic')
+                                      if pd.notna(row.get('Anesthetic')) else None)
+                # Build notes from coordinate fields
+                notes_parts = []
+                for field, label in [('Depths (D/V)', 'D/V'),
+                                     ('Coordinates (M/L)', 'M/L'),
+                                     ('Signal Post Perfusion', 'Signal')]:
+                    val = row.get(field)
+                    if pd.notna(val):
+                        notes_parts.append(f"{label}: {val}")
+                if notes_parts:
+                    surgery.notes = '; '.join(notes_parts)
+
+            # Survived field (both types)
+            survived_val = row.get('Survived')
+            if pd.notna(survived_val):
+                surgery.survived = 1 if str(survived_val).strip().upper() in ('Y', 'YES', '1', 'TRUE') else 0
 
             if not dry_run:
                 session.add(surgery)
@@ -1474,6 +1509,46 @@ class BrainGlobeImporter:
         r'^(\d+)_([A-Z]+)_(\d{2})_(\d{2})_(\d+p?\d*)x_z(\d+)$'
     )
 
+    # Cached acronym -> {id, name} lookup
+    _acronym_to_id_cache = None
+
+    @classmethod
+    def get_acronym_to_id(cls, atlas_name='allen_mouse_10um'):
+        """
+        Build acronym -> (region_id, region_name) lookup from Allen atlas.
+
+        Tries live BrainGlobeAtlas first, falls back to static JSON.
+
+        Returns:
+            Dict mapping acronym to {'id': int, 'name': str}
+        """
+        if cls._acronym_to_id_cache is not None:
+            return cls._acronym_to_id_cache
+
+        # Try live atlas first
+        try:
+            from brainglobe_atlasapi import BrainGlobeAtlas
+            atlas = BrainGlobeAtlas(atlas_name)
+            lookup = {}
+            for rid, info in atlas.structures.items():
+                acr = info.get('acronym', '')
+                if acr:
+                    lookup[acr] = {'id': int(rid), 'name': info.get('name', acr)}
+            cls._acronym_to_id_cache = lookup
+            return lookup
+        except (ImportError, Exception):
+            pass
+
+        # Fallback to static JSON
+        json_path = Path(__file__).parent / 'data' / f'{atlas_name}_lookup.json'
+        if json_path.exists():
+            import json
+            with open(json_path, 'r') as f:
+                cls._acronym_to_id_cache = json.load(f)
+            return cls._acronym_to_id_cache
+
+        return {}
+
     def __init__(self, db: Optional[Database] = None):
         self.db = db or get_db()
         self.errors: List[str] = []
@@ -1540,9 +1615,26 @@ class BrainGlobeImporter:
                 brain_id = row.get('brain') or row.get('brain_id')
                 if not brain_id or pd.isna(brain_id):
                     continue
+                brain_id = str(brain_id).strip()
 
-                # Parse brain name
+                # Handle composite names like "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
+                # Try parts separated by / to find the parseable brain ID
                 brain_info = self.parse_brain_name(brain_id)
+                if not brain_info and '/' in brain_id:
+                    for part in brain_id.split('/'):
+                        brain_info = self.parse_brain_name(part.strip())
+                        if brain_info:
+                            brain_id = part.strip()
+                            break
+                # Also try searching within the string for the pattern
+                if not brain_info:
+                    match = self._BRAIN_NAME_SEARCH.search(brain_id)
+                    if match:
+                        candidate = match.group(1)
+                        brain_info = self.parse_brain_name(candidate)
+                        if brain_info:
+                            brain_id = candidate
+
                 if not brain_info:
                     self.warnings.append(f"Could not parse brain ID: {brain_id}")
                     continue
@@ -1601,8 +1693,10 @@ class BrainGlobeImporter:
         """
         Import region counts from a CSV file.
 
-        Expected CSV columns: region_id, region_name, hemisphere, cell_count
-        Or BrainGlobe format with atlas region hierarchy.
+        Supports two formats:
+        - Long format with region_id, region_name, hemisphere, cell_count
+        - Per-brain format with region_acronym, region_name, cell_count, left_count, right_count
+          (acronyms are resolved to Allen Atlas integer IDs via lookup)
 
         Args:
             csv_path: Path to region counts CSV
@@ -1657,53 +1751,282 @@ class BrainGlobeImporter:
                 self.errors.append("Could not detect CSV format")
                 return self._get_result()
 
-            for _, row in df.iterrows():
-                region_id = self._parse_int(row.get(col_map.get('region_id', 'region_id')))
-                region_name = row.get(col_map.get('region_name', 'region_name'))
-                cell_count = self._parse_int(row.get(col_map.get('cell_count', 'cell_count')))
+            # Load acronym-to-ID lookup if we need it
+            acronym_lookup = {}
+            if 'region_id' not in col_map and 'acronym' in col_map:
+                acronym_lookup = self.get_acronym_to_id()
+                if not acronym_lookup:
+                    self.errors.append(
+                        "CSV has acronyms but no region_id column, "
+                        "and acronym-to-ID lookup is unavailable"
+                    )
+                    return self._get_result()
 
+            # Check if CSV has left/right hemisphere columns
+            has_hemisphere_cols = 'left_count' in col_map and 'right_count' in col_map
+
+            for _, row in df.iterrows():
+                # Get region identification
+                region_id = self._parse_int(row.get(col_map.get('region_id', '__none__')))
+                acronym = None
+                if col_map.get('acronym'):
+                    acronym_val = row.get(col_map['acronym'])
+                    acronym = str(acronym_val) if pd.notna(acronym_val) else None
+
+                region_name = None
+                if col_map.get('region_name'):
+                    name_val = row.get(col_map['region_name'])
+                    region_name = str(name_val) if pd.notna(name_val) else None
+
+                # Resolve acronym to region_id if needed
+                if region_id is None and acronym:
+                    info = acronym_lookup.get(acronym)
+                    if info:
+                        region_id = info['id']
+                        if not region_name:
+                            region_name = info['name']
+                    else:
+                        self.warnings.append(f"Unknown acronym: {acronym}")
+                        continue
+
+                cell_count = self._parse_int(row.get(col_map.get('cell_count', '__none__')))
                 if region_id is None or cell_count is None:
                     continue
 
-                hemisphere = row.get(col_map.get('hemisphere', 'hemisphere'), 'both')
-                if pd.isna(hemisphere):
+                if not region_name:
+                    region_name = f"Region_{region_id}"
+
+                # Insert total count (hemisphere='both')
+                if not has_hemisphere_cols:
+                    # Original format: single hemisphere column
                     hemisphere = 'both'
+                    if col_map.get('hemisphere'):
+                        h_val = row.get(col_map['hemisphere'])
+                        hemisphere = str(h_val) if pd.notna(h_val) else 'both'
 
-                # Check for duplicate
-                existing = session.query(RegionCount).filter_by(
-                    brain_sample_id=brain_sample.id,
-                    region_id=region_id,
-                    hemisphere=hemisphere,
-                    cell_type='all'
-                ).first()
-                if existing:
-                    continue
-
-                region_count = RegionCount(
-                    brain_sample_id=brain_sample.id,
-                    region_id=region_id,
-                    region_name=str(region_name) if region_name else f"Region_{region_id}",
-                    region_acronym=row.get(col_map.get('acronym', 'acronym')) if col_map.get('acronym') else None,
-                    parent_region_id=self._parse_int(row.get(col_map.get('parent_id', 'parent_structure_id'))),
-                    hemisphere=str(hemisphere),
-                    cell_count=cell_count,
-                    cell_density=self._parse_float(row.get(col_map.get('density', 'cell_density'))),
-                    region_volume_mm3=self._parse_float(row.get(col_map.get('volume', 'total_volume_mm3'))),
-                    cell_type='all',
-                    calibration_run_id=calibration_run_id,
-                    is_final=1 if is_final else 0,
-                    source_file=str(csv_path),
-                )
-
-                if not dry_run:
-                    session.add(region_count)
-                self.imported_counts['region_counts'] += 1
+                    self._insert_region_count(
+                        session, brain_sample, region_id, region_name, acronym,
+                        hemisphere, cell_count, col_map, row,
+                        calibration_run_id, is_final, csv_path, dry_run
+                    )
+                else:
+                    # Per-brain format with left_count/right_count columns
+                    # Insert total
+                    self._insert_region_count(
+                        session, brain_sample, region_id, region_name, acronym,
+                        'both', cell_count, col_map, row,
+                        calibration_run_id, is_final, csv_path, dry_run
+                    )
+                    # Insert left
+                    left_count = self._parse_int(row.get(col_map['left_count']))
+                    if left_count is not None and left_count > 0:
+                        self._insert_region_count(
+                            session, brain_sample, region_id, region_name, acronym,
+                            'left', left_count, col_map, row,
+                            calibration_run_id, is_final, csv_path, dry_run
+                        )
+                    # Insert right
+                    right_count = self._parse_int(row.get(col_map['right_count']))
+                    if right_count is not None and right_count > 0:
+                        self._insert_region_count(
+                            session, brain_sample, region_id, region_name, acronym,
+                            'right', right_count, col_map, row,
+                            calibration_run_id, is_final, csv_path, dry_run
+                        )
 
             if not dry_run and not self.errors:
                 session.commit()
                 print(f"  Committed {self.imported_counts['region_counts']} region counts")
 
         return self._get_result()
+
+    def _insert_region_count(self, session, brain_sample, region_id, region_name,
+                              acronym, hemisphere, cell_count, col_map, row,
+                              calibration_run_id, is_final, csv_path, dry_run):
+        """Insert a single RegionCount row, skipping duplicates."""
+        from .schema import RegionCount
+
+        # Check for duplicate
+        existing = session.query(RegionCount).filter_by(
+            brain_sample_id=brain_sample.id,
+            region_id=region_id,
+            hemisphere=hemisphere,
+            cell_type='all'
+        ).first()
+        if existing:
+            return
+
+        region_count = RegionCount(
+            brain_sample_id=brain_sample.id,
+            region_id=region_id,
+            region_name=region_name,
+            region_acronym=acronym,
+            parent_region_id=self._parse_int(
+                row.get(col_map.get('parent_id', '__none__'))
+            ),
+            hemisphere=hemisphere,
+            cell_count=cell_count,
+            cell_density=self._parse_float(
+                row.get(col_map.get('density', '__none__'))
+            ),
+            region_volume_mm3=self._parse_float(
+                row.get(col_map.get('volume', '__none__'))
+            ),
+            cell_type='all',
+            calibration_run_id=calibration_run_id,
+            is_final=1 if is_final else 0,
+            source_file=str(csv_path),
+        )
+
+        if not dry_run:
+            session.add(region_count)
+        self.imported_counts['region_counts'] += 1
+
+    def import_elife_counts(self, brain_sample_id: int,
+                             region_counts_dict: Dict[str, int],
+                             hemisphere_counts: Optional[Dict[str, Dict[str, int]]] = None,
+                             calibration_run_id: Optional[int] = None,
+                             is_final: bool = False,
+                             source_file: Optional[str] = None,
+                             dry_run: bool = False) -> Dict:
+        """
+        Compute and import eLife 25-group aggregated counts.
+
+        Args:
+            brain_sample_id: FK to brain_samples.id
+            region_counts_dict: {acronym: total_count} for all Allen regions
+            hemisphere_counts: Optional {acronym: {'left': N, 'right': N}}
+            calibration_run_id: Link to calibration run if known
+            is_final: Mark as production counts
+            source_file: Source CSV path for provenance
+            dry_run: If True, validate only
+
+        Returns:
+            Dict with import statistics
+        """
+        import json as json_mod
+        from .schema import ElifeRegionCount
+
+        self.errors = []
+        self.warnings = []
+        self.imported_counts = {'elife_region_counts': 0}
+
+        # Import aggregate_to_elife from mousebrain
+        aggregate_fn = None
+        try:
+            from mousebrain.region_mapping import aggregate_to_elife
+            aggregate_fn = aggregate_to_elife
+        except ImportError:
+            pass
+
+        if aggregate_fn is None:
+            # Fallback: direct file import like sync_databases.py
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location(
+                    "region_mapping",
+                    r"Y:\2_Connectome\Tissue\MouseBrain\src\mousebrain\region_mapping.py")
+                if spec and spec.loader:
+                    rm = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(rm)
+                    aggregate_fn = rm.aggregate_to_elife
+            except Exception:
+                pass
+
+        if aggregate_fn is None:
+            self.errors.append(
+                "Cannot import aggregate_to_elife from mousebrain.region_mapping "
+                "and fallback file not found"
+            )
+            return self._get_result()
+
+        print(f"{'[DRY RUN] ' if dry_run else ''}Computing eLife group counts "
+              f"for brain_sample_id={brain_sample_id}")
+
+        with self.db.session() as session:
+            # Aggregate total counts
+            elife_total = aggregate_fn(region_counts_dict)
+
+            # Aggregate hemisphere counts if available
+            elife_left = {}
+            elife_right = {}
+            if hemisphere_counts:
+                left_dict = {acr: hc.get('left', 0) for acr, hc in hemisphere_counts.items()
+                             if hc.get('left', 0) > 0}
+                right_dict = {acr: hc.get('right', 0) for acr, hc in hemisphere_counts.items()
+                              if hc.get('right', 0) > 0}
+                if left_dict:
+                    elife_left = aggregate_fn(left_dict)
+                if right_dict:
+                    elife_right = aggregate_fn(right_dict)
+
+            # Insert rows for each group and hemisphere
+            for group_name, group_data in elife_total.items():
+                count = group_data['count'] if isinstance(group_data, dict) else 0
+                constituents = group_data.get('constituents', {}) if isinstance(group_data, dict) else {}
+
+                self._insert_elife_count(
+                    session, brain_sample_id, group_name, 'both', count,
+                    constituents, calibration_run_id, is_final, source_file, dry_run
+                )
+
+                # Left hemisphere
+                if group_name in elife_left:
+                    left_data = elife_left[group_name]
+                    left_count = left_data['count'] if isinstance(left_data, dict) else 0
+                    left_constituents = left_data.get('constituents', {}) if isinstance(left_data, dict) else {}
+                    if left_count > 0:
+                        self._insert_elife_count(
+                            session, brain_sample_id, group_name, 'left', left_count,
+                            left_constituents, calibration_run_id, is_final, source_file, dry_run
+                        )
+
+                # Right hemisphere
+                if group_name in elife_right:
+                    right_data = elife_right[group_name]
+                    right_count = right_data['count'] if isinstance(right_data, dict) else 0
+                    right_constituents = right_data.get('constituents', {}) if isinstance(right_data, dict) else {}
+                    if right_count > 0:
+                        self._insert_elife_count(
+                            session, brain_sample_id, group_name, 'right', right_count,
+                            right_constituents, calibration_run_id, is_final, source_file, dry_run
+                        )
+
+            if not dry_run and not self.errors:
+                session.commit()
+                print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
+
+        return self._get_result()
+
+    def _insert_elife_count(self, session, brain_sample_id, group_name, hemisphere,
+                             cell_count, constituents, calibration_run_id, is_final,
+                             source_file, dry_run):
+        """Insert a single ElifeRegionCount row, skipping duplicates."""
+        import json as json_mod
+        from .schema import ElifeRegionCount
+
+        existing = session.query(ElifeRegionCount).filter_by(
+            brain_sample_id=brain_sample_id,
+            group_name=group_name,
+            hemisphere=hemisphere,
+        ).first()
+        if existing:
+            return
+
+        elife_count = ElifeRegionCount(
+            brain_sample_id=brain_sample_id,
+            group_name=group_name,
+            hemisphere=hemisphere,
+            cell_count=cell_count,
+            constituent_regions=json_mod.dumps(sorted(constituents.keys())) if constituents else None,
+            calibration_run_id=calibration_run_id,
+            is_final=1 if is_final else 0,
+            source_file=source_file,
+        )
+
+        if not dry_run:
+            session.add(elife_count)
+        self.imported_counts['elife_region_counts'] += 1
 
     def import_cells_from_xml(self, xml_path: Path, brain_id: Optional[str] = None,
                                calibration_run_id: Optional[int] = None,
@@ -1917,12 +2240,27 @@ class BrainGlobeImporter:
 
         return brain_sample
 
+    # Non-anchored pattern for searching within filenames
+    _BRAIN_NAME_SEARCH = re.compile(
+        r'(\d+_[A-Z]+_\d{2}_\d{2}_\d+p?\d*x_z\d+)'
+    )
+
     def _extract_brain_from_path(self, path: Path) -> Optional[str]:
-        """Try to extract brain ID from file path."""
-        # Check each part of the path
+        """Try to extract brain ID from file path or filename."""
+        # Check each part of the path (directory names)
         for part in reversed(path.parts):
             if self.parse_brain_name(part):
                 return part
+
+        # Try to find brain ID pattern within the filename stem
+        # Handles filenames like "349_CNT_01_02_349_CNT_01_02_1p625x_z4_counts.csv"
+        stem = path.stem
+        match = self._BRAIN_NAME_SEARCH.search(stem)
+        if match:
+            candidate = match.group(1)
+            if self.parse_brain_name(candidate):
+                return candidate
+
         return None
 
     def _detect_region_csv_format(self, df: pd.DataFrame) -> Optional[Dict]:
@@ -1934,10 +2272,12 @@ class BrainGlobeImporter:
         region_name_cols = ['region_name', 'name', 'structure_name', 'region', 'Name']
         cell_count_cols = ['cell_count', 'count', 'cells', 'n_cells', 'total_cells', 'Cell Count']
         hemisphere_cols = ['hemisphere', 'side', 'Hemisphere']
-        acronym_cols = ['acronym', 'abbrev', 'short_name', 'Acronym']
+        acronym_cols = ['region_acronym', 'acronym', 'abbrev', 'short_name', 'Acronym']
         parent_cols = ['parent_id', 'parent_structure_id', 'parent']
         density_cols = ['cell_density', 'density', 'cells_per_mm3']
         volume_cols = ['total_volume_mm3', 'volume', 'region_volume']
+        left_count_cols = ['left_count', 'left', 'left_cells']
+        right_count_cols = ['right_count', 'right', 'right_cells']
 
         for col_list, key in [
             (region_id_cols, 'region_id'),
@@ -1948,14 +2288,18 @@ class BrainGlobeImporter:
             (parent_cols, 'parent_id'),
             (density_cols, 'density'),
             (volume_cols, 'volume'),
+            (left_count_cols, 'left_count'),
+            (right_count_cols, 'right_count'),
         ]:
             for col in col_list:
                 if col in df.columns:
                     col_map[key] = col
                     break
 
-        # Must have at least region_id and cell_count
-        if 'region_id' not in col_map or 'cell_count' not in col_map:
+        # Must have cell_count and at least one of region_id or acronym
+        if 'cell_count' not in col_map:
+            return None
+        if 'region_id' not in col_map and 'acronym' not in col_map:
             return None
 
         return col_map
@@ -2052,3 +2396,218 @@ def import_brainglobe_data(brains_dir: Path, tracker_csv: Optional[Path] = None,
     print(f"  Detected cells: {total_cells}")
 
     return results
+
+
+# =============================================================================
+# BRIDGE FUNCTIONS FOR AUTO-SYNC
+# =============================================================================
+
+def sync_brain_to_db(brain_name: str,
+                     per_brain_csv=None,
+                     region_counts_dict: Optional[Dict[str, int]] = None,
+                     hemisphere_counts: Optional[Dict[str, Dict[str, int]]] = None,
+                     detection_params: Optional[Dict] = None,
+                     is_final: bool = True,
+                     exp_id: Optional[str] = None):
+    """
+    One-call sync: push a brain's region counts and eLife groups to connectome.db.
+
+    Called from pipeline step 6 after writing CSV. Handles:
+    - Creating/finding brain_sample
+    - Clearing stale data if brain was re-counted (replace semantics)
+    - Importing region counts (with acronym-to-ID resolution)
+    - Computing and importing eLife grouped counts
+    - Linking to calibration run via exp_id
+
+    Never raises -- catches all exceptions and prints warnings.
+
+    Args:
+        brain_name: Brain name from pipeline, e.g. "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
+                    or just "349_CNT_01_02_1p625x_z4"
+        per_brain_csv: Path to the per-brain long-format CSV (string or Path)
+        region_counts_dict: Optional pre-parsed {acronym: count}
+        hemisphere_counts: Optional {acronym: {'left': N, 'right': N}}
+        detection_params: Dict of detection parameters (for provenance)
+        is_final: Whether this is a production count
+        exp_id: Optional tracker experiment ID to link counts to calibration run
+    """
+    try:
+        from .database import get_db
+        from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
+
+        # Extract brain_id from brain_name (handle "349_CNT_01_02/349_CNT_01_02_1p625x_z4")
+        brain_id = brain_name
+        if '/' in brain_name:
+            # Try the part after / first (full brain id with mag and z)
+            parts = brain_name.split('/')
+            for part in reversed(parts):
+                if BrainGlobeImporter.BRAIN_NAME_PATTERN.match(part):
+                    brain_id = part
+                    break
+
+        db = get_db()
+
+        # Ensure table exists
+        Base.metadata.create_all(db.engine)
+
+        importer = BrainGlobeImporter(db)
+
+        # Clear existing counts for this brain (replace semantics for re-counts)
+        # This ensures re-running step 6 with new parameters replaces stale data
+        brain_info = importer.parse_brain_name(brain_id)
+        if brain_info:
+            with db.session() as session:
+                bs = session.query(BrainSample).filter_by(
+                    subject_id=brain_info['subject_id'], brain_id=brain_id
+                ).first()
+                if bs:
+                    old_rc = session.query(RegionCount).filter_by(
+                        brain_sample_id=bs.id).count()
+                    old_ec = session.query(ElifeRegionCount).filter_by(
+                        brain_sample_id=bs.id).count()
+                    if old_rc > 0 or old_ec > 0:
+                        session.query(RegionCount).filter_by(
+                            brain_sample_id=bs.id).delete()
+                        session.query(ElifeRegionCount).filter_by(
+                            brain_sample_id=bs.id).delete()
+                        session.commit()
+                        print(f"    [DB] Cleared {old_rc} old region counts, "
+                              f"{old_ec} old eLife counts")
+
+        # Resolve exp_id to calibration_run.id (DB FK)
+        cal_run_db_id = None
+        if exp_id and brain_info:
+            from .schema import CalibrationRun
+            with db.session() as session:
+                bs = session.query(BrainSample).filter_by(
+                    subject_id=brain_info['subject_id'], brain_id=brain_id
+                ).first()
+                if bs:
+                    cal_run = session.query(CalibrationRun).filter_by(
+                        brain_sample_id=bs.id, run_id=str(exp_id)
+                    ).first()
+                    if cal_run:
+                        cal_run_db_id = cal_run.id
+
+        # Import region counts from CSV if provided
+        if per_brain_csv:
+            per_brain_csv = Path(per_brain_csv)
+            if per_brain_csv.exists():
+                result = importer.import_region_counts(
+                    per_brain_csv, brain_id=brain_id,
+                    calibration_run_id=cal_run_db_id,
+                    is_final=is_final, dry_run=False
+                )
+                if result.get('errors'):
+                    for err in result['errors']:
+                        print(f"    [DB] Error: {err}")
+
+        # Get or parse region counts for eLife aggregation
+        if region_counts_dict is None and per_brain_csv and per_brain_csv.exists():
+            # Parse from CSV
+            import csv
+            region_counts_dict = {}
+            hemisphere_counts = hemisphere_counts or {}
+            with open(per_brain_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    acr = row.get('region_acronym', '')
+                    if not acr:
+                        continue
+                    total = int(row.get('cell_count', 0) or 0)
+                    left = int(row.get('left_count', 0) or 0)
+                    right = int(row.get('right_count', 0) or 0)
+                    region_counts_dict[acr] = total
+                    if left > 0 or right > 0:
+                        hemisphere_counts[acr] = {'left': left, 'right': right}
+
+        # Import eLife grouped counts
+        if region_counts_dict:
+            # Find the brain_sample_id
+            brain_info = importer.parse_brain_name(brain_id)
+            if brain_info:
+                with db.session() as session:
+                    bs = session.query(BrainSample).filter_by(
+                        subject_id=brain_info['subject_id'],
+                        brain_id=brain_id
+                    ).first()
+                    if bs:
+                        elife_result = importer.import_elife_counts(
+                            brain_sample_id=bs.id,
+                            region_counts_dict=region_counts_dict,
+                            hemisphere_counts=hemisphere_counts,
+                            calibration_run_id=cal_run_db_id,
+                            is_final=is_final,
+                            source_file=str(per_brain_csv) if per_brain_csv else None,
+                            dry_run=False,
+                        )
+                        if elife_result.get('errors'):
+                            for err in elife_result['errors']:
+                                print(f"    [DB] eLife error: {err}")
+
+    except ImportError as e:
+        print(f"    [DB] mousedb not available: {e}")
+    except Exception as e:
+        print(f"    [DB] Warning: brain sync failed: {e}")
+
+
+def sync_calibration_to_db(brain_name: str, exp_id: str, params_dict: Dict):
+    """
+    Push a single calibration run to connectome.db.
+
+    Called from napari tuning_widget after detection completes.
+    Never raises -- catches all exceptions.
+
+    Args:
+        brain_name: Full brain ID, e.g. "349_CNT_01_02_1p625x_z4"
+        exp_id: Experiment/run ID from tracker
+        params_dict: Dict with keys like ball_xy, ball_z, threshold,
+                     cells_detected, status, etc.
+    """
+    try:
+        from .database import get_db
+        from .schema import Base, BrainSample, CalibrationRun
+
+        db = get_db()
+        Base.metadata.create_all(db.engine)
+
+        importer = BrainGlobeImporter(db)
+        brain_info = importer.parse_brain_name(brain_name)
+        if not brain_info:
+            return
+
+        with db.session() as session:
+            brain_sample = importer._ensure_brain_sample(
+                session, brain_name, brain_info, dry_run=False
+            )
+            if not brain_sample:
+                return
+
+            # Check for duplicate
+            existing = session.query(CalibrationRun).filter_by(
+                brain_sample_id=brain_sample.id,
+                run_id=str(exp_id)
+            ).first()
+            if existing:
+                return
+
+            cal_run = CalibrationRun(
+                brain_sample_id=brain_sample.id,
+                run_id=str(exp_id),
+                ball_xy_um=params_dict.get('ball_xy'),
+                ball_z_um=params_dict.get('ball_z'),
+                soma_diameter_um=params_dict.get('soma_diameter'),
+                threshold=params_dict.get('threshold'),
+                cells_detected=params_dict.get('cells_detected'),
+                detection_time_s=params_dict.get('detection_time_s'),
+                status=params_dict.get('status', 'completed'),
+                is_best=1 if params_dict.get('is_best') else 0,
+                source_csv='napari_live_sync',
+            )
+            session.add(cal_run)
+            session.commit()
+
+    except ImportError:
+        pass  # mousedb not available in this env
+    except Exception:
+        pass  # Never break the GUI/pipeline
