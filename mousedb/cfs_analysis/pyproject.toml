@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cfs_analysis"
+version = "0.1.0"
+description = "CFS Project analysis: supraspinal connectivity vs. reach kinematics after SCI."
+readme = "README.md"
+authors = [{name = "Logan Friedrich"}]
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    # Database
+    "sqlalchemy>=2.0",
+    # Data
+    "pandas>=2.0",
+    "numpy>=1.26",
+    "pyarrow>=10.0",       # parquet cache format
+    # Analysis
+    "scikit-learn>=1.4",
+    "statsmodels>=0.14",
+    "scipy>=1.12",
+    # Visualization
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "plotly>=5.0",
+    "kaleido",             # Static PNG export for plotly Sankey figures
+    # Notebook
+    "jupyterlab>=4.0",
+    "ipykernel>=6.0",
+    "papermill>=2.5",       # parameterized notebook execution
+]
+
+[project.optional-dependencies]
+# Install this extra if running inside a mousedb-enabled environment.
+# Without it the tool uses the frozen region-prior snapshot in config.py.
+mousedb = []
+# Developer tooling (test harness, code extraction scripts).
+dev = [
+    "pytest>=7.0",
+    "nbmake>=1.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cfs_analysis*"]

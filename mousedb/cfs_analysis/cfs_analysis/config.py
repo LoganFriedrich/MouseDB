@@ -1,0 +1,206 @@
+"""Central configuration for the CFS analysis tool.
+
+Everything that might need tweaking lives here so the notebooks and helper
+modules stay short and uncluttered. Three kinds of things:
+
+1. Portable PATHS resolved relative to this file, so the whole folder works
+   when copied to any location on disk (USB drive, different machine).
+2. Analysis-wide constants (analyzable phases, cohorts to exclude, metadata
+   column set, unit-preference order, FDR alpha, etc.).
+3. A frozen snapshot of `mousedb.region_priors.SKILLED_REACHING` used as a
+   fallback when `mousedb` is not installed in the user's environment.
+
+A user who wants to tweak something for a one-off run should do it in the
+parameters cell at the top of the relevant notebook, not here. This file is
+the "analysis-wide default" tier. Path overrides can be supplied via
+environment variables (see ``get_db_path``).
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+
+# =============================================================================
+# PATHS
+# =============================================================================
+# All paths resolve relative to this file so the tool is location-independent.
+# Copy the folder to any disk, any OS, any directory depth; paths still work.
+
+PACKAGE_DIR = Path(__file__).resolve().parent                  # cfs_analysis/cfs_analysis/
+PROJECT_ROOT = PACKAGE_DIR.parent                              # cfs_analysis/ (outer tool folder)
+BUNDLED_DATA_DIR = PACKAGE_DIR / "_bundled_data"               # Ships with the tool, git-ignored contents
+BUNDLED_DB_PATH = BUNDLED_DATA_DIR / "connectome.db"           # Default DB location for bundled distributions
+CACHE_DIR = BUNDLED_DATA_DIR / "cache"                         # Parquet cache for the six base dataframes
+NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"                     # Where the analysis notebooks live
+EXAMPLE_OUTPUT_DIR = PROJECT_ROOT / "example_output"           # Committed PNGs of expected figures
+
+
+def get_db_path() -> Path:
+    """Resolve the connectome.db location.
+
+    Resolution order:
+      1. ``CFS_ANALYSIS_DB`` environment variable, if set -- power-user override.
+      2. Bundled copy at ``_bundled_data/connectome.db`` -- default, ships with folder.
+
+    The tool does NOT try to reach back to Y:\\ drive automatically. If a user
+    wants to point at the canonical NAS copy, they set the env var explicitly.
+    This keeps runs deterministic and avoids silent "which DB am I on?" bugs.
+    """
+    env_override = os.environ.get("CFS_ANALYSIS_DB")
+    if env_override:
+        return Path(env_override)
+    return BUNDLED_DB_PATH
+
+
+# =============================================================================
+# ANALYSIS CONSTANTS
+# =============================================================================
+
+# Phases that get compared in the analysis. Training, Rehab_Easy, Rehab_Flat,
+# Rehab_Pillar_Early, and Unscheduled use different tray types and/or unstable
+# task protocols, so mixing them in would introduce variance that has nothing
+# to do with injury or recovery.
+ANALYZABLE_PHASES: Tuple[str, ...] = (
+    "Baseline",
+    "Post_Injury_1",
+    "Post_Injury_2-4",
+    "Post_Rehab_Test",
+)
+
+# Cohort prefixes with no meaningful phase labels (pre-protocol subjects).
+COHORTS_TO_EXCLUDE: Tuple[str, ...] = ("CNT_00", "CNT_05", "CNT_99")
+
+# Imaging parameter match string. Only brain samples whose brain_id contains
+# this substring are considered compatible for cross-subject comparison.
+IMAGING_PARAMS_MATCH = "1p625x_z4"
+
+# Unit suffix preference for de-duplicating kinematic features that exist in
+# multiple units. Most-preferred first. Mm-based units are calibrated via an
+# internal ruler so they correct for parallax and camera-mounting differences;
+# pixel-based units are raw sensor output and vary with camera setup.
+UNIT_SUFFIX_PREFERENCE: Tuple[str, ...] = (
+    "_mm_per_sec",
+    "_mm",
+    "_ruler",
+    "_px_per_frame",
+    "_pixels",
+)
+
+# Columns that exist for indexing/classification/tracking rather than as
+# per-reach kinematic measurements. Anything numeric NOT in this set is
+# treated as a kinematic feature. This pattern is future-proof: when
+# MouseReach adds new kinematic columns, they are picked up automatically.
+METADATA_COLS = frozenset({
+    # Identity
+    "id", "subject_id", "video_name", "session_date", "tray_type", "run_number",
+    # Reach/segment indexing
+    "segment_num", "reach_id", "reach_num", "n_reaches_in_segment", "is_first_reach", "is_last_reach",
+    # Frame indices (positions in video, not kinematic measurements)
+    "start_frame", "apex_frame", "end_frame", "interaction_frame", "distance_to_interaction",
+    # Outcome / contact classifications
+    "outcome", "outcome_group", "contact_group", "segment_contact_group", "segment_outcome", "causal_reach",
+    # Phase labels
+    "test_phase", "phase_group",
+    # Tracking / quality flags
+    "mean_likelihood", "frames_low_confidence", "tracking_quality_score", "flagged_for_review", "flag_reason",
+    "segment_outcome_confidence", "segment_outcome_flagged",
+    # Segment / pellet context (not per-reach kinematics)
+    "attention_score", "pellet_position_idealness",
+    # Pipeline provenance
+    "source_file", "extractor_version", "imported_at", "processed_by", "mousereach_version", "dlc_scorer",
+    "segmenter_version", "reach_detector_version", "outcome_detector_version",
+})
+
+# Statistics thresholds. Edit here if the paper requires a different alpha.
+FDR_ALPHA: float = 0.05
+N_COMPONENTS_DEFAULT: int = 3
+N_PLS_COMPONENTS_DEFAULT: int = 2
+
+
+# =============================================================================
+# FROZEN FALLBACK: mousedb.region_priors.SKILLED_REACHING
+# =============================================================================
+# Synced from mousedb/region_priors.py on 2026-04-23.
+#
+# This snapshot is used when `mousedb` is not installed in the user's
+# environment (e.g., a grader opens the tool without the wider mousedb
+# package available). The package __init__ soft-imports mousedb first and
+# falls back to these constants.
+#
+# To refresh this snapshot from the live mousedb module, run:
+#     python tools/sync_region_priors.py
+# ---------------------------------------------------------------------------
+
+HEMISPHERES: Tuple[str, ...] = ("both", "left", "right")
+
+
+@dataclass(frozen=True)
+class RegionPrior:
+    """Predicted-importance ordering of eLife region groups for one activity.
+
+    Mirrors ``mousedb.region_priors.RegionPrior`` so downstream code can
+    accept either the live mousedb class or this fallback interchangeably.
+    """
+    activity: str
+    description: str
+    ordered_regions: Tuple[str, ...]
+    high_priority_cutoff: int
+
+
+FALLBACK_SKILLED_REACHING = RegionPrior(
+    activity="skilled_reaching",
+    description="Skilled unilateral forelimb reaching (single-pellet task).",
+    high_priority_cutoff=10,
+    ordered_regions=(
+        # -- predicted important for skilled reaching --
+        "Corticospinal",
+        "Red Nucleus",
+        "Magnocellular Reticular Nucleus",
+        "Gigantocellular Reticular Nucleus",
+        "Medullary Reticular Nuclei",
+        "Lateral Reticular Nuclei",
+        "Cerebellospinal Nuclei",
+        "Vestibular Nuclei",
+        "Pontine Reticular Nuclei",
+        "Raphe Nuclei",
+        # -- kept for contrast (lower predicted importance) --
+        "Pontine Trigeminal Area",
+        "Medullary Trigeminal Area",
+        "Perihypoglossal Area",
+        "Superior Olivary Complex",
+        "Parabrachial / Pedunculopontine",
+        "Pontine Central Gray Area",
+        "Midbrain Reticular Nuclei",
+        "Midbrain Midline Nuclei",
+        "Periaqueductal Gray",
+        "Dorsal Reticular Nucleus",
+        "Solitariospinal Area",
+        "Hypothalamic Lateral Area",
+        "Hypothalamic Medial Area",
+        "Hypothalamic Periventricular Zone",
+        "Thalamus",
+        # -- sentinel and explicit-exclude bucket last --
+        "[Unmapped]",
+        "Unused",
+    ),
+)
+
+
+def fallback_ordered_hemisphere_columns(
+    prior: RegionPrior,
+    available: Optional[List[str]] = None,
+    hemispheres: Tuple[str, ...] = HEMISPHERES,
+) -> List[str]:
+    """Build ``{region}_{hemisphere}`` column names in prior order.
+
+    Mirrors ``mousedb.region_priors.ordered_hemisphere_columns`` so it can
+    stand in when mousedb is not installed.
+    """
+    cols = [f"{r}_{h}" for r in prior.ordered_regions for h in hemispheres]
+    if available is not None:
+        avail = set(available)
+        cols = [c for c in cols if c in avail]
+    return cols
