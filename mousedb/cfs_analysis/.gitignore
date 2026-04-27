@@ -1,0 +1,32 @@
+# Bundled database (ships via folder-copy distribution, not git)
+cfs_analysis/_bundled_data/connectome.db
+cfs_analysis/_bundled_data/cache/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtual environments (users create locally via install.bat / install.sh)
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Notebook parameterized-run outputs (papermill)
+notebooks/_papermill_out/
+
+# Build artifacts
+build/
+dist/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# OMC tooling state artifacts
+.omc/
+
+# Stray pytest cache directories on NAS (permission-quirky, regenerated automatically)
+pytest-cache-files-*/
