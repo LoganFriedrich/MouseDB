@@ -84,7 +84,7 @@ SETUP_NB = [
           - Missing package? The "detail" column gives the ``pip install`` command.
           - Database file not found? Copy ``connectome.db`` into
             ``endpoint_ck_analysis/_bundled_data/`` (the folder you see next to this
-            notebook's parent) or set ``CFS_ANALYSIS_DB`` to its location.
+            notebook's parent) or set ``ENDPOINT_CK_ANALYSIS_DB`` to its location.
           - Still stuck? Open ``TROUBLESHOOTING.md`` in the project root.
     """),
     ("code", """

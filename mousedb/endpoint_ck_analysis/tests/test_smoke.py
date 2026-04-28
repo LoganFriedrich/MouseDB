@@ -56,10 +56,10 @@ def test_prefer_calibrated_units_drops_pixels_when_mm_exists():
 
 
 def test_doctor_all_green():
-    """Every diagnostic check must pass."""
+    """Every required diagnostic check must pass; informational ones can flag without failing."""
     from endpoint_ck_analysis.doctor import run_checks
-    failed = [r for r in run_checks() if not r.ok]
-    assert not failed, "\n".join(r.render() for r in failed)
+    blockers = [r for r in run_checks() if r.is_blocker]
+    assert not blockers, "\n".join(r.render() for r in blockers)
 
 
 def test_load_all_returns_all_dataframes():

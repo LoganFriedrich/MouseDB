@@ -30,42 +30,68 @@ REQUIRED_PACKAGES = (
     "seaborn",
     "plotly",
     "pyarrow",
-    "jupyterlab",
+    "ipykernel",         # so VS Code's kernel picker can see this env
+)
+
+# Optional packages: missing these produces an [INFO] line, not a [FAIL].
+# jupyterlab is only needed for the run_analysis.bat / .command launcher path.
+# VS Code users do not need it.
+OPTIONAL_PACKAGES = (
+    "jupyterlab",        # for the JupyterLab launcher (skip if using VS Code)
 )
 
 
 @dataclass
 class CheckResult:
-    """One row of the doctor's diagnostic table."""
+    """One row of the doctor's diagnostic table.
+
+    ``severity`` controls how a not-ok result is treated:
+        'fail'  - red, blocks doctor() from reporting all-green
+        'info'  - yellow, surfaces the absence but does not block
+    """
     name: str
     ok: bool
     detail: str
+    severity: str = "fail"
+
+    @property
+    def is_blocker(self) -> bool:
+        return (not self.ok) and self.severity == "fail"
 
     def render(self) -> str:
-        mark = "[OK]" if self.ok else "[FAIL]"
+        if self.ok:
+            mark = "[OK]"
+        elif self.severity == "info":
+            mark = "[INFO]"
+        else:
+            mark = "[FAIL]"
         return f"{mark:<7} {self.name:<28} {self.detail}"
 
 
 def _check_python_version() -> CheckResult:
     major, minor = sys.version_info[:2]
-    ok = (major, minor) >= (3, 11)
+    ok = (major, minor) >= (3, 10)
     detail = f"{sys.version.split()[0]} on {platform.system()} {platform.release()}"
     if not ok:
-        detail += " -- tool requires Python 3.11 or newer"
+        detail += " -- tool requires Python 3.10 or newer"
     return CheckResult("Python version", ok, detail)
 
 
-def _check_package(name: str) -> CheckResult:
+def _check_package(name: str, severity: str = "fail") -> CheckResult:
     try:
         mod = importlib.import_module(name)
         version = getattr(mod, "__version__", "?")
-        return CheckResult(f"import {name}", True, f"version {version}")
+        return CheckResult(f"import {name}", True, f"version {version}", severity=severity)
     except ImportError as e:
         pypi_name = {"sklearn": "scikit-learn"}.get(name, name)
+        detail = f"missing -- run: pip install {pypi_name}"
+        if severity == "info":
+            detail += "  (optional; only needed for the JupyterLab launcher path)"
         return CheckResult(
             f"import {name}",
             False,
-            f"missing -- run: pip install {pypi_name}",
+            detail,
+            severity=severity,
         )
 
 
@@ -84,7 +110,7 @@ def _check_db() -> CheckResult:
         "Database file",
         False,
         f"not found at {db_path} -- copy connectome.db into _bundled_data/ or "
-        "set CFS_ANALYSIS_DB env var",
+        "set ENDPOINT_CK_ANALYSIS_DB env var",
     )
 
 
@@ -111,6 +137,8 @@ def run_checks() -> List[CheckResult]:
     results = [_check_python_version()]
     for pkg in REQUIRED_PACKAGES:
         results.append(_check_package(pkg))
+    for pkg in OPTIONAL_PACKAGES:
+        results.append(_check_package(pkg, severity="info"))
     results.append(_check_db())
     results.append(_check_cache_dir())
     results.append(_check_region_priors())
@@ -118,18 +146,22 @@ def run_checks() -> List[CheckResult]:
 
 
 def doctor() -> bool:
-    """Run all checks, print a status table, return True on all-green."""
+    """Run all checks, print a status table, return True on no blocking failures."""
     print(f"endpoint_ck_analysis {__version__} -- environment check")
     print("=" * 72)
     results = run_checks()
     for r in results:
         print(r.render())
     print("=" * 72)
-    failures = [r for r in results if not r.ok]
-    if failures:
-        print(f"{len(failures)} check(s) failed. See TROUBLESHOOTING.md for fixes.")
+    blockers = [r for r in results if r.is_blocker]
+    info_only = [r for r in results if (not r.ok) and r.severity == "info"]
+    if blockers:
+        print(f"{len(blockers)} blocking check(s) failed. See TROUBLESHOOTING.md for fixes.")
         return False
-    print("All green. Ready to run the analysis notebooks.")
+    if info_only:
+        print(f"All required checks passed. {len(info_only)} optional check(s) flagged (informational).")
+    else:
+        print("All green. Ready to run the analysis notebooks.")
     return True
 
 

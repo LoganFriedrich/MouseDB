@@ -49,16 +49,24 @@ run.
 
 ---
 
-## Quickstart (five steps)
+## Quickstart
 
-See [`QUICKSTART.md`](QUICKSTART.md) for the annotated version.
+See [`QUICKSTART.md`](QUICKSTART.md) for the annotated version. Two
+supported paths:
 
-1. Install Python 3.11 or newer from <https://www.python.org/downloads/>.
-2. Double-click `install.bat` (Windows) or run `./install.sh` (macOS/Linux).
-3. Double-click `run_analysis.bat` / `run_analysis.command` to open JupyterLab.
-4. Open `notebooks/00_setup.ipynb` and run every cell.
-5. Open `notebooks/01_connectivity_pca.ipynb` through `99_figure_gallery.ipynb`
-   in order and run each one.
+- **VS Code with the Jupyter extension** (recommended for lab members
+  and developers): open this folder in VS Code, open
+  `notebooks/00_setup.ipynb`, pick the **Python (endpoint_ck_analysis)**
+  kernel from the top-right dropdown, run all cells, then repeat for
+  notebooks 01-08 and 99.
+- **JupyterLab launcher** (recommended for non-technical handoff):
+  double-click `run_analysis.bat` (Windows) or `run_analysis.command`
+  (macOS/Linux) to open JupyterLab in your browser, then run notebooks
+  in order from there.
+
+Both paths require running `install.bat` / `install.sh` once first to
+create the Python environment and register the Jupyter kernel. Python
+3.11+ is a prerequisite (<https://www.python.org/downloads/>).
 
 Troubleshooting: see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
@@ -103,7 +111,7 @@ Three tiers, in order of precedence:
 2. **`endpoint_ck_analysis/config.py`** for analysis-wide defaults (analyzable
    phases, FDR alpha, default component counts, frozen region-prior
    fallback).
-3. **`CFS_ANALYSIS_DB` environment variable** to point at a non-default
+3. **`ENDPOINT_CK_ANALYSIS_DB` environment variable** to point at a non-default
    database location. Set this if you want to run against the live Y:
    drive database instead of the bundled copy.
 

@@ -28,14 +28,42 @@ the previous entry.
 
 ## "No module named 'endpoint_ck_analysis'" in a notebook cell
 
-The kernel you selected is not the `Python (endpoint_ck_analysis)` kernel.
+The kernel selected for the notebook is not `Python (endpoint_ck_analysis)`.
 
-**Fix**: In JupyterLab, click the kernel name in the top-right of the
-notebook (probably says "Python 3" or similar) and choose **Python
-(endpoint_ck_analysis)** from the dropdown.
+**Fix in VS Code**: Click the kernel name in the top-right of the
+notebook tab (probably says "Python 3.x" or similar). The kernel-picker
+dropdown opens. Choose **Python (endpoint_ck_analysis)**.
 
-If that option is not listed, re-run `install.bat`. The kernel
-registration happens at the end of the installer.
+**Fix in JupyterLab**: Click the kernel name in the top-right of the
+notebook view. Choose **Python (endpoint_ck_analysis)**.
+
+If that option is not listed in either environment, re-run
+`install.bat` -- the kernel registration happens at the end of the
+installer. Restart VS Code or refresh the JupyterLab tab so the new
+kernel shows up in the picker.
+
+---
+
+## VS Code: notebook opens as raw JSON instead of as a notebook view
+
+The Jupyter extension is missing.
+
+**Fix**: Open the Extensions sidebar (`Ctrl+Shift+X`), search for
+"Jupyter", install Microsoft's official "Jupyter" extension (the
+Python extension comes with it as a dependency). Restart VS Code.
+Re-open the `.ipynb` file -- it should now render as a notebook.
+
+---
+
+## VS Code: kernel-picker says "No Kernel Detected" or only shows base Python
+
+The Jupyter extension didn't pick up the kernel `install.bat`
+registered. Usually a startup-timing thing.
+
+**Fix**: With the notebook open, run the command palette
+(`Ctrl+Shift+P`) -> "Jupyter: Refresh Kernels". If still no luck,
+restart VS Code and re-open the notebook. If still no luck, re-run
+`install.bat` -- the kernel registration step is at the end.
 
 ---
 
@@ -48,12 +76,12 @@ The tool couldn't find `connectome.db`.
 `.../endpoint_ck_analysis/endpoint_ck_analysis/_bundled_data/connectome.db` (note the
 nested folder name).
 
-**Fix 2 (power user)**: Set the `CFS_ANALYSIS_DB` environment variable to
+**Fix 2 (power user)**: Set the `ENDPOINT_CK_ANALYSIS_DB` environment variable to
 the full path of the database file before launching JupyterLab. On
 Windows, you can do this in a Command Prompt:
 
 ```
-set CFS_ANALYSIS_DB=Y:\2_Connectome\Databases\connectome.db
+set ENDPOINT_CK_ANALYSIS_DB=Y:\2_Connectome\Databases\connectome.db
 run_analysis.bat
 ```
 

@@ -42,14 +42,14 @@ def get_db_path() -> Path:
     """Resolve the connectome.db location.
 
     Resolution order:
-      1. ``CFS_ANALYSIS_DB`` environment variable, if set -- power-user override.
+      1. ``ENDPOINT_CK_ANALYSIS_DB`` environment variable, if set -- power-user override.
       2. Bundled copy at ``_bundled_data/connectome.db`` -- default, ships with folder.
 
     The tool does NOT try to reach back to Y:\\ drive automatically. If a user
     wants to point at the canonical NAS copy, they set the env var explicitly.
     This keeps runs deterministic and avoids silent "which DB am I on?" bugs.
     """
-    env_override = os.environ.get("CFS_ANALYSIS_DB")
+    env_override = os.environ.get("ENDPOINT_CK_ANALYSIS_DB")
     if env_override:
         return Path(env_override)
     return BUNDLED_DB_PATH

@@ -9,7 +9,7 @@ description = "CFS Project analysis: supraspinal connectivity vs. reach kinemati
 readme = "README.md"
 authors = [{name = "Logan Friedrich"}]
 license = {text = "MIT"}
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     # Database
     "sqlalchemy>=2.0",

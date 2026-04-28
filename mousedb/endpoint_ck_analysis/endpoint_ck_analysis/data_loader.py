@@ -376,7 +376,7 @@ def load_all(
         if not db_path.exists():
             raise FileNotFoundError(
                 f"connectome.db not found at {db_path}. Either place it there, "
-                "set the CFS_ANALYSIS_DB environment variable, or run with "
+                "set the ENDPOINT_CK_ANALYSIS_DB environment variable, or run with "
                 "use_cache=True if a cache exists."
             )
 
