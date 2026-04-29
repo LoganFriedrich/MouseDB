@@ -747,7 +747,10 @@ PLS_VARIANTS_NB = [
             Y, label = Y_BLOCKS[variant]                                                          # tuple unpack: Y is the Y-block dataframe, label is the human-readable string
             print(f'\\n=== {variant} ===')                                                        # section divider in the printed output
             results[variant] = run_pls(X_block, Y, n_components=N_COMPONENTS, label=label)        # fit PLSCanonical between connectivity X-block and this variant's Y-block
-            plot_pls(results[variant], top_n=TOP_N)                                               # render the three-panel figure (X-loadings, Y-loadings, cross-score scatter) per LV; top_n caps how many connectivity loadings to label
+            plot_pls(                                                                              # render the three-panel figure (X-loadings, Y-loadings, cross-score scatter) per LV
+                results[variant], top_n=TOP_N,                                                     # top_n caps how many connectivity loadings to label
+                save_dir=EXAMPLE_OUTPUT_DIR, slug=f"04_pls_{variant}",                             # also persist each LV figure to example_output/04_pls_{variant}_{LV}.png so the gallery (notebook 99) can show it later without re-running 04
+            )
     """),
     ("md", """
         ## 3. Export latent-variable scores for the gallery
@@ -1840,6 +1843,12 @@ GALLERY_NB = [
             ('02 Kinematics PCA - Important features',     '02_loadings_important_features.png'),
             ('03 Feature dendrogram',                      '03_dendrogram.png'),
             ('03 Feature clusters in PC1-PC2',             '03_feature_clusters_2d.png'),
+            ('04 PLS - Injury snapshot LV1',               '04_pls_injury_snapshot_LV1.png'),
+            ('04 PLS - Injury snapshot LV2',               '04_pls_injury_snapshot_LV2.png'),
+            ('04 PLS - Deficit delta LV1',                 '04_pls_deficit_delta_LV1.png'),
+            ('04 PLS - Deficit delta LV2',                 '04_pls_deficit_delta_LV2.png'),
+            ('04 PLS - Recovery delta LV1',                '04_pls_recovery_delta_LV1.png'),
+            ('04 PLS - Recovery delta LV2',                '04_pls_recovery_delta_LV2.png'),
             ('05 LMM summary',                             '05_lmm_summary.png'),
             ('06 Pellet scoring confusion matrix',         '06_confusion_matrix.png'),
             ('06 Agreement by phase',                      '06_agreement_by_phase.png'),

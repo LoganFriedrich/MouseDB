@@ -61,11 +61,15 @@ def plot_pca_for_phase(pca, eigen_summary: pd.DataFrame, loadings: pd.DataFrame,
     plt.show()
 
 
-def plot_pls(result: Dict[str, Any], top_n: int = 15):
+def plot_pls(result: Dict[str, Any], top_n: int = 15, save_dir=None, slug: Optional[str] = None):
     """Three-panel figure per latent variable: X-loadings, Y-loadings, cross-scores scatter.
 
     Lifted from notebook section 10. Expects the dict returned by
     ``helpers.dimreduce.run_pls``.
+
+    If ``save_dir`` and ``slug`` are both provided, each per-LV figure is also
+    written to ``{save_dir}/{slug}_{LV}.png`` before display. Useful for the
+    figure gallery and supplementary materials.
     """
     X_loadings = result["X_loadings"]                                             # connectivity-side loading matrix (region x LV)
     Y_loadings = result["Y_loadings"]                                             # kinematic-side loading matrix (feature x LV)
@@ -112,4 +116,9 @@ def plot_pls(result: Dict[str, Any], top_n: int = 15):
         fig.suptitle(f"{label} - {lv}", y=1.02)                                   # figure-level title; y=1.02 nudges above subplots
         stamp_version(fig, label=f"PLS {lv}")                                     # version footer for traceability
         plt.tight_layout()                                                        # auto-fit margins
+        if save_dir is not None and slug:                                         # caller wants the figure persisted; both args required to disambiguate from accidental partials
+            from pathlib import Path                                              # local import keeps the top-of-file imports lean for the no-save path
+            save_path = Path(save_dir) / f"{slug}_{lv}.png"                       # filename pattern: {slug}_LV1.png, {slug}_LV2.png, ...
+            save_path.parent.mkdir(parents=True, exist_ok=True)                   # ensure target directory exists
+            plt.savefig(save_path, dpi=150, bbox_inches="tight")                  # write before show(); bbox_inches='tight' trims whitespace, dpi=150 matches the rest of the pipeline
         plt.show()
