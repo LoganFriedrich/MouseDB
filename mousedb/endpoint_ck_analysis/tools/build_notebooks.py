@@ -1129,6 +1129,7 @@ TRAJECTORY_NB = [
         import seaborn as sns                                                                        # heatmap helper used for the cluster profile
         from sklearn.decomposition import PCA                                                        # connectivity PCA for the trajectory color axis
         from sklearn.preprocessing import StandardScaler                                             # z-scorer
+        from IPython.display import display                                                          # display(): renders a dataframe as an HTML table inline; nicer than print() for tabular data
 
         from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns                # canonical region prior + helper that produces region_hemi columns in priority order
         from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR, ANALYZABLE_PHASES     # cache dir, output PNG dir, the analyzable phase set
@@ -1175,7 +1176,7 @@ TRAJECTORY_NB = [
         )
         conn_scores_df.index.name = 'subject_id'                                                                # make the index name explicit so to_parquet preserves it
         print('Per-subject connectivity PC scores:')
-        print(conn_scores_df)
+        display(conn_scores_df)                                                                                  # display() renders the dataframe as an HTML table; plain print() would dump it as plain text and lose the formatting
 
         # Cache these so downstream notebooks can also colour by them
         conn_scores_df.to_parquet(CACHE_DIR / 'connectivity_pc_scores.parquet')                                # other notebooks (98+future) can read this without redoing PCA
