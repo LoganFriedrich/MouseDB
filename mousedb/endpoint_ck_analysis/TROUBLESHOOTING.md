@@ -28,11 +28,15 @@ the previous entry.
 
 ## "No module named 'endpoint_ck_analysis'" in a notebook cell
 
-The kernel selected for the notebook is not `Python (endpoint_ck_analysis)`.
+The kernel selected for the notebook is not the right one.
 
 **Fix in VS Code**: Click the kernel name in the top-right of the
-notebook tab (probably says "Python 3.x" or similar). The kernel-picker
-dropdown opens. Choose **Python (endpoint_ck_analysis)**.
+notebook tab (probably says "Python 3.x" or similar). The picker is a
+**two-level menu** -- the first screen shows categories
+(`Python Environments...`, `Jupyter Kernel...`, etc.), not the
+kernels themselves. To find the registered kernels, click
+`Jupyter Kernel...` -- the actual names (`Python (mousedb)` or
+`Python (endpoint_ck_analysis)`) live on the second screen.
 
 **Fix in JupyterLab**: Click the kernel name in the top-right of the
 notebook view. Choose **Python (endpoint_ck_analysis)**.

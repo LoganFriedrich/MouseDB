@@ -90,8 +90,26 @@ environment to use.
 ### In VS Code
 
 The kernel selector sits in the top-right corner of the notebook tab,
-just under the tab title. Click it. From the dropdown, choose
-**Python (endpoint_ck_analysis)**.
+just under the tab title. Click it.
+
+VS Code's kernel picker is a **two-level menu**: it does NOT immediately
+show kernels. The first screen shows kernel *categories*:
+
+- `Python Environments...` -- Python interpreters VS Code has discovered
+- `Jupyter Kernel...` -- kernelspecs registered via `ipykernel install`
+- `Existing Jupyter Server...` -- remote Jupyter servers
+- (a few others depending on extensions)
+
+To find **Python (mousedb)** (or **Python (endpoint_ck_analysis)** in the
+dedicated-venv path), click `Jupyter Kernel...` -- that's where
+registered kernelspecs live. The actual kernel names appear on the
+*second* screen of the picker.
+
+If you click `Python Environments...` instead and your env doesn't
+appear there, see the troubleshooting section in
+[`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) -- the conda env at
+`C:\2_Connectome\envs\MouseDB\` is in a non-standard location and may
+need to be added manually via `Python: Select Interpreter`.
 
 ### In JupyterLab
 
