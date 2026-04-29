@@ -88,8 +88,8 @@ SETUP_NB = [
           - Still stuck? Open ``TROUBLESHOOTING.md`` in the project root.
     """),
     ("code", """
-        from endpoint_ck_analysis.doctor import doctor
-        doctor()
+        from endpoint_ck_analysis.doctor import doctor # entry point that runs every diagnostic check and prints a status table
+        doctor() # prints the [OK]/[FAIL]/[INFO] table; returns True when there are no blockers
     """),
     ("md", """
         ## 2. Load all dataframes
@@ -104,22 +104,22 @@ SETUP_NB = [
         ``use_cache=False`` to force a rebuild.
     """),
     ("code", """
-        from endpoint_ck_analysis.data_loader import load_all
+        from endpoint_ck_analysis.data_loader import load_all # one-shot loader that returns a LoadedData with every dataframe downstream notebooks consume
 
-        data = load_all(use_cache=False, write_cache=True)
-
-        print()
-        print('Base dataframes:')
-        for name in ['AKDdf', 'FKDdf', 'ACDUdf', 'ACDGdf', 'FCDUdf', 'FCDGdf']:
-            print(f'  {name}: {getattr(data, name).shape}')
+        data = load_all(use_cache=False, write_cache=True) # use_cache=False forces a fresh DB rebuild; write_cache=True saves parquet so notebooks 01-08 don't re-touch the DB. Set use_cache=True after the first run for fast reloads.
 
         print()
-        print('Connectomics wide pivots:')
+        print('Base dataframes:') # AKDdf and friends are the per-reach / per-region tables; everything else is derived from these
+        for name in ['AKDdf', 'FKDdf', 'ACDUdf', 'ACDGdf', 'FCDUdf', 'FCDGdf']: # iterate by name string so the loop also prints the variable name alongside the shape
+            print(f'  {name}: {getattr(data, name).shape}') # getattr(data, name) pulls the dataframe attribute matching the loop variable; .shape gives (rows, columns)
+
+        print()
+        print('Connectomics wide pivots:') # one row per subject, one column per region_hemi; produced by helpers.connectivity.pivot_connectivity
         for name in ['ACDUdf_wide', 'ACDGdf_wide', 'FCDUdf_wide', 'FCDGdf_wide']:
             print(f'  {name}: {getattr(data, name).shape}')
 
         print()
-        print(f'Matched subjects (both kinematics and connectomics): {list(data.matched_subjects)}')
+        print(f'Matched subjects (both kinematics and connectomics): {list(data.matched_subjects)}') # the analyzable cohort: only subjects in this list participate in PLS or any cross-block analysis
     """),
     ("md", """
         ## 3. Quick-look previews
