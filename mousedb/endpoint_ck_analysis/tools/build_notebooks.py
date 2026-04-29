@@ -1120,35 +1120,35 @@ TRAJECTORY_NB = [
         FIGSIZE_ALLUVIAL = (900, 500)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        from matplotlib.cm import get_cmap
-        import seaborn as sns
-        from sklearn.decomposition import PCA
-        from sklearn.preprocessing import StandardScaler
+        import numpy as np                                                                          # numerical arrays
+        import pandas as pd                                                                          # dataframes
+        import matplotlib.pyplot as plt                                                              # 2D plotting
+        from matplotlib.cm import get_cmap                                                           # named-colormap accessor (e.g. 'tab10', 'viridis')
+        import seaborn as sns                                                                        # heatmap helper used for the cluster profile
+        from sklearn.decomposition import PCA                                                        # connectivity PCA for the trajectory color axis
+        from sklearn.preprocessing import StandardScaler                                             # z-scorer
 
-        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns
-        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR, ANALYZABLE_PHASES
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.clusters import (
-            cluster_subjects, profile_clusters, auto_name_clusters,
-            permutation_validate, alluvial_source_records,
+        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns                # canonical region prior + helper that produces region_hemi columns in priority order
+        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR, ANALYZABLE_PHASES     # cache dir, output PNG dir, the analyzable phase set
+        from endpoint_ck_analysis.data_loader import load_all                                        # one-shot loader; supports the synthetic-cohort path via flags
+        from endpoint_ck_analysis.helpers.clusters import (                                          # clustering + validation toolkit
+            cluster_subjects, profile_clusters, auto_name_clusters,                                  # method-agnostic clustering, per-cluster z-score profile, auto-generated cluster labels
+            permutation_validate, alluvial_source_records,                                            # cluster-validity permutation test, source records for plotly Sankey
         )
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        from endpoint_ck_analysis.helpers.plotting import stamp_version                              # figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all(
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                                        # ensure output folder exists
+        data = load_all(                                                                              # load data; the parameters cell controls whether this loads real or synthetic
             use_synthetic=USE_SYNTHETIC,
             synthetic_n=SYNTHETIC_N,
             synthetic_seed=SYNTHETIC_SEED,
             synthetic_conn_noise=SYNTHETIC_CONN_NOISE,
             synthetic_kine_noise=SYNTHETIC_KINE_NOISE,
-            use_cache=not USE_SYNTHETIC,     # synthetic always rebuilds
-            write_cache=not USE_SYNTHETIC,
+            use_cache=not USE_SYNTHETIC,     # synthetic always rebuilds (cache reflects the LAST real load; can't safely mix with synthetic data)
+            write_cache=not USE_SYNTHETIC,   # don't overwrite the real-data cache with synthetic content
             verbose=False,
         )
-        print(f"Running on {'SYNTHETIC' if USE_SYNTHETIC else 'REAL'} data.  "
+        print(f"Running on {'SYNTHETIC' if USE_SYNTHETIC else 'REAL'} data.  "                       # status banner so the run mode is visible at a glance
               f"N={len(data.matched_subjects)} subjects.")
     """),
     ("md", """
@@ -1159,24 +1159,24 @@ TRAJECTORY_NB = [
         continuous coordinate for coloring trajectories.
     """),
     ("code", """
-        X_conn = data.FCDGdf_wide.fillna(0)
-        canonical_cols = ordered_hemisphere_columns(SKILLED_REACHING, available=X_conn.columns.tolist())
-        X_conn = X_conn[canonical_cols]
+        X_conn = data.FCDGdf_wide.fillna(0)                                                                    # connectivity matrix (subjects x region_hemi); fillna(0) so PCA doesn't error
+        canonical_cols = ordered_hemisphere_columns(SKILLED_REACHING, available=X_conn.columns.tolist())       # priority-ordered column list, filtered to columns that actually exist
+        X_conn = X_conn[canonical_cols]                                                                         # reorder X_conn to canonical column order
 
-        X_scaled = StandardScaler().fit_transform(X_conn)
-        conn_pca = PCA(n_components=min(N_CONN_PCS, len(X_conn) - 1))
-        conn_scores = conn_pca.fit_transform(X_scaled)
-        conn_scores_df = pd.DataFrame(
+        X_scaled = StandardScaler().fit_transform(X_conn)                                                       # z-score so PCA isn't dominated by high-magnitude regions
+        conn_pca = PCA(n_components=min(N_CONN_PCS, len(X_conn) - 1))                                          # cap n_components at min(N_CONN_PCS, N-1); PCA can't extract more components than N-1
+        conn_scores = conn_pca.fit_transform(X_scaled)                                                          # subject coordinates in PC space
+        conn_scores_df = pd.DataFrame(                                                                          # wrap into a labeled DataFrame
             conn_scores,
-            index=X_conn.index,
-            columns=[f'PC{i+1}' for i in range(conn_scores.shape[1])],
+            index=X_conn.index,                                                                                 # row labels = subject_id (kept from X_conn)
+            columns=[f'PC{i+1}' for i in range(conn_scores.shape[1])],                                          # column labels = PC1, PC2, ... PC{actual fit count}
         )
-        conn_scores_df.index.name = 'subject_id'
+        conn_scores_df.index.name = 'subject_id'                                                                # make the index name explicit so to_parquet preserves it
         print('Per-subject connectivity PC scores:')
         print(conn_scores_df)
 
         # Cache these so downstream notebooks can also colour by them
-        conn_scores_df.to_parquet(CACHE_DIR / 'connectivity_pc_scores.parquet')
+        conn_scores_df.to_parquet(CACHE_DIR / 'connectivity_pc_scores.parquet')                                # other notebooks (98+future) can read this without redoing PCA
     """),
     ("md", """
         ## 2. Cluster subjects on connectivity
@@ -1197,11 +1197,11 @@ TRAJECTORY_NB = [
         100% (verified during development).
     """),
     ("code", """
-        cluster_result = cluster_subjects(
-            X_conn, method=CLUSTER_METHOD, k=N_CLUSTERS, random_state=SYNTHETIC_SEED,
+        cluster_result = cluster_subjects(                                              # method-agnostic clustering; returns a ClusterResult dataclass
+            X_conn, method=CLUSTER_METHOD, k=N_CLUSTERS, random_state=SYNTHETIC_SEED,    # reuse the synthetic seed for reproducibility (also seeds the stochastic clusterers)
         )
-        cluster_by_subject = cluster_result.labels.rename('conn_cluster').astype(int)
-        print(f'Method: {cluster_result.method}, k={cluster_result.k}')
+        cluster_by_subject = cluster_result.labels.rename('conn_cluster').astype(int)    # rename Series to 'conn_cluster' for clearer downstream merges; cast to int (was numpy int)
+        print(f'Method: {cluster_result.method}, k={cluster_result.k}')                  # echo what we asked for vs what came back (k can be < requested if some clusters are empty)
         print('\\nCluster assignments:')
         print(cluster_by_subject)
     """),
@@ -1216,19 +1216,19 @@ TRAJECTORY_NB = [
         they're known.
     """),
     ("code", """
-        profile = profile_clusters(X_conn, cluster_by_subject)
-        auto_names = auto_name_clusters(profile, top_n=PROFILE_TOP_N, threshold=PROFILE_THRESHOLD)
-        names = dict(auto_names)
-        names.update(MANUAL_CLUSTER_NAMES)
+        profile = profile_clusters(X_conn, cluster_by_subject)                                          # per-cluster x per-region z-score table; helper handles z-score vs population mean and std
+        auto_names = auto_name_clusters(profile, top_n=PROFILE_TOP_N, threshold=PROFILE_THRESHOLD)      # build human-readable labels from the top defining features per cluster
+        names = dict(auto_names)                                                                         # copy the dict so we can layer manual overrides on top
+        names.update(MANUAL_CLUSTER_NAMES)                                                               # MANUAL_CLUSTER_NAMES (parameters cell) lets the user replace auto names with biological ones; overrides win
         print('Cluster names:')
         for cid in sorted(names):
             print(f'  {names[cid]}')
 
         # Heatmap: clusters (rows) x top defining regions (cols)
-        top_cols = (profile.abs().max(axis=0).sort_values(ascending=False).head(20).index.tolist())
+        top_cols = (profile.abs().max(axis=0).sort_values(ascending=False).head(20).index.tolist())     # find the 20 regions with the largest peak |z-score| across any cluster (.max(axis=0) per column)
         fig, ax = plt.subplots(figsize=FIGSIZE_PROFILE)
-        sns.heatmap(profile[top_cols].rename(index=names), cmap='RdBu_r', center=0,
-                    annot=True, fmt='.1f', ax=ax, cbar_kws={'label': 'z-score'})
+        sns.heatmap(profile[top_cols].rename(index=names), cmap='RdBu_r', center=0,                     # red-blue diverging cmap centered at 0 so positive/negative z-scores read as red/blue; rename(index=names) replaces numeric cluster IDs with the readable labels
+                    annot=True, fmt='.1f', ax=ax, cbar_kws={'label': 'z-score'})                        # annot=True writes z-score values in the cells; fmt='.1f' = 1 decimal place
         ax.set_title('Cluster profile: top 20 discriminating regions')
         plt.tight_layout()
         stamp_version(fig, label='07 cluster profile')
@@ -1253,18 +1253,18 @@ TRAJECTORY_NB = [
         clustering captures real structure.
     """),
     ("code", """
-        pv = permutation_validate(X_conn, cluster_by_subject,
-                                  n_random=N_PERMUTATIONS, random_state=SYNTHETIC_SEED)
-        print(f'Observed within-cluster variance: {pv[\"observed\"]:.2f}')
-        print(f'LOO range:                        [{min(pv[\"loo\"]):.2f}, {max(pv[\"loo\"]):.2f}]')
-        print(f'Random null mean:                 {float(np.mean(pv[\"random\"])):.2f}')
-        print(f'p (random <= observed):           {pv[\"p_random\"]:.3f}')
+        pv = permutation_validate(X_conn, cluster_by_subject,                                  # cluster-validity test; returns observed statistic + LOO + permutation null distributions
+                                  n_random=N_PERMUTATIONS, random_state=SYNTHETIC_SEED)         # n_random sets shuffle count; bigger = smoother null but slower
+        print(f'Observed within-cluster variance: {pv[\"observed\"]:.2f}')                      # observed = sum of within-cluster variances on the actual clustering
+        print(f'LOO range:                        [{min(pv[\"loo\"]):.2f}, {max(pv[\"loo\"]):.2f}]')  # tight LOO range = robust to dropping any single subject
+        print(f'Random null mean:                 {float(np.mean(pv[\"random\"])):.2f}')         # average within-cluster variance from shuffled label assignments
+        print(f'p (random <= observed):           {pv[\"p_random\"]:.3f}')                       # left-tail p-value: how often did a shuffled clustering achieve as-tight or tighter clusters?
 
-        fig, ax = plt.subplots(figsize=FIGSIZE_PERMUTATION)
-        ax.hist(pv['random'], bins=50, alpha=0.7, label='Random-label null', color='grey')
-        ax.axvline(pv['observed'], color='red', linewidth=2, label=f'Observed ({pv[\"observed\"]:.1f})')
+        fig, ax = plt.subplots(figsize=FIGSIZE_PERMUTATION)                                     # one panel
+        ax.hist(pv['random'], bins=50, alpha=0.7, label='Random-label null', color='grey')      # histogram of the shuffled null; alpha makes the gray semi-transparent so other elements show through
+        ax.axvline(pv['observed'], color='red', linewidth=2, label=f'Observed ({pv[\"observed\"]:.1f})') # red vertical line at the observed value -- left of the histogram bulk = clusters tighter than chance
         for v in pv['loo']:
-            ax.axvline(v, color='blue', alpha=0.3, linewidth=0.8)
+            ax.axvline(v, color='blue', alpha=0.3, linewidth=0.8)                                # one thin blue tick per LOO iteration; clustered ticks mean robustness, spread ticks mean a few subjects drive the result
         ax.set_xlabel('Within-cluster variance (sum across features)')
         ax.set_ylabel('Count of null draws')
         ax.set_title(f'Cluster validity (p={pv[\"p_random\"]:.3f}; blue ticks = LOO)')
@@ -1289,55 +1289,55 @@ TRAJECTORY_NB = [
         the connectivity clustering above.
     """),
     ("code", """
-        agg_flat = data.AKDdf_agg_contact_flat()
-        kine_feature_cols = [c for c in agg_flat.columns if c.endswith(f'_{AGG_STAT}')]
+        agg_flat = data.AKDdf_agg_contact_flat()                                                                     # flattened aggregated kinematics; per (subject, phase, contact_group)
+        kine_feature_cols = [c for c in agg_flat.columns if c.endswith(f'_{AGG_STAT}')]                              # pick only columns ending with _{AGG_STAT} (e.g. *_mean) so we cluster on summary statistics not every individual reach
 
-        per_phase_labels = {}
-        for phase in PHASES:
-            phase_slice = agg_flat[
+        per_phase_labels = {}                                                                                         # phase -> Series of subject -> cluster_id
+        for phase in PHASES:                                                                                          # one clustering per phase
+            phase_slice = agg_flat[                                                                                   # filter rows: this phase + contacted reaches only
                 (agg_flat['phase_group'] == phase) & (agg_flat['contact_group'] == 'contacted')
             ]
-            if phase_slice.empty:
+            if phase_slice.empty:                                                                                     # some phases may have no contacted reaches; skip rather than crash
                 continue
             mat = (
-                phase_slice.set_index('subject_id')[kine_feature_cols]
-                .fillna(0)
+                phase_slice.set_index('subject_id')[kine_feature_cols]                                                # subject_id as row index, only the *_AGG_STAT columns
+                .fillna(0)                                                                                            # PCA / clustering can't handle NaN
             )
             try:
-                k_phase = min(N_CLUSTERS, len(mat) - 1) if len(mat) > 1 else 1
-                cr = cluster_subjects(mat, method=CLUSTER_METHOD, k=max(k_phase, 2), random_state=SYNTHETIC_SEED)
+                k_phase = min(N_CLUSTERS, len(mat) - 1) if len(mat) > 1 else 1                                        # cap k at N-1 (can't have more clusters than subjects-1)
+                cr = cluster_subjects(mat, method=CLUSTER_METHOD, k=max(k_phase, 2), random_state=SYNTHETIC_SEED)     # max(k_phase, 2) ensures at least 2 clusters for the Sankey to have flow to draw
                 per_phase_labels[phase] = cr.labels
             except Exception as e:
-                print(f'Phase {phase}: clustering failed ({e})')
+                print(f'Phase {phase}: clustering failed ({e})')                                                     # phase-level clustering can fail at degenerate data; print and continue
 
-        sankey_df = alluvial_source_records(per_phase_labels, PHASES)
+        sankey_df = alluvial_source_records(per_phase_labels, PHASES)                                                 # turn the per-phase label dict into (source, target, value) edge records for plotly Sankey
         print(f'Sankey edges: {len(sankey_df)} between {len(per_phase_labels)} phases.')
     """),
     ("code", """
-        import plotly.graph_objects as go
+        import plotly.graph_objects as go                                                                # plotly Sankey (alluvial flow) lives in graph_objects, not the simpler express interface
 
-        if len(sankey_df) == 0:
+        if len(sankey_df) == 0:                                                                          # guard: no edges means nothing to draw
             print('Not enough per-phase clustering data to draw the Sankey.')
         else:
-            nodes = pd.unique(pd.concat([sankey_df['source'], sankey_df['target']]))
-            node_index = {n: i for i, n in enumerate(nodes)}
-            fig_sankey = go.Figure(data=[go.Sankey(
-                node=dict(label=list(nodes), pad=12, thickness=14),
+            nodes = pd.unique(pd.concat([sankey_df['source'], sankey_df['target']]))                     # build a deduplicated list of all node IDs (each phase x cluster combo)
+            node_index = {n: i for i, n in enumerate(nodes)}                                             # plotly Sankey needs integer node indices, not strings; this dict maps name -> index
+            fig_sankey = go.Figure(data=[go.Sankey(                                                      # one Sankey trace
+                node=dict(label=list(nodes), pad=12, thickness=14),                                      # pad spaces nodes vertically; thickness is node bar width in pixels
                 link=dict(
-                    source=sankey_df['source'].map(node_index).tolist(),
-                    target=sankey_df['target'].map(node_index).tolist(),
-                    value=sankey_df['value'].tolist(),
+                    source=sankey_df['source'].map(node_index).tolist(),                                 # remap each source string to its integer index
+                    target=sankey_df['target'].map(node_index).tolist(),                                 # same for targets
+                    value=sankey_df['value'].tolist(),                                                   # link width = number of subjects taking that source->target path
                 ),
             )])
             fig_sankey.update_layout(
                 title_text='Kinematic-cluster flow across phases',
-                width=FIGSIZE_ALLUVIAL[0], height=FIGSIZE_ALLUVIAL[1],
+                width=FIGSIZE_ALLUVIAL[0], height=FIGSIZE_ALLUVIAL[1],                                   # Sankey size is in pixels (not inches), specified directly on the layout
             )
             try:
-                fig_sankey.write_image(str(EXAMPLE_OUTPUT_DIR / '07_alluvial.png'))
+                fig_sankey.write_image(str(EXAMPLE_OUTPUT_DIR / '07_alluvial.png'))                      # write_image needs the kaleido package; wrap in try/except so a missing kaleido doesn't break the notebook
             except Exception as e:
                 print(f'(Could not save Sankey PNG -- kaleido missing or failed: {e})')
-            fig_sankey.show()
+            fig_sankey.show()                                                                            # render inline; interactive in Jupyter (hover for tooltips)
     """),
     ("md", """
         ## 6. Build the per-subject per-phase trajectory table
@@ -1347,27 +1347,27 @@ TRAJECTORY_NB = [
         per subject per phase.
     """),
     ("code", """
-        agg_flat = data.AKDdf_agg_contact_flat()
-        feature_col = f'{TRAJECTORY_FEATURE}_{AGG_STAT}'
-        if feature_col not in agg_flat.columns:
+        agg_flat = data.AKDdf_agg_contact_flat()                                                                       # flattened aggregated kinematics (one row per subject x phase x contact_group)
+        feature_col = f'{TRAJECTORY_FEATURE}_{AGG_STAT}'                                                               # build the actual column name from the parameter pair (e.g. max_extent_mm + mean -> max_extent_mm_mean)
+        if feature_col not in agg_flat.columns:                                                                         # defensive: if the user picked a feature/stat combo that doesn't exist, fail loudly with the closest matches
             raise KeyError(
                 f'{feature_col!r} not in AKDdf_agg_contact columns. '
                 f'Set TRAJECTORY_FEATURE / AGG_STAT to a valid combination. '
-                f'First few available: {[c for c in agg_flat.columns if c.endswith("_" + AGG_STAT)][:10]}'
+                f'First few available: {[c for c in agg_flat.columns if c.endswith("_" + AGG_STAT)][:10]}'              # show 10 valid columns ending in the requested suffix as hints
             )
 
-        traj = agg_flat[
+        traj = agg_flat[                                                                                                # build the trajectory table: one row per (subject, phase) for plotting
             (agg_flat['contact_group'] == 'contacted')
             & (agg_flat['phase_group'].isin(PHASES))
-        ][['subject_id', 'phase_group', feature_col]].copy()
-        traj['phase_order'] = traj['phase_group'].apply(lambda p: PHASES.index(p) if p in PHASES else -1)
+        ][['subject_id', 'phase_group', feature_col]].copy()                                                            # keep only the columns we'll actually plot; .copy() prevents SettingWithCopyWarning when we mutate below
+        traj['phase_order'] = traj['phase_group'].apply(lambda p: PHASES.index(p) if p in PHASES else -1)               # numeric phase order for the x-axis (PHASES.index returns position in the list); the lambda runs once per row
 
         # Attach connectivity PC1 score and cluster to each row, drop subjects without connectivity
-        traj = traj.merge(conn_scores_df[['PC1']].reset_index(), on='subject_id', how='left')
-        traj = traj.merge(cluster_by_subject.to_frame().reset_index(), on='subject_id', how='left')
-        traj = traj.dropna(subset=['conn_cluster']).copy()
-        traj['conn_cluster'] = traj['conn_cluster'].astype(int)
-        print(traj.sort_values(['subject_id', 'phase_order']).head(20))
+        traj = traj.merge(conn_scores_df[['PC1']].reset_index(), on='subject_id', how='left')                           # left-join PC1 onto each (subject, phase) row; reset_index() pulls subject_id off the index into a column for the merge
+        traj = traj.merge(cluster_by_subject.to_frame().reset_index(), on='subject_id', how='left')                     # same join for the cluster ID Series
+        traj = traj.dropna(subset=['conn_cluster']).copy()                                                              # drop subjects with no connectivity / no cluster assignment (left-join produced NaN for them)
+        traj['conn_cluster'] = traj['conn_cluster'].astype(int)                                                         # cast back to int (merge may have left it as float because of the NaN that dropna just removed)
+        print(traj.sort_values(['subject_id', 'phase_order']).head(20))                                                 # preview: 20 rows sorted so each subject's phases appear together in order
     """),
     ("md", """
         ## 7. Continuous view: trajectories colored by connectivity PC1
@@ -1380,24 +1380,24 @@ TRAJECTORY_NB = [
         groups.
     """),
     ("code", """
-        fig, ax = plt.subplots(figsize=FIGSIZE_TRAJ)
-        pc1_vals = conn_scores_df['PC1']
-        vmin, vmax = pc1_vals.min(), pc1_vals.max()
-        cmap = get_cmap('viridis')
-        for subj, grp in traj.groupby('subject_id'):
-            grp = grp.sort_values('phase_order')
-            color = cmap((grp['PC1'].iloc[0] - vmin) / (vmax - vmin + 1e-9))
-            ax.plot(grp['phase_order'], grp[feature_col], '-o', color=color, label=subj, linewidth=2)
-            ax.annotate(subj, (grp['phase_order'].iloc[-1], grp[feature_col].iloc[-1]),
-                        fontsize=8, xytext=(4, 0), textcoords='offset points')
-        ax.set_xticks(range(len(PHASES)))
-        ax.set_xticklabels(PHASES, rotation=20, ha='right')
+        fig, ax = plt.subplots(figsize=FIGSIZE_TRAJ)                                               # one panel
+        pc1_vals = conn_scores_df['PC1']                                                            # connectivity PC1 per subject; used as the color axis
+        vmin, vmax = pc1_vals.min(), pc1_vals.max()                                                 # min/max for normalizing PC1 into a 0..1 colormap input
+        cmap = get_cmap('viridis')                                                                  # perceptually-uniform sequential colormap
+        for subj, grp in traj.groupby('subject_id'):                                                # one line per subject
+            grp = grp.sort_values('phase_order')                                                    # ensure x-axis is in phase order even if traj rows came in shuffled
+            color = cmap((grp['PC1'].iloc[0] - vmin) / (vmax - vmin + 1e-9))                        # normalize PC1 to [0,1] then look up color; +1e-9 prevents divide-by-zero if all PC1 values happen to be identical
+            ax.plot(grp['phase_order'], grp[feature_col], '-o', color=color, label=subj, linewidth=2) # line + markers, color per subject
+            ax.annotate(subj, (grp['phase_order'].iloc[-1], grp[feature_col].iloc[-1]),             # subject ID label at the rightmost point of each line
+                        fontsize=8, xytext=(4, 0), textcoords='offset points')                      # nudge label 4 pixels right to avoid overlap with the marker
+        ax.set_xticks(range(len(PHASES)))                                                           # tick at every phase position
+        ax.set_xticklabels(PHASES, rotation=20, ha='right')                                         # rotate so longer phase names don't collide
         ax.set_ylabel(feature_col)
         ax.set_xlabel('Phase')
         ax.set_title(f'Trajectory of {feature_col} colored by connectivity PC1')
-        sm = plt.cm.ScalarMappable(cmap=cmap,
+        sm = plt.cm.ScalarMappable(cmap=cmap,                                                       # ScalarMappable + colorbar pattern: matplotlib needs an explicit mappable to render a colorbar when colors come from a manually-constructed function
                                    norm=plt.Normalize(vmin=vmin, vmax=vmax))
-        plt.colorbar(sm, ax=ax, label='Connectivity PC1 score')
+        plt.colorbar(sm, ax=ax, label='Connectivity PC1 score')                                     # colorbar legend for the PC1 mapping
         plt.tight_layout()
         stamp_version(fig, label='07 continuous')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '07_trajectories_continuous.png', dpi=150, bbox_inches='tight')
@@ -1411,14 +1411,14 @@ TRAJECTORY_NB = [
     """),
     ("code", """
         fig, ax = plt.subplots(figsize=FIGSIZE_TRAJ)
-        palette = get_cmap('tab10')
-        already_labeled = set()
-        for cluster_id in sorted(traj['conn_cluster'].unique()):
-            grp = traj[traj['conn_cluster'] == cluster_id].sort_values(['subject_id', 'phase_order'])
-            color = palette((int(cluster_id) - 1) % 10)
-            cluster_name = names.get(int(cluster_id), f'cluster{cluster_id}')
-            for subj, sub in grp.groupby('subject_id'):
-                label = cluster_name if cluster_name not in already_labeled else None
+        palette = get_cmap('tab10')                                                                              # 10 distinct discrete colors; cluster IDs 1..K cycle through them
+        already_labeled = set()                                                                                  # track which cluster names have already been added to the legend so we don't repeat them
+        for cluster_id in sorted(traj['conn_cluster'].unique()):                                                 # iterate clusters in numeric order so legend ordering is deterministic
+            grp = traj[traj['conn_cluster'] == cluster_id].sort_values(['subject_id', 'phase_order'])             # this cluster's subjects, sorted so each subject's phases are consecutive
+            color = palette((int(cluster_id) - 1) % 10)                                                          # cluster_id - 1 because tab10 indexes 0..9; modulo 10 wraps if clusters exceed 10
+            cluster_name = names.get(int(cluster_id), f'cluster{cluster_id}')                                    # use the named version if present, else fall back to a numeric placeholder
+            for subj, sub in grp.groupby('subject_id'):                                                          # one trajectory per subject within the cluster
+                label = cluster_name if cluster_name not in already_labeled else None                            # only the first subject in each cluster contributes a legend entry; subsequent subjects pass label=None to suppress duplicates
                 ax.plot(sub['phase_order'], sub[feature_col], '-o', color=color, alpha=0.85,
                         label=label, linewidth=2)
                 already_labeled.add(cluster_name)
@@ -1427,7 +1427,7 @@ TRAJECTORY_NB = [
         ax.set_ylabel(feature_col)
         ax.set_xlabel('Phase')
         ax.set_title(f'Trajectory of {feature_col} by connectivity cluster (k={N_CLUSTERS})')
-        ax.legend(loc='best', fontsize=7)
+        ax.legend(loc='best', fontsize=7)                                                                        # 'best' lets matplotlib pick the least-overlapping legend location
         plt.tight_layout()
         stamp_version(fig, label='07 grouped')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '07_trajectories_by_cluster.png', dpi=150, bbox_inches='tight')
@@ -1452,39 +1452,39 @@ TRAJECTORY_NB = [
         different kinematic trajectories?".
     """),
     ("code", """
-        import warnings
-        if RUN_INTERACTION_LMM and traj['conn_cluster'].nunique() > 1:
-            from statsmodels.formula.api import mixedlm
+        import warnings                                                                                       # suppress convergence warnings inside the fit; we check converged status from the result
+        if RUN_INTERACTION_LMM and traj['conn_cluster'].nunique() > 1:                                          # only run if user opted in AND we have at least 2 clusters (interaction is meaningless with 1)
+            from statsmodels.formula.api import mixedlm                                                         # local import keeps cell standalone
 
-            reach_level = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()
-            reach_level['phase_group'] = pd.Categorical(
+            reach_level = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()                         # one row per contacted reach -- LMM works at the reach level for proper variance partitioning
+            reach_level['phase_group'] = pd.Categorical(                                                        # ordered Categorical so contrasts read as "later phase vs Baseline"
                 reach_level['phase_group'], categories=PHASES, ordered=True
             )
             # Attach connectivity cluster ID by subject_id
-            reach_level = reach_level.merge(cluster_by_subject.to_frame().reset_index(),
+            reach_level = reach_level.merge(cluster_by_subject.to_frame().reset_index(),                        # left-join cluster ID onto each reach
                                             on='subject_id', how='left')
             # Drop subjects without a cluster assignment (no connectivity data)
-            subset = reach_level.dropna(subset=['conn_cluster', TRAJECTORY_FEATURE])
-            subset['conn_cluster'] = subset['conn_cluster'].astype(int).astype(str)
-            if subset['subject_id'].nunique() >= 2 and subset['conn_cluster'].nunique() >= 2:
+            subset = reach_level.dropna(subset=['conn_cluster', TRAJECTORY_FEATURE])                            # require both cluster assignment and the target kinematic feature
+            subset['conn_cluster'] = subset['conn_cluster'].astype(int).astype(str)                             # statsmodels' C() works best with string-typed categories; this avoids float-cluster-id issues
+            if subset['subject_id'].nunique() >= 2 and subset['conn_cluster'].nunique() >= 2:                    # need at least 2 of each for the model to identify the interaction
                 try:
                     with warnings.catch_warnings():
                         warnings.simplefilter('ignore')
-                        model = mixedlm(
-                            formula=f"Q('{TRAJECTORY_FEATURE}') ~ C(phase_group) * C(conn_cluster)",
+                        model = mixedlm(                                                                         # MixedLM: linear mixed-effects model = OLS + random effects
+                            formula=f"Q('{TRAJECTORY_FEATURE}') ~ C(phase_group) * C(conn_cluster)",            # Q() escapes feature name in case of special chars; * = main effects + interaction
                             data=subset,
-                            groups='subject_id',
-                            vc_formula={'session': '0 + C(session_date)'},
+                            groups='subject_id',                                                                 # random intercept per subject
+                            vc_formula={'session': '0 + C(session_date)'},                                       # nested random intercept for session_within_subject; '0 +' suppresses the auto intercept
                         )
-                        result = model.fit(reml=True, method='lbfgs', disp=False)
-                    wald = result.wald_test_terms().table
+                        result = model.fit(reml=True, method='lbfgs', disp=False)                                # REML for unbiased variance estimates; lbfgs is a fast quasi-Newton optimizer
+                    wald = result.wald_test_terms().table                                                        # joint Wald test of each fixed-effect term
                     print(wald)
                     print('\\nInteraction p-value for phase x conn_cluster:')
-                    interaction_rows = [i for i in wald.index if 'phase_group' in i and 'conn_cluster' in i]
+                    interaction_rows = [i for i in wald.index if 'phase_group' in i and 'conn_cluster' in i]    # filter the Wald table to just the interaction row(s)
                     for i in interaction_rows:
-                        print(f'  {i}: {wald.loc[i, "P>chi2"]:.4f}')
+                        print(f'  {i}: {wald.loc[i, "P>chi2"]:.4f}')                                            # P>chi2 = chi-square Wald p-value
                 except Exception as e:
-                    print(f'Interaction LMM failed to fit (expected at very small N): {e}')
+                    print(f'Interaction LMM failed to fit (expected at very small N): {e}')                     # singular covariance matrices etc. show up here at small N
             else:
                 print('Too few subjects or clusters to fit the interaction LMM.')
         else:
