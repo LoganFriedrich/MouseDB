@@ -48,19 +48,20 @@ INTERPRETATIONS = {
 fine. Any `[FAIL]` line means the analysis won't run; the detail column
 gives the fix (usually a `pip install ...` command).
 
-**Data load shapes** (printed after `load_all`): expected at current N=4
-matched subjects:
+**Data load shapes** (printed after `load_all`): the notebook prints the
+actual row/column counts of every dataframe and the contents of
+`matched_subjects`. Verify each is nonzero and that `matched_subjects`
+contains the expected number of mice for the current cohort.
 
-- `AKDdf`: ~120K rows (every contacted/uncontacted reach in the analyzable phases)
-- `FCDGdf_wide`: 4 rows x 80 columns (matched subjects x eLife groups, both/left/right)
-- `AKDdf_agg_contact`: ~340 rows (subject x phase x contact_group aggregations)
-- `matched_subjects`: 4 IDs (CNT_01_02, CNT_02_08, CNT_03_07, CNT_03_08)
+- `AKDdf`: every contacted/uncontacted reach in the analyzable phases.
+- `FCDGdf_wide`: matched subjects x eLife groups (both/left/right hemispheres).
+- `AKDdf_agg_contact`: subject x phase x contact_group aggregated kinematics.
+- `matched_subjects`: mouse IDs for which both kinematic and connectomic data exist.
 
-If shapes are very different (e.g., AKDdf is empty, matched_subjects is 0),
-something upstream is wrong: phase columns weren't backfilled, the wrong
-DB is configured, or the imaging-parameter filter excluded everything.
-Re-check `connectome.db` is the right file and that recent backfills
-were applied.
+If any dataframe is empty or `matched_subjects` is 0, something upstream
+is wrong: phase columns weren't backfilled, the wrong DB is configured,
+or the imaging-parameter filter excluded everything. Re-check
+`connectome.db` is the right file and that recent backfills were applied.
 """,
     ),
 
@@ -93,7 +94,7 @@ to the LEFT of the line, the prior ordering aligns with what's varying
 most in the data; if they're spread evenly or favor the RIGHT, the
 literature-derived prior may be missing something the data sees.
 
-At N=4 every PC loading is noisy. Treat the top-10 region list as
+At small N every PC loading is noisy. Treat the top-10 region list as
 suggestive, not definitive. Re-run as N grows.
 """,
     ),
@@ -129,7 +130,7 @@ highest mean absolute loading. These feed into the PLS Y-block in
 notebook 04 -- they're the kinematic features the variance-mapping
 flagged as carrying signal.
 
-At N=4 each per-phase PCA has 4 subjects -- PC1 is reasonably stable but
+At small N each per-phase PCA has the matched-subject count as its row count -- PC1 is reasonably stable but
 higher PCs are noisy.
 """,
     ),
@@ -178,7 +179,7 @@ loadings (X), kinematic loadings (Y), subject cross-score scatter.
   axis. PLS found a connectivity pattern that tracks a kinematic
   pattern across the cohort.
 - Spread cloud, low r = no coherent axis was found.
-- At N=4, **every PLS will look highly correlated by construction**.
+- At small N, **every PLS will look highly correlated by construction**.
   PLSCanonical is given enough freedom (4 subjects x dozens of features
   per side) that it can always find a fit. Treat the cross-score r as
   descriptive ("here's what the data shows"), NOT inferential ("there's
@@ -219,10 +220,10 @@ Post_Rehab_Test). Each plots `-log10(FDR-adjusted p)` per feature.
   FDR; either the cohort is too small to find them or the effects are
   small relative to within-subject variability.
 
-**At N=4 expect very few features to clear FDR.** The LMM uses
+**At small N expect few features to clear FDR.** The LMM uses
 reach-level data (hundreds of reaches per subject) which gives within-
 subject precision, but the inferential N is still the 4 subjects.
-Anti-conservative chi-square Wald approximation at N=4 means raw
+The chi-square Wald approximation at small N means raw
 p-values are slightly too small; FDR correction partially compensates.
 
 **Per-analysis interpretation**:
@@ -325,7 +326,7 @@ subjects stay in the same kinematic cluster across phases?
 - Crossing flows = subjects change which other subjects they cluster
   with at different phases; kinematic structure reshuffles with
   injury/recovery.
-- At N=4 the alluvial degenerates to one subject per cluster per
+- At small N the alluvial degenerates to one subject per cluster per
   phase; the visualization is a smoke test, not informative until
   N grows.
 
@@ -335,10 +336,10 @@ subjects stay in the same kinematic cluster across phases?
   continuous view) following similar trajectories across phases =
   connectivity predicts kinematic trajectory shape.
 - Similar-color subjects diverging across phases = no predictive
-  relationship at this N.
+  relationship at small N.
 
 **Interaction LMM table**: tests whether trajectory shape differs by
-cluster. At N=4 with each cluster having ~1 subject the interaction is
+cluster. At small N with each cluster having ~1 subject the interaction is
 vacuous; at higher N this becomes the primary inferential test for
 "do connectivity clusters follow different recovery trajectories?".
 """,
@@ -383,7 +384,7 @@ height shows variance explained by the top 3 within-group PCs.
   model. Small (<0.05) = the added connectivity regions explain
   variance the prior model couldn't. Large = the simpler model was
   sufficient.
-- At N=4 with reach-level data the LMM has plenty of within-subject
+- At small N with reach-level data the LMM has plenty of within-subject
   data points but only 4 inferential units; LRT is anti-conservative.
   Synthetic mode (USE_SYNTHETIC=True) is the right test bench.
 

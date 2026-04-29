@@ -22,7 +22,7 @@ reach (residual variance)
 - **Session variance** captures the fact that reaches from one session
   are correlated: same motivation, same rig calibration, same pellet
   batch. Ignoring it inflates effective N.
-- **Subject variance** is the true experimental unit. With N=4 subjects
+- **Subject variance** is the true experimental unit. With few subjects
   it's noisy but still estimable.
 
 ---
@@ -75,7 +75,7 @@ Two narrower analyses run with the same helper:
 
 statsmodels uses a chi-square Wald approximation for the omnibus test
 rather than Satterthwaite or Kenward-Roger degrees-of-freedom correction.
-At N=4 subjects this is mildly anti-conservative (p-values slightly too
+At small N subjects this is mildly anti-conservative (p-values slightly too
 small). For a rigorous small-sample test, pymer4 (R's lme4 wrapper via
 Python) provides Kenward-Roger df. That's a future enhancement; worth a
 methods-section footnote when writing up.

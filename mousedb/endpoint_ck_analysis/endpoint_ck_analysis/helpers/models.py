@@ -14,7 +14,7 @@ sessions (same motivation, rig calibration, pellet batch) -- ignoring that
 would inflate effective N.
 
 Small-sample caveat: statsmodels uses a chi-square Wald approximation for
-the omnibus test, not Satterthwaite or Kenward-Roger. At N=4 this is mildly
+the omnibus test, not Satterthwaite or Kenward-Roger. At small N this is mildly
 anti-conservative. For a rigorous small-sample test, pymer4 (R's lme4
 wrapper) would give Kenward-Roger df -- worth noting in the paper.
 

@@ -30,7 +30,7 @@ the code that builds these.
 | `ACDUdf` | ~1.5K rows | **A**ll **C**onnectomics **D**ata **U**ngrouped: per-subject per-atomic-region cell counts, brains filtered to the target imaging parameter string (`IMAGING_PARAMS_MATCH` in config). |
 | `ACDGdf` | ~300 rows | **A**ll **C**onnectomics **D**ata **G**rouped: same but at eLife group resolution. |
 | `FCDUdf` / `FCDGdf` | same as A* but | **F**iltered Connectomics variants: `ACDUdf` / `ACDGdf` restricted to matched subjects only. |
-| `matched_subjects` | tuple of IDs | The subjects that appear in BOTH kinematics and connectomics. Currently 4: CNT_01_02, CNT_02_08, CNT_03_07, CNT_03_08. |
+| `matched_subjects` | tuple of IDs | The subjects that appear in BOTH kinematics and connectomics. Inspect `matched_subjects` for the current set. |
 
 ---
 

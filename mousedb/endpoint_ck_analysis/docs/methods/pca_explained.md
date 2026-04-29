@@ -26,7 +26,7 @@ In this tool we use PCA in two places:
   small loadings mean that variable doesn't participate in that axis of
   variation.
 - **Scores**: where each subject lands along each PC. Not plotted
-  directly in this tool because N=4 makes the scatterplot uninformative.
+  directly in this tool because small N makes the scatterplot uninformative.
 
 ---
 

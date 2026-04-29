@@ -161,8 +161,8 @@ CONNECTIVITY_PCA_NB = [
         **Input**: ``data.FCDGdf_wide`` -- connectomics filtered to matched subjects,
         eLife-grouped, wide format.
 
-        **Caveat**: N=4 matched subjects right now. PCA results are shown to
-        validate the pipeline end-to-end; interpretation at this N is
+        **Caveat**: N=few matched subjects. PCA results are shown to
+        validate the pipeline end-to-end; interpretation at small N is
         suggestive, not statistical. Re-run as N grows.
 
         Figures written to ``example_output/``:
@@ -382,7 +382,7 @@ KINEMATIC_PCA_NB = [
         **Input**: ``data.AKDdf_agg_contact`` (aggregated kinematics by
         contact_group), flattened.
 
-        **Caveat**: at N=4 each per-phase PCA has 4 subjects x many features --
+        **Caveat**: at small N each per-phase PCA has the matched-subject count as its row count x many features --
         PC1 is well-estimated, higher PCs are noisy.
     """),
     ("code", """
@@ -786,7 +786,7 @@ LMM_NB = [
         - Recovery (Post_Injury_2-4 -> Post_Rehab_Test)
 
         **Small-sample caveat**: statsmodels uses a chi-square Wald
-        approximation, not Satterthwaite/Kenward-Roger. At N=4 subjects this
+        approximation, not Satterthwaite/Kenward-Roger. At small N subjects this
         is mildly anti-conservative. Results here are suggestive of direction
         and structure; revisit when N grows.
     """),
@@ -1069,9 +1069,9 @@ TRAJECTORY_NB = [
         8. Ascending-connectivity placeholder: where the second-pass
            analysis plugs in when ascending tracing data arrives.
 
-        **Synthetic-cohort mode**. Real N is currently 4, too small for
-        any of the clustering or interaction statistics to mean
-        anything. Set ``USE_SYNTHETIC = True`` in the parameters cell to
+        **Synthetic-cohort mode**. When the real cohort is small the
+        clustering or interaction statistics can be uninformative on
+        their own. Set ``USE_SYNTHETIC = True`` in the parameters cell to
         swap in a cloned-and-perturbed synthetic cohort so the pipeline
         can be validated at realistic N. Synthetic runs produce output
         that exercises every code path but is explicitly NOT real data;
@@ -1191,7 +1191,7 @@ TRAJECTORY_NB = [
         - ``consensus`` -- bootstrap-resampled k-means with modal vote,
           more stable at higher N.
 
-        At real N=4 with N_CLUSTERS=4 each subject gets its own cluster;
+        At N_CLUSTERS equal to the matched-subject count each subject gets its own cluster;
         honest outcome. Under synthetic mode with the default noise scale,
         every method recovers the ground-truth prototype assignment at
         100% (verified during development).
@@ -1374,7 +1374,7 @@ TRAJECTORY_NB = [
 
         One line per subject, x = phase (ordered), y = chosen feature.
         Line color is a continuous mapping of that subject's connectivity
-        PC1 score. No grouping imposed. At N=4 this is the most honest view
+        PC1 score. No grouping imposed. At small N this is the most honest view
         -- it shows whether the connectivity gradient corresponds to any
         visible trajectory structure without pretending there are discrete
         groups.
@@ -1444,7 +1444,7 @@ TRAJECTORY_NB = [
         with random intercept for subject_id and nested session-within-
         subject.
 
-        At N=4 with 4 clusters this is statistically vacuous -- the
+        When the cluster count equals the subject count this is statistically vacuous -- the
         interaction is a reparameterization rather than a tested effect.
         Set ``RUN_INTERACTION_LMM = False`` to skip. When N grows and
         clusters contain multiple subjects this becomes the primary
@@ -1681,7 +1681,7 @@ HYPOTHESIS_NB = [
         priority. Compare via AIC / BIC / LRT. A small ``p_vs_prior``
         means the step added predictive power beyond the previous model.
 
-        At N=4 the LMMs are underdetermined whenever there are more
+        At small N the LMMs are underdetermined whenever there are more
         covariates than subjects; synthetic mode (N=30) is the right
         test bench for this section.
     """),

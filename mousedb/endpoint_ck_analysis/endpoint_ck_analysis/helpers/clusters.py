@@ -13,7 +13,7 @@ Functions:
     alluvial_source_records    -- flatten subject x cluster x phase assignments
                                   for plotly Sankey input
 
-Everything below works at any N; at N=4 the output is trivial but
+Everything below works at any N; at small N the output is trivial but
 correctly-structured (no crashes, no silent shape drift).
 """
 from __future__ import annotations
@@ -319,7 +319,7 @@ def alluvial_source_records(
     indexed by subject_id. Output is a DataFrame with columns ``source``,
     ``target``, ``value`` suitable for plotly.graph_objects.Sankey.
 
-    At N=4 with the default 4 one-subject clusters, every column has 4
+    At small N with the default 4 one-subject clusters, every column has 4
     distinct labels and the Sankey is a trivial left-to-right routing.
     At larger N and fewer clusters the flow shows migration patterns.
     """

@@ -43,13 +43,13 @@ For every latent variable (LV), `plot_pls` produces three panels:
 
 ## Caveats at small N
 
-- **PLS can find signal even when there is none**. At N=4 and dozens of
+- **PLS can find signal even when there is none**. At small N and dozens of
   features per side, the optimization has too much freedom. The
   cross-score scatter will look structured even for random data. Treat
   any single result as exploratory until replicated.
 - **Cross-validation is uninformative**. The usual Q^2 / leave-one-out
   metric requires enough subjects that leaving one out is informative;
-  at N=4 each fold is one subject and the variance estimates are wild.
+  with very few subjects each fold is essentially one subject and the variance estimates are wild.
 - **Sparse PLS / stability selection**. At higher N the right follow-up
   is sPLS (L1-penalized PLS) with cross-validated sparsity and
   resampling-based feature selection. Out of scope for this release.

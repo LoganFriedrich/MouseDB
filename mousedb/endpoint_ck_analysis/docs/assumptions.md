@@ -9,8 +9,7 @@ these.
 
 ## Sample size at time of release
 
-N = 4 subjects with BOTH kinematics and connectomics data:
-CNT_01_02, CNT_02_08, CNT_03_07, CNT_03_08.
+N = Subjects with BOTH kinematics and connectomics are listed in `matched_subjects`.
 
 Every statistical conclusion is pre-registered as exploratory at this
 sample size. Effect sizes reported, confidence intervals printed, but
@@ -42,7 +41,7 @@ variance, which we support by [future: controls / dose response]".
 
 ---
 
-## PCA results at N=4
+## PCA results at small N
 
 - **Loadings are noisy**. Removing or adding a single subject can
   substantially re-order which regions dominate a PC. Treat "top 10
@@ -58,13 +57,13 @@ variance, which we support by [future: controls / dose response]".
 
 ---
 
-## PLS at N=4
+## PLS at small N
 
-- **Canonical correlation is always high at N=4**. PLSCanonical on small
+- **Canonical correlation is always high at small N**. PLSCanonical on small
   N finds latent variables that make the cross-score scatter look
   structured, regardless of whether there is real signal. The r and p
   labels on those panels are descriptive, not inferential.
-- **Cross-validation is unreliable**. Standard Q^2 / leave-one-out at N=4
+- **Cross-validation is unreliable**. Standard Q^2 / leave-one-out at small N
   means each fold is a single subject and the estimates are wild.
 - **Sparse PLS not run**. At higher N the right tool is sparse PLS (L1
   penalty, cross-validated sparsity) with stability selection. Deferred
@@ -97,7 +96,7 @@ notes on "two-stage pipeline hazards" in the team discussion history.
 
 - **Wald chi-square df**. statsmodels uses a chi-square approximation for
   the omnibus phase test rather than Satterthwaite or Kenward-Roger
-  df-correction. At N=4 subjects this is mildly anti-conservative
+  df-correction. At small N subjects this is mildly anti-conservative
   (p-values slightly too small).
 - **Singular random-effect covariances**. Some features produce
   singular subject-level variance estimates. Those features are flagged
@@ -143,7 +142,7 @@ subset and that E/F tray outcomes require manual scoring.
 ## Synthetic-cohort mode (notebook 07)
 
 Notebook 07 supports a ``USE_SYNTHETIC = True`` mode that clones the real
-N=4 subjects into a larger synthetic cohort (default N=30) with
+small-N subjects into a larger synthetic cohort (default N=30) with
 perturbation, so the clustering / permutation / interaction-LMM machinery
 can be exercised at realistic N while real data is small. Caveats:
 
