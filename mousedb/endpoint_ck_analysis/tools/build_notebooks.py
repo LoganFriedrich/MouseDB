@@ -393,19 +393,19 @@ KINEMATIC_PCA_NB = [
         FIGSIZE_HEATMAP = (24, 10)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import seaborn as sns
+        import numpy as np                                                       # numerical arrays
+        import pandas as pd                                                      # dataframe library
+        import matplotlib.pyplot as plt                                          # plot interface
+        import seaborn as sns                                                    # statistical plotting (heatmaps here)
 
-        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.dimreduce import run_pca_for_phase, align_signs_to_reference
-        from endpoint_ck_analysis.helpers.plotting import plot_pca_for_phase, stamp_version
+        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR    # cache_dir for parquet writes; example_output_dir for saved PNGs
+        from endpoint_ck_analysis.data_loader import load_all                    # one-shot data loader
+        from endpoint_ck_analysis.helpers.dimreduce import run_pca_for_phase, align_signs_to_reference # per-phase PCA helper + cross-phase sign alignment
+        from endpoint_ck_analysis.helpers.plotting import plot_pca_for_phase, stamp_version            # per-phase scree+loadings plot helper + figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all()
-        agg_flat = data.AKDdf_agg_contact_flat()
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                    # ensure output folder exists
+        data = load_all()                                                        # load (uses cache from 00_setup)
+        agg_flat = data.AKDdf_agg_contact_flat()                                 # flatten the multi-index AKDdf_agg_contact so we can filter on phase_group + contact_group as regular columns
     """),
     ("md", """
         ## 1. Fit PCA per phase
@@ -414,9 +414,9 @@ KINEMATIC_PCA_NB = [
         runs PCA, and returns the fit plus its scores / loadings.
     """),
     ("code", """
-        pcas = {phase: run_pca_for_phase(agg_flat, phase, n_components=N_COMPONENTS) for phase in PHASES}
-        for phase, (pca, _, eigen, _, _) in pcas.items():
-            print(f'{phase}: variance explained = {pca.explained_variance_ratio_.round(3)}')
+        pcas = {phase: run_pca_for_phase(agg_flat, phase, n_components=N_COMPONENTS) for phase in PHASES} # dict-comprehension: one PCA fit per phase, key = phase name, value = the helper's tuple return
+        for phase, (pca, _, eigen, _, _) in pcas.items():                                                  # iterate over each phase's result; the underscores discard the scores/loadings/X we don't need for this print
+            print(f'{phase}: variance explained = {pca.explained_variance_ratio_.round(3)}')               # .round(3) limits to 3 decimal places for readability
     """),
     ("md", """
         ## 2. Per-phase scree + loading figures
@@ -425,8 +425,8 @@ KINEMATIC_PCA_NB = [
         per phase. Saves PNGs for the gallery.
     """),
     ("code", """
-        for phase, (pca, _, eigen, loadings, _) in pcas.items():
-            plot_pca_for_phase(pca, eigen, loadings, phase)
+        for phase, (pca, _, eigen, loadings, _) in pcas.items():     # iterate phase by phase
+            plot_pca_for_phase(pca, eigen, loadings, phase)          # helper renders scree + loading bars; uses plt.show() so each phase appears as its own pair of inline figures
     """),
     ("md", """
         ## 3. Align PC signs across phases
@@ -436,12 +436,12 @@ KINEMATIC_PCA_NB = [
         "positive PC1 loading" means the same thing across phases.
     """),
     ("code", """
-        loadings_baseline = pcas['Baseline'][3]
-        loadings_by_phase = {'Baseline': loadings_baseline}
-        for phase in PHASES[1:]:
-            loadings_by_phase[phase] = align_signs_to_reference(pcas[phase][3], loadings_baseline)
+        loadings_baseline = pcas['Baseline'][3]                                                # index 3 = the loadings DataFrame in the helper's tuple (pca, scores, eigen, loadings, X)
+        loadings_by_phase = {'Baseline': loadings_baseline}                                    # baseline serves as the sign reference; other phases get aligned to it
+        for phase in PHASES[1:]:                                                                # PHASES[1:] = every phase except Baseline
+            loadings_by_phase[phase] = align_signs_to_reference(pcas[phase][3], loadings_baseline) # flip a non-baseline phase's PC sign if it correlates negatively with baseline's same-numbered PC
 
-        loadings_concat = pd.concat(loadings_by_phase, axis=0)
+        loadings_concat = pd.concat(loadings_by_phase, axis=0)                                  # stack all phases vertically; result has a 2-level index (phase, PC) so we can pivot per-PC heatmaps later
     """),
     ("md", """
         ## 4. Heatmap: per-PC loadings across phases
@@ -450,13 +450,13 @@ KINEMATIC_PCA_NB = [
         Red = positive loading, blue = negative.
     """),
     ("code", """
-        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_HEATMAP)
-        for i, pc in enumerate([f'PC{k+1}' for k in range(N_COMPONENTS)]):
-            pc_loadings = loadings_concat.xs(pc, level=1).T
-            sns.heatmap(pc_loadings, cmap='RdBu_r', center=0, ax=axes[i],
-                        cbar_kws={'label': 'Loading'})
-            axes[i].set_title(f'{pc} loadings across phases')
-        plt.tight_layout()
+        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_HEATMAP)         # one row of subplots, one per PC
+        for i, pc in enumerate([f'PC{k+1}' for k in range(N_COMPONENTS)]):          # iterate PC1, PC2, ... PC{N_COMPONENTS}
+            pc_loadings = loadings_concat.xs(pc, level=1).T                         # .xs cross-section: pull just this PC across all phases; .T transposes so features become rows and phases become columns
+            sns.heatmap(pc_loadings, cmap='RdBu_r', center=0, ax=axes[i],           # red-blue colormap centered at 0 so positive vs negative loadings are visually distinct
+                        cbar_kws={'label': 'Loading'})                              # colorbar legend label
+            axes[i].set_title(f'{pc} loadings across phases')                       # subplot title
+        plt.tight_layout()                                                          # auto-adjust subplot spacing so titles/axes don't overlap
         stamp_version(fig, label='02 loadings by phase')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '02_loadings_by_phase.png', dpi=150, bbox_inches='tight')
         plt.show()
@@ -470,21 +470,21 @@ KINEMATIC_PCA_NB = [
         the PLS notebook.
     """),
     ("code", """
-        important_features = {}
-        for pc in [f'PC{k+1}' for k in range(N_COMPONENTS)]:
-            pc_loadings = loadings_concat.xs(pc, level=1).T
-            mean_abs = pc_loadings.abs().mean(axis=1)
-            top = mean_abs.nlargest(TOP_N_FEATURES)
+        important_features = {}                                                  # PC name -> Series of top features by mean |loading|
+        for pc in [f'PC{k+1}' for k in range(N_COMPONENTS)]:                     # iterate over PC1, PC2, ... PC{N_COMPONENTS}
+            pc_loadings = loadings_concat.xs(pc, level=1).T                       # features x phases for this PC (same pivot as the heatmap above)
+            mean_abs = pc_loadings.abs().mean(axis=1)                             # collapse phases: each feature gets a single mean-absolute-loading score across phases
+            top = mean_abs.nlargest(TOP_N_FEATURES)                               # keep only the TOP_N_FEATURES strongest contributors for this PC
             important_features[pc] = top
             print(f'\\nTop {TOP_N_FEATURES} features on {pc} by mean |loading|:')
             print(top)
 
-        all_important = set()
+        all_important = set()                                                    # union of important features across PCs
         for pc, series in important_features.items():
             all_important.update(series.index)
         print(f'\\n{len(all_important)} unique important features total')
 
-        pd.Series(sorted(all_important), name='feature').to_frame().to_parquet(
+        pd.Series(sorted(all_important), name='feature').to_frame().to_parquet(  # write the union to parquet for notebook 04 to consume; sorted for deterministic file content
             CACHE_DIR / 'important_features.parquet', index=False
         )
     """),
@@ -492,10 +492,10 @@ KINEMATIC_PCA_NB = [
         ## 6. Heatmap filtered to important features
     """),
     ("code", """
-        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_HEATMAP)
+        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_HEATMAP)         # one subplot per PC, same layout as the all-features heatmap
         for i, pc in enumerate([f'PC{k+1}' for k in range(N_COMPONENTS)]):
-            pc_loadings = loadings_concat.xs(pc, level=1).T
-            pc_top = pc_loadings.loc[pc_loadings.index.isin(all_important)]
+            pc_loadings = loadings_concat.xs(pc, level=1).T                         # features x phases for this PC
+            pc_top = pc_loadings.loc[pc_loadings.index.isin(all_important)]         # filter rows to only the important-feature set computed in the previous cell
             sns.heatmap(pc_top, cmap='RdBu_r', center=0, ax=axes[i],
                         cbar_kws={'label': 'Loading'})
             axes[i].set_title(f'{pc} loadings (important features)')
@@ -535,21 +535,21 @@ CLUSTERING_NB = [
         FIGSIZE_2D = (12, 10)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import plotly.express as px
-        from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
-        from scipy.spatial.distance import pdist
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.decomposition import PCA
+        import numpy as np                                                       # numerical arrays
+        import pandas as pd                                                      # dataframes
+        import matplotlib.pyplot as plt                                          # 2D plotting
+        import plotly.express as px                                              # interactive plots; used here for the 3D scatter at the end
+        from scipy.cluster.hierarchy import linkage, dendrogram, fcluster        # hierarchical clustering: linkage builds the merge tree, dendrogram draws it, fcluster cuts it into a target cluster count
+        from scipy.spatial.distance import pdist                                 # condensed pairwise-distance vector that linkage() expects
+        from sklearn.preprocessing import StandardScaler                         # z-scorer
+        from sklearn.decomposition import PCA                                    # principal components
 
-        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR, METADATA_COLS
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR, METADATA_COLS # PNG output dir + the set of column names that are NOT kinematic features (used to subtract metadata from numeric columns)
+        from endpoint_ck_analysis.data_loader import load_all                     # one-shot data loader
+        from endpoint_ck_analysis.helpers.plotting import stamp_version           # figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all()
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                    # ensure output folder exists
+        data = load_all()                                                        # uses cache from 00_setup
     """),
     ("md", """
         ## 1. Build the feature matrix
@@ -558,29 +558,29 @@ CLUSTERING_NB = [
         unit duplicates) is retained so the dendrogram can reveal redundancy.
     """),
     ("code", """
-        contacted = data.AKDdf[data.AKDdf['contact_group'] == 'contacted']
-        kine_cols = [c for c in contacted.select_dtypes(include='number').columns if c not in METADATA_COLS]
-        feature_matrix = contacted[kine_cols].fillna(0)  # rows = reaches, columns = features
+        contacted = data.AKDdf[data.AKDdf['contact_group'] == 'contacted']                                # boolean filter: keep only reaches where the mouse touched the pellet (uncontacted reaches don't have meaningful kinematics)
+        kine_cols = [c for c in contacted.select_dtypes(include='number').columns if c not in METADATA_COLS] # list comprehension: pick numeric columns that are NOT in METADATA_COLS (METADATA_COLS lists ID/index columns we don't want to treat as features)
+        feature_matrix = contacted[kine_cols].fillna(0)  # rows = one reach each, columns = one kinematic feature each; fillna(0) replaces missing values so PCA/clustering doesn't error
 
         # Convert correlation to distance (highly correlated -> short distance).
         # |r| treats negative correlations as similarity (same info, flipped sign).
-        corr = feature_matrix.corr()
-        dist = 1 - corr.abs()
+        corr = feature_matrix.corr()                                                                       # pandas .corr() returns a square (features x features) Pearson correlation matrix
+        dist = 1 - corr.abs()                                                                              # absolute value because a feature correlated -1 with another carries the same information; flip the sign and they're identical
 
-        link = linkage(pdist(dist), method='ward')  # Ward minimizes within-cluster variance
+        link = linkage(pdist(dist), method='ward')  # pdist condenses the square dist matrix into the upper-triangle vector linkage() needs; Ward = a hierarchical clustering criterion that minimizes within-cluster variance at each merge
 
-        cluster_ids = fcluster(link, t=N_CLUSTERS, criterion='maxclust')
-        feature_clusters = pd.Series(cluster_ids, index=corr.columns, name='cluster')
+        cluster_ids = fcluster(link, t=N_CLUSTERS, criterion='maxclust')                                   # cut the merge tree into exactly N_CLUSTERS flat clusters; criterion='maxclust' tells fcluster that t is a target cluster count (not a distance threshold)
+        feature_clusters = pd.Series(cluster_ids, index=corr.columns, name='cluster')                      # wrap the integer label array as a Series indexed by feature name so we can join it with PC coordinates downstream
     """),
     ("md", """
         ## 2. Dendrogram
     """),
     ("code", """
-        fig, ax = plt.subplots(figsize=FIGSIZE_DENDRO)
-        dendrogram(link, labels=corr.columns.tolist(), leaf_rotation=90, ax=ax)
-        ax.set_ylabel('Clustering distance')
+        fig, ax = plt.subplots(figsize=FIGSIZE_DENDRO)                                                  # one figure, one axis; FIGSIZE_DENDRO is (16, 6) by default in the parameters cell
+        dendrogram(link, labels=corr.columns.tolist(), leaf_rotation=90, ax=ax)                          # draw the merge tree; leaf_rotation=90 prints feature names vertically so they don't overlap
+        ax.set_ylabel('Clustering distance')                                                             # height in the dendrogram = how dissimilar two clusters were at the moment they merged
         ax.set_title(f'Kinematic feature dendrogram (contacted reaches; cut at {N_CLUSTERS} clusters)')
-        plt.tight_layout()
+        plt.tight_layout()                                                                               # prevent label overlap
         stamp_version(fig, label='03 dendrogram')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '03_dendrogram.png', dpi=150, bbox_inches='tight')
         plt.show()
@@ -592,16 +592,16 @@ CLUSTERING_NB = [
         observations) so we can plot features in 2D/3D.
     """),
     ("code", """
-        X_scaled = StandardScaler().fit_transform(feature_matrix)
-        pca_feat = PCA(n_components=3)
-        pca_feat.fit(X_scaled)
+        X_scaled = StandardScaler().fit_transform(feature_matrix)                # z-score every column so PC distances are unit-agnostic
+        pca_feat = PCA(n_components=3)                                           # request 3 components -- enough to position features in 3D
+        pca_feat.fit(X_scaled)                                                   # fit only (no .transform here -- we want the components matrix, not subject scores)
 
-        loadings_xyz = pd.DataFrame(
-            pca_feat.components_.T,
-            index=feature_matrix.columns,
+        loadings_xyz = pd.DataFrame(                                             # build a feature-coordinate table from the components matrix
+            pca_feat.components_.T,                                              # .components_ is shape (n_components, n_features); .T flips so rows=features, cols=PCs
+            index=feature_matrix.columns,                                        # keep the feature names as row labels
             columns=['PC1', 'PC2', 'PC3'],
         )
-        loadings_xyz['cluster'] = feature_clusters
+        loadings_xyz['cluster'] = feature_clusters                               # attach each feature's cluster ID as a column for color coding below
     """),
     ("md", """
         ## 4. 2D view with one label per cluster
@@ -610,32 +610,32 @@ CLUSTERING_NB = [
         keep the plot legible.
     """),
     ("code", """
-        representatives = []
-        for cid, group in loadings_xyz.groupby('cluster'):
-            centroid = group[['PC1', 'PC2']].mean()
-            dists = ((group[['PC1', 'PC2']] - centroid) ** 2).sum(axis=1)
-            representatives.append(dists.idxmin())
+        representatives = []                                                                     # list of feature names, one per cluster, that we'll use as visible labels on the scatter
+        for cid, group in loadings_xyz.groupby('cluster'):                                       # iterate cluster by cluster; group is a DataFrame of features in this cluster
+            centroid = group[['PC1', 'PC2']].mean()                                              # 2D centroid of the cluster (mean PC1 and mean PC2)
+            dists = ((group[['PC1', 'PC2']] - centroid) ** 2).sum(axis=1)                        # squared Euclidean distance from each feature to the centroid (no sqrt needed since we just want the minimum)
+            representatives.append(dists.idxmin())                                               # idxmin returns the feature name with the smallest distance -> closest to the centroid
 
-        fig, ax = plt.subplots(figsize=FIGSIZE_2D)
-        scatter = ax.scatter(
-            loadings_xyz['PC1'], loadings_xyz['PC2'],
-            c=loadings_xyz['cluster'], cmap='tab10', alpha=0.8, s=60,
+        fig, ax = plt.subplots(figsize=FIGSIZE_2D)                                               # one figure, one axis
+        scatter = ax.scatter(                                                                    # 2D scatter
+            loadings_xyz['PC1'], loadings_xyz['PC2'],                                            # x, y coords
+            c=loadings_xyz['cluster'], cmap='tab10', alpha=0.8, s=60,                            # color by cluster ID using tab10 (10 distinct colors); s = marker size in points
         )
-        for feature in representatives:
+        for feature in representatives:                                                          # one annotation per cluster representative
             row = loadings_xyz.loc[feature]
-            ax.annotate(feature, (row['PC1'], row['PC2']), fontsize=9, fontweight='bold')
-        ax.axhline(0, color='gray', linewidth=0.5, linestyle='--')
-        ax.axvline(0, color='gray', linewidth=0.5, linestyle='--')
-        ax.set_xlabel(f"PC1 ({pca_feat.explained_variance_ratio_[0]:.1%} variance)")
+            ax.annotate(feature, (row['PC1'], row['PC2']), fontsize=9, fontweight='bold')        # label only the representatives so the plot stays readable
+        ax.axhline(0, color='gray', linewidth=0.5, linestyle='--')                               # reference line at PC2=0
+        ax.axvline(0, color='gray', linewidth=0.5, linestyle='--')                               # reference line at PC1=0
+        ax.set_xlabel(f"PC1 ({pca_feat.explained_variance_ratio_[0]:.1%} variance)")             # axis label includes variance fraction; .1% formats as percentage with 1 decimal
         ax.set_ylabel(f"PC2 ({pca_feat.explained_variance_ratio_[1]:.1%} variance)")
         ax.set_title(f'Kinematic features in PC1-PC2 space ({N_CLUSTERS} clusters)')
-        plt.colorbar(scatter, ax=ax, label='Cluster ID', ticks=range(1, N_CLUSTERS + 1))
+        plt.colorbar(scatter, ax=ax, label='Cluster ID', ticks=range(1, N_CLUSTERS + 1))         # colorbar for the cluster legend; ticks=1..K (skip 0 since cluster IDs start at 1)
         plt.tight_layout()
         stamp_version(fig, label='03 2D PCA')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '03_feature_clusters_2d.png', dpi=150, bbox_inches='tight')
         plt.show()
 
-        print(f'\\nCluster membership ({N_CLUSTERS} clusters):')
+        print(f'\\nCluster membership ({N_CLUSTERS} clusters):')                                 # print which features ended up in which cluster -- crucial for interpreting the plot
         for cid, group in loadings_xyz.groupby('cluster'):
             print(f'  Cluster {cid} ({len(group)} features): {sorted(group.index.tolist())}')
     """),
@@ -646,22 +646,22 @@ CLUSTERING_NB = [
         Not saved as a PNG because the interactivity is the point.
     """),
     ("code", """
-        fig3d = px.scatter_3d(
-            loadings_xyz.reset_index().rename(columns={'index': 'feature'}),
-            x='PC1', y='PC2', z='PC3',
-            hover_name='feature',
-            color=loadings_xyz['cluster'].astype(str).values,
-            color_discrete_sequence=px.colors.qualitative.T10,
+        fig3d = px.scatter_3d(                                                                # plotly's interactive 3D scatter (matplotlib's 3D doesn't get hover-labels)
+            loadings_xyz.reset_index().rename(columns={'index': 'feature'}),                  # reset_index() pulls the feature names off the index into a column; rename so plotly knows what to call it
+            x='PC1', y='PC2', z='PC3',                                                        # axis assignments
+            hover_name='feature',                                                             # what shows in the tooltip when you hover a dot
+            color=loadings_xyz['cluster'].astype(str).values,                                 # cast cluster IDs to strings so plotly treats them as discrete categories (not a continuous gradient)
+            color_discrete_sequence=px.colors.qualitative.T10,                                # plotly's "T10" qualitative palette = the same 10 colors as matplotlib's tab10, so 2D and 3D views are visually consistent
             title='Kinematic features in PC1-PC2-PC3 space (colored by cluster)',
-            labels={
+            labels={                                                                          # axis-label overrides: include variance fraction in each label
                 'PC1': f"PC1 ({pca_feat.explained_variance_ratio_[0]:.1%})",
                 'PC2': f"PC2 ({pca_feat.explained_variance_ratio_[1]:.1%})",
                 'PC3': f"PC3 ({pca_feat.explained_variance_ratio_[2]:.1%})",
-                'color': 'Cluster',
+                'color': 'Cluster',                                                           # legend title for the color dimension
             },
         )
-        fig3d.update_traces(marker=dict(size=5, opacity=0.85))
-        fig3d.show()
+        fig3d.update_traces(marker=dict(size=5, opacity=0.85))                                # tweak marker visuals after plot construction; size in pixels, opacity 0..1
+        fig3d.show()                                                                          # render inline; rotate the plot by drag, hover a dot for its label
     """),
 ]
 
