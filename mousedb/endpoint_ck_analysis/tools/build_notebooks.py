@@ -92,6 +92,13 @@ SETUP_NB = [
         doctor() # prints the [OK]/[FAIL]/[INFO] table; returns True when there are no blockers
     """),
     ("md", """
+        **What you just saw.** Every required check should show `[OK]`. Optional
+        items (like `jupyterlab` if you're using VS Code) may show `[INFO]` --
+        that's fine and expected. Any `[FAIL]` line blocks the analysis; the
+        detail column on that line tells you what to do (usually a single
+        `pip install ...` command). If everything is green, you can move on.
+    """),
+    ("md", """
         ## 2. Load all dataframes
 
         ``load_all`` reads ``connectome.db`` (location resolved by
@@ -120,6 +127,22 @@ SETUP_NB = [
 
         print()
         print(f'Matched subjects (both kinematics and connectomics): {list(data.matched_subjects)}') # the analyzable cohort: only subjects in this list participate in PLS or any cross-block analysis
+    """),
+    ("md", """
+        **What you just saw.** Every dataframe shape should be non-empty. The
+        first block is the base data (`AKDdf` is the all-mice kinematic
+        dataframe; `F*` versions are filtered to the matched cohort, `*Udf` are
+        ungrouped/atomic-region, `*Gdf` are eLife-grouped). The wide pivots
+        are subject x region_hemi matrices used by every connectomics analysis
+        downstream. The `Matched subjects` line is the most consequential:
+        only mice with both kinematics AND connectomics data appear there, and
+        every cross-block question in 04 / 07 is answered from that cohort.
+
+        If any shape is `(0, 0)` or the matched-subjects list is empty, the
+        upstream pipeline didn't produce what we expected -- usually means the
+        wrong DB is configured, recent backfills weren't applied, or the
+        imaging-parameter filter excluded everything. Check `connectome.db`
+        before continuing.
     """),
     ("md", """
         ## 3. Quick-look previews
@@ -251,6 +274,25 @@ CONNECTIVITY_PCA_NB = [
         plt.show()                                                                       # render in the notebook output cell
     """),
     ("md", """
+        **What this figure shows.** Variance explained per principal component
+        on the residual-connectivity matrix. Bar height = fraction of total
+        cohort variance captured by that PC.
+
+        **What different patterns mean.** A tall PC1 alone (>50% variance) =
+        one shared axis dominates how mice differ in residual connectivity.
+        Mice are roughly orderable along that axis. PC1 + PC2 together
+        capturing most variance = two-axis structure; the residual landscape
+        is mostly 2D. Variance spread evenly across many PCs = mice differ on
+        many independent dimensions; no single axis summarizes the cohort.
+
+        **What this means scientifically.** Residual connectivity here is the
+        joint product of innate variation and a uniform injury procedure
+        producing non-uniform outcomes. PC1 is NOT lesion severity; it's the
+        dominant direction along which what's-still-connected differs across
+        mice. Whatever shape this scree shows, the PCs above feed into the
+        PLS in 04 as the X-block axes for the kinematics question.
+    """),
+    ("md", """
         ## 3. Loadings: all regions, in canonical order
 
         Horizontal bars per PC. A region with a long bar (positive or negative)
@@ -276,6 +318,36 @@ CONNECTIVITY_PCA_NB = [
         plt.show()                                                                        # render inline in the notebook
     """),
     ("md", """
+        **What these figures show.** One subplot per PC. Each horizontal bar
+        is one region's loading -- how much that region contributes to
+        differentiating mice along that PC. Long bar = strong contribution;
+        short bar = weak. Sign is arbitrary on its own; what matters is
+        magnitude and relative ordering. Regions are stacked top-to-bottom in
+        prior-priority order (high-priority on top).
+
+        **Top loadings -- what they mean.** A region with a long bar on PC1 is
+        where residual connectivity varies most across this cohort. *Example:*
+        if `Corticospinal_both` has a long bar on PC1, mice retained very
+        different amounts of CST connectivity post-injury, and that region is
+        a useful axis for distinguishing one mouse from another.
+
+        **Low loadings -- what they mean.** A region with a near-zero bar
+        doesn't vary much across mice on that PC. *Example:* if
+        `Vestibular Nuclei_both` has a tiny PC1 bar, every mouse retained
+        similar vestibular connectivity -- this region can't distinguish
+        between mice along PC1. Not a defect; the variance just lives
+        elsewhere (a different PC, or genuinely small).
+
+        **Scientific reading.** If the long bars cluster in the top rows
+        (high-priority reaching regions per `SKILLED_REACHING`), residual
+        variation is concentrated where the literature says reaching is
+        controlled -- predictive coupling to kinematics has a fighting chance
+        in 04. If the long bars are concentrated in the bottom rows,
+        cohort-wide residual variation is in tracts the prior de-emphasizes;
+        either the prior misses something or the variance is in regions the
+        reaching circuit doesn't lean on.
+    """),
+    ("md", """
         ## 4. Identify the top-loading regions per PC
 
         For each component, pick the ``TOP_N_REGIONS`` regions by absolute
@@ -298,6 +370,20 @@ CONNECTIVITY_PCA_NB = [
         print(sorted(all_important_regions))                                    # alphabetical for stable display across runs
     """),
     ("md", """
+        **What you just saw.** Per-PC top region lists, then their union. The
+        union is what gets carried forward as the X-block for PLS in 04 --
+        only regions whose residual connectivity has appreciable variance on
+        SOME PC participate in coupling to kinematics. Regions that never make
+        the list contribute mostly noise from this cohort's perspective and
+        are dropped.
+
+        **Reading the per-PC lists.** A region appearing in PC1's top set
+        means it drives the dominant axis of variation. A region appearing
+        only in PC2 or PC3 contributes to a secondary axis -- still useful
+        but not dominant. A region appearing in all three suggests it varies
+        on multiple independent axes simultaneously.
+    """),
+    ("md", """
         ## 5. Loadings: important regions only (canonical order)
     """),
     ("code", """
@@ -317,6 +403,21 @@ CONNECTIVITY_PCA_NB = [
         plt.show()
     """),
     ("md", """
+        **What this figure shows.** Same loadings as the previous bar chart,
+        but restricted to only the regions that made any PC's top-N list.
+        Cleaner view of where the action is once we drop the regions that
+        contribute little variance.
+
+        **What to read into it.** The same shape as the all-regions plot, just
+        with the noise-floor regions filtered out. Sign and magnitude tell
+        you which regions drive each PC most strongly within the
+        already-filtered subset. If most of these surviving regions are
+        prior-priority (top of `SKILLED_REACHING`), the data and the
+        literature agree on what matters in this cohort. If they're
+        prior-low-priority, the data is pointing somewhere the prior didn't
+        anticipate -- worth flagging for the discussion.
+    """),
+    ("md", """
         ## 6. Loadings heatmap
     """),
     ("code", """
@@ -329,6 +430,23 @@ CONNECTIVITY_PCA_NB = [
         stamp_version(fig, label='01 loadings heatmap')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '01_loadings_heatmap.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** The same loadings as the bar chart, but
+        as a heatmap. Rows are regions (high-priority on top), columns are
+        PCs. Red = positive loading, blue = negative, intensity = magnitude.
+
+        **What to read into it.** Look at each region's row across columns.
+        A row that's strongly red on PC1 and pale on PC2/PC3 = this region
+        contributes to PC1 only. A row that's red on PC1 and blue on PC2 =
+        this region contributes to multiple axes (PC1 and PC2 separate mice
+        in different ways using this region's residual connectivity).
+
+        **Why this view helps.** The bar chart shows magnitude clearly; the
+        heatmap shows multi-PC patterns clearly. Regions with strong
+        signals across multiple PCs are doing the most work in the
+        decomposition, so they're the regions whose residual connectivity
+        most distinguishes mice in this cohort.
     """),
     ("md", """
         ## 7. Subject x region cell-count heatmap
@@ -352,6 +470,32 @@ CONNECTIVITY_PCA_NB = [
         stamp_version(fig, label='01 cell counts')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '01_connectivity_heatmap.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** The raw residual cell-count matrix. Each
+        row is one mouse, each column is one region in canonical
+        prior-priority order. Bright cells = mouse retained lots of cells
+        connected to that region; dark cells = few cells. The red dashed
+        vertical line is the priority cutoff (`SKILLED_REACHING.high_priority_cutoff`):
+        regions to the LEFT of the line are predicted-important for skilled
+        reaching; regions to the RIGHT are kept for contrast.
+
+        **What different patterns mean.** Bright cells clustered to the LEFT
+        of the line = mice retained substantial connectivity in regions the
+        literature flags for reaching, AND that connectivity varies across
+        mice -- the prior aligns with what's structurally present in this
+        cohort. Bright cells spread evenly across both sides, or
+        concentrated to the RIGHT, = the cohort's residual connectivity is
+        elsewhere. Either the literature is missing relevant tracts, or this
+        cohort happens to retain connectivity in regions less central to
+        reaching.
+
+        **Reading rows.** Rows that are very different from each other
+        (mostly bright vs mostly dark) reveal the mice that retained
+        dramatically different amounts of total descending connectivity --
+        these are likely the mice driving PC1. Rows that look similar means
+        those mice have similar overall residual profiles even if they
+        differ region-by-region.
     """),
     ("md", """
         ## 8. Export the important-regions list for the PLS notebook
@@ -421,6 +565,21 @@ KINEMATIC_PCA_NB = [
             print(f'{phase}: variance explained = {pca.explained_variance_ratio_.round(3)}')               # .round(3) limits to 3 decimal places for readability
     """),
     ("md", """
+        **What you just saw.** The per-phase variance-explained ratios. Each
+        line is one phase, with the variance share captured by PC1, PC2,
+        PC3 within that phase.
+
+        **What different patterns mean.** Similar ratios across all four
+        phases = the dimensionality of how mice differ in reaching is stable
+        across the experiment; the same number of "main directions" exists
+        before injury, post-injury, and post-ABT. Very different ratios =
+        the kinematic state space changes shape with phase. *Example:* if
+        Baseline shows PC1=0.6 / PC2=0.2 / PC3=0.1 but Post_Injury_2-4
+        shows PC1=0.3 / PC2=0.3 / PC3=0.2, injury produced a wider spectrum
+        of compensatory reaching styles, with each mouse exploring its own
+        independent strategy.
+    """),
+    ("md", """
         ## 2. Per-phase scree + loading figures
 
         ``plot_pca_for_phase`` emits one scree plot and a loading-bars figure
@@ -429,6 +588,33 @@ KINEMATIC_PCA_NB = [
     ("code", """
         for phase, (pca, _, eigen, loadings, _) in pcas.items():     # iterate phase by phase
             plot_pca_for_phase(pca, eigen, loadings, phase)          # helper renders scree + loading bars; uses plt.show() so each phase appears as its own pair of inline figures
+    """),
+    ("md", """
+        **What these figures show.** For each phase, two figures: a scree plot
+        (variance per PC) and a loading bars panel (which kinematic features
+        drive each PC at that phase).
+
+        **Top loadings -- what they mean.** A feature with a long bar on
+        PC1 at a given phase is one along which mice differ a lot at that
+        phase. *Example:* if `peak_velocity_mm_per_sec` loads strongly on
+        PC1 at Post_Injury_1 but weakly at Baseline, injured mice differ
+        greatly in how fast they reach (some retain near-baseline speed,
+        others are dramatically slowed) while baseline mice all reach at
+        similar speeds.
+
+        **Low loadings -- what they mean.** A feature with a near-zero bar
+        doesn't separate mice at that phase along that PC. The feature is
+        either uniformly performed across mice (all reaching alike) or its
+        variance lives on a higher PC the loop didn't display. Either way,
+        it can't distinguish individuals on the dominant axis at that phase.
+
+        **Cross-phase comparison.** Compare the four scree plots side by
+        side. If PC1's variance share is much smaller post-injury than at
+        baseline, injury fragmented the cohort into more independent
+        reaching styles. Compare the four loading bars: a feature that
+        loads big on every phase is doing similar work throughout the
+        experiment; a feature that swings between phases changes its role
+        depending on injury state.
     """),
     ("md", """
         ## 3. Align PC signs across phases
@@ -464,6 +650,35 @@ KINEMATIC_PCA_NB = [
         plt.show()
     """),
     ("md", """
+        **What this figure shows.** One subplot per PC, with a row per
+        kinematic feature and a column per phase. Red = positive loading,
+        blue = negative loading, intensity = magnitude. Signs are aligned to
+        Baseline so a "red cell at Baseline" and a "red cell at Post_Rehab"
+        on the same row mean the feature is contributing in the same
+        direction at both phases.
+
+        **What different patterns mean.**
+        - A row that's consistently red (or blue) across all four columns =
+          the feature plays the same role in the dominant variance axis at
+          every phase. It's a stable kinematic axis.
+        - A row that flips color between columns = the feature's role
+          depends on phase. *Example:* `peak_velocity_mm_per_sec` red at
+          Baseline but blue at Post_Injury_2-4 would mean fast-reaching
+          mice are at one end of PC1 at baseline but at the other end
+          post-injury -- the feature changed its diagnostic meaning across
+          experimental phases.
+        - A row that's pale (near-zero) at one or two phases but bold at
+          others = the feature only contributes to PC structure at those
+          specific phases. Useful when interpreting what each phase's PC1
+          actually captures.
+
+        **Scientific reading.** Stable rows are kinematic axes the paper
+        can describe phase-invariantly. Flipping or swinging rows are
+        features whose interpretation depends on when in the experiment
+        you measure -- the paper either reports them per-phase or skips
+        them as ambiguous.
+    """),
+    ("md", """
         ## 5. Identify important features (mean |loading| across phases)
 
         Pool each PC's absolute loadings across phases; the top ``TOP_N_FEATURES``
@@ -491,6 +706,19 @@ KINEMATIC_PCA_NB = [
         )
     """),
     ("md", """
+        **What you just saw.** Per-PC top features, then their union. The
+        union is what gets carried forward as the kinematic Y-block for PLS
+        in 04 -- only features whose role in the variance structure is
+        substantial on SOME PC participate in the coupling-to-connectivity
+        question. Features that never make any PC's top list contribute
+        mostly noise from this analysis's perspective.
+
+        **Reading the lists.** A feature appearing in PC1's top set across
+        multiple phases is one whose role in cohort variance is robust. A
+        feature appearing only on a single PC is a secondary contributor.
+        A feature appearing nowhere is dropped.
+    """),
+    ("md", """
         ## 6. Heatmap filtered to important features
     """),
     ("code", """
@@ -505,6 +733,19 @@ KINEMATIC_PCA_NB = [
         stamp_version(fig, label='02 important features')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '02_loadings_important_features.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** Same cross-phase heatmap as figure 4,
+        but restricted to only the important-feature union we just
+        identified. Cleaner view of what's actually doing variance work
+        once we drop the noise-floor features.
+
+        **What to read into it.** Same patterns as figure 4 -- stable rows
+        are phase-invariant kinematic axes; flipping rows are
+        phase-dependent. The point of this filtered version is that every
+        row here is "important enough to track"; the rows that didn't
+        survive the union are gone, so any pattern you see now is on a
+        feature worth interpreting.
     """),
 ]
 
@@ -588,6 +829,37 @@ CLUSTERING_NB = [
         plt.show()
     """),
     ("md", """
+        **What this figure shows.** Hierarchical clustering of kinematic
+        features by how much they correlate with each other across reaches.
+        Height in the tree = clustering distance (1 - |Pearson r|, so
+        height 0 means perfect correlation, height 1 means uncorrelated).
+        Features are joined into clusters from bottom up; horizontal cuts
+        across the tree at higher distances yield fewer, broader clusters.
+
+        **What different patterns mean.**
+        - Pairs of features at distance ~0 = essentially the same
+          measurement. *Example:* `max_extent_mm` and `max_extent_pixels`
+          should sit at distance ~0; this is the unit-deduplication pass
+          validating itself.
+        - Tight cluster of 3-4 features at low height = those features
+          carry overlapping information; the paper can pick one
+          representative per cluster without losing biology.
+        - Features sitting alone at the right edge until very late merges
+          = they carry independent information not captured by anything
+          else. *Example:* if `trajectory_smoothness` only joins the rest
+          of the tree at distance ~0.8, no other feature in the dataset
+          is restating it -- it's a unique kinematic axis the paper
+          should report.
+        - Big chunks of the dendrogram at similar heights = the kinematic
+          feature space has clear functional groupings (e.g., velocity
+          features clustering together, separate from path-shape features).
+
+        **Scientific reading.** Use this to decide which features to keep
+        in the paper. Within a tight cluster, picking one representative
+        is defensible. Across distant clusters, all of them deserve
+        reporting because they each capture something independent.
+    """),
+    ("md", """
         ## 3. PCA on the same feature matrix
 
         Fit a feature-space PCA (features as the items, reaches as the
@@ -642,6 +914,34 @@ CLUSTERING_NB = [
             print(f'  Cluster {cid} ({len(group)} features): {sorted(group.index.tolist())}')
     """),
     ("md", """
+        **What this figure + printout show.** The 2D scatter is each feature
+        positioned in PC1-PC2 space (using a feature-space PCA, which is
+        different from the per-phase PCA in notebook 02). Color = cluster
+        ID from the dendrogram cut. The bold-labeled feature in each
+        cluster is the one closest to its cluster's centroid -- a
+        reasonable representative. The printout below the figure lists
+        every feature's cluster assignment.
+
+        **What different patterns mean.**
+        - Tight, well-separated clusters in 2D = the dendrogram structure
+          survives the projection to 2D; the clustering is geometrically
+          coherent in feature space.
+        - Spread or overlapping clusters in 2D = the clustering forced
+          structure that the 2D PC view doesn't see clearly. Could mean
+          PC1+PC2 don't capture the relevant feature relationships --
+          consider the 3D view.
+        - A cluster with many features piled on each other in 2D = those
+          features are tightly equivalent; the bold representative is a
+          good stand-in for the whole bundle.
+        - A cluster spread out along PC1 or PC2 = the cluster's features
+          cover a range; the centroid is a less faithful representative.
+
+        **Scientific reading.** The printout is the practical takeaway --
+        it tells the paper "if you want to summarize the kinematics with
+        N axes, here are the natural N groups, and here are the features
+        in each one." The 2D view is a sanity check on cluster geometry.
+    """),
+    ("md", """
         ## 5. 3D view (plotly -- interactive)
 
         Hover a dot to see its feature name; drag to rotate.
@@ -664,6 +964,24 @@ CLUSTERING_NB = [
         )
         fig3d.update_traces(marker=dict(size=5, opacity=0.85))                                # tweak marker visuals after plot construction; size in pixels, opacity 0..1
         fig3d.show()                                                                          # render inline; rotate the plot by drag, hover a dot for its label
+    """),
+    ("md", """
+        **What this figure shows.** Same data as the 2D scatter, plus PC3 as
+        a third axis. Drag to rotate; hover any dot to see the feature
+        name. Color matches the 2D plot's cluster colors.
+
+        **When to use this view.** When clusters look ambiguous in 2D
+        because PC1+PC2 alone don't separate them, the third dimension
+        often does. *Example:* if cluster A and cluster B overlap in the
+        2D scatter but pull apart along PC3, the cluster structure is
+        real -- it just doesn't project cleanly onto the first two
+        principal axes.
+
+        **Reading the rotation.** Watch which dots stay close together as
+        you rotate; those are genuinely similar features regardless of
+        viewing angle. Dots that swap apparent neighbors as the camera
+        moves are positioned in 3D such that 2D projections can be
+        misleading.
     """),
 ]
 
@@ -751,6 +1069,56 @@ PLS_VARIANTS_NB = [
                 results[variant], top_n=TOP_N,                                                     # top_n caps how many connectivity loadings to label
                 save_dir=EXAMPLE_OUTPUT_DIR, slug=f"04_pls_{variant}",                             # also persist each LV figure to example_output/04_pls_{variant}_{LV}.png so the gallery (notebook 99) can show it later without re-running 04
             )
+    """),
+    ("md", """
+        **What you just saw.** Three figures per variant (one per latent
+        variable). Each figure has three panels:
+        - **Left (X-loadings):** which residual-connectivity regions drive
+          this LV. Long bar = the region's residual connectivity is part of
+          the coupling axis.
+        - **Middle (Y-loadings):** which kinematic features drive this LV.
+          Long bar = the feature's variation is part of the coupling axis.
+        - **Right (cross-score scatter):** each subject as a point at
+          (X-side score, Y-side score). The dashed line is a least-squares
+          fit; r and p in the title quantify how well the two sides line up.
+
+        **Cross-score scatter -- the headline.** A clean diagonal scatter
+        with high r (>0.8) means the X-block and Y-block share a real
+        coupled axis: subjects who score high on the connectivity-side LV
+        also score high on the kinematic-side LV. *Example:* a clean
+        positive scatter on LV1 of `recovery_delta` would mean "mice with
+        more residual connectivity on the LV1 axis recovered more reaching
+        capacity post-ABT" -- the headline scientific claim of this
+        analysis. A spread cloud with low r means no coherent coupling
+        was found at this LV.
+
+        **Top vs low loadings -- what they mean.** A region with a long
+        positive bar on the X side AND a feature with a long positive bar
+        on the Y side covary positively. Same signs across blocks =
+        positive coupling; opposite signs = inverse coupling. A near-zero
+        bar means the region/feature isn't contributing to this LV.
+
+        **Variant-specific interpretation.**
+        - *Injury snapshot:* X-loadings = which residual-connectivity
+          regions go with which post-injury reaching style. Heads up the
+          "given what residual connectivity each mouse had, here's the
+          reaching style it produces" story.
+        - *Deficit delta:* X-loadings = which residual-connectivity
+          regions track the magnitude/direction of the immediate kinematic
+          shift baseline -> post-injury. The regions whose residual
+          connectivity best predicts the deficit.
+        - *Recovery delta:* X-loadings = which residual-connectivity
+          regions track post-ABT change in kinematics. The regions whose
+          residual connectivity best predicts ABT response. This is the
+          headline "does residual connectivity explain differential ABT
+          response" question.
+
+        **At small cohort sizes, every PLS will look highly correlated by
+        construction.** With few subjects and many features per side, PLS
+        has enough freedom to always find a fit. Treat the cross-score r
+        as descriptive (here's what the data shows), NOT inferential
+        (there's a real underlying relationship). At larger N this
+        becomes a real test.
     """),
     ("md", """
         ## 3. Export latent-variable scores for the gallery
@@ -842,6 +1210,31 @@ LMM_NB = [
         omnibus.to_parquet(CACHE_DIR / 'lmm_omnibus.parquet', index=False)                            # cache the full results table for downstream notebooks / re-analysis
     """),
     ("md", """
+        **What you just saw.** The top 15 features by FDR-adjusted p-value.
+        Columns: `phase_p` is the raw chi-square Wald p; `phase_p_adj` is
+        after Benjamini-Hochberg correction across the feature family;
+        `n_reaches` and `n_subjects` are the data going into each fit;
+        `converged` says whether the LMM optimizer succeeded.
+
+        **What different patterns mean.**
+        - Features with `phase_p_adj < 0.05` (the FDR cutoff) reliably
+          differ across the four phases once subject and session
+          random effects are accounted for. The cohort, on average,
+          reaches differently at different phases on these features.
+        - `phase_p_adj` close to 1 = no detectable phase effect; the
+          feature looks the same on average before and after injury.
+        - `converged = False` = the LMM optimizer failed; the
+          corresponding p-value is unreliable and that row should be
+          treated as missing.
+
+        **Reading the rows.** *Example:* if `head_angle_at_apex_deg`
+        leads the omnibus with adjusted p in the range of 1e-3 or
+        smaller, the cohort's head orientation at the apex of the reach
+        is changing across phases -- a real phase-dependent kinematic
+        signature. Worth tracking through the deficit and recovery
+        tests next.
+    """),
+    ("md", """
         ## 3. Deficit delta (Baseline vs Post_Injury_2-4)
 
         Same model structure but restricted to two phases, so the phase
@@ -855,6 +1248,29 @@ LMM_NB = [
         deficit.to_parquet(CACHE_DIR / 'lmm_deficit.parquet', index=False)
     """),
     ("md", """
+        **What you just saw.** Same per-feature LMM but restricted to two
+        phases (Baseline and Post_Injury_2-4). The phase coefficient now
+        IS the deficit -- the magnitude and direction of the average
+        kinematic change between baseline and the established post-injury
+        state.
+
+        **What different patterns mean.**
+        - Features with `phase_p_adj < 0.05` here = injury reliably
+          shifted that aspect of reaching. These are the kinematic axes
+          the C5 contusion produced a measurable change on.
+        - Features that survive the deficit test but NOT the omnibus
+          are uncommon (the omnibus pools more phases) but possible if
+          the deficit reverts at later phases.
+        - Features that survive the omnibus but NOT the deficit changed
+          across phases generally, but the change isn't concentrated at
+          the immediate post-injury timepoint -- it's at Post_Injury_1
+          (early subacute) or Post_Rehab_Test instead.
+
+        **Scientific reading.** This list is the candidate set of
+        injury-affected aspects of reaching. The recovery test below
+        then asks which of these came back after ABT.
+    """),
+    ("md", """
         ## 4. Recovery delta (Post_Injury_2-4 vs Post_Rehab_Test)
     """),
     ("code", """
@@ -863,6 +1279,31 @@ LMM_NB = [
         recovery = run_phase_lmm_for_features(recovery_df, features, fdr_alpha=FDR_ALPHA)
         print(recovery.head(15)[['feature', 'phase_p', 'phase_p_adj', 'n_reaches', 'n_subjects', 'converged']])
         recovery.to_parquet(CACHE_DIR / 'lmm_recovery.parquet', index=False)
+    """),
+    ("md", """
+        **What you just saw.** Same per-feature LMM restricted to
+        Post_Injury_2-4 vs Post_Rehab_Test. The phase coefficient is the
+        change attributable to ABT.
+
+        **What different patterns mean.**
+        - Features with `phase_p_adj < 0.05` here = ABT reliably shifted
+          that aspect of reaching. These are the ABT-responsive aspects.
+        - Features that survive both the deficit AND recovery tests are
+          the strongest candidates for the paper's headline narrative:
+          injury reliably perturbed them, ABT reliably restored some of
+          them.
+        - Features that survive deficit but NOT recovery dropped at
+          injury and stayed dropped (no ABT response) -- itself a
+          publishable finding pointing to deficit aspects ABT didn't
+          restore.
+        - Features that survive recovery but NOT deficit improved with
+          ABT but didn't clearly drop at injury. Could be late-phase
+          task-learning rather than injury-specific recovery; interpret
+          with caution.
+
+        **Scientific reading.** Cross-reference this list with the
+        deficit list to bin features into deficit-only / recovery-only /
+        both / neither. The "both" bin is the headline result.
     """),
     ("md", """
         ## 5. -log10(adjusted p) summary
@@ -892,6 +1333,38 @@ LMM_NB = [
         stamp_version(fig, label='05 LMM summary')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '05_lmm_summary.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** Three stacked bar charts, one per
+        analysis (omnibus / deficit / recovery). Each bar is one
+        kinematic feature; bar length is `-log10(FDR-adjusted p)`. Bars
+        right of the red dashed line cleared the FDR cutoff -- they're
+        statistically significant after multiple-testing correction.
+        Bars are colored: blue = significant, gray = not.
+
+        **What different patterns mean.**
+        - Many tall blue bars on the omnibus = reaching is broadly
+          affected by phase across the experiment.
+        - Tall blue bars on the deficit panel but gray on the recovery
+          panel = injury affected this feature, ABT didn't restore it.
+        - Tall blue bars on both deficit and recovery panels = headline
+          features for the paper -- injury changed them, ABT restored
+          some of the change.
+        - All bars short / gray everywhere = no detectable phase effects
+          after FDR. Either the cohort is too small for the effect size
+          or the cohort genuinely doesn't show injury/recovery on these
+          features.
+
+        **Scientific reading.** This figure is the per-feature inferential
+        summary of the whole pipeline. Combined with the deficit-vs-
+        recovery cross-reference above, it tells the paper exactly which
+        features to feature in the kinematic narrative.
+
+        **Small-N caveat.** The chi-square Wald approximation
+        statsmodels uses is mildly anti-conservative at small inferential
+        N. FDR correction partially compensates; at expanded cohort
+        sizes, switch to Kenward-Roger via `pymer4` for paper-ready
+        inference.
     """),
 ]
 
@@ -979,6 +1452,40 @@ VALIDATION_NB = [
         print(pd.crosstab(validation['manual_cat'], validation['algo_cat'], margins=True))                # pandas crosstab counts co-occurrences; margins=True adds row/column totals
     """),
     ("md", """
+        **What you just saw.** Three numbers and a count table.
+        - **Three-way exact agreement:** raw rate of "manual and algorithm
+          gave the same one of {missed, displaced, retrieved}".
+        - **Binary agreement:** rate of "manual and algorithm agree on
+          whether the pellet was touched at all" (collapsing displaced
+          and retrieved into one bucket).
+        - **Cohen's kappa:** chance-corrected agreement on the three-way
+          classification. The legend below the print spells out the
+          standard ranges.
+
+        **What different patterns mean.**
+        - Kappa > 0.8 = the algorithmic outcome labels are trustworthy
+          for publication; downstream analyses that use them are on
+          solid ground.
+        - Kappa 0.6-0.8 = substantial agreement; algorithmic labels
+          usable for most analyses, spot-check edge cases that hinge on
+          retrieval-vs-displacement distinctions.
+        - Kappa 0.4-0.6 = moderate; flag any conclusion that depends on
+          three-way categorization.
+        - Kappa < 0.4 = poor; default to manual scoring for the paper.
+        - Binary agreement much higher than three-way = algorithm is
+          good at detecting contact but bad at distinguishing displaced
+          vs retrieved. **What this means for the paper:** analyses
+          using `contact_group` are fine; analyses using `outcome_group`
+          (the three-way split) need extra caution.
+
+        **Reading the confusion matrix below.** The crosstab shows where
+        the disagreements live. Off-diagonal mass concentrated in the
+        displaced<->retrieved cells = the boundary the algorithm is
+        struggling with. Off-diagonal mass in missed<->contacted cells
+        = the algorithm is failing at contact detection itself, which
+        is more concerning.
+    """),
+    ("md", """
         ## 3. Confusion matrix heatmap (counts + row-normalized)
     """),
     ("code", """
@@ -1001,6 +1508,36 @@ VALIDATION_NB = [
         stamp_version(fig, label='06 confusion')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '06_confusion_matrix.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** Two heatmaps, both with manual class
+        on the y-axis and algorithmic class on the x-axis. The left panel
+        shows raw counts; the right panel shows the same matrix with
+        each row normalized to 1.0 (so the row reads as "given the
+        manual class, what fraction did the algorithm assign to each
+        bucket").
+
+        **What different patterns mean.**
+        - Strong diagonal in the row-normalized panel (each diagonal
+          cell close to 100%) = the algorithm is rarely wrong about
+          any of the three categories.
+        - Off-diagonal mass concentrated in displaced<->retrieved cells
+          = the boundary between successful retrieval and "knocked the
+          pellet but didn't bring it in" is what's hard. *Example:* if
+          the manual=retrieved row shows 70% retrieved, 25% displaced,
+          5% missed in the algo classification, the algorithm is
+          underestimating retrievals by treating them as displacements.
+        - Off-diagonal mass in missed<->contacted cells = contact
+          detection itself is failing. More concerning because contact
+          is the precondition for any kinematic analysis.
+        - The raw-counts panel reveals class imbalance: if "missed" has
+          tiny bin counts compared to the others, the kappa for that
+          row is unstable even if the percentages look fine.
+
+        **Scientific reading.** Use the row-normalized panel to identify
+        which boundary the algorithm needs to be retrained on. Use the
+        raw-counts panel to know which classes have enough data to
+        trust the agreement statistic.
     """),
     ("md", """
         ## 4. Per-phase agreement
@@ -1041,6 +1578,37 @@ VALIDATION_NB = [
         stamp_version(fig, label='06 per phase')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '06_agreement_by_phase.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure + printout show.** The print is per-phase
+        agreement (n pellets, three-way rate, binary rate). The figure is
+        the same data as side-by-side bars: blue = three-way, orange =
+        binary. The green dashed line at 0.9 is a "good agreement"
+        reference.
+
+        **What different patterns mean.**
+        - Steady high agreement across all phases (both colors near or
+          above the green line) = the algorithm is robust across
+          experimental phases. Use it freely throughout the analysis.
+        - Agreement dropping post-injury = the injured cohort's reach
+          kinematics differ from what the algorithm was trained on, so
+          its outcome decisions are less reliable on those phases.
+          *Example:* if Baseline kappa is 0.9 but Post_Injury_1 binary
+          agreement falls to 0.6, post-injury outcome labels are the
+          weakest part of the dataset; any kinematic finding that
+          conditions on outcome at that phase needs a caveat.
+        - Three-way bar consistently lower than the binary bar at every
+          phase = the algorithm reliably detects contact but consistently
+          struggles with the displaced/retrieved boundary. Stays
+          phase-independent; not a phase-specific issue.
+        - Phases with very small n (printed in the table) = agreement
+          estimate at that phase is itself unreliable; ignore the bar
+          and focus on phases with substantive sample sizes.
+
+        **Scientific reading.** This figure tells the paper which phases
+        you can trust the algorithm on. Where it dips, plan to either
+        manually re-score that phase's data or footnote the
+        phase-specific uncertainty in the discussion.
     """),
 ]
 
@@ -1185,6 +1753,22 @@ TRAJECTORY_NB = [
         conn_scores_df.to_parquet(CACHE_DIR / 'connectivity_pc_scores.parquet')                                # other notebooks (98+future) can read this without redoing PCA
     """),
     ("md", """
+        **What you just saw.** Each row is one mouse; each column is its
+        score on a connectivity PC. These coordinates are how this
+        notebook positions mice in residual-connectivity space for
+        coloring trajectories and grouping by similarity.
+
+        **Reading the table.** Mice with similar values on PC1 retained
+        similar amounts of residual connectivity along the dominant
+        cohort axis. Mice with very different PC1 scores sit at opposite
+        ends of that axis -- their residual profiles look most unlike
+        each other. PC2 and PC3 capture secondary/tertiary directions.
+
+        Together, these scores feed every downstream visualization in
+        this notebook -- the cluster colors, the continuous-trajectory
+        gradient, and the synthetic-vs-real label rendering.
+    """),
+    ("md", """
         ## 2. Cluster subjects on connectivity
 
         Pick a clustering method via ``CLUSTER_METHOD`` in the parameters
@@ -1210,6 +1794,25 @@ TRAJECTORY_NB = [
         print(f'Method: {cluster_result.method}, k={cluster_result.k}')                  # echo what we asked for vs what came back (k can be < requested if some clusters are empty)
         print('\\nCluster assignments:')
         print(cluster_by_subject)
+    """),
+    ("md", """
+        **What you just saw.** Each subject's cluster label (1..K). Mice
+        sharing a label have similar residual-connectivity profiles by
+        the chosen clustering method.
+
+        **Reading the assignments.** Cluster identity isn't meaningful in
+        isolation -- the next cell profiles each cluster to identify
+        which regions define it. What matters here is just "do similar
+        residuals get grouped together?" When K equals the matched-
+        subject count, every mouse gets its own cluster (uninformative).
+        When K is smaller, mice are forced into shared groups, and the
+        next cell tells you what the groups stand for biologically.
+
+        **In synthetic mode** (USE_SYNTHETIC=True), the cluster recovery
+        rate against the prototype labels is a validation of the
+        pipeline at realistic N -- if clustering fails to recover
+        prototypes from synthetic data, something is wrong with the
+        method or noise level.
     """),
     ("md", """
         ## 3. Cluster profiling + naming
@@ -1240,6 +1843,35 @@ TRAJECTORY_NB = [
         stamp_version(fig, label='07 cluster profile')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '07_cluster_profile.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What you just saw.** First, auto-generated cluster names like
+        `cluster3: up-Red_Nucleus_both down-Corticospinal_left` -- these
+        describe each cluster by which regions it stands out on. Then a
+        heatmap: rows are clusters (with their auto-names), columns are
+        the top 20 discriminating regions, color = z-score of that
+        region in that cluster relative to the population.
+
+        **What different patterns mean.**
+        - Strongly red OR strongly blue cells in distinct columns per
+          row = clusters genuinely differ in residual-connectivity
+          profile. The auto-names should reflect real defining regions.
+          *Example:* cluster A red on `Corticospinal_both` and cluster
+          B blue on the same column means A retained more residual CST
+          connectivity than B -- "CST-spared" vs "CST-affected" is a
+          fair plain-English description of the boundary.
+        - A cluster row with mostly pale cells = subjects in that
+          cluster are near population mean in most regions. The cluster
+          is "central" -- not strongly defined.
+        - A column that's pale across ALL rows = that region doesn't
+          distinguish clusters from each other; mice retained similar
+          amounts regardless of which cluster they belong to.
+
+        **Scientific reading.** The auto-names are a first-pass label
+        for each cluster; you can override them with biologically
+        meaningful names in `MANUAL_CLUSTER_NAMES` once you've identified
+        what the clusters represent. The heatmap tells you which regions
+        you'd defend the names with.
     """),
     ("md", """
         ## 4. Permutation validation
@@ -1279,6 +1911,38 @@ TRAJECTORY_NB = [
         stamp_version(fig, label='07 permutation')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '07_permutation_validation.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** The histogram is the null distribution
+        of within-cluster variance under random label shuffling. The
+        observed within-cluster variance (red vertical) shows where the
+        actual clustering falls in that distribution. Blue ticks above
+        the histogram are leave-one-out variants -- recompute the same
+        statistic with each subject removed.
+
+        **What different patterns mean.**
+        - Observed (red) far below the null distribution mean = the
+          clustering is tighter than random. Mice within each cluster
+          really do look more alike than random groups of the same
+          size. p_random small (<0.05) confirms the gap is unlikely
+          by chance.
+        - Observed near or above the null distribution mean = clusters
+          are noise. The algorithm divided subjects but the within-
+          cluster coherence is no better than random groups. **Don't
+          take cluster names seriously when this is the case.**
+        - LOO ticks (blue) clustered tightly around the observed line
+          = the result is robust; no single subject is driving the
+          structure.
+        - LOO ticks spread widely = one or two subjects dominate the
+          clustering. Drop them and the structure changes substantially.
+          Treat as fragile; don't generalize beyond the current cohort
+          without expanded N.
+
+        **Scientific reading.** This is the "are these clusters real?"
+        check. If the observed line sits in the left tail of the null
+        with tight LOO ticks, the cluster names from the previous cell
+        describe meaningful structure. If not, the rest of the notebook
+        is descriptive only.
     """),
     ("md", """
         ## 5. Alluvial: do subjects cluster the same way per phase?
@@ -1346,6 +2010,35 @@ TRAJECTORY_NB = [
             fig_sankey.show()                                                                            # render inline; interactive in Jupyter (hover for tooltips)
     """),
     ("md", """
+        **What this figure shows.** A Sankey diagram. Columns are phases
+        (Baseline -> Post_Injury_1 -> Post_Injury_2-4 -> Post_Rehab_Test).
+        Each column has K kinematic-cluster nodes; the ribbons between
+        columns show how subjects move between clusters phase-to-phase.
+        Ribbon thickness = number of subjects taking that path.
+
+        **What different patterns mean.**
+        - Mostly horizontal flows (each subject's ribbon stays in
+          column-aligned clusters across phases) = kinematic phenotype
+          is stable. Subjects reach in their own characteristic style
+          throughout the experiment regardless of injury and ABT.
+        - Crossing flows = subjects change which other subjects they
+          cluster with at different phases. The kinematic neighborhood
+          reshuffles with injury/recovery. *Example:* a subject that
+          clustered with another at baseline might cluster with a
+          different mouse post-injury if injury brought their reaching
+          styles into closer alignment.
+        - Convergence (many ribbons fanning into the same cluster
+          post-injury) = injury collapses kinematic diversity; mice
+          start reaching more similarly. Divergence post-rehab =
+          ABT brings out individual differences again.
+
+        **At small cohort sizes** the Sankey degenerates to one subject
+        per cluster per phase, which makes the diagram a smoke test
+        rather than informative. The structural question (do subjects
+        keep their kinematic identity across phases?) becomes
+        meaningful as N grows past per-cluster singletons.
+    """),
+    ("md", """
         ## 6. Build the per-subject per-phase trajectory table
 
         Pull ``{FEATURE}_{AGG_STAT}`` from ``data.AKDdf_agg_contact`` for the
@@ -1374,6 +2067,19 @@ TRAJECTORY_NB = [
         traj = traj.dropna(subset=['conn_cluster']).copy()                                                              # drop subjects with no connectivity / no cluster assignment (left-join produced NaN for them)
         traj['conn_cluster'] = traj['conn_cluster'].astype(int)                                                         # cast back to int (merge may have left it as float because of the NaN that dropna just removed)
         print(traj.sort_values(['subject_id', 'phase_order']).head(20))                                                 # preview: 20 rows sorted so each subject's phases appear together in order
+    """),
+    ("md", """
+        **What you just saw.** Preview rows of the trajectory table. Each
+        row is one (subject, phase) point with its kinematic value, its
+        connectivity PC1 score, and its connectivity cluster ID. This
+        is the data structure the next two figures plot.
+
+        **Reading the table.** Confirm each subject has a row for every
+        phase you expect (or fewer if some phases are missing data).
+        Confirm the `PC1` column has real values, not NaN -- a NaN
+        means the subject was missing connectivity data and got
+        dropped. The `conn_cluster` column should match the assignments
+        we printed earlier.
     """),
     ("md", """
         ## 7. Continuous view: trajectories colored by connectivity PC1
@@ -1410,6 +2116,38 @@ TRAJECTORY_NB = [
         plt.show()
     """),
     ("md", """
+        **What this figure shows.** One line per subject. X-axis is
+        experimental phase in temporal order. Y-axis is the chosen
+        kinematic feature. Line color is a continuous mapping of the
+        subject's connectivity PC1 score (viridis: dark = low PC1,
+        bright yellow = high PC1).
+
+        **What different patterns mean.**
+        - Subjects with similar PC1 scores (similar colors) following
+          similar trajectory shapes = residual connectivity predicts
+          kinematic trajectory. This is the headline outcome the
+          analysis is reaching for.
+        - Subjects with similar colors diverging across phases = no
+          consistent coupling between residual PC1 and trajectory
+          shape, at least at this cohort size.
+        - Color gradient running smoothly from one end of the y-axis
+          to the other at any phase = PC1 is sorting subjects by their
+          kinematic value at that phase. *Example:* if the
+          Post_Rehab_Test column shows yellow (high PC1) lines at the
+          top and dark (low PC1) lines at the bottom, mice with the
+          most residual connectivity also have the highest post-ABT
+          kinematic value -- direct support for "residual connectivity
+          predicts recovery."
+        - No relationship between color and y-position = PC1 is not
+          coupling to this feature in this cohort.
+
+        **Why "continuous" matters.** This view doesn't impose
+        clusters; PC1 is a smooth gradient. At small cohort sizes
+        clusters are unstable, but PC1 still has meaning. If you see
+        a coherent color-to-position mapping here, that's a signal
+        that doesn't depend on clustering survival.
+    """),
+    ("md", """
         ## 8. Grouped view: trajectories by named connectivity cluster
 
         Same trajectories, colored by cluster membership and labeled with
@@ -1438,6 +2176,32 @@ TRAJECTORY_NB = [
         stamp_version(fig, label='07 grouped')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '07_trajectories_by_cluster.png', dpi=150, bbox_inches='tight')
         plt.show()
+    """),
+    ("md", """
+        **What this figure shows.** Same trajectories as the continuous
+        view, but colored by discrete cluster membership instead of a
+        continuous gradient. The legend names match the auto-names
+        (or your manual overrides) from section 3.
+
+        **What different patterns mean.**
+        - Lines within a cluster following parallel paths across phases
+          = the cluster has a coherent trajectory profile. Mice with
+          similar residual-connectivity profiles really do reach
+          similarly across the experiment.
+        - Lines from different clusters tracking each other (one
+          cluster's lines shadowing another's) = the clustering
+          partition isn't separating kinematic trajectory groups; the
+          cluster boundary doesn't match a kinematic boundary.
+        - Lines within a cluster scattering wildly = the cluster
+          contains kinematically heterogeneous subjects. The
+          residual-connectivity grouping doesn't predict this kinematic
+          feature; another feature might work better.
+
+        **Comparison to the continuous view.** If the continuous PC1
+        view shows a clean gradient but the cluster view looks
+        scrambled, the discretization (forcing K clusters) is
+        destroying signal that PC1 carries continuously. If both views
+        agree, the structure is robust to the choice.
     """),
     ("md", """
         ## 9. Interaction LMM template
@@ -1486,15 +2250,44 @@ TRAJECTORY_NB = [
                     wald = result.wald_test_terms().table                                                        # joint Wald test of each fixed-effect term
                     print(wald)
                     print('\\nInteraction p-value for phase x conn_cluster:')
+                    pcol = 'pvalue' if 'pvalue' in wald.columns else 'P>chi2'                                   # statsmodels 0.14+ renamed the p-value column to 'pvalue'; fall back to legacy 'P>chi2' for older statsmodels
                     interaction_rows = [i for i in wald.index if 'phase_group' in i and 'conn_cluster' in i]    # filter the Wald table to just the interaction row(s)
                     for i in interaction_rows:
-                        print(f'  {i}: {wald.loc[i, "P>chi2"]:.4f}')                                            # P>chi2 = chi-square Wald p-value
+                        print(f'  {i}: {float(wald.loc[i, pcol]):.4f}')                                         # cast to float since 0.14+ returns 0-d arrays; .4f formats with 4 decimal places
                 except Exception as e:
                     print(f'Interaction LMM failed to fit (expected at very small N): {e}')                     # singular covariance matrices etc. show up here at small N
             else:
                 print('Too few subjects or clusters to fit the interaction LMM.')
         else:
             print('Skipping interaction LMM (RUN_INTERACTION_LMM=False or only one cluster present).')
+    """),
+    ("md", """
+        **What you just saw.** A Wald test table for the interaction LMM
+        (`feature ~ phase * conn_cluster`). The interaction p-value
+        tests whether the phase effect on the feature differs by
+        connectivity cluster.
+
+        **What different patterns mean.**
+        - Small interaction p (<0.05) = the trajectories shown above
+          really are different by cluster. Different residual-
+          connectivity groups follow different recovery courses, which
+          is the headline scientific claim.
+        - Large interaction p = the clusters' average trajectories
+          look similar across phases, even if individual subjects
+          within clusters vary. No detectable group-level coupling.
+        - "Interaction LMM failed to fit" = the model is degenerate at
+          this cohort size. Common when each cluster contains one
+          subject (the interaction collapses to a per-subject effect)
+          or when categorical levels have no within-level replication.
+        - "Skipping interaction LMM" = `RUN_INTERACTION_LMM=False` was
+          set or only one cluster was found.
+
+        **At small cohort sizes** with each cluster having ~1 subject,
+        the interaction is a reparameterization rather than a tested
+        effect. Treat the framework as in-place-for-when-N-grows: the
+        same code becomes a real inferential test of "do connectivity
+        groups follow different recovery trajectories?" once each
+        cluster contains multiple subjects.
     """),
     ("md", """
         ## 10. Ascending connectivity placeholder
@@ -1633,6 +2426,33 @@ HYPOTHESIS_NB = [
         plt.show()
     """),
     ("md", """
+        **What you just saw + what the figure shows.** A long-format
+        table of variance-per-PC at both granularity levels (grouped
+        eLife regions vs atomic regions), and a scree-style line plot
+        showing the same data. Two lines: one for grouped, one for
+        ungrouped.
+
+        **What different patterns mean.**
+        - The two lines tracking each other closely = the eLife
+          grouping captures the dominant variance structure. Aggregating
+          to group level loses little. **What this means for the
+          paper:** the upstream pipeline's choice to use grouped
+          regions is defensible.
+        - Ungrouped line consistently above grouped (more variance per
+          PC) = atomic-region variance is being averaged out by the
+          grouping. The drill-down (next panel) is justified to find
+          which groups are hiding subregional differences.
+        - Ungrouped line consistently below grouped = the grouping is
+          creating structure that doesn't exist at the atomic level.
+          Rare but possible -- typically indicates the grouping is
+          summing weakly-correlated subregions in a way that
+          amplifies their joint signal.
+        - Both lines flat = no PC dominates at either granularity;
+          residual variation is spread broadly. Reduces the value of
+          PC-based summaries for downstream prediction at any
+          granularity.
+    """),
+    ("md", """
         ## 2. Per-group drill-down
 
         For each eLife group, run a mini-PCA on its atomic-region
@@ -1680,6 +2500,38 @@ HYPOTHESIS_NB = [
         plt.show()
     """),
     ("md", """
+        **What you just saw + what the figure shows.** A printed table
+        listing each eLife group with its top-3 within-group PC variance
+        shares, and a stacked horizontal bar chart of the same data.
+        Each bar is one group; the three colored segments are PC1, PC2,
+        PC3 within that group. The dashed line at 0.9 is a "almost
+        everything captured" reference.
+
+        **What different patterns mean.**
+        - Bars dominated by blue (PC1) = the group is internally
+          coherent; one within-group axis captures all subregional
+          variation. The eLife grouping is defensible for that group --
+          lumping its atomic regions together is consistent with the
+          data.
+        - Bars where PC1, PC2, PC3 are all substantial = the group has
+          subregional heterogeneity the grouping is hiding. *Example:*
+          if `Reticular Nuclei` splits its variance evenly across PC1,
+          PC2, PC3, the subregions of the reticular formation are doing
+          different things across mice; lumping them costs signal.
+          Candidate to split in future work.
+        - Bars below the dashed line = even three within-group PCs
+          don't capture everything. Most variance is in higher-order
+          PCs, which often means the within-group structure is mostly
+          noise from a single dominant axis or that the group is too
+          heterogeneous to summarize.
+
+        **Scientific reading.** Use this to identify groups whose
+        subregions deserve closer attention in the paper or in future
+        cohorts. Internally-coherent groups can be reported at the
+        group level safely; heterogeneous groups need explicit
+        breakdowns or split before group-level claims are made.
+    """),
+    ("md", """
         ## 3. Nested LMM comparison
 
         Fit a sequence of LMMs on the chosen target kinematic feature,
@@ -1723,6 +2575,44 @@ HYPOTHESIS_NB = [
             vc_formula={'session': '0 + C(session_date)'},                                                 # nested random effect: session_date within subject; '0 +' suppresses intercept so each session gets its own random slope
         )
         print(nested_results.to_string(index=False))                                                        # tabular AIC/BIC/LRT summary; small p_vs_prior column means the added regions matter
+    """),
+    ("md", """
+        **What you just saw.** A table comparing two LMMs:
+        - `baseline (phase only)`: kinematic feature ~ phase fixed
+          effect, with subject and session random effects.
+        - `+top{TOP_K_PRIORS}_priors`: same baseline plus the top-K
+          prior-ranked connectivity regions added as fixed-effect
+          covariates.
+
+        Columns include `aic`, `bic`, `loglik`, `chi2_vs_prior`,
+        `p_vs_prior` (LRT), and `converged`.
+
+        **What different patterns mean.**
+        - `+top{TOP_K_PRIORS}_priors` has a smaller AIC/BIC than
+          baseline AND `p_vs_prior` < 0.05 = adding the top-priority
+          connectivity regions improves the model fit beyond what
+          phase alone explains. Residual connectivity at those
+          regions is doing predictive work for this kinematic
+          feature.
+        - Smaller AIC but non-significant `p_vs_prior` = the AIC
+          improvement is marginal and could be over-fitting; the LRT
+          says the simpler model is sufficient. AIC and LRT can
+          disagree at small N -- treat AIC favorability with caution.
+        - Larger AIC for the extended model OR `p_vs_prior` > 0.05 =
+          the prior-ranked regions don't help past phase. The
+          literature priority list, at least at this top-K cutoff,
+          isn't predictive in this cohort.
+        - `converged = False` = the model failed to fit; the
+          comparison is unreliable. Common when there are more
+          covariates than subjects -- synthetic mode with N=30 is
+          where this analysis becomes trustworthy.
+
+        **Scientific reading.** This test is a direct check of "is
+        residual connectivity in the literature-flagged regions
+        helping us predict reaching, or are we just relying on
+        phase?" A surviving p_vs_prior validates the prior; a failing
+        one suggests we should let the data choose features instead
+        of the prior.
     """),
     ("md", """
         ## 4. Prior-weighted PCA
@@ -1779,6 +2669,39 @@ HYPOTHESIS_NB = [
         plt.tight_layout()                                                                                 # margin tightening
         plt.savefig(EXAMPLE_OUTPUT_DIR / '08_prior_weighted.png', dpi=150, bbox_inches='tight')           # write committed example PNG
         plt.show()
+    """),
+    ("md", """
+        **What you just saw + what the figure shows.** Two printed top-10
+        loading lists for PC1 (unweighted vs prior-weighted), then a
+        side-by-side horizontal bar chart of those 15 union regions
+        across both versions.
+
+        **What different patterns mean.**
+        - Top regions on PC1 (unweighted) and (prior-weighted) overlap
+          heavily, with similar bar magnitudes = the dominant variance
+          axis is already aligned with the prior; the prior didn't
+          change what PC1 sees. **What this means for the paper:** the
+          data and the literature agree on which regions matter; the
+          analyses in 01-07 rest on solid ground.
+        - Lists differ substantially = the unweighted PCA was driven
+          by regions the prior de-emphasizes. *Example:* if unweighted
+          PC1 is dominated by `Hypothalamic_both` but prior-weighted
+          PC1 is dominated by `Corticospinal_both`, the cohort's
+          largest residual variation is in a region the literature
+          doesn't link to reaching. Either the literature is missing
+          something, the variance is artifactual (e.g. immune
+          response), or this cohort happens to vary on tracts the
+          reaching circuit doesn't lean on.
+        - Same regions but flipped magnitudes = the same biology
+          shows up in both, but the prior amplifies different
+          contributions. The prior is reweighting within an already-
+          aligned axis -- an editorial change rather than a discovery.
+
+        **Scientific reading.** Each interpretation has a different
+        discussion implication. The matched case lets the paper claim
+        the prior is doing real work; the divergent case is a finding
+        in itself (data revising the literature) and warrants
+        explicit treatment in the discussion.
     """),
     ("md", """
         ## Summary
@@ -1895,21 +2818,12 @@ def main() -> int:
         out.write_text(json.dumps(nb, indent=1) + "\n", encoding="utf-8")
         print(f"wrote {out} ({len(cells)} cells)")
 
-    # Append the "How to read this notebook's output" interpretation cells.
-    # Kept in a separate script (and a separate dict of long markdown blobs)
-    # so this builder file doesn't double in size. Idempotent -- safe to run
-    # repeatedly; appends only when the marker isn't already present.
-    interp_script = HERE / "add_interpretation_sections.py"
-    if interp_script.exists():
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, str(interp_script), str(NOTEBOOKS_DIR)],
-            capture_output=True, text=True,
-        )
-        sys.stdout.write(result.stdout)
-        sys.stderr.write(result.stderr)
-    else:
-        print(f"WARN: {interp_script} missing; interpretation sections not appended.")
+    # Trailing collapsible interpretation blocks are no longer appended.
+    # Interpretations now live INLINE after each output-producing cell so
+    # the reader can connect each result to its meaning at the moment it
+    # appears, instead of scrolling to the bottom and reverse-mapping.
+    # The legacy add_interpretation_sections.py script is kept around in
+    # tools/ for reference / revert path but is intentionally not invoked.
     return 0
 
 
