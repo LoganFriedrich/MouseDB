@@ -694,23 +694,23 @@ PLS_VARIANTS_NB = [
         TOP_N = 15       # Top connectivity regions to label per LV
     """),
     ("code", """
-        import pandas as pd
-        import matplotlib.pyplot as plt
+        import pandas as pd                                                                          # dataframes
+        import matplotlib.pyplot as plt                                                              # plotting
 
-        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.dimreduce import build_y_phase, build_y_shift, run_pls
-        from endpoint_ck_analysis.helpers.plotting import plot_pls, stamp_version
+        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR                        # cache dir for the parquet files we read; example_output dir for saved figures
+        from endpoint_ck_analysis.data_loader import load_all                                        # one-shot loader
+        from endpoint_ck_analysis.helpers.dimreduce import build_y_phase, build_y_shift, run_pls     # Y-block builders (snapshot vs phase-delta) + PLS fitter
+        from endpoint_ck_analysis.helpers.plotting import plot_pls, stamp_version                    # PLS three-panel figure helper + figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all()
-        agg_flat = data.AKDdf_agg_contact_flat()
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                                        # ensure output folder exists
+        data = load_all()                                                                            # load (uses cache from 00_setup)
+        agg_flat = data.AKDdf_agg_contact_flat()                                                     # flatten the multi-index aggregated kinematics so we can filter on phase + contact_group as columns
 
         # Pull the important regions / features written by notebooks 01 and 02.
-        important_regions = pd.read_parquet(CACHE_DIR / 'important_regions.parquet')['region_hemi'].tolist()
-        important_features = pd.read_parquet(CACHE_DIR / 'important_features.parquet')['feature'].tolist()
+        important_regions = pd.read_parquet(CACHE_DIR / 'important_regions.parquet')['region_hemi'].tolist() # parquet was written by notebook 01; .tolist() converts the column into a Python list of strings
+        important_features = pd.read_parquet(CACHE_DIR / 'important_features.parquet')['feature'].tolist()    # parquet from notebook 02; same shape
 
-        X_block = data.FCDGdf_wide[important_regions].fillna(0)
+        X_block = data.FCDGdf_wide[important_regions].fillna(0)                                      # X-block for PLS: subjects x important connectivity regions; fillna(0) since PLS doesn't accept NaNs
     """),
     ("md", """
         ## 1. Build the three Y-blocks
@@ -718,11 +718,11 @@ PLS_VARIANTS_NB = [
         These share the same X-block (connectivity) so results compare directly.
     """),
     ("code", """
-        Y_injury = build_y_phase(agg_flat, important_features, 'Post_Injury_2-4')
-        Y_deficit = build_y_shift(agg_flat, important_features, 'Baseline', 'Post_Injury_2-4')
-        Y_recovery = build_y_shift(agg_flat, important_features, 'Post_Injury_2-4', 'Post_Rehab_Test')
+        Y_injury = build_y_phase(agg_flat, important_features, 'Post_Injury_2-4')                    # snapshot Y: subject x feature kinematics at the post-injury phase
+        Y_deficit = build_y_shift(agg_flat, important_features, 'Baseline', 'Post_Injury_2-4')        # delta Y: how much each kinematic feature shifted from baseline to post-injury (per subject)
+        Y_recovery = build_y_shift(agg_flat, important_features, 'Post_Injury_2-4', 'Post_Rehab_Test') # delta Y: how much each feature recovered from post-injury to post-rehab
 
-        Y_BLOCKS = {
+        Y_BLOCKS = {                                                                                  # dispatch table: maps the variant string to (Y_block, label) pair so the loop below can pick which to run
             'injury_snapshot': (Y_injury, 'Injury snapshot (Post_Injury_2-4 kinematics)'),
             'deficit_delta':   (Y_deficit, 'Injury deficit (Post_Injury_2-4 - Baseline)'),
             'recovery_delta':  (Y_recovery, 'ABT recovery (Post_Rehab_Test - Post_Injury_2-4)'),
@@ -736,16 +736,16 @@ PLS_VARIANTS_NB = [
         (X-loadings, Y-loadings, score-vs-score scatter).
     """),
     ("code", """
-        variants = list(Y_BLOCKS.keys()) if VARIANT == 'all' else [VARIANT]
-        if VARIANT != 'all' and VARIANT not in Y_BLOCKS:
+        variants = list(Y_BLOCKS.keys()) if VARIANT == 'all' else [VARIANT]                       # if VARIANT='all', loop over all three; otherwise just the chosen one
+        if VARIANT != 'all' and VARIANT not in Y_BLOCKS:                                          # guard against typos in the parameters cell
             raise ValueError(f"Unknown VARIANT {VARIANT!r}. Choose one of {list(Y_BLOCKS) + ['all']}.")
 
-        results = {}
+        results = {}                                                                              # variant name -> dict returned by run_pls (contains pls model, X_scores, Y_scores, X_loadings, Y_loadings, subjects, label)
         for variant in variants:
-            Y, label = Y_BLOCKS[variant]
-            print(f'\\n=== {variant} ===')
-            results[variant] = run_pls(X_block, Y, n_components=N_COMPONENTS, label=label)
-            plot_pls(results[variant], top_n=TOP_N)
+            Y, label = Y_BLOCKS[variant]                                                          # tuple unpack: Y is the Y-block dataframe, label is the human-readable string
+            print(f'\\n=== {variant} ===')                                                        # section divider in the printed output
+            results[variant] = run_pls(X_block, Y, n_components=N_COMPONENTS, label=label)        # fit PLSCanonical between connectivity X-block and this variant's Y-block
+            plot_pls(results[variant], top_n=TOP_N)                                               # render the three-panel figure (X-loadings, Y-loadings, cross-score scatter) per LV; top_n caps how many connectivity loadings to label
     """),
     ("md", """
         ## 3. Export latent-variable scores for the gallery
@@ -754,11 +754,11 @@ PLS_VARIANTS_NB = [
         gallery can assemble a summary figure without re-fitting.
     """),
     ("code", """
-        for variant, r in results.items():
-            out = pd.DataFrame(r['X_scores'], index=r['subjects'],
-                               columns=[f'LV{i+1}' for i in range(r['X_scores'].shape[1])])
-            out.to_parquet(CACHE_DIR / f'pls_{variant}_X_scores.parquet')
-            print(f'Wrote pls_{variant}_X_scores.parquet, N={len(out)}')
+        for variant, r in results.items():                                                         # iterate over the variants that ran (depending on VARIANT setting, this is 1 or 3)
+            out = pd.DataFrame(r['X_scores'], index=r['subjects'],                                 # subjects' positions on each LV in connectivity-side latent space
+                               columns=[f'LV{i+1}' for i in range(r['X_scores'].shape[1])])       # LV1, LV2, ... column names; .shape[1] = number of latent variables actually fit
+            out.to_parquet(CACHE_DIR / f'pls_{variant}_X_scores.parquet')                          # one parquet per variant; figure gallery / future analyses can read these without re-fitting
+            print(f'Wrote pls_{variant}_X_scores.parquet, N={len(out)}')                           # status; N here is matched-subject count for this variant
     """),
 ]
 
@@ -797,18 +797,18 @@ LMM_NB = [
         FIGSIZE_BARS = (14, 16)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
+        import numpy as np                                                                # numerical arrays
+        import pandas as pd                                                               # dataframes
+        import matplotlib.pyplot as plt                                                   # plotting
 
-        from endpoint_ck_analysis.config import ANALYZABLE_PHASES, EXAMPLE_OUTPUT_DIR, CACHE_DIR, FDR_ALPHA
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.kinematics import get_kinematic_cols
-        from endpoint_ck_analysis.helpers.models import run_phase_lmm_for_features
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        from endpoint_ck_analysis.config import ANALYZABLE_PHASES, EXAMPLE_OUTPUT_DIR, CACHE_DIR, FDR_ALPHA # phase set + output paths + FDR alpha for multiple-testing correction
+        from endpoint_ck_analysis.data_loader import load_all                                              # one-shot loader
+        from endpoint_ck_analysis.helpers.kinematics import get_kinematic_cols                             # returns the deduplicated list of kinematic feature column names
+        from endpoint_ck_analysis.helpers.models import run_phase_lmm_for_features                          # fits an LMM per feature, returns FDR-corrected results
+        from endpoint_ck_analysis.helpers.plotting import stamp_version                                     # figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all()
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                             # ensure output folder exists
+        data = load_all()                                                                  # uses cache from 00_setup
     """),
     ("md", """
         ## 1. Prepare the reach-level dataframe
@@ -818,23 +818,23 @@ LMM_NB = [
         "phase X - Baseline".
     """),
     ("code", """
-        contacted = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()
-        contacted['phase_group'] = pd.Categorical(
+        contacted = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()        # only reaches that touched the pellet (uncontacted reaches lack meaningful kinematics); .copy() avoids a SettingWithCopyWarning when we mutate columns below
+        contacted['phase_group'] = pd.Categorical(                                       # convert phase_group to an ordered Categorical...
             contacted['phase_group'],
-            categories=list(ANALYZABLE_PHASES),
-            ordered=True,
+            categories=list(ANALYZABLE_PHASES),                                          # ...explicit category order so Baseline is the reference level...
+            ordered=True,                                                                # ...ordered=True so contrasts read as "later phase vs Baseline"
         )
 
-        features = FEATURE_LIST or get_kinematic_cols(contacted)
-        print(f'Features to test: {len(features)}')
+        features = FEATURE_LIST or get_kinematic_cols(contacted)                         # FEATURE_LIST is a parameter override; if None/empty, fall back to the deduplicated kinematic-feature list
+        print(f'Features to test: {len(features)}')                                      # status; this is the family size FDR will correct over
     """),
     ("md", """
         ## 2. Omnibus across all four phases
     """),
     ("code", """
-        omnibus = run_phase_lmm_for_features(contacted, features, fdr_alpha=FDR_ALPHA)
-        print(omnibus.head(15)[['feature', 'phase_p', 'phase_p_adj', 'n_reaches', 'n_subjects', 'converged']])
-        omnibus.to_parquet(CACHE_DIR / 'lmm_omnibus.parquet', index=False)
+        omnibus = run_phase_lmm_for_features(contacted, features, fdr_alpha=FDR_ALPHA)               # one LMM per feature, all four phases included; helper internally FDR-corrects across the feature family
+        print(omnibus.head(15)[['feature', 'phase_p', 'phase_p_adj', 'n_reaches', 'n_subjects', 'converged']]) # show the 15 most-significant features (sorted by p_adj inside the helper); column subset keeps the print readable
+        omnibus.to_parquet(CACHE_DIR / 'lmm_omnibus.parquet', index=False)                            # cache the full results table for downstream notebooks / re-analysis
     """),
     ("md", """
         ## 3. Deficit delta (Baseline vs Post_Injury_2-4)
@@ -843,9 +843,9 @@ LMM_NB = [
         coefficient IS the delta.
     """),
     ("code", """
-        deficit_df = contacted[contacted['phase_group'].isin(['Baseline', 'Post_Injury_2-4'])].copy()
-        deficit_df['phase_group'] = pd.Categorical(deficit_df['phase_group'], categories=['Baseline', 'Post_Injury_2-4'])
-        deficit = run_phase_lmm_for_features(deficit_df, features, fdr_alpha=FDR_ALPHA)
+        deficit_df = contacted[contacted['phase_group'].isin(['Baseline', 'Post_Injury_2-4'])].copy() # restrict to the two-phase deficit comparison so the LMM coefficient IS the delta
+        deficit_df['phase_group'] = pd.Categorical(deficit_df['phase_group'], categories=['Baseline', 'Post_Injury_2-4']) # rebuild the Categorical with just these two levels; ordering ensures Baseline is the reference
+        deficit = run_phase_lmm_for_features(deficit_df, features, fdr_alpha=FDR_ALPHA)               # same per-feature LMM as the omnibus, but on the restricted dataframe
         print(deficit.head(15)[['feature', 'phase_p', 'phase_p_adj', 'n_reaches', 'n_subjects', 'converged']])
         deficit.to_parquet(CACHE_DIR / 'lmm_deficit.parquet', index=False)
     """),
@@ -853,8 +853,8 @@ LMM_NB = [
         ## 4. Recovery delta (Post_Injury_2-4 vs Post_Rehab_Test)
     """),
     ("code", """
-        recovery_df = contacted[contacted['phase_group'].isin(['Post_Injury_2-4', 'Post_Rehab_Test'])].copy()
-        recovery_df['phase_group'] = pd.Categorical(recovery_df['phase_group'], categories=['Post_Injury_2-4', 'Post_Rehab_Test'])
+        recovery_df = contacted[contacted['phase_group'].isin(['Post_Injury_2-4', 'Post_Rehab_Test'])].copy() # two-phase recovery comparison
+        recovery_df['phase_group'] = pd.Categorical(recovery_df['phase_group'], categories=['Post_Injury_2-4', 'Post_Rehab_Test']) # Post_Injury_2-4 is the reference here; coefficient reads as "Post_Rehab - Post_Injury"
         recovery = run_phase_lmm_for_features(recovery_df, features, fdr_alpha=FDR_ALPHA)
         print(recovery.head(15)[['feature', 'phase_p', 'phase_p_adj', 'n_reaches', 'n_subjects', 'converged']])
         recovery.to_parquet(CACHE_DIR / 'lmm_recovery.parquet', index=False)
@@ -866,20 +866,20 @@ LMM_NB = [
         significance. Red dashed line marks the FDR cutoff.
     """),
     ("code", """
-        combined = pd.concat([
-            omnibus.head(TOP_N_FIGURE).assign(analysis='Omnibus (all phases)'),
+        combined = pd.concat([                                                                       # stack the top features from all three analyses with an 'analysis' label column for groupby
+            omnibus.head(TOP_N_FIGURE).assign(analysis='Omnibus (all phases)'),                       # .assign() adds a constant-valued column to the dataframe; .head(N) takes the top N rows already sorted by p_adj
             deficit.head(TOP_N_FIGURE).assign(analysis='Deficit (Baseline -> Post_Injury_2-4)'),
             recovery.head(TOP_N_FIGURE).assign(analysis='Recovery (Post_Injury_2-4 -> Post_Rehab_Test)'),
         ])
-        combined['neg_log_p'] = -np.log10(combined['phase_p_adj'].clip(lower=1e-30))
+        combined['neg_log_p'] = -np.log10(combined['phase_p_adj'].clip(lower=1e-30))                  # -log10 inflates small p-values into tall bars; .clip(lower=1e-30) avoids -log10(0)=inf when p_adj rounds to zero
 
-        sig_threshold = -np.log10(FDR_ALPHA)
-        fig, axes = plt.subplots(3, 1, figsize=FIGSIZE_BARS)
-        for ax, (label, group) in zip(axes, combined.groupby('analysis', sort=False)):
-            plot_df = group.dropna(subset=['neg_log_p']).sort_values('neg_log_p')
-            colors = ['steelblue' if v >= sig_threshold else 'lightgray' for v in plot_df['neg_log_p']]
-            ax.barh(plot_df['feature'], plot_df['neg_log_p'], color=colors)
-            ax.axvline(sig_threshold, color='red', linestyle='--', linewidth=1, label=f'FDR q={FDR_ALPHA}')
+        sig_threshold = -np.log10(FDR_ALPHA)                                                          # vertical reference line for the conventional 0.05 cutoff
+        fig, axes = plt.subplots(3, 1, figsize=FIGSIZE_BARS)                                          # 3 stacked panels (one per analysis)
+        for ax, (label, group) in zip(axes, combined.groupby('analysis', sort=False)):                # iterate panels and groups in lockstep; sort=False preserves insertion order (omnibus -> deficit -> recovery)
+            plot_df = group.dropna(subset=['neg_log_p']).sort_values('neg_log_p')                     # drop features that didn't fit (NaN p_adj) and sort ascending so the strongest bar ends up on top of the horizontal chart
+            colors = ['steelblue' if v >= sig_threshold else 'lightgray' for v in plot_df['neg_log_p']] # list comprehension: significant bars get a bold color, non-significant ones gray
+            ax.barh(plot_df['feature'], plot_df['neg_log_p'], color=colors)                           # horizontal bars with feature names on y-axis
+            ax.axvline(sig_threshold, color='red', linestyle='--', linewidth=1, label=f'FDR q={FDR_ALPHA}') # red dashed line marking the FDR cutoff
             ax.set_xlabel('-log10(FDR-adjusted p)')
             ax.set_title(label)
             ax.legend(loc='lower right')
@@ -914,17 +914,17 @@ VALIDATION_NB = [
         FIGSIZE_PER_PHASE = (9, 5)
     """),
     ("code", """
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        from sklearn.metrics import cohen_kappa_score, confusion_matrix
+        import pandas as pd                                              # dataframes
+        import matplotlib.pyplot as plt                                  # plotting
+        import seaborn as sns                                            # heatmap helper used for the confusion matrix
+        from sklearn.metrics import cohen_kappa_score, confusion_matrix  # chance-corrected agreement statistic + raw count matrix
 
-        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR       # PNG output dir
+        from endpoint_ck_analysis.data_loader import load_all            # one-shot loader
+        from endpoint_ck_analysis.helpers.plotting import stamp_version  # figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all()
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)            # ensure output folder exists
+        data = load_all()                                                # uses cache from 00_setup
     """),
     ("md", """
         ## 1. Build the per-pellet validation dataframe
@@ -932,62 +932,62 @@ VALIDATION_NB = [
         Inner-join manual and algorithmic scores on shared per-pellet keys.
     """),
     ("code", """
-        manual_pellet_pillar = data.manual_pelletdf[data.manual_pelletdf['tray_type'] == 'P']
-        kinematics_pillar = data.kinematicsdf[data.kinematicsdf['tray_type'] == 'P']
+        manual_pellet_pillar = data.manual_pelletdf[data.manual_pelletdf['tray_type'] == 'P']           # restrict to pillar trays only -- the algorithm wasn't designed for E/F trays
+        kinematics_pillar = data.kinematicsdf[data.kinematicsdf['tray_type'] == 'P']                    # same restriction on the kinematics side
 
-        algo_per_segment = kinematics_pillar[
+        algo_per_segment = kinematics_pillar[                                                            # pull just the columns we need to identify segments + their algorithmic outcome...
             ['subject_id', 'session_date', 'tray_type', 'run_number', 'segment_num', 'segment_outcome']
-        ].drop_duplicates().rename(columns={'run_number': 'tray_number', 'segment_num': 'pellet_number'})
+        ].drop_duplicates().rename(columns={'run_number': 'tray_number', 'segment_num': 'pellet_number'}) # ...drop_duplicates collapses multiple reaches in the same segment to one row, then rename to the column names manual scoring uses
 
-        validation = manual_pellet_pillar[
+        validation = manual_pellet_pillar[                                                              # build the validation join key from manual scoring's columns...
             ['subject_id', 'session_date', 'tray_type', 'tray_number', 'pellet_number', 'score']
-        ].merge(
+        ].merge(                                                                                         # ...and inner-join against the algorithmic per-segment table
             algo_per_segment,
-            on=['subject_id', 'session_date', 'tray_type', 'tray_number', 'pellet_number'],
-            how='inner',
+            on=['subject_id', 'session_date', 'tray_type', 'tray_number', 'pellet_number'],             # composite key uniquely identifies one pellet event
+            how='inner',                                                                                 # 'inner' drops pellets that don't match in both sources; that's intentional -- only paired observations count for agreement
         )
         print(f'Matched {len(validation)} pillar pellets between manual and algorithmic scoring')
 
-        manual_cat_map = {0: 'missed', 1: 'displaced', 2: 'retrieved'}
-        algo_cat_map = {
+        manual_cat_map = {0: 'missed', 1: 'displaced', 2: 'retrieved'}                                  # manual scoring uses integer codes; map to readable strings for the confusion matrix
+        algo_cat_map = {                                                                                 # algorithmic scoring has more granular categories; collapse to the same three buckets manual uses
             'untouched': 'missed', 'uncertain': 'missed',
             'displaced_sa': 'displaced', 'displaced_outside': 'displaced',
             'retrieved': 'retrieved',
         }
-        validation['manual_cat'] = validation['score'].map(manual_cat_map)
+        validation['manual_cat'] = validation['score'].map(manual_cat_map)                              # .map applies the dict element-wise; result is a new Series of category strings
         validation['algo_cat'] = validation['segment_outcome'].map(algo_cat_map)
-        validation['manual_contacted'] = validation['manual_cat'] != 'missed'
-        validation['algo_contacted'] = validation['algo_cat'] != 'missed'
+        validation['manual_contacted'] = validation['manual_cat'] != 'missed'                           # boolean: did the manual score say the pellet was at least touched?
+        validation['algo_contacted'] = validation['algo_cat'] != 'missed'                               # same boolean for the algorithm; binary metric is easier to interpret than three-way
     """),
     ("md", """
         ## 2. Summary statistics
     """),
     ("code", """
-        three_way = (validation['manual_cat'] == validation['algo_cat']).mean()
-        binary = (validation['manual_contacted'] == validation['algo_contacted']).mean()
-        kappa = cohen_kappa_score(validation['manual_cat'], validation['algo_cat'])
-        print(f'Three-way exact agreement:     {three_way:.3%}')
+        three_way = (validation['manual_cat'] == validation['algo_cat']).mean()                           # element-wise equality on the three categories -> boolean Series; .mean() of bools = fraction True = exact agreement rate
+        binary = (validation['manual_contacted'] == validation['algo_contacted']).mean()                  # same logic on the binary contacted/missed collapse
+        kappa = cohen_kappa_score(validation['manual_cat'], validation['algo_cat'])                       # Cohen's kappa: agreement adjusted for the rate you'd expect by chance given each rater's marginal distribution
+        print(f'Three-way exact agreement:     {three_way:.3%}')                                          # .3% formats as percentage with 3 decimal places
         print(f'Binary (contacted vs missed):  {binary:.3%}')
         print(f"Cohen's kappa (three-way):     {kappa:.3f}")
-        print('Interpretation of kappa: <0.4 poor, 0.4-0.6 moderate, 0.6-0.8 substantial, >0.8 almost perfect')
+        print('Interpretation of kappa: <0.4 poor, 0.4-0.6 moderate, 0.6-0.8 substantial, >0.8 almost perfect') # standard kappa-interpretation thresholds (Landis & Koch 1977)
         print('\\nConfusion matrix (rows=manual, cols=algorithmic):')
-        print(pd.crosstab(validation['manual_cat'], validation['algo_cat'], margins=True))
+        print(pd.crosstab(validation['manual_cat'], validation['algo_cat'], margins=True))                # pandas crosstab counts co-occurrences; margins=True adds row/column totals
     """),
     ("md", """
         ## 3. Confusion matrix heatmap (counts + row-normalized)
     """),
     ("code", """
-        cats = ['missed', 'displaced', 'retrieved']
-        cm = confusion_matrix(validation['manual_cat'], validation['algo_cat'], labels=cats)
-        cm_norm = cm / cm.sum(axis=1, keepdims=True)
+        cats = ['missed', 'displaced', 'retrieved']                                                     # explicit category order; passing labels= to confusion_matrix locks the row/col axis to this order regardless of which categories appear in the data
+        cm = confusion_matrix(validation['manual_cat'], validation['algo_cat'], labels=cats)             # 3x3 raw-count matrix; rows=manual labels, cols=algorithmic labels
+        cm_norm = cm / cm.sum(axis=1, keepdims=True)                                                     # row-normalize: divide each row by its sum -> rows now sum to 1.0; reads as "given the manual class, what fraction does the algorithm assign to each class"; keepdims=True keeps it as a (3,1) for proper broadcasting
 
-        fig, axes = plt.subplots(1, 2, figsize=FIGSIZE_CM)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=cats, yticklabels=cats,
+        fig, axes = plt.subplots(1, 2, figsize=FIGSIZE_CM)                                              # two side-by-side panels: counts and normalized
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=cats, yticklabels=cats,          # annot=True writes the count in each cell; fmt='d' formats as integer
                     ax=axes[0], cbar_kws={'label': 'count'})
         axes[0].set_xlabel('Algorithmic classification')
         axes[0].set_ylabel('Manual classification')
         axes[0].set_title('Pillar confusion matrix (raw counts)')
-        sns.heatmap(cm_norm, annot=True, fmt='.2%', cmap='Blues', xticklabels=cats, yticklabels=cats,
+        sns.heatmap(cm_norm, annot=True, fmt='.2%', cmap='Blues', xticklabels=cats, yticklabels=cats,   # fmt='.2%' formats as percentage with 2 decimals; vmin/vmax fix the colormap range so two heatmaps with different absolute scales remain visually comparable
                     ax=axes[1], vmin=0, vmax=1, cbar_kws={'label': 'fraction'})
         axes[1].set_xlabel('Algorithmic classification')
         axes[1].set_ylabel('Manual classification')
@@ -1003,34 +1003,34 @@ VALIDATION_NB = [
         Does the algorithm's accuracy drift across the experimental phases?
     """),
     ("code", """
-        validation_with_phase = validation.merge(
+        validation_with_phase = validation.merge(                                                       # left-join phase_group onto each validated pellet so we can group by phase
             manual_pellet_pillar[['subject_id', 'session_date', 'tray_number', 'pellet_number', 'phase_group']],
-            on=['subject_id', 'session_date', 'tray_number', 'pellet_number'],
-            how='left',
+            on=['subject_id', 'session_date', 'tray_number', 'pellet_number'],                          # composite key matches the validation table
+            how='left',                                                                                  # keep every validation row even if phase isn't found (rare; would show as NaN phase_group)
         )
-        per_phase = validation_with_phase.groupby('phase_group').apply(
-            lambda g: pd.Series({
-                'n': len(g),
-                'three_way_agreement': (g['manual_cat'] == g['algo_cat']).mean(),
-                'binary_agreement': (g['manual_contacted'] == g['algo_contacted']).mean(),
+        per_phase = validation_with_phase.groupby('phase_group').apply(                                 # one row per phase
+            lambda g: pd.Series({                                                                        # lambda runs on each phase's subset 'g'; returns a small Series of statistics
+                'n': len(g),                                                                             # how many pellets contributed to this phase's number
+                'three_way_agreement': (g['manual_cat'] == g['algo_cat']).mean(),                       # exact-agreement rate within phase
+                'binary_agreement': (g['manual_contacted'] == g['algo_contacted']).mean(),              # contacted-vs-missed agreement within phase
             })
-        ).sort_values('n', ascending=False)
+        ).sort_values('n', ascending=False)                                                              # sort by sample size so phases with the most data appear first
         print(per_phase)
 
-        fig, ax = plt.subplots(figsize=FIGSIZE_PER_PHASE)
-        x = range(len(per_phase))
-        ax.bar([i - 0.2 for i in x], per_phase['three_way_agreement'], width=0.4,
+        fig, ax = plt.subplots(figsize=FIGSIZE_PER_PHASE)                                               # one panel
+        x = range(len(per_phase))                                                                        # integer x positions (one per phase)
+        ax.bar([i - 0.2 for i in x], per_phase['three_way_agreement'], width=0.4,                        # offset by -0.2 so this bar sits to the LEFT of the phase tick
                label='Three-way agreement', color='steelblue')
-        ax.bar([i + 0.2 for i in x], per_phase['binary_agreement'], width=0.4,
+        ax.bar([i + 0.2 for i in x], per_phase['binary_agreement'], width=0.4,                           # offset by +0.2 so this bar sits to the RIGHT, paired with the matching three-way bar
                label='Binary agreement', color='orange')
         ax.set_xticks(list(x))
-        ax.set_xticklabels(per_phase.index, rotation=45, ha='right')
+        ax.set_xticklabels(per_phase.index, rotation=45, ha='right')                                    # rotate phase names so they don't overlap; ha='right' anchors text at the right edge
         ax.set_ylabel('Agreement rate')
-        ax.set_ylim(0, 1)
-        ax.axhline(0.9, color='green', linestyle='--', linewidth=0.7, label='0.90 reference')
+        ax.set_ylim(0, 1)                                                                                # agreement is a fraction; lock axis to [0,1] so the y-axis is comparable across runs
+        ax.axhline(0.9, color='green', linestyle='--', linewidth=0.7, label='0.90 reference')           # green dashed line at 0.9 -- a typical "good agreement" benchmark
         ax.legend()
         ax.set_title('Manual vs algorithmic agreement by phase (pillar trays only)')
-        for i, (phase, row) in enumerate(per_phase.iterrows()):
+        for i, (phase, row) in enumerate(per_phase.iterrows()):                                          # annotate each phase position with its N at the bottom of the plot
             ax.text(i, 0.02, f"N={int(row['n'])}", ha='center', fontsize=8)
         plt.tight_layout()
         stamp_version(fig, label='06 per phase')
