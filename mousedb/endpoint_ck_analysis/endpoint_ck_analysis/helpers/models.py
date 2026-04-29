@@ -101,7 +101,13 @@ def fit_phase_lmm(df: pd.DataFrame, feature: str) -> Dict[str, Any]:
 
         # Omnibus Wald test for "does phase matter at all, pooling over all levels?"
         wald_table = result.wald_test_terms().table                                # statsmodels returns a small DataFrame of Wald tests per term; .table extracts it
-        phase_p = wald_table.loc["C(phase_group)", "P>chi2"]                       # pull the p-value cell for the phase term
+        # Statsmodels >=0.14 renamed the p-value column from "P>chi2" to "pvalue".
+        # Try the new name first; fall back to the legacy name for older installs.
+        if "pvalue" in wald_table.columns:                                         # statsmodels 0.14+: column is 'pvalue'
+            phase_p = wald_table.loc["C(phase_group)", "pvalue"]
+        else:                                                                       # legacy (<0.14): column was 'P>chi2'
+            phase_p = wald_table.loc["C(phase_group)", "P>chi2"]
+        phase_p = float(phase_p)                                                   # cast to plain Python float; statsmodels 0.14+ returns 0-d numpy arrays which FDR correction can't handle uniformly
 
         return {                                                                   # success result dict; mirrors the failure shape so the caller can build a uniform table
             "feature": feature,
@@ -165,9 +171,12 @@ def run_phase_lmm_for_features(
 
     results_df = results_df.sort_values("phase_p_adj").reset_index(drop=True)       # smallest adjusted p first; reset_index drops the original (now-shuffled) row numbers
 
-    # Stash fitted models in .attrs (survives groupby/merge on recent pandas) so post-hocs can find them.
-    results_df.attrs["feature_results"] = {r["feature"]: r for r in raw_results}   # dict comprehension keyed by feature name for O(1) lookup
-    results_df.attrs["fdr_alpha"] = fdr_alpha                                       # remember the alpha used so downstream code can label it
+    # Stash the FDR alpha on .attrs for downstream labeling. We deliberately do NOT
+    # stash the fitted model objects on .attrs: pandas serializes .attrs as JSON
+    # when writing parquet, and statsmodels' MixedLMResultsWrapper is not
+    # JSON-serializable. If post-hoc contrasts are ever needed, hold onto the
+    # raw_results list directly in the calling notebook instead.
+    results_df.attrs["fdr_alpha"] = fdr_alpha                                       # FDR alpha is a plain float -> safe for parquet metadata
     return results_df
 
 
