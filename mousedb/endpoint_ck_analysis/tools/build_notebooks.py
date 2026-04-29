@@ -128,11 +128,12 @@ SETUP_NB = [
         analytical notebooks. Uncomment any lines that would be useful to see.
     """),
     ("code", """
-        # Uncomment any of the lines below to peek at the loaded data. Each one prints a different dataframe so you can sanity-check shape and contents before continuing.
-        # data.AKDdf.head()                                                                          # first 5 rows of All Kinematic Data: per-reach kinematic features for every analyzable phase
-        # data.FCDGdf_wide                                                                           # Filtered Connectivity Data Grouped (eLife) -- wide subjects x region_hemi matrix; matched-subject rows only
-        # data.AKDdf_agg_contact.head()                                                              # first 5 rows of the (subject, phase, contact_group) aggregation: mean/std/median/q25/q75 per kinematic feature
-        pass                                                                                          # 'pass' is a no-op placeholder; required because Python disallows an empty cell body when all real lines are commented out
+        from IPython.display import display                                                          # display(): force-renders any object as cell output. Plain `df.head()` only shows when it's the LAST line of the cell, so for multi-preview cells we wrap each in display() instead.
+        # Uncomment any of the lines below to peek at the loaded data. Each one renders a different dataframe so you can sanity-check shape and contents before continuing.
+        # display(data.AKDdf.head())                                                                 # first 5 rows of All Kinematic Data: per-reach kinematic features for every analyzable phase
+        # display(data.FCDGdf_wide)                                                                  # Filtered Connectivity Data Grouped (eLife) -- wide subjects x region_hemi matrix; matched-subject rows only
+        # display(data.AKDdf_agg_contact.head())                                                     # first 5 rows of the (subject, phase, contact_group) aggregation: mean/std/median/q25/q75 per kinematic feature
+        pass                                                                                          # 'pass' is a no-op placeholder; required because Python disallows an empty cell body when all real lines are commented out. With display(), the position of pass no longer matters: every uncommented display() call still prints.
     """),
     ("md", """
         ## Next
