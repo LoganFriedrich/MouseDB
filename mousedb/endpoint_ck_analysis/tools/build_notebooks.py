@@ -184,22 +184,22 @@ CONNECTIVITY_PCA_NB = [
         FIGSIZE_SUBJECT_REGION = (24, 4)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.decomposition import PCA
+        import numpy as np                              # numpy: fast numerical arrays + math; aliased as np by convention
+        import pandas as pd                             # pandas: dataframe library (rows + named columns, like a spreadsheet); aliased as pd
+        import matplotlib.pyplot as plt                 # matplotlib's plotting interface; plt.figure(), plt.bar(), etc.
+        import seaborn as sns                           # seaborn: statistical plotting layer on top of matplotlib; gives nicer heatmaps
+        from sklearn.preprocessing import StandardScaler # z-scorer: subtracts mean, divides by std so each feature has comparable magnitude
+        from sklearn.decomposition import PCA           # principal component analysis: finds axes of maximum variance in a dataset
 
-        import endpoint_ck_analysis  # Soft-imports mousedb.region_priors with a frozen fallback
-        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns
-        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        import endpoint_ck_analysis                     # our package; importing it triggers the soft-import of mousedb.region_priors with a frozen fallback
+        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns # canonical region prior + helper that builds {region}_{hemisphere} column names in priority order
+        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR # where saved PNGs go; resolves to ../example_output/ relative to the package
+        from endpoint_ck_analysis.data_loader import load_all # one-shot loader; returns a LoadedData container with every base/derived dataframe
+        from endpoint_ck_analysis.helpers.plotting import stamp_version # adds a small "tool version" footer to a figure for traceability
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True) # ensure the example_output folder exists before we try to save into it
 
-        data = load_all()  # Reads from cache produced by 00_setup
+        data = load_all()  # default uses the cache produced by 00_setup; pass use_cache=False to force a fresh DB rebuild
     """),
     ("md", """
         ## 1. Prepare the matrix and run PCA
@@ -209,27 +209,27 @@ CONNECTIVITY_PCA_NB = [
         regions sit together at the top.
     """),
     ("code", """
-        X = data.FCDGdf_wide.fillna(0)  # PCA cannot handle NaNs; fill with 0
+        X = data.FCDGdf_wide.fillna(0)  # FCDGdf_wide is the matched-subjects connectivity matrix (rows=subjects, cols=region_hemi); fillna(0) replaces missing cells with 0 because PCA cannot handle NaNs
 
         # Canonical column order: predicted importance for skilled reaching, both/left/right per region.
-        canonical_cols = ordered_hemisphere_columns(
-            SKILLED_REACHING, available=X.columns.tolist()
+        canonical_cols = ordered_hemisphere_columns(           # build the ordered list of {region}_{hemi} column names...
+            SKILLED_REACHING, available=X.columns.tolist()      # ...filtered to only those columns the dataframe actually has (some hemispheres may be absent)
         )
-        X = X[canonical_cols]  # Reorder so every downstream plot inherits this order
+        X = X[canonical_cols]  # reorder X's columns; every downstream plot inherits this column ordering automatically
 
-        scaler = StandardScaler()            # Z-score each region's counts across subjects
-        X_scaled = scaler.fit_transform(X)
+        scaler = StandardScaler()            # set up the z-scorer (does nothing yet, just holds the transformation)
+        X_scaled = scaler.fit_transform(X)   # fit() learns each column's mean+std, transform() applies the z-score; result is a numpy array
 
-        pca = PCA(n_components=N_COMPONENTS)
-        scores = pca.fit_transform(X_scaled)
+        pca = PCA(n_components=N_COMPONENTS) # PCA decomposer; n_components caps how many principal components to extract (parameters cell sets this)
+        scores = pca.fit_transform(X_scaled) # fit() finds the components, transform() projects each subject onto them; scores[i, j] = subject i's coordinate on PCj
 
-        eigen_summary = pd.DataFrame({
-            'Component': [f'PC{i+1}' for i in range(N_COMPONENTS)],
-            'Eigenvalue': pca.explained_variance_,
-            'Variance': pca.explained_variance_ratio_,
-            'Cumulative': np.cumsum(pca.explained_variance_ratio_),
+        eigen_summary = pd.DataFrame({                                                     # build a small table summarizing the components
+            'Component': [f'PC{i+1}' for i in range(N_COMPONENTS)],                        # PC1, PC2, ... names (i+1 because humans count from 1, Python from 0)
+            'Eigenvalue': pca.explained_variance_,                                         # raw variance captured by each PC (in z-scored units)
+            'Variance': pca.explained_variance_ratio_,                                     # same thing as a fraction of total variance (sums to <=1)
+            'Cumulative': np.cumsum(pca.explained_variance_ratio_),                        # running total -- shows how much variance the first k PCs together capture
         })
-        print(eigen_summary)
+        print(eigen_summary) # print the summary table; useful first sanity check on the decomposition
     """),
     ("md", """
         ## 2. Scree plot
@@ -238,15 +238,15 @@ CONNECTIVITY_PCA_NB = [
         explain most of the variance, a 2D plot captures the dominant structure.
     """),
     ("code", """
-        fig = plt.figure(figsize=FIGSIZE_SCREE)
-        plt.bar(range(1, N_COMPONENTS + 1), pca.explained_variance_ratio_)
-        plt.xticks(range(1, N_COMPONENTS + 1), eigen_summary['Component'])
-        plt.xlabel('Principal Component')
-        plt.ylabel('Variance Explained')
-        plt.title('Connectivity PCA: Variance per PC')
-        stamp_version(fig, label='01 scree')
-        plt.savefig(EXAMPLE_OUTPUT_DIR / '01_scree.png', dpi=150, bbox_inches='tight')
-        plt.show()
+        fig = plt.figure(figsize=FIGSIZE_SCREE)                                          # new matplotlib figure; figsize is (width, height) in inches
+        plt.bar(range(1, N_COMPONENTS + 1), pca.explained_variance_ratio_)               # bar chart: x = PC index 1..K, y = variance fraction explained by each PC
+        plt.xticks(range(1, N_COMPONENTS + 1), eigen_summary['Component'])               # replace numeric x-tick labels with the PC1/PC2/... strings from eigen_summary
+        plt.xlabel('Principal Component')                                                # x-axis label (edit the string to change what shows on the plot)
+        plt.ylabel('Variance Explained')                                                 # y-axis label
+        plt.title('Connectivity PCA: Variance per PC')                                   # plot title
+        stamp_version(fig, label='01 scree')                                             # adds the small tool-version footer; helps trace which run produced this PNG
+        plt.savefig(EXAMPLE_OUTPUT_DIR / '01_scree.png', dpi=150, bbox_inches='tight')   # write to disk; dpi controls resolution, bbox_inches='tight' trims whitespace
+        plt.show()                                                                       # render in the notebook output cell
     """),
     ("md", """
         ## 3. Loadings: all regions, in canonical order
@@ -255,23 +255,23 @@ CONNECTIVITY_PCA_NB = [
         contributes strongly to that component's differentiation between subjects.
     """),
     ("code", """
-        loadings = pd.DataFrame(
-            pca.components_,
-            columns=X.columns,
-            index=[f'PC{i+1}' for i in range(N_COMPONENTS)],
+        loadings = pd.DataFrame(                                              # wrap the raw numpy components matrix into a labeled DataFrame
+            pca.components_,                                                  # shape (n_components, n_features); each row is one PC's contribution from each feature
+            columns=X.columns,                                                # reattach the region_hemi column names so we can read them on the plot
+            index=[f'PC{i+1}' for i in range(N_COMPONENTS)],                  # name each row PC1, PC2, ...
         )
 
-        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_LOADINGS, sharey=True)
-        for i, pc in enumerate(loadings.index):
-            ordered = loadings.loc[pc, canonical_cols]  # In canonical order, not sorted by value
-            axes[i].barh(ordered.index, ordered.values)
-            axes[i].set_xlabel('Loading')
-            axes[i].set_title(f'{pc} ({pca.explained_variance_ratio_[i]:.1%} var)')
-            axes[i].axvline(0, color='black', linewidth=0.5)
-            axes[i].invert_yaxis()  # Highest-priority regions on top
-        stamp_version(fig, label='01 loadings (all)')
-        plt.savefig(EXAMPLE_OUTPUT_DIR / '01_loadings_all.png', dpi=150, bbox_inches='tight')
-        plt.show()
+        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_LOADINGS, sharey=True) # one row, N_COMPONENTS columns of subplots; sharey=True so y-axis labels (region names) stay aligned across PCs
+        for i, pc in enumerate(loadings.index):                                          # i is the integer index, pc is the string 'PC1'/'PC2'/...; loop fills each subplot
+            ordered = loadings.loc[pc, canonical_cols]  # pull this PC's row, restricted+reordered to canonical_cols (predicted-importance order)
+            axes[i].barh(ordered.index, ordered.values)                                  # horizontal bars: y=region names, x=loading magnitude
+            axes[i].set_xlabel('Loading')                                                # x-axis label
+            axes[i].set_title(f'{pc} ({pca.explained_variance_ratio_[i]:.1%} var)')      # title shows PC name + how much variance it captured (.1%) formats as a percentage with 1 decimal place
+            axes[i].axvline(0, color='black', linewidth=0.5)                             # thin vertical line at zero so positive vs negative loadings are easy to see
+            axes[i].invert_yaxis()  # default barh draws first row at the bottom; invert so the highest-priority region (first in canonical_cols) sits on top
+        stamp_version(fig, label='01 loadings (all)')                                    # version footer
+        plt.savefig(EXAMPLE_OUTPUT_DIR / '01_loadings_all.png', dpi=150, bbox_inches='tight') # save the figure to disk
+        plt.show()                                                                        # render inline in the notebook
     """),
     ("md", """
         ## 4. Identify the top-loading regions per PC
@@ -281,35 +281,35 @@ CONNECTIVITY_PCA_NB = [
         "important regions" that carry forward into PLS as X-block features.
     """),
     ("code", """
-        important_regions = {}
-        for pc in loadings.index:
-            region_importance = loadings.loc[pc].abs()
-            top_regions = region_importance.nlargest(TOP_N_REGIONS)
-            important_regions[pc] = top_regions
-            print(f"\\nTop {TOP_N_REGIONS} regions on {pc} by |loading|:")
+        important_regions = {}                                                  # dict mapping PC name to its top-loading regions
+        for pc in loadings.index:                                               # iterate over PC1, PC2, ... PC{N_COMPONENTS}
+            region_importance = loadings.loc[pc].abs()                          # absolute value of this PC's loadings (sign doesn't matter for "is this region influential")
+            top_regions = region_importance.nlargest(TOP_N_REGIONS)             # keep the TOP_N_REGIONS regions with the largest |loading|
+            important_regions[pc] = top_regions                                 # store this PC's top set
+            print(f"\\nTop {TOP_N_REGIONS} regions on {pc} by |loading|:")     # \\n inserts a blank line so successive PCs are visually separated
             print(top_regions)
 
-        all_important_regions = set()
-        for pc, series in important_regions.items():
-            all_important_regions.update(series.index)
+        all_important_regions = set()                                           # collect the union of important regions across PCs (deduplicated)
+        for pc, series in important_regions.items():                            # walk through each PC's top set
+            all_important_regions.update(series.index)                          # add this PC's region names to the union (set.update accepts any iterable)
         print(f"\\n{len(all_important_regions)} unique important regions:")
-        print(sorted(all_important_regions))
+        print(sorted(all_important_regions))                                    # alphabetical for stable display across runs
     """),
     ("md", """
         ## 5. Loadings: important regions only (canonical order)
     """),
     ("code", """
-        important_cols_ordered = ordered_hemisphere_columns(
-            SKILLED_REACHING, available=list(all_important_regions)
+        important_cols_ordered = ordered_hemisphere_columns(                    # rebuild the column ordering, but restricted to just the important regions...
+            SKILLED_REACHING, available=list(all_important_regions)             # ...still keeping prior-priority order within that subset
         )
-        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_LOADINGS_FILTERED)
+        fig, axes = plt.subplots(1, N_COMPONENTS, figsize=FIGSIZE_LOADINGS_FILTERED) # one subplot per PC, narrower than the all-regions version because there are fewer rows
         for i, pc in enumerate(loadings.index):
-            pc_top = loadings.loc[pc, important_cols_ordered]
-            axes[i].barh(pc_top.index, pc_top.values)
-            axes[i].axvline(0, color='black', linewidth=0.5)
+            pc_top = loadings.loc[pc, important_cols_ordered]                   # pull this PC's loadings, filtered+ordered to important regions
+            axes[i].barh(pc_top.index, pc_top.values)                           # horizontal bars: region names on y, loading magnitude on x
+            axes[i].axvline(0, color='black', linewidth=0.5)                    # zero reference line
             axes[i].set_xlabel('Loading')
             axes[i].set_title(f'{pc} (important regions only)')
-            axes[i].invert_yaxis()
+            axes[i].invert_yaxis()                                              # priority-region-on-top convention again
         stamp_version(fig, label='01 loadings (important)')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '01_loadings_important.png', dpi=150, bbox_inches='tight')
         plt.show()
@@ -318,11 +318,11 @@ CONNECTIVITY_PCA_NB = [
         ## 6. Loadings heatmap
     """),
     ("code", """
-        important_loadings = loadings[important_cols_ordered].T  # regions as rows, PCs as columns
-        fig = plt.figure(figsize=FIGSIZE_HEATMAP)
-        ax = sns.heatmap(important_loadings, cmap='RdBu_r', center=0,
-                         cbar_kws={'label': 'Loading'})
-        ax.invert_yaxis()
+        important_loadings = loadings[important_cols_ordered].T  # select important columns then transpose (.T) so regions are rows and PCs are columns; matches the conventional heatmap orientation
+        fig = plt.figure(figsize=FIGSIZE_HEATMAP)                # new figure
+        ax = sns.heatmap(important_loadings, cmap='RdBu_r', center=0,  # red-blue diverging colormap centered at 0 so positive/negative loadings render as red/blue
+                         cbar_kws={'label': 'Loading'})          # cbar_kws labels the colorbar legend
+        ax.invert_yaxis()                                        # priority-region-on-top
         plt.title('Connectivity loadings (important regions only)')
         stamp_version(fig, label='01 loadings heatmap')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '01_loadings_heatmap.png', dpi=150, bbox_inches='tight')
@@ -336,16 +336,16 @@ CONNECTIVITY_PCA_NB = [
         (above) and kept-for-contrast regions (below).
     """),
     ("code", """
-        fig = plt.figure(figsize=FIGSIZE_SUBJECT_REGION)
-        ax = sns.heatmap(X, cmap='viridis', cbar_kws={'label': 'Cell count'})
+        fig = plt.figure(figsize=FIGSIZE_SUBJECT_REGION)                                       # new figure; FIGSIZE_SUBJECT_REGION is set in the parameters cell to the wide aspect this heatmap needs
+        ax = sns.heatmap(X, cmap='viridis', cbar_kws={'label': 'Cell count'})                  # heatmap of raw cell counts (rows=subjects, cols=regions); viridis is a perceptually-uniform colormap
 
-        high_priority_region_names = set(
-            SKILLED_REACHING.ordered_regions[:SKILLED_REACHING.high_priority_cutoff]
+        high_priority_region_names = set(                                                      # build a set of the top-priority region names...
+            SKILLED_REACHING.ordered_regions[:SKILLED_REACHING.high_priority_cutoff]            # ...by slicing the prior at its declared cutoff index
         )
-        cutoff_cols = sum(
-            1 for c in canonical_cols if c.rsplit('_', 1)[0] in high_priority_region_names
-        )
-        ax.axvline(cutoff_cols, color='red', linestyle='--', linewidth=1.5)
+        cutoff_cols = sum(                                                                     # count how many columns in canonical_cols belong to a high-priority region...
+            1 for c in canonical_cols if c.rsplit('_', 1)[0] in high_priority_region_names     # ...c.rsplit('_', 1)[0] strips the trailing _both/_left/_right suffix to recover the region name
+        )                                                                                       # this gives the x-axis position to draw the priority/contrast divider
+        ax.axvline(cutoff_cols, color='red', linestyle='--', linewidth=1.5)                    # red dashed vertical line marking the priority cutoff
         plt.title('Subject x region cell counts (canonical order; red = priority cutoff)')
         stamp_version(fig, label='01 cell counts')
         plt.savefig(EXAMPLE_OUTPUT_DIR / '01_connectivity_heatmap.png', dpi=150, bbox_inches='tight')
@@ -358,11 +358,11 @@ CONNECTIVITY_PCA_NB = [
         ``04_pls_variants`` can read it without recomputing.
     """),
     ("code", """
-        from endpoint_ck_analysis.config import CACHE_DIR
-        pd.Series(sorted(all_important_regions), name='region_hemi').to_frame().to_parquet(
-            CACHE_DIR / 'important_regions.parquet', index=False
+        from endpoint_ck_analysis.config import CACHE_DIR                          # cache dir lives next to the bundled DB; downstream notebooks read parquet files from here
+        pd.Series(sorted(all_important_regions), name='region_hemi').to_frame().to_parquet( # Series -> DataFrame so parquet has a named column; sorted for deterministic ordering
+            CACHE_DIR / 'important_regions.parquet', index=False                   # parquet is a fast columnar format; index=False because we don't need the integer row index here
         )
-        print(f'Wrote {len(all_important_regions)} important regions to cache.')
+        print(f'Wrote {len(all_important_regions)} important regions to cache.')   # short status so the user can confirm the export happened
     """),
 ]
 
