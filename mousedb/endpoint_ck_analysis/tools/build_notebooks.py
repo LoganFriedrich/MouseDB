@@ -1568,32 +1568,32 @@ HYPOTHESIS_NB = [
         FIGSIZE_WEIGHTED = (14, 6)
     """),
     ("code", """
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        from sklearn.preprocessing import StandardScaler
-        from sklearn.decomposition import PCA
+        import numpy as np                                                                          # numerical arrays
+        import pandas as pd                                                                          # dataframes
+        import matplotlib.pyplot as plt                                                              # plotting
+        import seaborn as sns                                                                        # heatmaps
+        from sklearn.preprocessing import StandardScaler                                             # z-scorer (used twice in this notebook for PCA prep)
+        from sklearn.decomposition import PCA                                                        # principal component analysis
 
-        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns
-        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR, ANALYZABLE_PHASES
-        from endpoint_ck_analysis.data_loader import load_all
-        from endpoint_ck_analysis.helpers.hierarchical import (
-            build_group_region_map, drill_down_pca, grouped_vs_ungrouped_summary,
+        from endpoint_ck_analysis import SKILLED_REACHING, ordered_hemisphere_columns                # canonical region prior + helper for priority-ordered column lists
+        from endpoint_ck_analysis.config import CACHE_DIR, EXAMPLE_OUTPUT_DIR, ANALYZABLE_PHASES     # cache dir + output dir + analyzable phase set
+        from endpoint_ck_analysis.data_loader import load_all                                        # one-shot loader (supports synthetic mode via flags)
+        from endpoint_ck_analysis.helpers.hierarchical import (                                      # tools for grouped-vs-ungrouped analysis
+            build_group_region_map, drill_down_pca, grouped_vs_ungrouped_summary,                    # group->region map + per-group PCA + side-by-side variance summary
         )
-        from endpoint_ck_analysis.helpers.dimreduce import (
-            priority_weights_from_prior, apply_feature_weights,
+        from endpoint_ck_analysis.helpers.dimreduce import (                                         # tools for prior-weighted decomposition
+            priority_weights_from_prior, apply_feature_weights,                                       # build per-feature weights from a region prior + apply them to an X matrix
         )
-        from endpoint_ck_analysis.helpers.models import compare_nested_lmms
-        from endpoint_ck_analysis.helpers.plotting import stamp_version
+        from endpoint_ck_analysis.helpers.models import compare_nested_lmms                          # nested LMM model-comparison helper (AIC/BIC/LRT)
+        from endpoint_ck_analysis.helpers.plotting import stamp_version                              # figure version footer
 
-        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        data = load_all(
+        EXAMPLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)                                        # ensure output folder exists
+        data = load_all(                                                                              # data load with synthetic flags wired through
             use_synthetic=USE_SYNTHETIC,
             synthetic_n=SYNTHETIC_N,
             synthetic_seed=SYNTHETIC_SEED,
-            use_cache=not USE_SYNTHETIC,
-            write_cache=not USE_SYNTHETIC,
+            use_cache=not USE_SYNTHETIC,                                                             # synthetic always rebuilds (cache reflects last real load)
+            write_cache=not USE_SYNTHETIC,                                                           # don't overwrite real-data cache with synthetic
             verbose=False,
         )
         print(f"Running on {'SYNTHETIC' if USE_SYNTHETIC else 'REAL'} data. "
@@ -1608,19 +1608,19 @@ HYPOTHESIS_NB = [
         profiles imply the grouping is hiding or creating structure.
     """),
     ("code", """
-        summary = grouped_vs_ungrouped_summary(
-            data.ACDGdf_wide.fillna(0), data.ACDUdf_wide.fillna(0), n_components=5,
+        summary = grouped_vs_ungrouped_summary(                                                      # helper runs PCA on both matrices and returns a long-format summary
+            data.ACDGdf_wide.fillna(0), data.ACDUdf_wide.fillna(0), n_components=5,                  # eLife-grouped matrix vs atomic-region matrix; n_components=5 is enough to show the scree shape
         )
-        print(summary)
+        print(summary)                                                                                # tabular printout of variance per PC at both levels
 
         fig, ax = plt.subplots(figsize=FIGSIZE_VAR)
-        for level, grp in summary.groupby('level'):
-            ax.plot(grp['component'], grp['variance_explained'], marker='o', label=level)
+        for level, grp in summary.groupby('level'):                                                  # one line per level (grouped, ungrouped)
+            ax.plot(grp['component'], grp['variance_explained'], marker='o', label=level)            # standard scree-style line plot
         ax.set_ylabel('Variance explained')
         ax.set_xlabel('Component')
         ax.set_title('Connectivity PCA: grouped (eLife) vs ungrouped (atomic regions)')
         ax.legend()
-        ax.grid(alpha=0.3)
+        ax.grid(alpha=0.3)                                                                            # faint grid for easier reading
         stamp_version(fig, label='08 grouped vs ungrouped')
         plt.tight_layout()
         plt.savefig(EXAMPLE_OUTPUT_DIR / '08_grouped_vs_ungrouped.png', dpi=150, bbox_inches='tight')
@@ -1635,42 +1635,42 @@ HYPOTHESIS_NB = [
         PCs has subregional heterogeneity the grouping is hiding.
     """),
     ("code", """
-        group_region_map = build_group_region_map(data.counts_groupeddf)
-        drill_rows = []
-        for group in data.FCDGdf_wide.columns.map(lambda c: c.rsplit('_', 1)[0]).unique():
-            result = drill_down_pca(data.ACDUdf_wide.fillna(0), group, group_region_map, n_components=3)
-            if result is None:
-                continue
-            drill_rows.append({
-                'group': group,
-                'n_atomic': result.n_atomic_regions,
-                'PC1_var': float(result.explained_variance_ratio[0]) if len(result.explained_variance_ratio) else np.nan,
-                'PC2_var': float(result.explained_variance_ratio[1]) if len(result.explained_variance_ratio) > 1 else np.nan,
-                'PC3_var': float(result.explained_variance_ratio[2]) if len(result.explained_variance_ratio) > 2 else np.nan,
+        group_region_map = build_group_region_map(data.counts_groupeddf)                                # build {group_name: [atomic_region_columns]} map from the long-format grouped counts table
+        drill_rows = []                                                                                  # accumulator: one dict per group with that group's PCA result
+        for group in data.FCDGdf_wide.columns.map(lambda c: c.rsplit('_', 1)[0]).unique():               # iterate unique group names; column names are 'GROUP_left'/'GROUP_right'/'GROUP_both' so rsplit('_',1)[0] strips the hemisphere suffix
+            result = drill_down_pca(data.ACDUdf_wide.fillna(0), group, group_region_map, n_components=3) # helper: subset atomic columns belonging to this group and run a mini-PCA on them
+            if result is None:                                                                            # helper returns None when group has fewer atomic regions than samples (PCA would be ill-posed)
+                continue                                                                                  # skip this group; loop continues with the next
+            drill_rows.append({                                                                           # build a flat record for the summary dataframe
+                'group': group,                                                                           # group name (eLife label)
+                'n_atomic': result.n_atomic_regions,                                                      # how many atomic regions fed into this group's mini-PCA
+                'PC1_var': float(result.explained_variance_ratio[0]) if len(result.explained_variance_ratio) else np.nan,    # PC1 share of within-group variance; np.nan if no PCs returned
+                'PC2_var': float(result.explained_variance_ratio[1]) if len(result.explained_variance_ratio) > 1 else np.nan,  # PC2 share; np.nan if fewer than 2 PCs
+                'PC3_var': float(result.explained_variance_ratio[2]) if len(result.explained_variance_ratio) > 2 else np.nan,  # PC3 share; np.nan if fewer than 3 PCs
             })
 
-        drill_df = pd.DataFrame(drill_rows).sort_values('n_atomic', ascending=False)
-        print(drill_df.to_string(index=False))
+        drill_df = pd.DataFrame(drill_rows).sort_values('n_atomic', ascending=False)                     # convert list-of-dicts to dataframe; sort biggest groups first so the bar chart reads left-to-right by size
+        print(drill_df.to_string(index=False))                                                            # full table to stdout; to_string(index=False) suppresses the row-number column
 
         # Plot: stacked bar of PC1/PC2/PC3 variance per group
-        fig, ax = plt.subplots(figsize=FIGSIZE_DRILL)
-        x = range(len(drill_df))
-        bottom = np.zeros(len(drill_df))
-        for pc_col, color, label in [('PC1_var', 'steelblue', 'PC1'),
+        fig, ax = plt.subplots(figsize=FIGSIZE_DRILL)                                                    # figsize from parameters cell so users can resize without editing here
+        x = range(len(drill_df))                                                                         # x positions: one tick per group
+        bottom = np.zeros(len(drill_df))                                                                 # running bottom for stacking; starts at zero for PC1
+        for pc_col, color, label in [('PC1_var', 'steelblue', 'PC1'),                                    # iterate the three PCs; each adds another stacked layer
                                      ('PC2_var', 'coral', 'PC2'),
                                      ('PC3_var', 'seagreen', 'PC3')]:
-            vals = drill_df[pc_col].fillna(0).values
-            ax.bar(x, vals, bottom=bottom, color=color, label=label)
-            bottom = bottom + vals
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(drill_df['group'], rotation=60, ha='right', fontsize=8)
+            vals = drill_df[pc_col].fillna(0).values                                                     # variance shares; fillna(0) because groups with <3 atomic regions have NaN for higher PCs
+            ax.bar(x, vals, bottom=bottom, color=color, label=label)                                     # draw this PC layer on top of the previous bottom
+            bottom = bottom + vals                                                                        # advance bottom for the next iteration
+        ax.set_xticks(list(x))                                                                            # explicit tick positions
+        ax.set_xticklabels(drill_df['group'], rotation=60, ha='right', fontsize=8)                       # group labels at 60deg right-aligned; small font so they fit
         ax.set_ylabel('Variance explained within group')
         ax.set_title('Per-eLife-group drill-down: variance across top 3 within-group PCs')
-        ax.axhline(0.9, color='black', linestyle='--', linewidth=0.6, alpha=0.5)
+        ax.axhline(0.9, color='black', linestyle='--', linewidth=0.6, alpha=0.5)                         # reference line at 90 percent: groups whose top-3 stack reaches it are "compact" in 3D
         ax.legend()
-        stamp_version(fig, label='08 drill-down')
-        plt.tight_layout()
-        plt.savefig(EXAMPLE_OUTPUT_DIR / '08_drill_down.png', dpi=150, bbox_inches='tight')
+        stamp_version(fig, label='08 drill-down')                                                        # version stamp in the footer for traceability
+        plt.tight_layout()                                                                                # tighten margins so labels don't clip
+        plt.savefig(EXAMPLE_OUTPUT_DIR / '08_drill_down.png', dpi=150, bbox_inches='tight')              # write committed example PNG; dpi=150 for crisp output
         plt.show()
     """),
     ("md", """
@@ -1686,37 +1686,37 @@ HYPOTHESIS_NB = [
         test bench for this section.
     """),
     ("code", """
-        reach_level = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()
-        reach_level['phase_group'] = pd.Categorical(
-            reach_level['phase_group'], categories=list(ANALYZABLE_PHASES), ordered=True,
+        reach_level = data.AKDdf[data.AKDdf['contact_group'] == 'contacted'].copy()                       # work on per-reach rows; restrict to reaches that actually contacted the pellet (kinematics need a contact event)
+        reach_level['phase_group'] = pd.Categorical(                                                      # convert phase to ordered categorical so statsmodels treats it as a factor with intentional ordering
+            reach_level['phase_group'], categories=list(ANALYZABLE_PHASES), ordered=True,                  # category order taken from the parameters cell list (Pre, post-injury, post-rehab, etc.)
         )
 
         # Attach top-K prior-ranked connectivity region values to every reach
         # by merging on subject_id from the wide connectivity matrix.
-        canonical_cols = ordered_hemisphere_columns(
-            SKILLED_REACHING, available=data.FCDGdf_wide.columns.tolist(),
+        canonical_cols = ordered_hemisphere_columns(                                                       # helper returns columns in the prior-defined region order, restricted to those actually present
+            SKILLED_REACHING, available=data.FCDGdf_wide.columns.tolist(),                                 # SKILLED_REACHING: the prior list (CST > RuST > ReST etc.); available filters out missing columns
         )
-        top_cols = [c for c in canonical_cols if c.endswith('_both')][:TOP_K_PRIORS]
-        conn_wide = data.FCDGdf_wide[top_cols].fillna(0)
+        top_cols = [c for c in canonical_cols if c.endswith('_both')][:TOP_K_PRIORS]                       # keep bilateral '_both' versions only (avoids double-counting hemispheres) and slice the top-K from the parameters cell
+        conn_wide = data.FCDGdf_wide[top_cols].fillna(0)                                                   # subset wide matrix to the chosen columns; fill missing with 0 since absent data ~= no traced cells
         # Rename to safe python identifiers for patsy formula
-        safe_names = {c: f"conn_{i}" for i, c in enumerate(top_cols)}
-        conn_wide = conn_wide.rename(columns=safe_names).reset_index()
-        reach_level = reach_level.merge(conn_wide, on='subject_id', how='left')
+        safe_names = {c: f"conn_{i}" for i, c in enumerate(top_cols)}                                      # patsy chokes on column names containing dots/dashes; map to conn_0, conn_1, ...
+        conn_wide = conn_wide.rename(columns=safe_names).reset_index()                                     # apply rename and lift subject_id from the index back to a column for the merge
+        reach_level = reach_level.merge(conn_wide, on='subject_id', how='left')                            # left-join: every reach now carries its subject's connectivity values; subjects missing connectivity get NaN
 
-        rhs_parts = list(safe_names.values())
-        model_specs = [
-            ('baseline (phase only)', ''),
-            (f'+top{TOP_K_PRIORS}_priors', ' + '.join(rhs_parts)),
+        rhs_parts = list(safe_names.values())                                                              # list of patsy-safe predictor names (the conn_N columns)
+        model_specs = [                                                                                    # nested model sequence: each spec is (label, additional_RHS_terms)
+            ('baseline (phase only)', ''),                                                                 # baseline: phase fixed effect only (added by helper); empty string means no extra covariates
+            (f'+top{TOP_K_PRIORS}_priors', ' + '.join(rhs_parts)),                                         # extended: baseline + all top-K connectivity regions joined with patsy '+'
         ]
 
-        nested_results = compare_nested_lmms(
-            reach_level.dropna(subset=rhs_parts + [TARGET_FEATURE]),
-            target_feature=TARGET_FEATURE,
-            model_specs=model_specs,
-            groups='subject_id',
-            vc_formula={'session': '0 + C(session_date)'},
+        nested_results = compare_nested_lmms(                                                              # helper fits each model in sequence and returns AIC, BIC, log-likelihood, LRT p-value vs previous spec
+            reach_level.dropna(subset=rhs_parts + [TARGET_FEATURE]),                                       # drop rows missing any predictor or the target so all models compare on the same data
+            target_feature=TARGET_FEATURE,                                                                 # name of kinematic feature to model (from parameters cell)
+            model_specs=model_specs,                                                                       # the nested sequence defined above
+            groups='subject_id',                                                                           # outermost random-effect grouping: subject
+            vc_formula={'session': '0 + C(session_date)'},                                                 # nested random effect: session_date within subject; '0 +' suppresses intercept so each session gets its own random slope
         )
-        print(nested_results.to_string(index=False))
+        print(nested_results.to_string(index=False))                                                        # tabular AIC/BIC/LRT summary; small p_vs_prior column means the added regions matter
     """),
     ("md", """
         ## 4. Prior-weighted PCA
@@ -1732,46 +1732,46 @@ HYPOTHESIS_NB = [
         unweighted are data-driven additions the prior de-emphasized.
     """),
     ("code", """
-        X_conn = data.FCDGdf_wide.fillna(0)
-        X_ordered = X_conn[canonical_cols]
-        X_scaled = pd.DataFrame(
-            StandardScaler().fit_transform(X_ordered),
-            columns=X_ordered.columns, index=X_ordered.index,
+        X_conn = data.FCDGdf_wide.fillna(0)                                                               # wide subject x region matrix; fill NaNs with 0 so PCA has no missing values
+        X_ordered = X_conn[canonical_cols]                                                                # reorder columns into prior-priority order so weights align by position later
+        X_scaled = pd.DataFrame(                                                                          # z-score each column (mean 0, std 1) so PCA isn't dominated by raw-count magnitude
+            StandardScaler().fit_transform(X_ordered),                                                    # sklearn StandardScaler: subtracts column mean, divides by std
+            columns=X_ordered.columns, index=X_ordered.index,                                              # rebuild a dataframe so column/index labels survive the scaler call
         )
 
-        weights = priority_weights_from_prior(SKILLED_REACHING, X_ordered.columns, decay=PRIOR_DECAY)
-        X_weighted = apply_feature_weights(X_scaled, weights)
+        weights = priority_weights_from_prior(SKILLED_REACHING, X_ordered.columns, decay=PRIOR_DECAY)     # helper builds w_i = exp(-decay * rank_i); higher decay = more aggressive down-weighting of low-priority regions
+        X_weighted = apply_feature_weights(X_scaled, weights)                                              # element-wise multiply each column by its weight; PCA on this is the prior-weighted version
 
-        pca_raw = PCA(n_components=min(3, len(X_ordered) - 1)).fit(X_scaled.values)
-        pca_weighted = PCA(n_components=min(3, len(X_ordered) - 1)).fit(X_weighted.values)
+        pca_raw = PCA(n_components=min(3, len(X_ordered) - 1)).fit(X_scaled.values)                       # sklearn PCA on raw z-scored matrix; n_components capped at min(3, N-1) since PCA can't exceed N-1 components
+        pca_weighted = PCA(n_components=min(3, len(X_ordered) - 1)).fit(X_weighted.values)                # PCA on weighted matrix; same cap so the two are comparable
 
-        loadings_raw = pd.Series(pca_raw.components_[0], index=X_scaled.columns)
-        loadings_weighted = pd.Series(pca_weighted.components_[0], index=X_scaled.columns)
+        loadings_raw = pd.Series(pca_raw.components_[0], index=X_scaled.columns)                          # PC1 loadings (eigenvector); components_[0] is the first principal component
+        loadings_weighted = pd.Series(pca_weighted.components_[0], index=X_scaled.columns)                # weighted PC1 loadings; same shape, different values
 
-        top_raw = loadings_raw.abs().nlargest(10).index
-        top_weighted = loadings_weighted.abs().nlargest(10).index
+        top_raw = loadings_raw.abs().nlargest(10).index                                                   # 10 regions with largest absolute loading on raw PC1 (sign-agnostic since PC sign is arbitrary)
+        top_weighted = loadings_weighted.abs().nlargest(10).index                                         # same for weighted PC1
 
         print('Top 10 regions on PC1 (unweighted):')
-        print(loadings_raw.loc[top_raw].sort_values())
+        print(loadings_raw.loc[top_raw].sort_values())                                                    # sort by signed value so reader sees positive vs negative loadings clearly
         print()
         print('Top 10 regions on PC1 (prior-weighted):')
         print(loadings_weighted.loc[top_weighted].sort_values())
 
         # Side-by-side horizontal bar chart of top 15 regions by |loading|, both versions
-        union = list(pd.Index(top_raw).union(pd.Index(top_weighted))[:15])
-        comp = pd.DataFrame({
+        union = list(pd.Index(top_raw).union(pd.Index(top_weighted))[:15])                                # union of top-10 from each version, truncated to 15 to keep the chart readable
+        comp = pd.DataFrame({                                                                             # build a 2-column comparison dataframe (rows=regions, columns=unweighted/prior-weighted)
             'unweighted': loadings_raw.loc[union],
             'prior-weighted': loadings_weighted.loc[union],
-        }).reindex(union)
-        fig, ax = plt.subplots(figsize=FIGSIZE_WEIGHTED)
-        comp.plot(kind='barh', ax=ax, width=0.8)
-        ax.axvline(0, color='black', linewidth=0.5)
+        }).reindex(union)                                                                                 # ensure row order matches the 'union' list (avoids alphabetical reshuffling)
+        fig, ax = plt.subplots(figsize=FIGSIZE_WEIGHTED)                                                  # figsize from parameters cell
+        comp.plot(kind='barh', ax=ax, width=0.8)                                                          # horizontal bars; pandas plots the two columns side-by-side per region
+        ax.axvline(0, color='black', linewidth=0.5)                                                       # zero reference line so positive vs negative loadings are visually obvious
         ax.set_xlabel('PC1 loading')
-        ax.set_title(f'PC1 loadings: unweighted vs prior-weighted (decay={PRIOR_DECAY})')
-        ax.invert_yaxis()
-        stamp_version(fig, label='08 prior weighted')
-        plt.tight_layout()
-        plt.savefig(EXAMPLE_OUTPUT_DIR / '08_prior_weighted.png', dpi=150, bbox_inches='tight')
+        ax.set_title(f'PC1 loadings: unweighted vs prior-weighted (decay={PRIOR_DECAY})')                 # title includes the decay value so readers know which weighting regime they're seeing
+        ax.invert_yaxis()                                                                                 # put highest-priority region at the top (matplotlib default puts row-0 at the bottom for barh)
+        stamp_version(fig, label='08 prior weighted')                                                     # version stamp in the footer
+        plt.tight_layout()                                                                                 # margin tightening
+        plt.savefig(EXAMPLE_OUTPUT_DIR / '08_prior_weighted.png', dpi=150, bbox_inches='tight')           # write committed example PNG
         plt.show()
     """),
     ("md", """
@@ -1822,12 +1822,12 @@ GALLERY_NB = [
         re-run the notebook that produces it.
     """),
     ("code", """
-        from pathlib import Path
-        from IPython.display import Image, Markdown, display
+        from pathlib import Path                                                                          # pathlib: object-oriented file paths; safer than string concat
+        from IPython.display import Image, Markdown, display                                              # IPython display helpers: Image renders a PNG inline, Markdown renders text, display is the function that emits to the cell output
 
-        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR
+        from endpoint_ck_analysis.config import EXAMPLE_OUTPUT_DIR                                        # canonical location of saved figures (set in config.py)
 
-        expected = [
+        expected = [                                                                                       # list of (title, filename) pairs in display order; edit here to add/remove gallery items
             ('01 Connectivity PCA - Scree',                '01_scree.png'),
             ('01 Connectivity PCA - Loadings (all)',       '01_loadings_all.png'),
             ('01 Connectivity PCA - Loadings (important)', '01_loadings_important.png'),
@@ -1850,13 +1850,13 @@ GALLERY_NB = [
             ('08 Prior-weighted vs unweighted PC1',        '08_prior_weighted.png'),
         ]
 
-        for title, filename in expected:
-            path = EXAMPLE_OUTPUT_DIR / filename
-            display(Markdown(f'### {title}'))
-            if path.exists():
-                display(Image(filename=str(path)))
+        for title, filename in expected:                                                                   # iterate the list; each iteration emits one section heading + one image (or a missing-file note)
+            path = EXAMPLE_OUTPUT_DIR / filename                                                           # pathlib '/' operator joins directory and filename portably across OSes
+            display(Markdown(f'### {title}'))                                                              # render section heading as H3 markdown so the gallery has a navigable structure
+            if path.exists():                                                                              # only display if the PNG was actually written by an earlier notebook run
+                display(Image(filename=str(path)))                                                         # render the PNG inline; str(path) because Image expects a string filename
             else:
-                display(Markdown(f'*Not found: ``{path}``. Re-run the notebook that produces this figure.*'))
+                display(Markdown(f'*Not found: ``{path}``. Re-run the notebook that produces this figure.*'))  # italic note pointing the user back to the producing notebook
     """),
 ]
 
