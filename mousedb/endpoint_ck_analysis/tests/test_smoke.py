@@ -144,6 +144,6 @@ def test_00_setup_notebook_executes_cleanly():
     """``00_setup.ipynb`` must run every cell without error."""
     nb_path = NOTEBOOKS_DIR / "00_setup.ipynb"
     assert nb_path.exists(), f"Notebook missing at {nb_path}"
-    nb = _execute_notebook(nb_path, timeout=180)
+    nb = _execute_notebook(nb_path, timeout=300)  # 300s gives NAS hiccup margin
     errors = _cell_errors(nb)
     assert not errors, "\n".join(errors)

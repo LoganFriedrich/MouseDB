@@ -1882,6 +1882,22 @@ def main() -> int:
         out = NOTEBOOKS_DIR / name
         out.write_text(json.dumps(nb, indent=1) + "\n", encoding="utf-8")
         print(f"wrote {out} ({len(cells)} cells)")
+
+    # Append the "How to read this notebook's output" interpretation cells.
+    # Kept in a separate script (and a separate dict of long markdown blobs)
+    # so this builder file doesn't double in size. Idempotent -- safe to run
+    # repeatedly; appends only when the marker isn't already present.
+    interp_script = HERE / "add_interpretation_sections.py"
+    if interp_script.exists():
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, str(interp_script), str(NOTEBOOKS_DIR)],
+            capture_output=True, text=True,
+        )
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+    else:
+        print(f"WARN: {interp_script} missing; interpretation sections not appended.")
     return 0
 
 
