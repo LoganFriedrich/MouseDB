@@ -8,10 +8,13 @@ version = "0.1.0"
 description = "Database and data management tools for mouse experiments"
 readme = "README.md"
 authors = [
-    {name = "Logan Friedrich", email = "logan@example.com"}
+    {name = "Logan Friedrich"}
 ]
 license = {text = "MIT"}
-requires-python = ">=3.9"
+# Bumped from 3.9 to 3.10: 3.9 went EOL October 2025 and the
+# endpoint_ck_analysis sibling subpackage already requires 3.10. Keeping the
+# two pyproject files in sync prevents env mismatches.
+requires-python = ">=3.10"
 dependencies = [
     "sqlalchemy>=2.0",
     "pandas>=1.5",
@@ -35,6 +38,10 @@ web = [
 ]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",          # coverage reporting; opt-in via --cov flag
+    "nbclient>=0.8",            # required by endpoint_ck_analysis smoke test that executes notebooks
+    "nbformat>=5.7",            # parses .ipynb files in the smoke test
+    "papermill>=2.4",           # parameterized notebook execution; useful for CI / reproducible runs
     "black",
     "ruff",
 ]
@@ -62,8 +69,49 @@ where = ["."]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py310"]
 
 [tool.ruff]
 line-length = 100
 select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+# Pin the test discovery roots so `pytest` from the repo root only collects
+# real test suites. Without this, pytest's auto-discovery would scan into
+# .venv/, build artifacts, and any stray script whose name happens to start
+# with `test_` (the historical landmine: a `test_setup.py` script with
+# interactive `input()` calls used to hang pytest).
+testpaths = [
+    "tests",
+    "mousedb/endpoint_ck_analysis/tests",
+]
+# Make collection failures hard rather than silent so a typo in a test file
+# stops the suite instead of silently dropping coverage.
+addopts = "--strict-markers -ra"
+# Ignore vendored/build directories that occasionally appear in the tree.
+norecursedirs = [
+    ".git",
+    ".venv",
+    "*.egg-info",
+    "build",
+    "dist",
+    "pytest-cache-files-*",
+    "mousedb/endpoint_ck_analysis/.venv",
+    "mousedb/endpoint_ck_analysis/_bundled_data",
+]
+
+[tool.coverage.run]
+source = ["mousedb"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "mousedb/endpoint_ck_analysis/_bundled_data/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

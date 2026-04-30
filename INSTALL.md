@@ -1,5 +1,20 @@
 # MouseDB - Installation & Usage
 
+## Subpackages
+
+`mousedb` ships two installable Python packages:
+
+- **`mousedb`** itself — the core package described in this document
+  (database, importers, exporters, GUI, web, validators, CLI).
+- **`mousedb/endpoint_ck_analysis/`** — a self-contained statistical
+  analysis pipeline (PCA, PLS, LMM, clustering) on the SCI cohort. It
+  ships its own `pyproject.toml`, notebooks, and a `QUICKSTART.md`. See
+  [`mousedb/endpoint_ck_analysis/QUICKSTART.md`](mousedb/endpoint_ck_analysis/QUICKSTART.md)
+  for that subpackage's setup; it can be installed and run independently
+  of the rest of `mousedb`.
+
+The instructions below cover the core `mousedb` package only.
+
 ## Quick Setup
 
 ```bash
@@ -21,6 +36,23 @@ mousedb import --all
 # 6. Launch the GUI
 mousedb entry
 ```
+
+## Running the tests
+
+```bash
+# Install the dev extras (pytest, nbclient, papermill, black, ruff)
+pip install -e ".[dev]"
+
+# Full suite from the repo root
+pytest
+```
+
+`testpaths` in `pyproject.toml` keeps `pytest` scoped to `tests/` and
+`mousedb/endpoint_ck_analysis/tests/`, so it won't crawl `.venv/` or stray
+cache directories. The endpoint_ck_analysis smoke test executes a notebook
+against the bundled database and is slower than the unit tests; if you
+just want fast feedback while editing the core package, run
+`pytest tests/`.
 
 ## GUI Features
 
