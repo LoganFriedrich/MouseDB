@@ -47,3 +47,6 @@ KinematicFeatureDecompositionAnalys.md
 # Imported reference (lab's historical DLC / R analysis project, ~584MB) -- external,
 # kept local only as a reading reference for kinematic PCA conventions
 mousedb/historical_kinematic_analysis/
+
+# Agent/personal notes -- never published. See CLAUDE.md on notes placement.
+.notes/
