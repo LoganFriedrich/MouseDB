@@ -104,6 +104,68 @@ def cmd_new_cohort(args):
     print(f"  Subjects: {cohort_id}_01 through {cohort_id}_{num_mice:02d}")
 
 
+def cmd_cohort_sheets(args):
+    """Show, set, or discover where this machine's cohort tracking sheets are.
+
+    The path is lab-specific and this repository is public, so it is never in
+    source: it lives in ~/.mousedb/config.json, or the MOUSEDB_COHORT_SHEETS
+    environment variable.
+    """
+    from .cohort_sheets import (
+        describe, discover, set_cohort_sheets_dir, available_cohorts,
+        find_cohort_sheet, is_stale_source, CONFIG_PATH)
+
+    if args.set:
+        target = Path(args.set)
+        if not target.is_dir():
+            print(f"Not a directory: {target}")
+            sys.exit(1)
+        found = available_cohorts(target)
+        if not found:
+            print(f"No cohort tracking sheets in {target}")
+            print("Expected files named Connectome_NN_Animal_Tracking.xlsx")
+            sys.exit(1)
+        if is_stale_source(target):
+            print(f"REFUSING: {target} looks like a snapshot folder, not the")
+            print("live sheets. Snapshots go stale -- point at the working copy.")
+            sys.exit(1)
+        cfg = set_cohort_sheets_dir(target)
+        print(f"Cohort sheets: {target}")
+        print(f"  cohorts with a sheet: {', '.join(found)}")
+        print(f"  saved to {cfg} (local to this machine, never committed)")
+        return
+
+    if args.discover:
+        print("Looking for cohort tracking sheets...")
+        hits = discover()
+        if not hits:
+            print("Found none. Say where they are:")
+            print('    mousedb cohort-sheets --set "<path>"')
+            sys.exit(1)
+        for i, d in enumerate(hits, 1):
+            print(f"  [{i}] {d}")
+            print(f"      cohorts: {', '.join(available_cohorts(d)) or '(none)'}")
+        if len(hits) == 1:
+            cfg = set_cohort_sheets_dir(hits[0])
+            print(f"\nSaved to {cfg}")
+        else:
+            print("\nMore than one. Pick with:")
+            print('    mousedb cohort-sheets --set "<path>"')
+        return
+
+    print(describe())
+    if args.cohort:
+        sheet = find_cohort_sheet(args.cohort)
+        print()
+        if sheet is None:
+            print(f"No sheet found for {args.cohort}")
+        else:
+            import datetime
+            m = datetime.date.fromtimestamp(sheet.stat().st_mtime)
+            print(f"{args.cohort}: {sheet}")
+            print(f"  {sheet.stat().st_size // 1024} KB, last edited {m}")
+
+
 def cmd_import(args):
     """Import Excel tracking sheets."""
     from .database import init_database
@@ -111,11 +173,24 @@ def cmd_import(args):
 
     init_database()
 
+    from .cohort_sheets import cohort_sheets_dir, describe, is_stale_source
+
     if args.all:
-        # Import all cohorts from directory
-        cohorts_dir = Path(args.directory)
-        if not cohorts_dir.exists():
-            print(f"Error: Directory not found: {cohorts_dir}")
+        # Where the sheets actually are, not where they used to be. The old
+        # default pointed at Y:/LAB_ROOT/Behavior/3_Connectome_Animal_Cohorts,
+        # which no longer exists -- so this command found nothing and said so in
+        # a way that read like "nothing to import".
+        cohorts_dir = Path(args.directory) if args.directory else cohort_sheets_dir()
+        if cohorts_dir is None or not cohorts_dir.exists():
+            print(describe())
+            sys.exit(1)
+        print(f"Reading cohort sheets from: {cohorts_dir}")
+        if is_stale_source(cohorts_dir):
+            print("REFUSING: that is a snapshot folder, not the live sheets.")
+            print("The archived copies are out of date -- the cohort 05 copy there")
+            print("is a stub with an empty subject table while the live sheet has")
+            print("the full scoring record. Point at the live folder instead:")
+            print(describe())
             sys.exit(1)
         results = import_all_cohorts(cohorts_dir, dry_run=args.dry_run)
     else:
@@ -124,6 +199,10 @@ def cmd_import(args):
         if not excel_path.exists():
             print(f"Error: File not found: {excel_path}")
             sys.exit(1)
+        if is_stale_source(excel_path):
+            print(f"WARNING: {excel_path} is in a snapshot folder, not the live")
+            print("cohort sheets. It may be out of date. The live folder is:")
+            print(describe())
         importer = ExcelImporter()
         result = importer.import_cohort_file(excel_path, dry_run=args.dry_run)
 
@@ -1154,7 +1233,17 @@ def main():
     import_parser = subparsers.add_parser('import', help='Import Excel files')
     import_parser.add_argument('--file', help='Single Excel file to import')
     import_parser.add_argument('--all', action='store_true', help='Import all cohorts from directory')
-    import_parser.add_argument('--directory', default='Y:/LAB_ROOT/Behavior/3_Connectome_Animal_Cohorts',
+    sheets_parser = subparsers.add_parser(
+        'cohort-sheets',
+        help="Show/set where this machine's cohort tracking sheets are")
+    sheets_parser.add_argument('--set', metavar='PATH',
+                               help='Record the folder holding the sheets')
+    sheets_parser.add_argument('--discover', action='store_true',
+                               help='Look for it on this machine')
+    sheets_parser.add_argument('--cohort', help='Also show one cohort\'s sheet')
+    sheets_parser.set_defaults(func=cmd_cohort_sheets)
+
+    import_parser.add_argument('--directory', default=None,
                                help='Directory containing Excel files')
     import_parser.add_argument('--dry-run', action='store_true', help='Validate without importing')
     import_parser.set_defaults(func=cmd_import)
