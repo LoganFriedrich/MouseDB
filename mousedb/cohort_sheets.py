@@ -32,6 +32,13 @@ none to import, and anyone going looking found the snapshots under
 and injection details. A wrong default that silently resolves is worse than no
 default, because it produces a confident wrong answer.
 
+READ-ONLY. The configured folder is a synced share and this code must never
+write into it -- not the sheets, not a sibling file, not a lock file. Everything
+here reads; fetch_cohort_sheet exists precisely so that a tool which might
+open a workbook for writing gets a copy in its own working directory instead.
+Writing tools in cohort_tools already emit to a separate output directory
+under a distinct name; keep it that way.
+
 Setup:
     mousedb cohort-sheets --discover        # find it and save it
     mousedb cohort-sheets --set "<path>"    # or say where it is
