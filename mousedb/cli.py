@@ -115,6 +115,23 @@ def cmd_cohort_sheets(args):
         describe, discover, set_cohort_sheets_dir, available_cohorts,
         find_cohort_sheet, is_stale_source, CONFIG_PATH)
 
+    if getattr(args, 'set_aspa', None):
+        target = Path(args.set_aspa)
+        if not target.is_dir():
+            print(f"Not a directory: {target}")
+            sys.exit(1)
+        from .cohort_sheets import available_aspa_cohorts, set_aspa_data_dir
+        letters = available_aspa_cohorts(target)
+        if not letters:
+            print(f"No ASPA animal sheets in {target}")
+            print('Expected workbooks named for a cohort letter, e.g. J.xlsx')
+            sys.exit(1)
+        cfg = set_aspa_data_dir(target)
+        print(f"ASPA animal sheets: {target}")
+        print(f"  cohorts with a sheet: {', '.join(letters)}")
+        print(f"  saved to {cfg} (local to this machine, never committed)")
+        return
+
     if args.set:
         target = Path(args.set)
         if not target.is_dir():
@@ -1237,7 +1254,9 @@ def main():
         'cohort-sheets',
         help="Show/set where this machine's cohort tracking sheets are")
     sheets_parser.add_argument('--set', metavar='PATH',
-                               help='Record the folder holding the sheets')
+                               help='Record the folder holding the CNT cohort sheets')
+    sheets_parser.add_argument('--set-aspa', metavar='PATH', dest='set_aspa',
+                               help='Record the folder holding the ASPA animal sheets')
     sheets_parser.add_argument('--discover', action='store_true',
                                help='Look for it on this machine')
     sheets_parser.add_argument('--cohort', help='Also show one cohort\'s sheet')
