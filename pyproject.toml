@@ -63,6 +63,7 @@ mousedb-quick-export = "mousedb.exporters.quick_export:main"
 mousedb-video-status = "mousedb.cli:mousedb_video_status"
 mousedb-archive-status = "mousedb.cli:mousedb_archive_status"
 mousedb-web = "mousedb.web.main:run_server"
+mousedb-refresh-snapshot = "mousedb.exporters.refresh_snapshot:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
