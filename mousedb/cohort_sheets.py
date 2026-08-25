@@ -1,4 +1,15 @@
-"""Where the cohort tracking spreadsheets live, and how to get a fresh one.
+"""Where the lab's source-of-record spreadsheets live, and how to read them.
+
+Two folders, both on a synced share, both READ-ONLY, and neither path in source:
+
+  CNT cohort tracking sheets -- Connectome_NN_Animal_Tracking.xlsx, one per
+      cohort, kept current.
+  ASPA animal sheets -- one workbook per cohort letter (I.xlsx, J.xlsx,
+      "K - Contusion 70kd.xlsx"), frozen; that corpus is finished.
+
+Reading either to keep the database current is expected. The rules are that it is
+read-only, and that the PATH is configuration rather than code.
+
 
 Each cohort has one Excel tracking sheet -- ``Connectome_{NN}_Animal_Tracking.xlsx``
 -- and it is the source of record for that cohort's animals: subject list, weights,
@@ -231,14 +242,153 @@ def available_cohorts(sheets_dir=None) -> List[str]:
     return sorted(found)
 
 
+# ---------------------------------------------------------------------------
+# ASPA animal sheets
+# ---------------------------------------------------------------------------
+
+ASPA_ENV_VAR = "MOUSEDB_ASPA_DATA"
+
+# "J.xlsx", "K - Contusion 70kd.xlsx", "G - Transection.xlsx", and the earlier
+# ones written "OptD - Rehab 1 - pyramidotomy.xlsx". A cohort letter, optionally
+# behind an "Opt" prefix, optionally followed by a description.
+#
+# The "Opt" is a known misnomer -- those cohorts are just D through G, and the
+# directory naming kept a prefix from when they were thought of as optimisation
+# rounds. Matching only a bare letter silently lost D, E and F.
+_ASPA_RE = re.compile(r"^(?:Opt)?([A-Z])(?:\s*-\s*.+)?\.xlsx?$", re.I)
+
+
+def _aspa_file_letter(name: str):
+    m = _ASPA_RE.match(name)
+    return m.group(1).upper() if m else None
+
+
+def aspa_data_dir() -> Optional[Path]:
+    """The configured folder of ASPA animal sheets, or None."""
+    for raw in (os.environ.get(ASPA_ENV_VAR), _read_config().get("aspa_data_dir")):
+        if not raw:
+            continue
+        d = Path(raw)
+        try:
+            if d.is_dir() and any(_aspa_file_letter(f.name) for f in d.iterdir()):
+                return d
+        except OSError:
+            continue
+    return None
+
+
+def set_aspa_data_dir(path) -> Path:
+    """Record where this machine's ASPA animal sheets are."""
+    cfg = _read_config()
+    cfg["aspa_data_dir"] = str(Path(path))
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    return CONFIG_PATH
+
+
+def aspa_letter(cohort) -> Optional[str]:
+    """The ASPA cohort letter for anything that names a cohort.
+
+    ASPA animals are named ``{letter}{subject:2d}`` (J11). The pipeline needs
+    ``{letters}{cohort:2d}{subject:2d}``, so ids are encoded with
+    **cohort number = the letter's alphabet position**: J11 -> ASPA1011. A rule
+    rather than a lookup, so it reconstructs itself if any table is lost.
+
+    Accepts 'J', 10, '10', 'ASPA_10', 'ASPA_10_11', 'ASPA1011'.
+    """
+    t = str(cohort).strip().upper()
+    m = re.fullmatch(r"[A-Z]", t)
+    if m:
+        return t
+    m = re.search(r"ASPA_?(\d{2})", t) or re.fullmatch(r"(\d{1,2})", t)
+    if m:
+        n = int(m.group(1))
+        if 1 <= n <= 26:
+            return chr(ord("A") + n - 1)
+    return None
+
+
+def aspa_cohort_number(letter: str) -> Optional[str]:
+    """'J' -> '10'. The inverse of :func:`aspa_letter`."""
+    t = str(letter).strip().upper()
+    return "%02d" % (ord(t) - ord("A") + 1) if re.fullmatch(r"[A-Z]", t) else None
+
+
+def find_aspa_sheet(cohort, data_dir=None) -> Optional[Path]:
+    """The ASPA animal workbook for a cohort, or None.
+
+    ``cohort`` may be the letter, the encoded number, or a full animal id.
+    """
+    d = Path(data_dir) if data_dir else aspa_data_dir()
+    if d is None:
+        return None
+    letter = aspa_letter(cohort)
+    if letter is None:
+        return None
+    hits = []
+    try:
+        for f in d.iterdir():
+            if _aspa_file_letter(f.name) == letter and not f.name.startswith("~"):
+                hits.append(f)
+    except OSError:
+        return None
+    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+
+
+def available_aspa_cohorts(data_dir=None) -> List[str]:
+    """Cohort letters that have an ASPA animal sheet, e.g. ['G','H','I','J']."""
+    d = Path(data_dir) if data_dir else aspa_data_dir()
+    if d is None:
+        return []
+    found = set()
+    try:
+        for f in d.iterdir():
+            L = _aspa_file_letter(f.name)
+            if L and not f.name.startswith("~"):
+                found.add(L)
+    except OSError:
+        return []
+    return sorted(found)
+
+
+def fetch_aspa_sheet(cohort, dest_dir, data_dir=None) -> Optional[Path]:
+    """Copy an ASPA cohort's workbook into ``dest_dir``. Read-only at the source."""
+    src = find_aspa_sheet(cohort, data_dir=data_dir)
+    if src is None:
+        return None
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / src.name
+    shutil.copy2(src, dest)
+    return dest
+
+
 def describe() -> str:
     """What is configured, or how to configure it. For --help and for saying so
     out loud when an import finds nothing."""
+    lines = []
     d = cohort_sheets_dir()
     if d is not None:
         cohorts = available_cohorts(d)
-        return ("Cohort sheets: %s\n  cohorts with a sheet: %s"
-                % (d, ", ".join(cohorts) if cohorts else "(none)"))
+        lines.append("CNT cohort sheets: %s" % d)
+        lines.append("  cohorts with a sheet: %s"
+                     % (", ".join(cohorts) if cohorts else "(none)"))
+    a = aspa_data_dir()
+    if a is not None:
+        letters = available_aspa_cohorts(a)
+        lines.append("ASPA animal sheets: %s" % a)
+        lines.append("  cohorts with a sheet: %s"
+                     % (", ".join(letters) if letters else "(none)"))
+    if lines:
+        if d is None:
+            lines.append("")
+            lines.append("No CNT cohort sheets configured "
+                         "(mousedb cohort-sheets --set <path>).")
+        if a is None:
+            lines.append("")
+            lines.append("No ASPA animal sheets configured "
+                         "(mousedb cohort-sheets --set-aspa <path>).")
+        return "\n".join(lines)
     return "\n".join([
         "No cohort tracking sheets are configured on this machine.",
         "",
