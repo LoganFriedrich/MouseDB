@@ -107,8 +107,50 @@ def refresh(db_path: Path = DEFAULT_DB, snapshot_dir: Path = DEFAULT_SNAPSHOT_DI
     return counts
 
 
+def import_sheets_first() -> bool:
+    """Pull the current cohort tracking sheets into connectome.db before the
+    export, so a bench score entered on paper this morning is in tonight's
+    snapshot without anyone remembering to run ``mousedb import``.
+
+    Uses the same ``mousedb import --all`` path a human would (configured
+    cohort_sheets_dir; SharePoint stays read-only -- import only READS the
+    workbooks). Never raises: a failed import means the snapshot refreshes
+    from the data already in the db, which is strictly better than nothing.
+    Returns True if the import ran cleanly."""
+    import subprocess
+    import sys
+    if watcher_running():
+        print("  [skip] import: watcher active (same guard as the export)")
+        return False
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "mousedb.cli", "import", "--all"],
+            capture_output=True, text=True, timeout=1800)
+        tail = (r.stdout or "").strip().splitlines()[-3:]
+        for line in tail:
+            print("  import: %s" % line)
+        if r.returncode != 0:
+            print("  [warn] import exited %d: %s"
+                  % (r.returncode, (r.stderr or "").strip()[-500:]))
+            return False
+        return True
+    except Exception as e:
+        print("  [warn] import failed (%s); snapshotting existing db data" % e)
+        return False
+
+
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--import-sheets", action="store_true",
+                    help="Run 'mousedb import --all' first, so newly-entered "
+                         "bench scores land in this refresh (skipped safely "
+                         "if unconfigured or a watcher is active).")
+    args = ap.parse_args()
+
     print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"))
+    if args.import_sheets:
+        import_sheets_first()
     counts = refresh()
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
 
