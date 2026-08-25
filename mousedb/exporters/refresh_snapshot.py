@@ -74,14 +74,18 @@ def watcher_running() -> bool:
 
 
 def refresh(db_path: Path = DEFAULT_DB, snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR,
-           tables=TABLES) -> dict:
+           tables=TABLES, force: bool = False) -> dict:
     """Export each table in ``tables`` from ``db_path`` to
     ``snapshot_dir/{table}.parquet``, overwriting in place.
 
     Returns {table: row_count} for what was written. Raises RuntimeError
-    without touching anything if a watcher is active.
+    without touching anything if a watcher is active, UNLESS ``force`` --
+    which exists for exactly one caller: the watcher's own single-threaded
+    main loop, which blocks on this subprocess and therefore cannot be
+    writing connectome.db at the same time. Anything else passing force
+    reintroduces the reader-under-writer risk this guard exists for.
     """
-    if watcher_running():
+    if not force and watcher_running():
         raise RuntimeError(
             "Refusing to read connectome.db: a MouseReach watcher is active. "
             "The database is on a network share in rollback-journal mode, so "
@@ -107,7 +111,7 @@ def refresh(db_path: Path = DEFAULT_DB, snapshot_dir: Path = DEFAULT_SNAPSHOT_DI
     return counts
 
 
-def import_sheets_first() -> bool:
+def import_sheets_first(force: bool = False) -> bool:
     """Pull the current cohort tracking sheets into connectome.db before the
     export, so a bench score entered on paper this morning is in tonight's
     snapshot without anyone remembering to run ``mousedb import``.
@@ -119,7 +123,7 @@ def import_sheets_first() -> bool:
     Returns True if the import ran cleanly."""
     import subprocess
     import sys
-    if watcher_running():
+    if not force and watcher_running():
         print("  [skip] import: watcher active (same guard as the export)")
         return False
     try:
@@ -146,12 +150,16 @@ def main():
                     help="Run 'mousedb import --all' first, so newly-entered "
                          "bench scores land in this refresh (skipped safely "
                          "if unconfigured or a watcher is active).")
+    ap.add_argument("--force", action="store_true",
+                    help="Skip the watcher-running guard. ONLY for the "
+                         "watcher's own main loop, which blocks on this "
+                         "process and so cannot be writing concurrently.")
     args = ap.parse_args()
 
     print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"))
     if args.import_sheets:
-        import_sheets_first()
-    counts = refresh()
+        import_sheets_first(force=args.force)
+    counts = refresh(force=args.force)
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
 
 
