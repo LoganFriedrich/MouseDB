@@ -9,7 +9,7 @@ That means a writer (the MouseReach watcher, or any node with
 ``also_process`` on) blocks readers outright, and a read that dies partway
 through leaves nothing usable behind.
 
-The fix used throughout ``mousedb.recipes`` is to never read the live database
+The fix used throughout mousedb is to never read the live database
 from an analysis script -- read a snapshot instead
 (``C:/LAB_ROOT/_analysis_snapshot/*.parquet``). Until now that snapshot
 was a one-time file from 2026-08-20 with no refresh mechanism anywhere in

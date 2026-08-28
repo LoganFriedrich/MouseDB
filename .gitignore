@@ -50,3 +50,12 @@ mousedb/historical_kinematic_analysis/
 
 # Agent/personal notes -- never published. See CLAUDE.md on notes placement.
 .notes/
+
+# Accessory/analysis leftovers that must never reach this public repo.
+# endpoint_ck_analysis was removed from the tool repo as an accessory, but its
+# on-disk _bundled_data still holds a full copy of connectome.db and cached
+# parquet of real animal data. Untracked and unignored, a single `git add -A`
+# would publish the research database. Ignore the whole tree.
+mousedb/endpoint_ck_analysis/
+endpoint_ck_analysis/
+*.db

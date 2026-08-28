@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import config
 from .dependencies import get_database
-from .routers import plots, dashboard
+from .routers import dashboard
 
 
 @asynccontextmanager
@@ -37,7 +37,6 @@ def create_app() -> FastAPI:
     app.state.templates = templates
 
     # Include routers
-    app.include_router(plots.router)
     app.include_router(dashboard.router)
 
     # Landing page
