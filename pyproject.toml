@@ -72,7 +72,9 @@ where = ["."]
 # dirs it cannot always clean up (other users' ones are permission-denied).
 # setuptools' discovery walked into one and the editable build died with
 # 'Access is denied' -- so no console script could be regenerated (2026-08-28).
-exclude = ["pytest-cache-files-*", "pytest-cache-files-*.*", "tests", "tests.*"]
+exclude = ["pytest-cache-files-*", "pytest-cache-files-*.*",
+           "*.pytest-cache-files-*", "*.pytest-cache-files-*.*",
+           "tests", "tests.*"]
 
 [tool.black]
 line-length = 100
