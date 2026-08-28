@@ -85,34 +85,51 @@ def animals_in_sheet(path: Path, letter: str) -> Set[int]:
     return found
 
 
-def animals_with_videos(letter: str) -> Set[int]:
-    """Subject numbers for ``letter`` that have analysed videos on this machine."""
-    try:
-        from mousedb.cohort_sheets import aspa_cohort_number
-    except Exception:
-        return set()
-    num = aspa_cohort_number(letter)
-    if num is None:
-        return set()
+def _video_roots() -> List[Path]:
+    """Where analysed videos live on this machine.
 
-    roots = []
+    mousereach's own Paths when that package is importable; otherwise the
+    pipeline root under CONNECTOME_ROOT (the MouseDB env does not have
+    mousereach installed, which is why the dry run used to report 0 videos
+    for every cohort on the very machine that holds them all)."""
+    import os
+    roots: List[Path] = []
     try:
         from mousereach.config import Paths
         for r in (Paths.ANALYZED_OUTPUT, Paths.PROCESSING):
             if r:
                 roots.append(Path(r))
     except Exception:
-        pass
+        base = Path(os.environ.get("CONNECTOME_ROOT", "Y:/LAB_ROOT"))
+        pipe = base / "Behavior" / "MouseReach_Pipeline"
+        roots.extend([pipe / "Analyzed", pipe / "Processing"])
+    return [r for r in roots if r.exists()]
 
-    found: Set[int] = set()
-    for root in roots:
-        if not root.exists():
-            continue
+
+def videos_for(letter: str) -> Dict[int, List[str]]:
+    """{subject_number: [YYYYMMDD, ...]} for ``letter``'s analysed videos on
+    this machine -- the numbers say who exists, the dates say when the cohort
+    was running (its start date is the earliest of them)."""
+    try:
+        from mousedb.cohort_sheets import aspa_cohort_number
+    except Exception:
+        return {}
+    num = aspa_cohort_number(letter)
+    if num is None:
+        return {}
+    found: Dict[int, List[str]] = defaultdict(list)
+    pat = re.compile(r"(\d{8})_" + PROJECT + num + r"(\d{2})_")
+    for root in _video_roots():
         for f in root.rglob("*%s%s*_features.json" % (PROJECT, num)):
-            m = re.search(PROJECT + num + r"(\d{2})", f.name)
+            m = pat.search(f.name)
             if m:
-                found.add(int(m.group(1)))
-    return found
+                found[int(m.group(2))].append(m.group(1))
+    return dict(found)
+
+
+def animals_with_videos(letter: str) -> Set[int]:
+    """Subject numbers for ``letter`` that have analysed videos on this machine."""
+    return set(videos_for(letter))
 
 
 def plan(letters: Optional[List[str]] = None) -> List[dict]:
@@ -128,7 +145,17 @@ def plan(letters: Optional[List[str]] = None) -> List[dict]:
             out.append({"letter": L, "error": "no sheet found"})
             continue
         in_sheet = animals_in_sheet(sheet, L)
-        with_video = animals_with_videos(L)
+        vids = videos_for(L)
+        with_video = set(vids)
+        dates = sorted(d for ds in vids.values() for d in ds)
+        # A cohort's start date is a NOT NULL fact in the database. The only
+        # evidence this tool has for it is the videos themselves, so it is the
+        # earliest analysed video's date -- and a cohort with no video on this
+        # machine has no start date and is NOT registered (reported instead).
+        start = None
+        if dates:
+            d = dates[0]
+            start = "%s-%s-%s" % (d[:4], d[4:6], d[6:8])
         out.append({
             "letter": L,
             "cohort_id": "%s_%s" % (PROJECT, aspa_cohort_number(L)),
@@ -137,6 +164,7 @@ def plan(letters: Optional[List[str]] = None) -> List[dict]:
             "with_video": sorted(with_video),
             "video_only": sorted(with_video - in_sheet),
             "register": sorted(in_sheet | with_video),
+            "start_date": start,
         })
     return out
 
@@ -162,11 +190,19 @@ def register(entries: List[dict], apply: bool = False) -> Dict[str, int]:
             cid = e["cohort_id"]
             cohort = session.query(Cohort).filter_by(cohort_id=cid).first()
             if not cohort:
+                if not e.get("start_date"):
+                    # cohorts.start_date is NOT NULL and nothing here can
+                    # honestly supply one -- skip the whole cohort, loudly.
+                    counts["cohorts_no_start_date"] += 1
+                    continue
                 counts["cohorts"] += 1
                 if apply:
+                    from datetime import date as _date
                     session.add(Cohort(cohort_id=cid, project_code=PROJECT,
+                                       start_date=_date.fromisoformat(e["start_date"]),
                                        num_mice=len(e["register"]),
-                                       notes="Registered from %s" % e["sheet"]))
+                                       notes="Registered from %s; start date = "
+                                             "earliest analysed video" % e["sheet"]))
                     session.flush()
             for n in e["register"]:
                 sid = "%s_%02d" % (cid, n)
@@ -202,15 +238,16 @@ def main(argv=None) -> int:
     letters = [c.upper() for c in args.cohort] if args.cohort else None
     entries = plan(letters)
 
-    print("%-4s %-9s %-28s %6s %6s %8s" %
-          ("", "cohort", "sheet", "sheet", "videos", "register"))
+    print("%-4s %-9s %-28s %6s %6s %8s  %s" %
+          ("", "cohort", "sheet", "sheet", "videos", "register", "start"))
     for e in entries:
         if e.get("error"):
             print("%-4s %-9s %s" % (e["letter"], "-", e["error"]))
             continue
-        print("%-4s %-9s %-28s %6d %6d %8d" % (
+        print("%-4s %-9s %-28s %6d %6d %8d  %s" % (
             e["letter"], e["cohort_id"], e["sheet"][:28],
-            len(e["in_sheet"]), len(e["with_video"]), len(e["register"])))
+            len(e["in_sheet"]), len(e["with_video"]), len(e["register"]),
+            e.get("start_date") or "(no video here -> not registered)"))
         if e["video_only"]:
             print("       videos exist for animals the sheet does not list: %s"
                   % ", ".join("%s%d" % (e["letter"], n) for n in e["video_only"]))
@@ -224,6 +261,11 @@ def main(argv=None) -> int:
     if counts.get("subjects_existing"):
         print("  %d subject(s) already existed and were left alone"
               % counts["subjects_existing"])
+    if counts.get("cohorts_no_start_date"):
+        print("  %d cohort(s) skipped: no analysed video on this machine, so no "
+              "start date (cohorts.start_date is required). Run this where "
+              "their videos are, or register them by hand."
+              % counts["cohorts_no_start_date"])
     if not args.apply:
         print("\n(dry run -- nothing written; re-run with --apply)")
     return 0

@@ -136,8 +136,78 @@ class TestThePlanIsReadOnly:
 
         entries = [{"letter": "J", "cohort_id": "ASPA_10", "sheet": "J.xlsx",
                     "in_sheet": [1, 2], "with_video": [1],
-                    "video_only": [], "register": [1, 2]}]
+                    "video_only": [], "register": [1, 2],
+                    "start_date": "2022-08-11"}]
         counts = ra.register(entries, apply=False)
 
         assert added == [], "a dry run must add nothing and commit nothing"
         assert counts["subjects"] == 2, "but it still reports what it would do"
+
+
+class TestStartDate:
+    """cohorts.start_date is NOT NULL; the first real --apply crashed on it
+    (2026-08-28) because the tool never supplied one."""
+
+    def _fake_db(self, monkeypatch, added):
+        class FakeSession:
+            def query(self, *a, **k):
+                return self
+            def filter_by(self, **k):
+                return self
+            def first(self):
+                return None
+            def add(self, obj):
+                added.append(obj)
+            def flush(self):
+                pass
+            def commit(self):
+                added.append("COMMIT")
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        class FakeDB:
+            def session(self):
+                return FakeSession()
+
+        import mousedb.database as dbmod
+        monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: FakeDB())
+
+    def test_apply_writes_the_cohort_with_its_start_date(self, monkeypatch):
+        import mousedb.cohort_tools.register_aspa as ra
+        from mousedb.schema import Cohort
+        added = []
+        self._fake_db(monkeypatch, added)
+        entries = [{"letter": "J", "cohort_id": "ASPA_10", "sheet": "J.xlsx",
+                    "in_sheet": [1], "with_video": [1], "video_only": [],
+                    "register": [1], "start_date": "2022-08-11"}]
+        ra.register(entries, apply=True)
+        cohorts = [o for o in added if isinstance(o, Cohort)]
+        assert len(cohorts) == 1
+        assert str(cohorts[0].start_date) == "2022-08-11"
+
+    def test_a_cohort_with_no_start_date_is_skipped_not_invented(self, monkeypatch):
+        import mousedb.cohort_tools.register_aspa as ra
+        from mousedb.schema import Cohort, Subject
+        added = []
+        self._fake_db(monkeypatch, added)
+        entries = [{"letter": "A", "cohort_id": "ASPA_01", "sheet": "OptA.xlsx",
+                    "in_sheet": [1, 2], "with_video": [], "video_only": [],
+                    "register": [1, 2], "start_date": None}]
+        counts = ra.register(entries, apply=True)
+        assert counts.get("cohorts_no_start_date") == 1
+        assert not [o for o in added if isinstance(o, (Cohort, Subject))]
+
+    def test_plan_derives_start_date_from_the_earliest_video(self, monkeypatch, tmp_path):
+        import mousedb.cohort_tools.register_aspa as ra
+        monkeypatch.setattr(ra, "videos_for",
+                            lambda L: {11: ["20220815", "20220811"], 3: ["20220817"]})
+        monkeypatch.setattr(ra, "animals_in_sheet", lambda p, L: {3, 11})
+        import mousedb.cohort_sheets as cs
+        monkeypatch.setattr(cs, "find_aspa_sheet", lambda L: tmp_path / "J.xlsx")
+        monkeypatch.setattr(cs, "aspa_cohort_number", lambda L: "10")
+        (tmp_path / "J.xlsx").write_bytes(b"")
+        e = ra.plan(["J"])[0]
+        assert e["start_date"] == "2022-08-11"
+        assert e["register"] == [3, 11]
