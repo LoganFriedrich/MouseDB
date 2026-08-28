@@ -5877,6 +5877,23 @@ class DataEntryWindow(QMainWindow):
         except Exception:
             pass  # Graceful if watcher_bridge not available
 
+        # 10. TRACKING SHEETS - import the lab's tracking workbooks from a button
+        # (moved here from MouseReach 2026-08-28: importing sheets is this tool's job)
+        try:
+            from .sheets_tab import TrackingSheetsTab
+            self.sheets_tab = TrackingSheetsTab(self.db)
+            self.tabs.addTab(self.sheets_tab, "10. Tracking Sheets")
+        except Exception as e:
+            print("[!] Tracking Sheets tab unavailable: %s" % e)
+
+        # 11. WHERE IS MY DATA - per-cohort data status + the current exports folder
+        try:
+            from .data_status_tab import DataStatusTab
+            self.data_status_tab = DataStatusTab(self.db)
+            self.tabs.addTab(self.data_status_tab, "11. Where Is My Data")
+        except Exception as e:
+            print("[!] Where Is My Data tab unavailable: %s" % e)
+
         # LEGACY TABS - kept for backward compatibility
         # Weight entry tab (for general weight tracking outside ramp)
         self.bulk_weight_tab = BulkWeightEntryTab(self.db)

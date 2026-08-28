@@ -104,7 +104,7 @@ PROJECT_DEFAULTS = {
     "SpeciesTyp": "Mouse",
     "SpeciesStrainTyp": "C57BL/6J",
     "AnimalSourceNam": "Jackson Laboratory",
-    "Laboratory": "Murray/LAB Lab",
+    "Laboratory": __import__("mousedb.config", fromlist=["lab_name"]).lab_name(),
     "StudyLeader": "Adam Murray",
     "Injury_device": "Infinite Horizon Impactor",
 }

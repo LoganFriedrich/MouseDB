@@ -194,8 +194,8 @@ def cmd_import(args):
 
     if args.all:
         # Where the sheets actually are, not where they used to be. The old
-        # default pointed at Y:/LAB_ROOT/Behavior/3_Connectome_Animal_Cohorts,
-        # which no longer exists -- so this command found nothing and said so in
+        # default pointed at a folder that no longer existed -- so this command
+        # found nothing and said so in
         # a way that read like "nothing to import".
         cohorts_dir = Path(args.directory) if args.directory else cohort_sheets_dir()
         if cohorts_dir is None or not cohorts_dir.exists():
@@ -298,10 +298,10 @@ def cmd_check(args):
             if args.json:
                 # Wrap single cohort in a full report structure for consistency
                 from .diagnostics import CompletenessReport
-                from . import DEFAULT_DB_PATH
+                from .config import require
                 full_report = CompletenessReport(
                     cohorts=[report_single],
-                    db_path=str(DEFAULT_DB_PATH),
+                    db_path=str(require("db_path")),
                 )
                 print(json.dumps(format_report_as_dict(full_report), indent=2))
             else:
@@ -433,7 +433,8 @@ def cmd_dump(args):
     db = init_database()
 
     # Output directory
-    output_dir = Path(args.output) if args.output else Path("Y:/LAB_ROOT/Databases/database_dump")
+    from .config import require
+    output_dir = Path(args.output) if args.output else require("mousedb_root") / "database_dump"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Tables to export
@@ -986,6 +987,32 @@ def _print_import_result(label, result):
         print(f"    ... and {remaining} more warnings")
 
 
+def cmd_import_reaches(args):
+    """Pull MouseReach features files into reach_data (see mousedb.import_reaches)."""
+    from .import_reaches import main as _main
+    argv = []
+    if args.all: argv.append("--all")
+    if args.dry_run: argv.append("--dry-run")
+    if args.include_processing: argv.append("--include-processing")
+    if args.force: argv.append("--force")
+    if args.limit: argv += ["--limit", str(args.limit)]
+    raise SystemExit(_main(argv))
+
+
+def cmd_config(args):
+    """mousedb config: the machine-specific locations (see mousedb.config)."""
+    from . import config as cfg
+    if args.set:
+        key, value = args.set
+        path = cfg.set_value(key, value)
+        print("[OK] %s = %s  (saved to %s)" % (key, value, path))
+    if args.unset:
+        path = cfg.set_value(args.unset, None)
+        print("[OK] %s removed  (saved to %s)" % (args.unset, path))
+    if args.show or not (args.set or args.unset):
+        print(cfg.describe())
+
+
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
@@ -997,6 +1024,24 @@ def main():
     # mousedb-status
     status_parser = subparsers.add_parser('status', help='Show database status')
     status_parser.set_defaults(func=cmd_status)
+
+    # mousedb config -- where things are on THIS machine (the only place lab paths live)
+    config_parser = subparsers.add_parser(
+        'config', help='Show or set where this machine keeps the database, snapshot and pipelines')
+    config_parser.add_argument('--show', action='store_true', help='Print every key, value and source')
+    config_parser.add_argument('--set', nargs=2, metavar=('KEY', 'VALUE'), help='Set one key')
+    config_parser.add_argument('--unset', metavar='KEY', help='Remove one key')
+    config_parser.set_defaults(func=cmd_config)
+
+    # mousedb import-reaches -- pull MouseReach's per-video results into reach_data
+    ir = subparsers.add_parser('import-reaches',
+                               help="Import MouseReach features files (new or changed) into reach_data")
+    ir.add_argument('--all', action='store_true', help='Ignore the ledger; re-import every file')
+    ir.add_argument('--dry-run', action='store_true', help='Count only; write nothing')
+    ir.add_argument('--include-processing', action='store_true', help='Also scan the Processing folder')
+    ir.add_argument('--force', action='store_true', help='Write even if a MouseReach watcher is running')
+    ir.add_argument('--limit', type=int, help='At most this many files')
+    ir.set_defaults(func=cmd_import_reaches)
 
     # mousedb-init
     init_parser = subparsers.add_parser('init', help='Initialize database')
@@ -1061,7 +1106,7 @@ def main():
     # mousedb-dump
     dump_parser = subparsers.add_parser('dump', help='Dump database tables to CSV files')
     dump_parser.add_argument('table', nargs='?', help='Specific table to dump (default: all tables)')
-    dump_parser.add_argument('--output', '-o', help='Output directory (default: Y:/LAB_ROOT/Databases/database_dump)')
+    dump_parser.add_argument('--output', '-o', help='Output directory (default: <mousedb_root>/database_dump)')
     dump_parser.set_defaults(func=cmd_dump)
 
     # mousedb-video-status

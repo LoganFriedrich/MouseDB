@@ -180,10 +180,14 @@ def find_watcher_db() -> WatcherStatus:
         except Exception:
             pass
 
-    # 3. Fallback
-    fallback = Path("Y:/LAB_ROOT/Behavior/MouseReach_Pipeline/watcher.db")
-    if fallback.exists():
-        return WatcherStatus(True, fallback, f"Found at fallback path: {fallback}")
+    # 3. The configured MouseReach pipeline root (mousedb config)
+    try:
+        from .config import mousereach_pipeline_root
+        root = mousereach_pipeline_root()
+        if root and (root / "watcher.db").exists():
+            return WatcherStatus(True, root / "watcher.db", f"Found at configured pipeline root: {root}")
+    except Exception:
+        pass
 
     return WatcherStatus(
         False, None,
@@ -199,7 +203,7 @@ def find_versions_json() -> Optional[Path]:
     1. MOUSEDB_VERSIONS_JSON environment variable
     2. ~/.mousereach/config.json -> nas_root/pipeline_versions.json
     3. ~/.mousereach/config.json -> processing_root/pipeline_versions.json
-    4. Hardcoded fallback path
+    4. mousedb config: mousereach_pipeline_root/pipeline_versions.json
     """
     env_path = os.environ.get('MOUSEDB_VERSIONS_JSON')
     if env_path:
@@ -228,9 +232,13 @@ def find_versions_json() -> Optional[Path]:
         except Exception:
             pass
 
-    fallback = Path("Y:/LAB_ROOT/Behavior/MouseReach_Pipeline/pipeline_versions.json")
-    if fallback.exists():
-        return fallback
+    try:
+        from .config import mousereach_pipeline_root
+        root = mousereach_pipeline_root()
+        if root and (root / "pipeline_versions.json").exists():
+            return root / "pipeline_versions.json"
+    except Exception:
+        pass
 
     return None
 

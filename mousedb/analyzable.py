@@ -39,10 +39,24 @@ import sqlite3
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
-PIPELINE_ROOT = Path(r"Y:\LAB_ROOT\Behavior\MouseReach_Pipeline")
-DECLARED_VERSIONS = PIPELINE_ROOT / "pipeline_versions.json"
-VERSION_INDEX = PIPELINE_ROOT / "pipeline_records" / "version_index.db"
-ANALYZED = PIPELINE_ROOT / "Analyzed"
+from .config import require
+
+
+def _pipeline_root() -> Path:
+    """MouseReach's shared pipeline folder, from mousedb config (no lab default)."""
+    return require("mousereach_pipeline_root")
+
+
+def _declared_versions_path() -> Path:
+    return _pipeline_root() / "pipeline_versions.json"
+
+
+def _version_index_path() -> Path:
+    return _pipeline_root() / "pipeline_records" / "version_index.db"
+
+
+def _analyzed() -> Path:
+    return _pipeline_root() / "Analyzed"
 
 # Declared keys that are not per-stage version checks.
 _NOT_A_STAGE = {"mousereach"}
@@ -53,12 +67,14 @@ _DLC_KEY = "dlc_scorer"
 _NOT_A_VERSION = {"", "not_run", "unknown", "error_reading", "None", None}
 
 
-def declared_versions(path: Path = DECLARED_VERSIONS) -> Dict[str, str]:
+def declared_versions(path: Path = None) -> Dict[str, str]:
+    path = path or _declared_versions_path()
     """The versions the pipeline currently says every stage should be at."""
     return json.loads(Path(path).read_text()).get("versions", {})
 
 
-def _index_rows(db_path: Path = VERSION_INDEX) -> Dict[str, dict]:
+def _index_rows(db_path: Path = None) -> Dict[str, dict]:
+    db_path = db_path or _version_index_path()
     """Per-video recorded versions, from MouseReach's version index."""
     con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=60)
     try:
@@ -105,7 +121,7 @@ def finished_videos_with_reasons(
     in_analyzed = None
     if require_analyzed:
         in_analyzed = {p.name[: -len("_processing_manifest.json")]
-                       for p in ANALYZED.rglob("*_processing_manifest.json")}
+                       for p in _analyzed().rglob("*_processing_manifest.json")}
 
     ok: Set[str] = set()
     rejected: Dict[str, str] = {}

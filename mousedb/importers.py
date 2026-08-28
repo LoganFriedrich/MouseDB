@@ -2104,19 +2104,8 @@ class BrainGlobeImporter:
         except ImportError:
             pass
 
-        if aggregate_fn is None:
-            # Fallback: direct file import like sync_databases.py
-            try:
-                import importlib.util
-                spec = importlib.util.spec_from_file_location(
-                    "region_mapping",
-                    r"Y:\LAB_ROOT\Tissue\MouseBrain\src\mousebrain\region_mapping.py")
-                if spec and spec.loader:
-                    rm = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(rm)
-                    aggregate_fn = rm.aggregate_to_elife
-            except Exception:
-                pass
+        # No file-path fallback into another tool's source tree: if mousebrain is
+        # not importable in this environment, region aggregation is simply skipped.
 
         if aggregate_fn is None:
             self.errors.append(

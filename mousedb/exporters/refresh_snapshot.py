@@ -11,7 +11,7 @@ through leaves nothing usable behind.
 
 The fix used throughout mousedb is to never read the live database
 from an analysis script -- read a snapshot instead
-(``C:/LAB_ROOT/_analysis_snapshot/*.parquet``). Until now that snapshot
+(``<snapshot_dir>/*.parquet``, see ``mousedb config --show``). Until now that snapshot
 was a one-time file from 2026-08-20 with no refresh mechanism anywhere in
 either repo, so anything reading it never saw a bench score entered after
 that date. This script is that mechanism -- run it periodically (Windows Task
@@ -34,7 +34,7 @@ USAGE
 Windows Task Scheduler, hourly, running as the same user the watcher would
 run as:
     schtasks /Create /SC HOURLY /TN "MouseDB Snapshot Refresh" /TR ^
-      "C:\\LAB_ROOT\\envs\\MouseDB\\python.exe -m mousedb.exporters.refresh_snapshot"
+      "<MouseDB env>\\python.exe -m mousedb.exporters.refresh_snapshot"
 """
 from __future__ import annotations
 
@@ -44,8 +44,10 @@ from pathlib import Path
 
 import pandas as pd
 
-DEFAULT_DB = Path(r"Y:\LAB_ROOT\Databases\connectome.db")
-DEFAULT_SNAPSHOT_DIR = Path("C:/LAB_ROOT/_analysis_snapshot")
+from ..config import db_path as _db_path, snapshot_dir as _snapshot_dir, require
+
+DEFAULT_DB = _db_path()                 # None until configured
+DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.
@@ -73,7 +75,7 @@ def watcher_running() -> bool:
         return True
 
 
-def refresh(db_path: Path = DEFAULT_DB, snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR,
+def refresh(db_path: Path = None, snapshot_dir: Path = None,
            tables=TABLES, force: bool = False) -> dict:
     """Export each table in ``tables`` from ``db_path`` to
     ``snapshot_dir/{table}.parquet``, overwriting in place.
@@ -85,6 +87,8 @@ def refresh(db_path: Path = DEFAULT_DB, snapshot_dir: Path = DEFAULT_SNAPSHOT_DI
     writing connectome.db at the same time. Anything else passing force
     reintroduces the reader-under-writer risk this guard exists for.
     """
+    db_path = db_path or require("db_path")
+    snapshot_dir = snapshot_dir or require("snapshot_dir")
     if not force and watcher_running():
         raise RuntimeError(
             "Refusing to read connectome.db: a MouseReach watcher is active. "
@@ -117,7 +121,7 @@ def import_sheets_first(force: bool = False) -> bool:
     snapshot without anyone remembering to run ``mousedb import``.
 
     Uses the same ``mousedb import --all`` path a human would (configured
-    cohort_sheets_dir; SharePoint stays read-only -- import only READS the
+    cohort_sheets_dir; that folder stays read-only -- import only READS the
     workbooks). Never raises: a failed import means the snapshot refreshes
     from the data already in the db, which is strictly better than nothing.
     Returns True if the import ran cleanly."""

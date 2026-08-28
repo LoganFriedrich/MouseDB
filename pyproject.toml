@@ -69,6 +69,7 @@ mousedb-current-exports = "mousedb.exporters.current:main"
 mousedb-import-aspa-scores = "mousedb.cohort_tools.import_aspa_scores:main"
 mousedb-data-status = "mousedb.data_status:main"
 mousedb-bench-scan = "mousedb.bench_scan:main"
+mousedb-import-reaches = "mousedb.import_reaches:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

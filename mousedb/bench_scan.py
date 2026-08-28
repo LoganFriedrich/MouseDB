@@ -120,10 +120,11 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
         (reach_rows, manual_scores)
     """
     if db_path is None:
-        db_path = DEFAULT_DB
+        from mousedb.config import require
+        db_path = DEFAULT_DB or require("db_path")
     # Prefer the snapshot without being asked. Only fall through to the live
     # database when there is no snapshot AND no watcher is running.
-    if cache_dir is None and (DEFAULT_CACHE / "reach_data.parquet").exists():
+    if cache_dir is None and DEFAULT_CACHE and (DEFAULT_CACHE / "reach_data.parquet").exists():
         cache_dir = DEFAULT_CACHE
 
     if cache_dir and (Path(cache_dir) / "reach_data.parquet").exists():

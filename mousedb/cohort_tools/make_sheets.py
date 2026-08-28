@@ -18,6 +18,7 @@ Future Mode 2 (Fix Existing): Will standardize existing files
     python 0_Make_or_Fix_Sheets.py --fix path/to/existing_file.xlsx
 """
 
+from mousedb.config import lab_name as _lab_name
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
@@ -131,7 +132,7 @@ PROJECT_DEFAULTS = {
     "SpeciesTyp": "Mouse",
     "SpeciesStrainTyp": "C57BL/6J",
     "AnimalSourceNam": "Jackson Laboratory",
-    "Laboratory": "Murray/LAB Lab",
+    "Laboratory": __import__("mousedb.config", fromlist=["lab_name"]).lab_name(),
     "StudyLeader": "Logan Friedrich",
     "Injury_device": "Infinite Horizon Impactor",
 }
@@ -1878,7 +1879,7 @@ def write_2_odc_with_formulas(ws, data, cohort_name):
             ws.cell(row=row, column=col_idx["SpeciesStrainTyp"], value="C57BL/6J")
             ws.cell(row=row, column=col_idx["AnimalSourceNam"], value="Jackson Laboratory")
             ws.cell(row=row, column=col_idx["InjGroupAssignTyp"], value=cohort_name)
-            ws.cell(row=row, column=col_idx["Laboratory"], value="Murray/LAB Lab")
+            ws.cell(row=row, column=col_idx["Laboratory"], value=_lab_name())
             ws.cell(row=row, column=col_idx["StudyLeader"], value="Logan Friedrich")
             ws.cell(row=row, column=col_idx["Injury_device"], value="Infinite Horizon Impactor")
             
@@ -3563,7 +3564,7 @@ def compute_odc_rows(extracted_data, cohort_name, source_file, report):
             row['BodyWgtMeasrVal'] = animal_info.get('baseline_weight', '')
             row['SexTyp'] = animal_info.get('sex', '')
             row['InjGroupAssignTyp'] = cohort_name
-            row['Laboratory'] = 'Murray/LAB Lab'
+            row['Laboratory'] = _lab_name()
             row['StudyLeader'] = 'Logan Friedrich'
             
             # Exclusion based on survival

@@ -100,9 +100,10 @@ def _video_roots() -> List[Path]:
             if r:
                 roots.append(Path(r))
     except Exception:
-        base = Path(os.environ.get("CONNECTOME_ROOT", "Y:/LAB_ROOT"))
-        pipe = base / "Behavior" / "MouseReach_Pipeline"
-        roots.extend([pipe / "Analyzed", pipe / "Processing"])
+        from ..config import mousereach_pipeline_root
+        pipe = mousereach_pipeline_root()
+        if pipe:
+            roots.extend([pipe / "Analyzed", pipe / "Processing"])
     return [r for r in roots if r.exists()]
 
 

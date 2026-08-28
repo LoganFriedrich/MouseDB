@@ -24,10 +24,12 @@ class Database:
         Initialize database connection.
 
         Args:
-            db_path: Path to SQLite database file. Defaults to Y:/LAB_ROOT/Databases/connectome.db
+            db_path: Path to SQLite database file. Defaults to the configured
+                     database (mousedb config --set mousedb_root <folder>).
         """
-        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
-        self.log_path = DEFAULT_LOG_PATH
+        from .config import require
+        self.db_path = Path(db_path) if db_path else require("db_path")
+        self.log_path = DEFAULT_LOG_PATH or (self.db_path.parent / "logs")
 
         # Ensure directories exist
         self.db_path.parent.mkdir(parents=True, exist_ok=True)

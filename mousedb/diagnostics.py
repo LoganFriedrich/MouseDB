@@ -472,12 +472,12 @@ def check_all_cohorts(
         CompletenessReport with per-cohort findings
     """
     from .schema import Cohort
-    from . import DEFAULT_DB_PATH
+    from .config import require
 
     cohorts = session.query(Cohort).order_by(Cohort.cohort_id).all()
 
     report = CompletenessReport(
-        db_path=str(DEFAULT_DB_PATH),
+        db_path=str(require("db_path")),
     )
 
     for cohort in cohorts:

@@ -255,7 +255,8 @@ def build_rows(wb, source_name: str, form_tabs=(), constants=None) -> List[dict]
 
         row["SubjectID"] = subject
         row["SexTyp"] = s["sex"] or _norm(m.get("Sex"))
-        row["Laboratory"] = "LAB"
+        from ..config import lab_name
+        row["Laboratory"] = lab_name()
         # Study-wide constants. Identical for every animal in every cohort, so they
         # are configuration rather than data -- and were empty across all five
         # cohorts simply because nobody had anywhere to put them.

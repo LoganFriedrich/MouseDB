@@ -42,7 +42,16 @@ from .cohort_sheets import (
     find_cohort_sheet, pin_cohort_sheet, pinned_sheet, set_cohort_sheets_dir,
 )
 
-LEDGER = Path(DEFAULT_LOG_PATH) / "sheet_imports.jsonl"
+# Override hook (tests point it at a temp file); None = the configured logs folder.
+LEDGER = None
+
+
+def _ledger() -> Path:
+    """The import ledger lives in the configured logs folder."""
+    if LEDGER is not None:
+        return Path(LEDGER)
+    from .config import require
+    return (DEFAULT_LOG_PATH or (require("mousedb_root") / "logs")) / "sheet_imports.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +59,10 @@ LEDGER = Path(DEFAULT_LOG_PATH) / "sheet_imports.jsonl"
 # ---------------------------------------------------------------------------
 
 def _read_ledger() -> List[dict]:
-    if not LEDGER.is_file():
+    if not _ledger().is_file():
         return []
     out = []
-    for line in LEDGER.read_text(encoding="utf-8").splitlines():
+    for line in _ledger().read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -65,8 +74,8 @@ def _read_ledger() -> List[dict]:
 
 
 def _append_ledger(entry: dict) -> None:
-    LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    with LEDGER.open("a", encoding="utf-8") as f:
+    _ledger().parent.mkdir(parents=True, exist_ok=True)
+    with _ledger().open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, default=str) + "\n")
 
 
@@ -160,7 +169,7 @@ def status() -> dict:
         "cnt_sheets_dir": str(d) if d else None,
         "aspa_sheets_dir": str(a) if a else None,
         "configured": d is not None,
-        "ledger": str(LEDGER),
+        "ledger": str(_ledger()),
         "cohorts": [],
         "problem": None,
     }

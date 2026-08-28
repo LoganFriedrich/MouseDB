@@ -77,3 +77,9 @@ mousedb/
 Open an issue with the failing import or query, the cohort it affects, and
 either a minimal reproduction or the exact CLI invocation that broke. For
 GUI bugs, a screenshot helps a lot.
+
+## Operator guides (no codebase knowledge assumed)
+
+- [Where is my data?](docs/WHERE_IS_MY_DATA.md) -- the current exports folder (CSV + data dictionaries, ODC-SCI shape), the per-cohort status tab, and how reach data gets into the database (`mousedb import-reaches`).
+- [Tracking Sheets](docs/TRACKING_SHEETS.md) -- importing the lab's tracking workbooks from a button, choosing between duplicate files, creating a new cohort sheet.
+- `mousedb config --show` -- every machine-specific location (database, snapshot, pipeline folders, sheets folder, lab name) and where each value came from. Nothing lab-specific is in the source; everything is set once per machine with `mousedb config --set <key> <value>`.

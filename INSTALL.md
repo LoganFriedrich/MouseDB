@@ -174,3 +174,37 @@ pip install -e "Y:/LAB_ROOT/Databases/mousedb"
 - Only one user should run `mousedb import` at a time
 - GUI can have multiple users reading simultaneously
 - Writes are serialized automatically
+
+## Configuration (once per machine)
+
+mousedb has NO built-in paths. After installing, tell it where things are:
+
+```
+mousedb config --set mousedb_root <folder holding connectome.db, exports/, logs/>
+mousedb config --set snapshot_dir <local folder for the parquet snapshot>
+mousedb config --set mousereach_pipeline_root <MouseReach's shared pipeline folder>   # optional if ~/.mousereach/config.json exists
+mousedb config --set mousebrain_pipeline_root <MouseBrain's pipeline folder>
+mousedb config --set lab_name "<your lab, as it should appear in exports>"
+mousedb config --set mousereach_env <MouseReach env's Scripts or bin dir>             # only for bench-scan routing
+mousedb-sheets set-dir <folder holding the tracking workbooks>
+mousedb config --show
+```
+
+Any command that needs a location that is not set stops with a message naming
+the exact `mousedb config --set` line to run. Values can also be given per run
+as environment variables (`mousedb config --show` lists them).
+
+## Scheduled jobs (the processing machine)
+
+mousedb is an integrator: it PULLS from the tools on a schedule. Register these
+with the operating system's scheduler (Task Scheduler / cron), all in the MouseDB
+environment:
+
+| job | command | cadence | what it does |
+|---|---|---|---|
+| snapshot + sheets | `python -m mousedb.exporters.refresh_snapshot --import-sheets` | hourly | imports the tracking workbooks, takes the parquet snapshot of the database, rewrites `exports/current/` |
+| reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data` |
+| bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
+
+None of these write while a MouseReach watcher is running on the same machine;
+they report that and exit.

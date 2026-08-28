@@ -43,8 +43,10 @@ import pandas as pd
 from . import data_dictionary as dd
 from .. import DEFAULT_EXPORT_PATH
 
-CURRENT_DIR = Path(DEFAULT_EXPORT_PATH) / "current"
-DEFAULT_SNAPSHOT_DIR = Path("C:/LAB_ROOT/_analysis_snapshot")
+from ..config import require, snapshot_dir as _snapshot_dir
+
+CURRENT_DIR = (Path(DEFAULT_EXPORT_PATH) / "current") if DEFAULT_EXPORT_PATH else None
+DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 
 # Column order of reach_data.csv: identity first, then the reach, then
 # provenance. extended_features (a JSON blob per row) goes LAST so a person
@@ -175,7 +177,7 @@ def _mtime(p: Path) -> Optional[str]:
         return None
 
 
-def refresh_current(snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR, out_dir: Path = CURRENT_DIR,
+def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
                     db_ok: bool = False) -> dict:
     """Rewrite the current-exports folder. Returns the manifest.
 
@@ -183,6 +185,8 @@ def refresh_current(snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR, out_dir: Path = C
     now (the watcher's own loop, or no watcher running). Without it the
     per-cohort ODC session files are left as they were and the manifest
     says so."""
+    snapshot_dir = snapshot_dir or require("snapshot_dir")
+    out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {

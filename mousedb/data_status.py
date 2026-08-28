@@ -31,11 +31,13 @@ from typing import Dict, List
 
 from . import DEFAULT_EXPORT_PATH
 
-SNAPSHOT_DIR = Path("C:/LAB_ROOT/_analysis_snapshot")
+from .config import require, snapshot_dir as _snapshot_dir
+
+SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set snapshot_dir ...)
 
 
 def _pipeline_root() -> Path:
-    return Path(os.environ.get("CONNECTOME_ROOT", "Y:/LAB_ROOT")) / "Behavior" / "MouseReach_Pipeline"
+    return require("mousereach_pipeline_root")
 
 
 def _queue_videos(name: str) -> List[str]:
@@ -58,6 +60,7 @@ def _cohort_of_video(video_id: str) -> str:
 
 
 def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
+    snapshot_dir = snapshot_dir or require("snapshot_dir")
     import pandas as pd
 
     out: Dict = {"snapshot_dir": str(snapshot_dir), "cohorts": [], "problems": [],
@@ -133,7 +136,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "segments_by_outcome_source": {k: int(v) for k, v in src.items()},
         })
 
-    manifest = Path(DEFAULT_EXPORT_PATH) / "current" / "MANIFEST.json"
+    manifest = require("mousedb_root") / "exports" / "current" / "MANIFEST.json"
     if manifest.is_file():
         try:
             m = json.loads(manifest.read_text(encoding="utf-8"))
