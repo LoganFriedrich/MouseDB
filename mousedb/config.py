@@ -28,6 +28,8 @@ Keys (config.json name -> environment variable):
   snapshot_dir              MOUSEDB_SNAPSHOT_DIR    parquet snapshot folder (read while a watcher may hold the db)
   mousereach_pipeline_root  MOUSEREACH_PIPELINE_ROOT   MouseReach's shared pipeline folder (Analyzed/, Processing/ ...)
   mousebrain_pipeline_root  MOUSEBRAIN_PIPELINE_ROOT   MouseBrain's pipeline folder
+  mousebrain_registry_root  MOUSEBRAIN_REGISTRY_ROOT   MouseBrain's analysis registry (default: <pipeline>/Registry;
+                                                       the same variable MouseBrain itself honours, so both agree)
   cohort_sheets_dir         MOUSEDB_COHORT_SHEETS   (managed by mousedb.cohort_sheets)
   mousereach_route_cmd / mousereach_env             (managed by mousedb.bench_scan)
   lab_name                  MOUSEDB_LAB_NAME        the "Laboratory" value written into generated sheets / ODC exports
@@ -47,6 +49,7 @@ KEYS = {
     "snapshot_dir": "MOUSEDB_SNAPSHOT_DIR",
     "mousereach_pipeline_root": "MOUSEREACH_PIPELINE_ROOT",
     "mousebrain_pipeline_root": "MOUSEBRAIN_PIPELINE_ROOT",
+    "mousebrain_registry_root": "MOUSEBRAIN_REGISTRY_ROOT",
     "cohort_sheets_dir": "MOUSEDB_COHORT_SHEETS",
     "mousereach_route_cmd": "MOUSEDB_MOUSEREACH_ROUTE_CMD",
     "mousereach_env": "MOUSEDB_MOUSEREACH_ENV",
@@ -141,12 +144,25 @@ def mousebrain_pipeline_root() -> Optional[Path]:
     return _path("mousebrain_pipeline_root")
 
 
+def mousebrain_registry_root() -> Optional[Path]:
+    """Where MouseBrain keeps its analysis registry: explicit key/env, else
+    <mousebrain_pipeline_root>/Registry (MouseBrain's own default), else None.
+    WHY a separate key: MouseBrain lets a lab move its registry with
+    MOUSEBRAIN_REGISTRY_ROOT; the puller must follow the same setting."""
+    p = _path("mousebrain_registry_root")
+    if p:
+        return p
+    pipe = mousebrain_pipeline_root()
+    return pipe / "Registry" if pipe else None
+
+
 _ACCESSORS = {
     "mousedb_root": mousedb_root,
     "db_path": db_path,
     "snapshot_dir": snapshot_dir,
     "mousereach_pipeline_root": mousereach_pipeline_root,
     "mousebrain_pipeline_root": mousebrain_pipeline_root,
+    "mousebrain_registry_root": mousebrain_registry_root,
 }
 
 

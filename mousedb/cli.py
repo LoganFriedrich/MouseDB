@@ -788,6 +788,18 @@ def cmd_import_brains(args):
     from .importers import BrainGlobeImporter
     from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
 
+    # Where MouseBrain's 2_Data_Summary is: given, or derived from the configured
+    # pipeline root. Resolved BEFORE the database is opened so an unconfigured
+    # machine stops with the exact `mousedb config --set` line and touches
+    # nothing. WHY: this used to reference a module constant that no longer
+    # existed -- a NameError on every run without --summary-dir (2026-08).
+    summary_dir = None
+    if args.summary_dir:
+        summary_dir = Path(args.summary_dir)
+    elif args.all:
+        from .config import require
+        summary_dir = require("mousebrain_pipeline_root") / "3D_Cleared" / "2_Data_Summary"
+
     db = init_database()
     # Ensure all tables exist (including new elife_region_counts)
     Base.metadata.create_all(db.engine)
@@ -795,8 +807,6 @@ def cmd_import_brains(args):
     importer = BrainGlobeImporter(db)
     dry_run = args.dry_run
     prefix = "[DRY RUN] " if dry_run else ""
-
-    summary_dir = Path(args.summary_dir) if args.summary_dir else _DEFAULT_BRAIN_SUMMARY_DIR
 
     if args.calibration:
         # Import calibration runs only
@@ -822,9 +832,14 @@ def cmd_import_brains(args):
             csv_path, brain_id=brain_id, is_final=True, dry_run=dry_run)
         _print_import_result(f"Region counts ({brain_id})", result)
 
-        # Also import eLife counts
+        # Also import eLife counts. MouseBrain's aggregate (elife_counts.csv)
+        # normally sits beside the per-brain CSV in 2_Data_Summary.
         if result['success'] and not dry_run:
-            _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run)
+            elife_csv = (summary_dir or csv_path.parent) / 'elife_counts.csv'
+            _, elife_errors = _import_elife_from_csv(
+                importer, db, csv_path, brain_id, dry_run, elife_csv)
+            if elife_errors:
+                sys.exit(1)
         return
 
     if args.all:
@@ -857,6 +872,11 @@ def cmd_import_brains(args):
         print(f"\n--- Region Counts ({len(brain_csvs)} brains) ---")
         total_regions = 0
         total_elife = 0
+        elife_failed = []
+        # MouseBrain's step 6 writes the eLife aggregate itself (one row per
+        # brain); it is what the eLife import reads when mousebrain is not
+        # importable in this environment.
+        elife_csv = summary_dir / 'elife_counts.csv'
 
         for csv_path in brain_csvs:
             brain_id = importer._extract_brain_from_path(csv_path)
@@ -878,15 +898,20 @@ def cmd_import_brains(args):
 
             # Import eLife counts
             if result['success']:
-                elife_count = _import_elife_from_csv(
-                    importer, db, csv_path, brain_id, dry_run)
+                elife_count, elife_errors = _import_elife_from_csv(
+                    importer, db, csv_path, brain_id, dry_run, elife_csv)
                 total_elife += elife_count
+                if elife_errors:
+                    elife_failed.append(brain_id)
 
         # Summary
         print(f"\n{'=' * 60}")
         print(f"{prefix}Import Complete:")
         print(f"  Region counts: {total_regions}")
         print(f"  eLife group counts: {total_elife}")
+        if elife_failed:
+            print(f"  [FAIL] eLife group counts NOT imported for {len(elife_failed)} brain(s): "
+                  f"{', '.join(elife_failed)} -- see the lines above")
 
         # Show table stats
         if not dry_run:
@@ -897,6 +922,8 @@ def cmd_import_brains(args):
                 print(f"  elife_region_counts: {session.query(ElifeRegionCount).count()}")
                 from .schema import CalibrationRun
                 print(f"  calibration_runs: {session.query(CalibrationRun).count()}")
+        if elife_failed:
+            sys.exit(1)
         return
 
     # No action specified
@@ -904,8 +931,15 @@ def cmd_import_brains(args):
     sys.exit(1)
 
 
-def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run):
-    """Parse a per-brain CSV and import eLife grouped counts. Returns count."""
+def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run, elife_csv=None):
+    """Parse a per-brain CSV and import eLife grouped counts.
+
+    Returns (count, errors). Every reason nothing was imported is PRINTED and
+    returned -- the silent `return 0` paths this function used to have are
+    how eLife counts went unimported for months without anyone noticing.
+    ``elife_csv`` is MouseBrain's own aggregate (2_Data_Summary/elife_counts.csv),
+    read when mousebrain is not importable here (see importers.import_elife_counts).
+    """
     import csv as csv_mod
     from .schema import BrainSample
 
@@ -924,19 +958,23 @@ def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run):
             if left > 0 or right > 0:
                 hemisphere_counts[acr] = {'left': left, 'right': right}
 
+    def _fail(msg):
+        print(f"    [FAIL] eLife counts ({brain_id}): {msg}")
+        return 0, [msg]
+
     if not region_counts_dict:
-        return 0
+        return _fail(f"no region rows in {csv_path.name}")
 
     brain_info = importer.parse_brain_name(brain_id)
     if not brain_info:
-        return 0
+        return _fail(f"brain id {brain_id!r} does not parse as BRAIN#_PROJECT_COHORT_SUBJECT_MAGx_zSTEP")
 
     with db.session() as session:
         bs = session.query(BrainSample).filter_by(
             subject_id=brain_info['subject_id'], brain_id=brain_id
         ).first()
         if not bs:
-            return 0
+            return _fail("no brain_samples row (the region-count import should have created it)")
 
         result = importer.import_elife_counts(
             brain_sample_id=bs.id,
@@ -945,8 +983,15 @@ def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run):
             is_final=True,
             source_file=str(csv_path),
             dry_run=dry_run,
+            brain_id=brain_id,
+            elife_summary_csv=elife_csv,
         )
-        return result.get('imported', {}).get('elife_region_counts', 0)
+        for err in result.get('errors', []):
+            print(f"    [FAIL] eLife counts ({brain_id}): {err}")
+        for warn in result.get('warnings', []):
+            print(f"    [!] eLife counts ({brain_id}): {warn}")
+        return (result.get('imported', {}).get('elife_region_counts', 0),
+                list(result.get('errors', [])))
 
 
 def _delete_brain_data(db, brain_id, dry_run):
@@ -999,6 +1044,16 @@ def cmd_import_reaches(args):
     raise SystemExit(_main(argv))
 
 
+def cmd_import_analyses(args):
+    """Mirror MouseBrain's analysis registry into the mousedb folders (see mousedb.import_analyses)."""
+    from .import_analyses import main as _main
+    argv = []
+    if args.all: argv.append("--all")
+    if args.dry_run: argv.append("--dry-run")
+    if args.limit: argv += ["--limit", str(args.limit)]
+    raise SystemExit(_main(argv))
+
+
 def cmd_config(args):
     """mousedb config: the machine-specific locations (see mousedb.config)."""
     from . import config as cfg
@@ -1011,6 +1066,9 @@ def cmd_config(args):
         print("[OK] %s removed  (saved to %s)" % (args.unset, path))
     if args.show or not (args.set or args.unset):
         print(cfg.describe())
+
+
+from .config import ConfigError
 
 
 def main():
@@ -1042,6 +1100,15 @@ def main():
     ir.add_argument('--force', action='store_true', help='Write even if a MouseReach watcher is running')
     ir.add_argument('--limit', type=int, help='At most this many files')
     ir.set_defaults(func=cmd_import_reaches)
+
+    # mousedb import-analyses -- mirror MouseBrain's analysis registry (files only, no database)
+    ia = subparsers.add_parser('import-analyses',
+                               help="Mirror MouseBrain's analysis registry (exports, figures, logs, "
+                                    "provenance) into the mousedb folders")
+    ia.add_argument('--all', action='store_true', help='Ignore the ledger; re-check every file')
+    ia.add_argument('--dry-run', action='store_true', help='Count only; write nothing')
+    ia.add_argument('--limit', type=int, help='Copy at most this many files')
+    ia.set_defaults(func=cmd_import_analyses)
 
     # mousedb-init
     init_parser = subparsers.add_parser('init', help='Initialize database')
@@ -1146,9 +1213,12 @@ def main():
     brain_parser.add_argument('--brain', '-b', help='Brain ID (if not in filename)')
     brain_parser.add_argument('--calibration', help='Path to calibration_runs.csv')
     brain_parser.add_argument('--all', '-a', action='store_true',
-        help='Import all data from default 2_Data_Summary directory')
+        help="Import everything in MouseBrain's 2_Data_Summary folder (calibration runs, "
+             "per-brain region counts, eLife group counts)")
     brain_parser.add_argument('--summary-dir',
-        help='Path to 2_Data_Summary directory (overrides default)')
+        help="Path to MouseBrain's 2_Data_Summary folder. Default: "
+             "<mousebrain_pipeline_root>/3D_Cleared/2_Data_Summary, from "
+             "`mousedb config --set mousebrain_pipeline_root <path>`")
     brain_parser.add_argument('--update', action='store_true',
         help='Delete existing counts for brain(s) before re-importing')
     brain_parser.add_argument('--dry-run', action='store_true',
@@ -1161,7 +1231,11 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    args.func(args)
+    try:
+        args.func(args)
+    except ConfigError as e:  # WHY: the message already names the exact fix; a traceback hides it
+        print("[FAIL] %s" % e)
+        raise SystemExit(1)
 
 
 # Entry points for pyproject.toml

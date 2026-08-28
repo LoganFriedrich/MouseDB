@@ -18,11 +18,15 @@ The instructions below cover the core `mousedb` package only.
 ## Quick Setup
 
 ```bash
-# 1. Create the conda environment
-conda env create -f "Y:/LAB_ROOT/Databases/mousedb/environment.yml" -p "Y:/LAB_ROOT/envs/MouseDB"
+# 1. Create the conda environment (<repo> = this checkout, <env_dir> = wherever you keep environments)
+cd <repo>
+conda env create -f environment.yml -p <env_dir>
 
 # 2. Activate it
-conda activate "Y:/LAB_ROOT/envs/MouseDB"
+conda activate <env_dir>
+
+# 2b. Tell mousedb where things are on this machine (see "Configuration" below)
+mousedb config --set mousedb_root <folder for connectome.db, exports/, logs/>
 
 # 3. Initialize the database
 mousedb init
@@ -101,6 +105,9 @@ The GUI has three tabs:
 | `mousedb export --cohort CNT_05 --all-formats` | Export all formats |
 | `mousedb export --unified` | Export unified reaches parquet |
 | `mousedb entry` | Launch GUI |
+| `mousedb import-reaches` | Pull new or changed MouseReach `*_features.json` results into `reach_data` (`--dry-run` to count only) |
+| `mousedb import-analyses` | Mirror MouseBrain's analysis registry (exports, figures, logs, provenance) into `<mousedb_root>/exports/<analysis>`, `figures/<analysis>`, `logs/`; writes `exports/ANALYSES_MANIFEST.json` (`--dry-run` to count only) |
+| `mousedb import-brains --all` | Import BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` (`--summary-dir` to point elsewhere) |
 
 ## Export Formats
 
@@ -126,11 +133,16 @@ All subjects with session summaries for analysis:
 
 ## Files
 
+`<mousedb_root>` is the folder set with `mousedb config --set mousedb_root <path>`
+(`mousedb config --show` prints it).
+
 | Location | Purpose |
 |----------|---------|
-| `Y:/LAB_ROOT/Databases/connectome.db` | SQLite database (single source of truth) |
-| `Y:/LAB_ROOT/Databases/logs/` | Audit trail (JSONL) |
-| `Y:/LAB_ROOT/Databases/exports/` | Generated exports |
+| `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
+| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`reach_imports.json`, `analysis_imports.json`) |
+| `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
+| `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarised in `exports/ANALYSES_MANIFEST.json` |
+| `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |
 
 ## Validation Rules
 
@@ -153,21 +165,21 @@ If you modify the package code:
 
 If you add new CLI commands to pyproject.toml:
 ```bash
-conda activate "Y:/LAB_ROOT/envs/MouseDB"
-pip install -e "Y:/LAB_ROOT/Databases/mousedb"
+conda activate <env_dir>
+pip install -e <repo>
 ```
 
 ## Troubleshooting
 
 ### "PyQt5 not found"
 ```bash
-conda activate "Y:/LAB_ROOT/envs/MouseDB"
+conda activate <env_dir>
 pip install PyQt5
 ```
 
 ### "Module not found: mousedb"
 ```bash
-pip install -e "Y:/LAB_ROOT/Databases/mousedb"
+pip install -e <repo>
 ```
 
 ### Database locked
@@ -204,7 +216,9 @@ environment:
 |---|---|---|---|
 | snapshot + sheets | `python -m mousedb.exporters.refresh_snapshot --import-sheets` | hourly | imports the tracking workbooks, takes the parquet snapshot of the database, rewrites `exports/current/` |
 | reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data` |
+| analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
 | bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
 
-None of these write while a MouseReach watcher is running on the same machine;
-they report that and exit.
+The jobs that write the database do not run while a MouseReach watcher is
+running on the same machine; they report that and exit. The analysis import
+writes files only (never the database), so it runs regardless.

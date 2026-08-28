@@ -14,9 +14,12 @@ cohort, in one table:
     videos_in_review triage / deep-review bundles waiting for a person
     outcomes         how many segments' outcomes are algo-only vs human-reviewed
     exports          the current CSVs, when written, and whether ODC-complete
+    analyses         one line per tissue analysis mirrored from MouseBrain's
+                     registry (exports/ANALYSES_MANIFEST.json, written by
+                     mousedb import-analyses): current / stale / invalidated
 
-It reads the analysis SNAPSHOT (parquet) and two queue folders -- never
-connectome.db -- so it is safe to call from a GUI at any time.
+It reads the analysis SNAPSHOT (parquet), two queue folders and two manifest
+files -- never connectome.db -- so it is safe to call from a GUI at any time.
 
     mousedb-data-status [--json]
 """
@@ -32,8 +35,29 @@ from typing import Dict, List
 from . import DEFAULT_EXPORT_PATH
 
 from .config import require, snapshot_dir as _snapshot_dir
+from .import_analyses import MANIFEST_NAME as ANALYSES_MANIFEST_NAME
 
 SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set snapshot_dir ...)
+
+
+def read_analyses_manifest(path: Path) -> List[dict]:
+    """The per-analysis rows of exports/ANALYSES_MANIFEST.json; [] when no
+    import has run yet. Raises when the file is there but unreadable."""
+    if not path.is_file():
+        return []
+    m = json.loads(path.read_text(encoding="utf-8"))
+    rows = m.get("analyses", []) if isinstance(m, dict) else m
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def analysis_lines(rows: List[dict]) -> List[str]:
+    """One line per analysis, identical in the terminal and the GUI."""
+    def _n(v):
+        return "?" if v is None else v
+    return ["Analysis %s: %s current, %s stale vs approved, %s invalidated, imported %s" % (
+                r.get("analysis_name"), _n(r.get("current")), _n(r.get("stale_vs_approved")),
+                _n(r.get("invalidated")), r.get("imported_at") or "?")
+            for r in rows]
 
 
 def _pipeline_root() -> Path:
@@ -64,7 +88,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     import pandas as pd
 
     out: Dict = {"snapshot_dir": str(snapshot_dir), "cohorts": [], "problems": [],
-                 "exports": None}
+                 "exports": None, "analyses": []}
     try:
         rd = pd.read_parquet(snapshot_dir / "reach_data.parquet",
                              columns=["subject_id", "video_name", "outcome_source", "segment_num"])
@@ -148,6 +172,13 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     else:
         out["exports"] = {"folder": str(manifest.parent), "generated_at": None,
                           "complete": False, "problems": ["no current exports yet"], "files": {}}
+
+    # Tissue analyses mirrored from MouseBrain's registry (mousedb import-analyses)
+    try:
+        out["analyses"] = read_analyses_manifest(
+            require("mousedb_root") / "exports" / ANALYSES_MANIFEST_NAME)
+    except Exception as e:
+        out["problems"].append("analyses manifest unreadable: %s" % e)
     return out
 
 
@@ -163,6 +194,8 @@ def _print(st: dict) -> None:
             q["triage"], q["deep_review"], c["sheet"].get("state") or "-"))
     ex = st.get("exports") or {}
     print("Exports: %s  written %s  ODC-complete=%s" % (ex.get("folder"), ex.get("generated_at"), ex.get("complete")))
+    for line in analysis_lines(st.get("analyses") or []):
+        print(line)
     for p in st.get("problems", []) + list(ex.get("problems", [])):
         print("  [!] %s" % p)
 

@@ -41,7 +41,7 @@ pytest-cache-files-*/
 # (mousedb/figures/ is the shipped subpackage; this only excludes the repo-root folder)
 /figures/
 
-# Internal analysis design docs / scratch notes -- live in OneDrive, not the repo
+# Internal analysis design docs / scratch notes -- kept outside the repo
 KinematicFeatureDecompositionAnalys.md
 
 # Imported reference (lab's historical DLC / R analysis project, ~584MB) -- external,

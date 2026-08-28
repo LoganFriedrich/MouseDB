@@ -19,7 +19,7 @@
             <li><a href="/dashboard/" class="{% if '/dashboard' in request.url.path %}active{% endif %}">Pipeline Status</a></li>
         </ul>
         <div class="nav-footer">
-            <span class="nav-server">MACHINE</span>
+            <span class="nav-server">{{ request.url.hostname }}</span>
         </div>
     </nav>
 
