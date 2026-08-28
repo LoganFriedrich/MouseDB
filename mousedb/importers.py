@@ -686,11 +686,12 @@ class ExcelImporter:
             self.warnings.append(f"Failed to read 3b_Manual_Tray: {e}")
             return
 
-        # Pellet columns can be int or str
-        pellet_cols = [str(i) for i in range(1, 21)]
-        if 1 in df.columns:
-            pellet_cols = list(range(1, 21))
-
+        # PASS 1: parse every scorable row. Nothing is inserted yet, because
+        # the phase a session belongs to depends on the cohort's WHOLE date
+        # structure (gap detection), which is only known once every row is
+        # read. Test_Phase in the sheet itself is operator-entered and
+        # unreliable, so it is ignored.
+        rows = []  # (subject_id, date, tray_type, tray_number, {pellet: score})
         for _, row in df.iterrows():
             subject_id = row.get('Animal') or row.get('SubjectID')
             if not subject_id or pd.isna(subject_id):
@@ -719,36 +720,58 @@ class ExcelImporter:
             except ValueError:
                 continue
 
-            # Test_Phase in the Excel sheet is unreliable (operator-entered, often blank
-            # or inconsistent). We derive test_phase/phase_group from the cohort's actual
-            # testing-day structure in _assign_pellet_phases below after all rows are inserted.
-
-            # Ensure subject exists
-            self._ensure_subject(session, subject_id, cohort_id, dry_run)
-
-            # Import each pellet score
+            scores = {}
             for pellet_num in range(1, 21):
                 col = pellet_num if pellet_num in df.columns else str(pellet_num)
                 if col not in df.columns:
                     continue
-
                 score = row.get(col)
                 if pd.isna(score):
                     continue
-
                 try:
                     score = int(score)
                 except (ValueError, TypeError):
                     continue
-
                 valid, msg = validate_pellet_score(score)
                 if not valid:
                     self.warnings.append(
                         f"Invalid score for {subject_id} {date_val} T{tray_number}P{pellet_num}: {msg}"
                     )
                     continue
+                scores[pellet_num] = score
+            rows.append((subject_id, date_val, tray_type, tray_number, scores))
 
-                # Check for duplicate
+        if not rows:
+            return
+
+        # PASS 2: derive each date's phase BEFORE inserting. pellet_scores.
+        # test_phase is NOT NULL in the live database (older DDL than the ORM,
+        # which allows NULL) -- the previous insert-NULL-then-update design
+        # violated it and rolled back every import of a new cohort, silently,
+        # for the hourly sheet import too. The date set is this sheet's dates
+        # plus whatever the db already holds for the cohort, so the gap
+        # structure is computed over the same union _assign_pellet_phases uses.
+        pairs = {(d, t) for _, d, t, _, _ in rows}
+        if not dry_run:
+            pairs |= {
+                (d, t) for d, t in
+                session.query(PelletScore.session_date, PelletScore.tray_type)
+                .join(Subject, Subject.subject_id == PelletScore.subject_id)
+                .filter(Subject.cohort_id == cohort_id).distinct().all()
+            }
+        phase_by_date = {a.session_date: a for a in assign_phases_for_cohort(sorted(pairs))}
+
+        for subject_id, date_val, tray_type, tray_number, scores in rows:
+            self._ensure_subject(session, subject_id, cohort_id, dry_run)
+            a = phase_by_date.get(date_val)
+            test_phase = a.test_phase if a else 'unassigned'
+            phase_group = a.phase_group if a else None
+            if a is None:
+                self.warnings.append(
+                    f"No phase derivable for {cohort_id} session {date_val} "
+                    f"({tray_type}) -- stored as 'unassigned'")
+
+            for pellet_num, score in scores.items():
                 existing = session.query(PelletScore).filter_by(
                     subject_id=subject_id,
                     session_date=date_val,
@@ -766,6 +789,8 @@ class ExcelImporter:
                     tray_number=tray_number,
                     pellet_number=pellet_num,
                     score=score,
+                    test_phase=test_phase,
+                    phase_group=phase_group,
                     entered_by='excel_import',
                 )
 
@@ -775,6 +800,7 @@ class ExcelImporter:
 
         if not dry_run:
             session.flush()
+            # Normalization pass over the whole cohort (legacy rows included).
             self._assign_pellet_phases(session, cohort_id)
 
     def _assign_pellet_phases(self, session, cohort_id: str):
