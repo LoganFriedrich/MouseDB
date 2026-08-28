@@ -186,18 +186,16 @@ def _cohort_number(cohort: str) -> Optional[str]:
     return "%02d" % int(m.group(1)) if m else None
 
 
-def find_cohort_sheet(cohort: str, sheets_dir=None) -> Optional[Path]:
-    """The live tracking sheet for a cohort, or None.
-
-    Where a cohort has more than one file (``..._Animal_Tracking1.xlsx``, dated
-    variants), the most recently modified wins -- that is the one being kept up.
-    """
+def cohort_sheet_candidates(cohort: str, sheets_dir=None) -> List[Path]:
+    """EVERY file in the folder that names this cohort (a ``(2).xlsx``, a dated
+    copy, a draft...), newest first. Excel lock files (``~$...``) excluded.
+    More than one candidate is a question for a person -- see pin_cohort_sheet."""
     d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
     if d is None:
-        return None
+        return []
     n = _cohort_number(cohort)
     if n is None:
-        return None
+        return []
     hits = []
     try:
         for f in d.iterdir():
@@ -205,8 +203,57 @@ def find_cohort_sheet(cohort: str, sheets_dir=None) -> Optional[Path]:
             if m and "%02d" % int(m.group(1)) == n and not f.name.startswith("~"):
                 hits.append(f)
     except OSError:
+        return []
+    return sorted(hits, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def pinned_sheet(cohort: str) -> Optional[str]:
+    """The filename a person pinned for this cohort ("it's this one"), or None."""
+    n = _cohort_number(cohort)
+    return (_read_config().get("pinned_sheets") or {}).get("CNT_%s" % n) if n else None
+
+
+def pin_cohort_sheet(cohort: str, filename: Optional[str]) -> Path:
+    """Record which of several matching files IS the cohort's sheet.
+
+    WHY: when a cohort matches more than one file, silently taking the newest
+    was a guess nobody could see. The person who knows which file is real
+    says so once; it is remembered in local config (never in source, never on
+    the share) and shown in every status listing. ``filename=None`` unpins.
+    Returns the config path."""
+    n = _cohort_number(cohort)
+    if n is None:
+        raise ValueError("not a cohort: %r" % cohort)
+    cfg = _read_config()
+    pins = cfg.setdefault("pinned_sheets", {})
+    key = "CNT_%s" % n
+    if filename:
+        pins[key] = Path(filename).name
+    else:
+        pins.pop(key, None)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    return CONFIG_PATH
+
+
+def find_cohort_sheet(cohort: str, sheets_dir=None) -> Optional[Path]:
+    """The live tracking sheet for a cohort, or None.
+
+    A pinned file wins if it still exists. Otherwise, where a cohort has more
+    than one file (``..._Animal_Tracking1.xlsx``, dated variants), the most
+    recently modified is used -- and callers that show status should say so
+    (``cohort_sheet_candidates`` lists them) rather than let the guess pass
+    silently.
+    """
+    hits = cohort_sheet_candidates(cohort, sheets_dir=sheets_dir)
+    if not hits:
         return None
-    return max(hits, key=lambda p: p.stat().st_mtime) if hits else None
+    pin = pinned_sheet(cohort)
+    if pin:
+        for h in hits:
+            if h.name == pin:
+                return h
+    return hits[0]
 
 
 def fetch_cohort_sheet(cohort: str, dest_dir, sheets_dir=None) -> Optional[Path]:

@@ -64,9 +64,15 @@ mousedb-video-status = "mousedb.cli:mousedb_video_status"
 mousedb-archive-status = "mousedb.cli:mousedb_archive_status"
 mousedb-web = "mousedb.web.main:run_server"
 mousedb-refresh-snapshot = "mousedb.exporters.refresh_snapshot:main"
+mousedb-sheets = "mousedb.sheet_sync:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+# pytest, run from the repo on the network share, leaves 'pytest-cache-files-*'
+# dirs it cannot always clean up (other users' ones are permission-denied).
+# setuptools' discovery walked into one and the editable build died with
+# 'Access is denied' -- so no console script could be regenerated (2026-08-28).
+exclude = ["pytest-cache-files-*", "pytest-cache-files-*.*", "tests", "tests.*"]
 
 [tool.black]
 line-length = 100

@@ -121,23 +121,27 @@ def import_sheets_first(force: bool = False) -> bool:
     workbooks). Never raises: a failed import means the snapshot refreshes
     from the data already in the db, which is strictly better than nothing.
     Returns True if the import ran cleanly."""
-    import subprocess
-    import sys
     if not force and watcher_running():
         print("  [skip] import: watcher active (same guard as the export)")
         return False
     try:
-        r = subprocess.run(
-            [sys.executable, "-m", "mousedb.cli", "import", "--all"],
-            capture_output=True, text=True, timeout=1800)
-        tail = (r.stdout or "").strip().splitlines()[-3:]
-        for line in tail:
-            print("  import: %s" % line)
-        if r.returncode != 0:
-            print("  [warn] import exited %d: %s"
-                  % (r.returncode, (r.stderr or "").strip()[-500:]))
-            return False
-        return True
+        # Through sheet_sync so every cohort's outcome -- success OR the exact
+        # error -- lands in the ledger the Tracking Sheets tab reads. The
+        # previous 'mousedb import --all' subprocess rolled back CNT_05 every
+        # hour for weeks and nobody could see it.
+        from mousedb.sheet_sync import import_cohorts
+        r = import_cohorts(triggered_by="hourly-refresh")
+        ok = True
+        for c in r.get("cohorts", []):
+            if c.get("success"):
+                print("  import %s: %s" % (c["cohort_id"], c.get("imported")))
+            else:
+                ok = False
+                print("  [warn] import %s FAILED: %s" % (c["cohort_id"], c.get("error")))
+        if r.get("problem"):
+            print("  [warn] %s" % r["problem"])
+            ok = False
+        return ok
     except Exception as e:
         print("  [warn] import failed (%s); snapshotting existing db data" % e)
         return False
