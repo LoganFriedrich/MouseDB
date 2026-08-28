@@ -186,60 +186,78 @@ def create_0a_metadata(subject_ids):
     return df
 
 
-def create_0_injection_calculations():
-    """
-    Create 0_Injection_Calculations sheet for virus prep
-    Matches existing structure with calculation formulas
-    """
-    # This will be written with formulas via openpyxl
-    df = pd.DataFrame({
-        "Date of surgery": [None],
-        "Virus Name": [None],
-        "Virus Box": [None],
-        "Virus Source": [None],
-        "Starting concentration in SciNot": [None],
-        "Starting concentration (in AAV protect)": [None],  # Formula: =E2/L2
-        "Target Concentration": [50],  # Default target
-        "Total Volume": [None],
-        "parts for this virus": [1],  # Default
-        "parts of 1xAAV protect": [None],  # Formula: =H2-I2
-        "Final concentration": [None],  # Formula: =(F2/H2)*I2
-        "Conversion factor": [100000000000],  # 10^11
-        "Final Concentration in SciNot": [None],  # Formula: =K2*L2
-    })
-    return df
+# The lab's required 0_Injection_Calculations layout (settled 2026-08-28):
+# one BATCH block per virus mix. A batch is a titled table --
+#
+#   Batch <label> - YYYYMMDD
+#   Virus | Starting concentration (in AAV protect) | Solution Parts Total
+#         | parts for this virus | Final concentration | [Disambiguated]
+#         | Mouse Quantity
+#   <one row per virus in the mix>
+#   Totals | | | sum(parts) | sum(final) | sum(disambiguated) |
+#
+# Concentrations use the lab's shorthand ("10" means 1x10^12), and the
+# [Disambiguated] column converts back: final x 1e11. Final concentration
+# = starting x parts / total parts. Earlier generators wrote a single-row
+# 13-column table (CNT_01 style) and a vertical Parameter/Value/Units
+# calculator (never mousedb's own) -- both retired; the importer still reads
+# them for legacy cohorts.
+INJECTION_CALC_HEADERS = [
+    "Virus",
+    "Starting concentration (in AAV protect)",
+    "Solution Parts Total",
+    "parts for this virus",
+    "Final concentration",
+    "[Disambiguated]",
+    "Mouse Quantity",
+]
+INJECTION_CALC_BATCH_PREFIX = "Batch"
+DISAMBIGUATION_FACTOR = 100_000_000_000  # shorthand "10" == 1x10^12
+DEFAULT_SOLUTION_PARTS_TOTAL = 6
 
 
-def write_0_injection_calculations_with_formulas(ws, df):
-    """
-    Write 0_Injection_Calculations with calculation formulas
-    """
-    headers = list(df.columns)
-    
-    # Write headers
-    for col_idx, header in enumerate(headers, 1):
-        ws.cell(row=1, column=col_idx, value=header)
-    
-    # Write row 2 with formulas
-    row_idx = 2
-    for col_idx, col_name in enumerate(headers, 1):
-        if col_name == "Starting concentration (in AAV protect)":
-            # Formula: =E2/L2 (Starting SciNot / Conversion factor)
-            ws.cell(row=row_idx, column=col_idx, value="=E2/L2")
-        elif col_name == "parts of 1xAAV protect":
-            # Formula: =H2-I2 (Total Volume - parts for virus)
-            ws.cell(row=row_idx, column=col_idx, value="=H2-I2")
-        elif col_name == "Final concentration":
-            # Formula: =(F2/H2)*I2
-            ws.cell(row=row_idx, column=col_idx, value="=(F2/H2)*I2")
-        elif col_name == "Final Concentration in SciNot":
-            # Formula: =K2*L2
-            ws.cell(row=row_idx, column=col_idx, value="=K2*L2")
-        else:
-            # Static value from dataframe
-            val = df.iloc[0][col_name]
-            if pd.notna(val):
-                ws.cell(row=row_idx, column=col_idx, value=val)
+def create_0_injection_calculations(num_batches=1, viruses_per_batch=3):
+    """Describe the 0_Injection_Calculations sheet: ``num_batches`` empty
+    batch blocks of ``viruses_per_batch`` virus rows each, in the lab's
+    required layout (see INJECTION_CALC_HEADERS above)."""
+    return {
+        '_is_injection_calc': True,
+        'num_batches': num_batches,
+        'viruses_per_batch': viruses_per_batch,
+    }
+
+
+def write_0_injection_calculations_with_formulas(ws, data):
+    """Write the batch-block layout with live formulas.
+
+    Per virus row r: Final concentration E = B*D/C; [Disambiguated] F =
+    E*1e11. Totals row sums parts, final and disambiguated. Solution Parts
+    Total is a plain value in every row (default 6) so a batch with a
+    different part count is edited in place. Blank rows separate batches."""
+    num_batches = data.get('num_batches', 1)
+    viruses_per_batch = data.get('viruses_per_batch', 3)
+
+    row = 1
+    for _ in range(num_batches):
+        ws.cell(row=row, column=1,
+                value=f"{INJECTION_CALC_BATCH_PREFIX} <label> - YYYYMMDD")
+        row += 1
+        for col_idx, header in enumerate(INJECTION_CALC_HEADERS, 1):
+            ws.cell(row=row, column=col_idx, value=header)
+        row += 1
+        first = row
+        for _ in range(viruses_per_batch):
+            ws.cell(row=row, column=3, value=DEFAULT_SOLUTION_PARTS_TOTAL)
+            ws.cell(row=row, column=5, value=f'=IFERROR(B{row}*D{row}/C{row},"")')
+            ws.cell(row=row, column=6,
+                    value=f'=IFERROR(E{row}*{DISAMBIGUATION_FACTOR},"")')
+            row += 1
+        last = row - 1
+        ws.cell(row=row, column=1, value="Totals")
+        ws.cell(row=row, column=4, value=f"=SUM(D{first}:D{last})")
+        ws.cell(row=row, column=5, value=f"=SUM(E{first}:E{last})")
+        ws.cell(row=row, column=6, value=f"=SUM(F{first}:F{last})")
+        row += 3  # two blank rows between batches
 
 
 def create_0_virus_preparation(cohort_name, num_groups=2, viruses_per_group=3):

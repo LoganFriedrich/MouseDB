@@ -913,14 +913,144 @@ class ExcelImporter:
             self.warnings.append("0_Injection_Calculations: sheet is empty or too small")
             return
 
+        # The lab's required layout (batch blocks -- see
+        # cohort_tools.make_sheets.INJECTION_CALC_HEADERS) is tried first and
+        # wins if present anywhere on the sheet. The two legacy layouts are
+        # kept only for cohorts written before it was settled.
+        if self._import_injection_batches(df, cohort_id, session, dry_run):
+            return
+
         first_cell = str(df.iloc[0, 0]).strip().lower() if pd.notna(df.iloc[0, 0]) else ''
 
         if 'parameter' in first_cell:
-            # Vertical format (CNT_05 style)
+            # Legacy vertical Parameter/Value/Units calculator
             self._import_injection_vertical(df, cohort_id, session, dry_run)
         else:
-            # Horizontal format (CNT_01 style)
+            # Legacy single-row horizontal format (CNT_01 style)
             self._import_injection_horizontal(df, cohort_id, session, dry_run)
+
+    def _import_injection_batches(self, df, cohort_id: str, session, dry_run: bool) -> bool:
+        """Parse every batch block on the sheet into VirusPrep records.
+
+        A block is a title row ("Batch <label> - YYYYMMDD"), a header row
+        containing "Solution Parts Total", one row per virus, and a "Totals"
+        row. One VirusPrep per BATCH (the schema's unique key is cohort +
+        prep_date, and a batch IS one prep): the mix's viruses are joined into
+        virus_name, per-virus starting/parts/final/disambiguated/mice go into
+        calculation_notes line by line, final_titer is the batch's
+        disambiguated total, num_animals the sum of Mouse Quantity, and the
+        batch label is kept in preparation_notes.
+
+        Returns True if the sheet is in batch layout (even if every block is
+        an unfilled template), False if no batch header exists at all.
+        """
+        import re
+
+        def cell(r, c):
+            if c >= df.shape[1]:
+                return None
+            v = df.iloc[r, c]
+            return None if pd.isna(v) else v
+
+        def text(r, c):
+            v = cell(r, c)
+            return str(v).strip() if v is not None else ''
+
+        header_rows = [
+            r for r in range(df.shape[0])
+            if any('solution parts total' in text(r, c).lower()
+                   for c in range(df.shape[1]))
+        ]
+        if not header_rows:
+            return False
+
+        for h in header_rows:
+            headers = [text(h, c).lower() for c in range(df.shape[1])]
+
+            def col(*keywords):
+                for i, name in enumerate(headers):
+                    if all(k in name for k in keywords):
+                        return i
+                return None
+
+            c_virus = col('virus')
+            c_start = col('starting')
+            c_total = col('solution', 'parts')
+            c_parts = col('parts', 'for')
+            c_final = col('final')
+            c_disamb = col('disambig')
+            c_mice = col('mouse')
+            if c_virus is None:
+                c_virus = 0
+
+            title = text(h - 1, 0) if h > 0 else ''
+            label, prep_date = title, None
+            m = re.search(r'(\d{8})\s*$', title)
+            if m:
+                prep_date = self._parse_date(m.group(1))
+                label = title[:m.start()].rstrip(' -').strip()
+            if label.lower().startswith('batch'):
+                label = label[5:].strip(' :-')
+
+            viruses = []
+            r = h + 1
+            while r < df.shape[0]:
+                name = text(r, c_virus)
+                if not name or name.lower().startswith('total'):
+                    break
+                if name.startswith('<') or name.startswith('['):
+                    r += 1  # unfilled template placeholder
+                    continue
+                viruses.append({
+                    'name': name,
+                    'start': self._parse_float(cell(r, c_start)) if c_start is not None else None,
+                    'total_parts': self._parse_float(cell(r, c_total)) if c_total is not None else None,
+                    'parts': self._parse_float(cell(r, c_parts)) if c_parts is not None else None,
+                    'final': self._parse_float(cell(r, c_final)) if c_final is not None else None,
+                    'disamb': self._parse_float(cell(r, c_disamb)) if c_disamb is not None else None,
+                    'mice': self._parse_float(cell(r, c_mice)) if c_mice is not None else None,
+                })
+                r += 1
+
+            if not viruses:
+                self.warnings.append(
+                    "0_Injection_Calculations: batch %r has no virus rows (template?)"
+                    % (title or '(untitled)'))
+                continue
+            if prep_date is None:
+                self.warnings.append(
+                    "0_Injection_Calculations: batch %r has no YYYYMMDD date in its "
+                    "title -- skipped (the date is the record's key)" % title)
+                continue
+
+            existing = session.query(VirusPrep).filter_by(
+                cohort_id=cohort_id, prep_date=prep_date
+            ).first()
+            if existing:
+                continue
+
+            disamb_total = sum(v['disamb'] for v in viruses if v['disamb'] is not None)
+            mice_total = sum(int(v['mice']) for v in viruses if v['mice'] is not None)
+            notes = ["%s: start %s, parts %s/%s, final %s (%.3g), mice %s" % (
+                v['name'], v['start'], v['parts'], v['total_parts'], v['final'],
+                v['disamb'] if v['disamb'] is not None else float('nan'),
+                int(v['mice']) if v['mice'] is not None else '-') for v in viruses]
+
+            virus_prep = VirusPrep(
+                cohort_id=cohort_id,
+                prep_date=prep_date,
+                virus_name=' + '.join(v['name'] for v in viruses),
+                final_titer=disamb_total if disamb_total > 0 else None,
+                num_animals=mice_total or None,
+                preparation_notes=label or None,
+                calculation_notes='\n'.join(notes),
+                entered_by='excel_import',
+            )
+            if not dry_run:
+                session.add(virus_prep)
+            self.imported_counts['virus_preps'] += 1
+
+        return True
 
     def _import_injection_horizontal(self, df, cohort_id: str, session, dry_run: bool):
         """Import horizontal injection calculations (CNT_01 format)."""
