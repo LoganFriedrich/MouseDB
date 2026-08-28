@@ -90,6 +90,20 @@ class ExcelImporter:
         with self.db.session() as session:
             # Ensure cohort exists
             cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+            if cohort and str(cohort.notes or '').lower().startswith('auto-created'):
+                # The pipeline created this cohort from a video before the
+                # sheet was imported (videos arrive daily, sheets "eventually"),
+                # with the video's date as a placeholder start. The sheet is
+                # the authority on the start date and roster size: fill them in
+                # now and drop the placeholder marker.
+                start_date = self._detect_start_date(xl, available_sheets)
+                if start_date:
+                    if not dry_run:
+                        cohort.start_date = start_date
+                        cohort.notes = (f"Imported from {excel_path.name} "
+                                        f"(record first created by the pipeline from a video)")
+                        session.flush()
+                    print(f"  Updated auto-created cohort {cohort_id}: start {start_date} (from sheet)")
             if not cohort:
                 # Need to determine start date from the data
                 start_date = self._detect_start_date(xl, available_sheets)
