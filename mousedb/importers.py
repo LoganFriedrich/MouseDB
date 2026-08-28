@@ -1567,6 +1567,13 @@ class ExcelImporter:
 
         existing = session.query(Subject).filter_by(subject_id=subject_id).first()
         if not existing:
+            # In a dry run nothing is added, so the same animal would look new
+            # on every one of its rows and be counted each time ('subjects:
+            # 1583' for a 16-mouse cohort). Count each id once.
+            seen = self.__dict__.setdefault('_dry_run_subjects', set())
+            if dry_run and subject_id in seen:
+                return
+            seen.add(subject_id)
             subject = Subject(subject_id=subject_id, cohort_id=cohort_id)
             if not dry_run:
                 session.add(subject)
