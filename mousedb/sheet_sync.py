@@ -121,12 +121,44 @@ def cohort_status(cohort_num: str) -> dict:
     }
 
 
+def aspa_cohort_status(letter: str) -> dict:
+    """ASPA is its own project with its own (frozen) workbook per cohort
+    letter, in its own folder. Same verdicts as CNT; 'sheet_newer' can only
+    happen if someone edits a frozen sheet, which is itself worth seeing."""
+    from .cohort_sheets import aspa_cohort_number, find_aspa_sheet
+    cohort_id = "ASPA_%s" % aspa_cohort_number(letter)
+    sheet = find_aspa_sheet(letter)
+    last = last_import(cohort_id)
+    edited = _iso(sheet.stat().st_mtime) if sheet else None
+    if sheet is None:
+        state, why = "no_sheet", "no ASPA workbook for cohort %s" % letter
+    elif last is None:
+        state, why = "never_imported", "manual scores never imported (mousedb-import-aspa-scores)"
+    elif not last.get("success"):
+        state, why = "last_import_failed", (last.get("error") or "unknown error")[:300]
+    elif last.get("sheet_mtime") and edited and edited > last["sheet_mtime"]:
+        state, why = "sheet_newer", "the workbook was edited after the last import"
+    else:
+        state, why = "up_to_date", "database matches the workbook's last edit"
+    return {"cohort_id": cohort_id, "project": "ASPA", "letter": letter,
+            "sheet": sheet.name if sheet else None, "sheet_path": str(sheet) if sheet else None,
+            "sheet_edited": edited, "candidates": [{"name": sheet.name, "edited": edited,
+                                                    "size": sheet.stat().st_size}] if sheet else [],
+            "ambiguous": False, "pinned": None, "last_import": last, "state": state, "why": why}
+
+
 def status() -> dict:
-    """Everything the Tracking Sheets tab shows, as one JSON-able dict."""
+    """Everything the Tracking Sheets tab shows, as one JSON-able dict.
+
+    One folder per PROJECT: CNT's tracking sheets and ASPA's frozen
+    workbooks are separate configured folders; both are listed."""
+    from .cohort_sheets import aspa_data_dir, available_aspa_cohorts
     d = cohort_sheets_dir()
+    a = aspa_data_dir()
     out = {
         "config_path": str(CONFIG_PATH),
         "cnt_sheets_dir": str(d) if d else None,
+        "aspa_sheets_dir": str(a) if a else None,
         "configured": d is not None,
         "ledger": str(LEDGER),
         "cohorts": [],
@@ -136,13 +168,22 @@ def status() -> dict:
         out["problem"] = ("No tracking-sheet folder is configured (or the configured "
                           "folder holds no Connectome_NN_Animal_Tracking.xlsx). "
                           "Use 'Set sheets folder' / mousedb-sheets set-dir.")
-        return out
-    for n in available_cohorts(d):
-        try:
-            out["cohorts"].append(cohort_status(n))
-        except Exception as e:
-            out["cohorts"].append({"cohort_id": "CNT_%s" % n, "state": "error",
-                                   "why": "status failed: %s" % e})
+    else:
+        for n in available_cohorts(d):
+            try:
+                c = cohort_status(n)
+                c["project"] = "CNT"
+                out["cohorts"].append(c)
+            except Exception as e:
+                out["cohorts"].append({"cohort_id": "CNT_%s" % n, "project": "CNT",
+                                       "state": "error", "why": "status failed: %s" % e})
+    if a is not None:
+        for L in available_aspa_cohorts(a):
+            try:
+                out["cohorts"].append(aspa_cohort_status(L))
+            except Exception as e:
+                out["cohorts"].append({"cohort_id": "ASPA_%s" % L, "project": "ASPA",
+                                       "state": "error", "why": "status failed: %s" % e})
     return out
 
 
@@ -167,8 +208,26 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         return results
 
     wanted = None
+    aspa_letters = []
     if cohorts:
-        wanted = {("CNT_%02d" % int(c.split("_")[-1])) for c in cohorts}
+        wanted = set()
+        for c in cohorts:
+            if c.upper().startswith("ASPA"):
+                aspa_letters.append(c)
+            else:
+                wanted.add("CNT_%02d" % int(c.split("_")[-1]))
+
+    # ASPA cohorts go through their own importer (frozen wide-layout workbooks)
+    if aspa_letters:
+        from .cohort_sheets import aspa_letter
+        from .cohort_tools.import_aspa_scores import import_cohort as import_aspa
+        for c in aspa_letters:
+            L = aspa_letter(c) or c[-1]
+            e = import_aspa(L, apply=not dry_run)
+            e["triggered_by"] = triggered_by
+            results["cohorts"].append(e)
+        if wanted == set():
+            return results
 
     for n in available_cohorts(d):
         cohort_id = "CNT_%s" % n

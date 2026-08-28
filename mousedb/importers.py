@@ -755,6 +755,14 @@ class ExcelImporter:
                 scores[pellet_num] = score
             rows.append((subject_id, date_val, tray_type, tray_number, scores))
 
+        self._insert_pellet_rows(session, cohort_id, rows, dry_run)
+
+    def _insert_pellet_rows(self, session, cohort_id: str, rows, dry_run: bool):
+        """Insert parsed pellet rows -- (subject_id, date, tray_type, tray_number,
+        {pellet: score}) -- with phases derived first. Shared by the CNT
+        tracking-sheet path above and the ASPA workbook importer
+        (cohort_tools.import_aspa_scores), so both cohorts' scores go through
+        the same phase derivation, dedup and subject creation."""
         if not rows:
             return
 

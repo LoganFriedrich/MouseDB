@@ -66,6 +66,7 @@ mousedb-web = "mousedb.web.main:run_server"
 mousedb-refresh-snapshot = "mousedb.exporters.refresh_snapshot:main"
 mousedb-sheets = "mousedb.sheet_sync:main"
 mousedb-current-exports = "mousedb.exporters.current:main"
+mousedb-import-aspa-scores = "mousedb.cohort_tools.import_aspa_scores:main"
 mousedb-data-status = "mousedb.data_status:main"
 
 [tool.setuptools.packages.find]
