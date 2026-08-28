@@ -49,7 +49,7 @@ DEFAULT_SNAPSHOT_DIR = Path("C:/LAB_ROOT/_analysis_snapshot")
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.
-TABLES = ["pellet_scores", "reach_data"]
+TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts"]
 
 
 def watcher_running() -> bool:
@@ -165,6 +165,19 @@ def main():
         import_sheets_first(force=args.force)
     counts = refresh(force=args.force)
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
+
+    # The snapshot is for code; the CURRENT EXPORTS are for people ("where is
+    # my data?"). Rewrite them from the snapshot just taken. --force means the
+    # caller vouches the database is readable now, which is what the
+    # per-cohort ODC session files need.
+    try:
+        from mousedb.exporters.current import refresh_current
+        m = refresh_current(db_ok=args.force)
+        print("Current exports: %d files, complete=%s%s" % (
+            len(m["files"]), m["complete"],
+            ("; problems: " + " | ".join(m["problems"])) if m["problems"] else ""))
+    except Exception as e:
+        print("  [warn] current exports not refreshed: %s" % e)
 
 
 if __name__ == "__main__":
