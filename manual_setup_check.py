@@ -60,8 +60,11 @@ def main():
 
     # Step 4: Check for Excel files to import
     print("\n[4] Checking for Excel files to import...")
-    cohorts_dir = Path("Y:/LAB_ROOT/Behavior/3_Connectome_Animal_Cohorts")
-    if cohorts_dir.exists():
+    from mousedb.cohort_sheets import cohort_sheets_dir
+    cohorts_dir = cohort_sheets_dir()  # configured with: mousedb-sheets set-dir <folder>
+    if cohorts_dir is None:
+        print("    [!] no tracking-sheet folder configured (mousedb-sheets set-dir <folder>)")
+    elif cohorts_dir.exists():
         excel_files = list(cohorts_dir.glob("Connectome_*.xlsx"))
         print(f"    Found {len(excel_files)} Excel files in {cohorts_dir}")
         for f in excel_files[:5]:

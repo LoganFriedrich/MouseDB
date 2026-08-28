@@ -55,6 +55,40 @@ changed, creates any animal it has not seen, and re-derives the protocol
 phase of every cohort it touched. `mousedb import-reaches --dry-run` says
 what it would do.
 
+## How tissue analysis outputs get here
+
+MouseBrain keeps its own record of every analysis output it produces -- the
+per-sample measurements, the figures, and `registry.json` saying for each
+sample which method and parameters made it, from which source files, when,
+and whether it is still current -- in a `Registry/` folder inside its own
+pipeline folder. It never writes into this tool's folders.
+
+`mousedb import-analyses` (run hourly where scheduled, or by hand) mirrors
+that registry here:
+
+| what | where it lands |
+|---|---|
+| measurements and other data files, plus `registry.json` (the provenance) | `<mousedb_root>/exports/<analysis>/...` |
+| figures | `<mousedb_root>/figures/<analysis>/...` |
+| the analysis's registration log | `<mousedb_root>/logs/<analysis>.log` |
+| one summary of every analysis | `<mousedb_root>/exports/ANALYSES_MANIFEST.json` |
+
+Relative paths and modification times are kept, so a path recorded in
+`registry.json` (`exports/<analysis>/<sample>/measurements.csv`) resolves
+under `<mousedb_root>` exactly as it does in MouseBrain's registry. Only new
+or changed files are copied. A file MouseBrain withdraws is not deleted here:
+it is moved to `<mousedb_root>/_archived/analyses/<date_time>/`.
+
+`ANALYSES_MANIFEST.json` has one row per analysis: how many samples are
+registered, how many are **current**, how many are **stale vs approved**
+(current, but produced with a method other than the one the analysis now
+approves -- re-run them before using them), how many were **invalidated**,
+and when the mirror was taken. The Where Is My Data tab shows the same
+numbers as one line per analysis under the export files.
+
+`mousedb import-analyses --dry-run` says what would be copied or archived
+without writing anything (no files, no ledger, no manifest).
+
 ## Why the numbers can lag by up to an hour
 
 The tab and the exports read an hourly *snapshot* of the database, not the
@@ -80,6 +114,7 @@ From a terminal (MouseDB environment active):
 ```
 mousedb-data-status              # the table above, as text
 mousedb import-reaches           # pull new MouseReach results into reach_data
+mousedb import-analyses          # mirror MouseBrain's analysis registry (exports, figures, provenance)
 mousedb-current-exports          # rewrite reach_data + manual_scores (+ dictionaries)
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
 ```

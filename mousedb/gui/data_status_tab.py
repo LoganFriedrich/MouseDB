@@ -52,6 +52,13 @@ for an ODC-SCI upload. "Open exports folder" opens it in Explorer.
 The folder is rewritten by the hourly job. "Refresh exports now" rewrites
 reach_data and manual_scores immediately from the latest snapshot.
 Terminal equivalents: mousedb-data-status, mousedb-current-exports
+
+TISSUE ANALYSES: below the export files, one line per MouseBrain analysis
+says how many samples are current, how many were produced with a method
+other than the one now approved (stale -- re-run before use), how many were
+invalidated, and when the mirror was last taken. The measurements, figures
+and provenance (registry.json) are mirrored hourly by mousedb import-analyses
+into exports/<analysis> and figures/<analysis> beside the export folder.
 """
 
 
@@ -179,6 +186,9 @@ class DataStatusTab(QWidget):
                  % (ex.get("generated_at") or "never", ex.get("complete"))]
         for name, rows in (ex.get("files") or {}).items():
             lines.append("  %-38s %s rows" % (name, rows))
+        # Tissue analyses mirrored from MouseBrain's registry -- same lines as the terminal
+        from ..data_status import analysis_lines
+        lines.extend(analysis_lines(st.get("analyses") or []))
         for p in list(st.get("problems", [])) + list(ex.get("problems", [])):
             lines.append("  [!] %s" % p)
         self.exports.setPlainText("\n".join(lines))

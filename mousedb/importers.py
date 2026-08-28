@@ -1675,6 +1675,78 @@ def import_all_cohorts(cohorts_dir: Path, dry_run: bool = False) -> List[Dict]:
 # BRAINGLOBE DATA IMPORTER
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# eLife group counts from MouseBrain's own aggregate (2_Data_Summary/elife_counts.csv)
+# ---------------------------------------------------------------------------
+
+def _elife_column_groups() -> Dict[str, str]:
+    """Reverse MouseBrain's column naming in elife_counts.csv: a group is
+    written as ``group_<name>`` / ``group_left_<name>`` / ``group_right_<name>``
+    with ``name.replace(' ', '_').replace('/', '_')``, and the unmapped bucket
+    (the group ``[Unmapped]``) as ``Unmapped``. The canonical names come from
+    mousedb.region_priors, so no mousebrain import is needed."""
+    from .region_priors import PRIORS
+    out = {"Unmapped": "[Unmapped]"}
+    for prior in PRIORS.values():
+        for name in prior.ordered_regions:
+            if name.startswith("["):
+                continue
+            out[name.replace(' ', '_').replace('/', '_')] = name
+    return out
+
+
+def read_elife_summary_rows(csv_path: Path, brain_id: str) -> Dict[str, Dict[str, int]]:
+    """{group name: {'both': n, 'left': n, 'right': n}} for one brain, read from
+    MouseBrain's elife_counts.csv (one row per brain: the ``brain`` column is
+    ``<mouse folder>/<brain id>`` and ``brain_id`` is the bare brain number).
+
+    Matching, in order: the brain id itself (the whole ``brain`` value or its
+    last path component), then the brain number alone when it is unique in the
+    file. Raises LookupError when nothing (or more than one candidate) matches,
+    so the caller can say exactly why nothing was imported. A blank cell is
+    ABSENT from the result, not 0: a hemisphere MouseBrain did not count is not
+    a hemisphere with zero cells.
+    """
+    import csv as csv_mod
+    decode = _elife_column_groups()
+    number = brain_id.split('_')[0]
+    exact, by_number = [], []
+    with open(csv_path, 'r', encoding='utf-8', newline='') as f:
+        for row in csv_mod.DictReader(f):
+            brain = (row.get('brain') or '').strip()
+            leaf = brain.replace('\\', '/').rsplit('/', 1)[-1]
+            if brain == brain_id or leaf == brain_id:
+                exact.append(row)
+            elif (row.get('brain_id') or '').strip() == number:
+                by_number.append(row)
+    if exact:
+        row = exact[-1]  # MouseBrain rewrites a brain's row in place; the last one is current
+    elif len(by_number) == 1:
+        row = by_number[0]
+    elif by_number:
+        raise LookupError("%d rows in %s carry brain number %s and none names %s exactly"
+                          % (len(by_number), csv_path, number, brain_id))
+    else:
+        raise LookupError("no row for %s in %s (MouseBrain step 6 has not run for this brain, "
+                          "or its brain id differs)" % (brain_id, csv_path))
+    out: Dict[str, Dict[str, int]] = {}
+    for col, val in row.items():
+        if not col or not col.startswith('group_') or val is None or str(val).strip() == '':
+            continue
+        rest = col[len('group_'):]
+        hemisphere = 'both'
+        for h in ('left', 'right'):
+            if rest.startswith(h + '_'):
+                hemisphere, rest = h, rest[len(h) + 1:]
+                break
+        try:
+            n = int(float(val))
+        except ValueError:
+            continue
+        out.setdefault(decode.get(rest, rest), {})[hemisphere] = n
+    return out
+
+
 class BrainGlobeImporter:
     """
     Import BrainGlobe cell detection and region analysis results.
@@ -2073,9 +2145,20 @@ class BrainGlobeImporter:
                              calibration_run_id: Optional[int] = None,
                              is_final: bool = False,
                              source_file: Optional[str] = None,
-                             dry_run: bool = False) -> Dict:
+                             dry_run: bool = False,
+                             brain_id: Optional[str] = None,
+                             elife_summary_csv: Optional[Path] = None) -> Dict:
         """
-        Compute and import eLife 25-group aggregated counts.
+        Import eLife 25-group aggregated counts.
+
+        Two sources, in this order:
+          1. mousebrain importable here -> recompute from ``region_counts_dict``
+             with MouseBrain's own mapping (``aggregate_to_elife``).
+          2. otherwise -> read the brain's row from MouseBrain's aggregate,
+             ``elife_summary_csv`` (2_Data_Summary/elife_counts.csv, written by
+             MouseBrain's step 6). Needs ``brain_id`` to find the row.
+        When neither is possible the result carries an explicit error line;
+        it never skips silently.
 
         Args:
             brain_sample_id: FK to brain_samples.id
@@ -2085,6 +2168,8 @@ class BrainGlobeImporter:
             is_final: Mark as production counts
             source_file: Source CSV path for provenance
             dry_run: If True, validate only
+            brain_id: The brain's id (row key in elife_summary_csv)
+            elife_summary_csv: MouseBrain's elife_counts.csv (source 2)
 
         Returns:
             Dict with import statistics
@@ -2096,7 +2181,7 @@ class BrainGlobeImporter:
         self.warnings = []
         self.imported_counts = {'elife_region_counts': 0}
 
-        # Import aggregate_to_elife from mousebrain
+        # Recompute with MouseBrain's own mapping when it is importable here.
         aggregate_fn = None
         try:
             from mousebrain.region_mapping import aggregate_to_elife
@@ -2104,15 +2189,17 @@ class BrainGlobeImporter:
         except ImportError:
             pass
 
-        # No file-path fallback into another tool's source tree: if mousebrain is
-        # not importable in this environment, region aggregation is simply skipped.
-
         if aggregate_fn is None:
-            self.errors.append(
-                "Cannot import aggregate_to_elife from mousebrain.region_mapping "
-                "and fallback file not found"
-            )
-            return self._get_result()
+            # WHY: mousedb is the integrator; it must not need mousebrain
+            # installed to hold MouseBrain's numbers. MouseBrain's step 6
+            # already writes the aggregate this method would recompute (one row
+            # per brain in elife_counts.csv), so read that. And every way of NOT
+            # importing is an error line: the old "skip when mousebrain is
+            # missing" is how eLife counts never reached the database for months
+            # without anyone seeing it (2026-08).
+            return self._import_elife_counts_from_summary(
+                brain_sample_id, brain_id, elife_summary_csv,
+                calibration_run_id, is_final, dry_run)
 
         print(f"{'[DRY RUN] ' if dry_run else ''}Computing eLife group counts "
               f"for brain_sample_id={brain_sample_id}")
@@ -2170,6 +2257,51 @@ class BrainGlobeImporter:
                 session.commit()
                 print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
 
+        return self._get_result()
+
+    def _import_elife_counts_from_summary(self, brain_sample_id, brain_id, elife_summary_csv,
+                                          calibration_run_id, is_final, dry_run) -> Dict:
+        """Source 2 of import_elife_counts: the brain's row in MouseBrain's
+        elife_counts.csv. Constituent regions are not in that file, so the
+        rows carry none. Every failure is an error line (see the WHY above)."""
+        where = ("MouseBrain's elife_counts.csv was not given" if elife_summary_csv is None
+                 else "MouseBrain's elife_counts.csv does not exist at %s" % elife_summary_csv)
+        if elife_summary_csv is None or not Path(elife_summary_csv).is_file():
+            self.errors.append(
+                "eLife counts NOT imported for brain_sample_id=%s: mousebrain.region_mapping is not "
+                "importable in this environment and %s" % (brain_sample_id, where))
+            return self._get_result()
+        if not brain_id:
+            self.errors.append(
+                "eLife counts NOT imported for brain_sample_id=%s: brain_id is needed to find the "
+                "brain's row in %s" % (brain_sample_id, elife_summary_csv))
+            return self._get_result()
+        try:
+            rows = read_elife_summary_rows(Path(elife_summary_csv), brain_id)
+        except (LookupError, OSError, ValueError) as e:
+            self.errors.append("eLife counts NOT imported for %s: %s" % (brain_id, e))
+            return self._get_result()
+
+        known = set(_elife_column_groups().values())
+        for name in sorted(rows):
+            if name not in known:
+                self.warnings.append("group %r in %s is not a known eLife group name; stored as written"
+                                     % (name, Path(elife_summary_csv).name))
+
+        print(f"{'[DRY RUN] ' if dry_run else ''}Reading eLife group counts for {brain_id} "
+              f"from {elife_summary_csv} (mousebrain not importable here)")
+        with self.db.session() as session:
+            for group_name, by_hemisphere in rows.items():
+                for hemisphere in ('both', 'left', 'right'):
+                    if hemisphere not in by_hemisphere:
+                        continue
+                    self._insert_elife_count(
+                        session, brain_sample_id, group_name, hemisphere,
+                        by_hemisphere[hemisphere], {}, calibration_run_id, is_final,
+                        str(elife_summary_csv), dry_run)
+            if not dry_run and not self.errors:
+                session.commit()
+                print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
         return self._get_result()
 
     def _insert_elife_count(self, session, brain_sample_id, group_name, hemisphere,

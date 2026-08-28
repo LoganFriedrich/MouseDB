@@ -1,10 +1,10 @@
 # Conda environment for MouseDB
 #
-# Create with:
-#   conda env create -f environment.yml -p "Y:/LAB_ROOT/envs/MouseDB"
+# Create with (from the repo root; <env_dir> = wherever you keep environments):
+#   conda env create -f environment.yml -p <env_dir>
 #
 # Activate with:
-#   conda activate "Y:/LAB_ROOT/envs/MouseDB"
+#   conda activate <env_dir>
 
 name: MouseDB
 channels:
@@ -19,4 +19,4 @@ dependencies:
   - sqlalchemy>=2.0
   - pyqt>=5.15
   - pip:
-    - -e "Y:/LAB_ROOT/Databases/mousedb"
+    - -e .   # this repo, editable (run `conda env create` from the repo root)
