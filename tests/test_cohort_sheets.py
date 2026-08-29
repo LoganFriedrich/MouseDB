@@ -49,7 +49,7 @@ class TestNothingLabSpecificInSource:
     def test_the_module_names_no_organisation_or_drive(self):
         text = Path(cs.__file__).read_text(encoding="utf-8")
         for leak in ("OneDrive - ", "Sharepoint", "SharePoint",
-                     "G:\\", "Y:/LAB_ROOT", "user_data"):
+                     "G:\\", "Y:/", "Y:\\", "user_data"):
             assert leak not in text, f"lab-specific string in source: {leak!r}"
 
     def test_there_is_no_built_in_fallback_path(self, unconfigured):
