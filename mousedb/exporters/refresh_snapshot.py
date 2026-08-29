@@ -151,7 +151,7 @@ def import_sheets_first(force: bool = False) -> bool:
         return False
 
 
-def main():
+def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--import-sheets", action="store_true",
@@ -161,28 +161,47 @@ def main():
     ap.add_argument("--force", action="store_true",
                     help="Skip the watcher-running guard. ONLY for the "
                          "watcher's own main loop, which blocks on this "
-                         "process and so cannot be writing concurrently.")
-    args = ap.parse_args()
+                         "process and so cannot be writing concurrently. "
+                         "Also vouches the database is readable for the "
+                         "per-cohort ODC session exports.")
+    args = ap.parse_args(argv)
 
     print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"))
     if args.import_sheets:
         import_sheets_first(force=args.force)
+    # A running watcher makes refresh() raise, and that aborts this whole
+    # run: nothing below may read the database while a writer is active.
     counts = refresh(force=args.force)
+    snapshot_ok = True
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
 
     # The snapshot is for code; the CURRENT EXPORTS are for people ("where is
-    # my data?"). Rewrite them from the snapshot just taken. --force means the
-    # caller vouches the database is readable now, which is what the
-    # per-cohort ODC session files need.
+    # my data?"). Rewrite them from the snapshot just taken.
+    #
+    # WHY db_ok follows the snapshot and not --force: the per-cohort
+    # ODC_sessions_*.csv files are the one export that needs the live
+    # database. refresh() has just read that database safely -- it refused to
+    # start if a watcher was running -- so after a successful snapshot the
+    # database IS readable. The hourly scheduled task runs without --force,
+    # and tying db_ok to --force meant those files were never refreshed and
+    # MANIFEST.json said odc_sessions_refreshed=False every hour (found
+    # 2026-08-28). The guard is asked once more because the snapshot can take
+    # a while and a watcher may have started since; --force still overrides
+    # (that caller vouches nothing else can be writing).
+    db_ok = args.force or (snapshot_ok and not watcher_running())
+    if not db_ok:
+        print("  [!] a watcher started after the snapshot; the ODC session "
+              "exports are left from the previous refresh")
     try:
         from mousedb.exporters.current import refresh_current
-        m = refresh_current(db_ok=args.force)
+        m = refresh_current(db_ok=db_ok)
         print("Current exports: %d files, complete=%s%s" % (
             len(m["files"]), m["complete"],
             ("; problems: " + " | ".join(m["problems"])) if m["problems"] else ""))
     except Exception as e:
         print("  [warn] current exports not refreshed: %s" % e)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

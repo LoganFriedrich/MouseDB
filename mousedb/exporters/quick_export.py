@@ -1,6 +1,25 @@
-"""Quick export of unified data with surgery metadata for presentation."""
-import pandas as pd
+"""Quick export of unified behavioural data with surgery metadata, for a
+presentation or a hand-off.
+
+READS  (from <dir>/generated/, where <dir> is the current working directory
+        unless --dir says otherwise):
+    all_cohorts_pellet_level.csv     one row per pellet
+    all_cohorts_tray_summaries.csv   one row per tray
+    plus, only when the optional mousereach package is importable, the
+    surgery metadata it can load for those animals (otherwise the export is
+    the two inputs unchanged).
+
+WRITES (into the same <dir>/generated/ folder, overwriting):
+    unified_pellet_level.csv         pellets + surgery columns, days_post_injury, Timepoint
+    unified_tray_level.csv           trays + the same
+    unified_behavioral_data.xlsx     both as sheets (+ Surgery_Metadata when available)
+
+Nothing else is read or written; the database is not touched.
+"""
+import argparse
 from pathlib import Path
+
+import pandas as pd
 
 # Optional: mousereach is a separate package/env - not a dependency of mousedb
 try:
@@ -8,18 +27,49 @@ try:
 except ImportError:
     load_all_surgery_metadata = None
 
+GENERATED = "generated"
+PELLET_INPUT = "all_cohorts_pellet_level.csv"
+TRAY_INPUT = "all_cohorts_tray_summaries.csv"
 
-def main():
-    """Main export function."""
+
+def _parse_args(argv):
+    ap = argparse.ArgumentParser(
+        prog="mousedb-quick-export", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--dir", type=Path, default=None,
+                    help="folder that holds %s/ (default: the current working "
+                         "directory)" % GENERATED)
+    return ap.parse_args(argv)
+
+
+def main(argv=None) -> int:
+    """Main export function. Returns the process exit code."""
+    args = _parse_args(argv)
+    base_dir = Path(args.dir) if args.dir else Path.cwd()
+    gen_dir = base_dir / GENERATED
+
+    # WHY check up front: a missing folder used to surface as a pandas
+    # FileNotFoundError traceback that said nothing about what this command
+    # expects or where it looked.
+    if not gen_dir.is_dir():
+        print("[FAIL] %s does not exist." % gen_dir)
+        print("  mousedb-quick-export reads <dir>/%s/%s and %s."
+              % (GENERATED, PELLET_INPUT, TRAY_INPUT))
+        print("  Run it from the folder that holds %s/, or pass --dir <folder>." % GENERATED)
+        return 1
+    missing = [name for name in (PELLET_INPUT, TRAY_INPUT) if not (gen_dir / name).is_file()]
+    if missing:
+        print("[FAIL] missing input file(s) in %s: %s" % (gen_dir, ", ".join(missing)))
+        return 1
+
     # Load existing pellet-level data
     print("Loading pellet-level data...")
-    base_dir = Path.cwd()
-    pellet_df = pd.read_csv(base_dir / 'generated' / 'all_cohorts_pellet_level.csv')
+    pellet_df = pd.read_csv(gen_dir / PELLET_INPUT)
     print(f"  {len(pellet_df):,} pellet outcomes")
 
     # Load tray summaries
     print("Loading tray summaries...")
-    tray_df = pd.read_csv(base_dir / 'generated' / 'all_cohorts_tray_summaries.csv')
+    tray_df = pd.read_csv(gen_dir / TRAY_INPUT)
     print(f"  {len(tray_df):,} tray records")
 
     # Load surgery metadata
@@ -98,9 +148,8 @@ def main():
         pellet_merged = pellet_df
         tray_merged = tray_df
 
-    # Export
-    output_dir = base_dir / 'generated'
-    output_dir.mkdir(exist_ok=True)
+    # Export -- into the same generated/ folder the inputs came from
+    output_dir = gen_dir
 
     # Pellet-level with surgery
     pellet_out = output_dir / 'unified_pellet_level.csv'
@@ -135,7 +184,8 @@ def main():
     if 'days_post_injury' in tray_merged.columns:
         valid_dpi = tray_merged['days_post_injury'].notna().sum()
         print(f"Days post injury available for: {valid_dpi}/{len(tray_merged)} records")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
