@@ -214,7 +214,8 @@ environment:
 
 | job | command | cadence | what it does |
 |---|---|---|---|
-| snapshot + sheets | `python -m mousedb.exporters.refresh_snapshot --import-sheets` | hourly | imports the tracking workbooks, takes the parquet snapshot of the database, rewrites `exports/current/` |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/` |
+| sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | every 4 h | imports the tracking workbooks (they are filled in by hand, so hourly only adds load) |
 | reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data` |
 | analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
 | bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
