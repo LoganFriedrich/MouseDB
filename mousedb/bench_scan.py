@@ -20,9 +20,9 @@ WHY THIS IS A CORE MODULE, NOT A RECIPE
     read at any time.
 
 Usage:
-    python -m mousedb.bench_scan --out worklist.json
-    mousedb-bench-scan --out worklist.json
-    mousedb-bench-scan --route            # also send the worklist to MouseReach's queue
+    python -m mousedb.bench_scan              # writes <mousedb_root>/logs/never_reviewed_worklist.json
+    mousedb-bench-scan --out worklist.json    # ...or anywhere else
+    mousedb-bench-scan --route                # also send the worklist to MouseReach's queue
 
 ROUTING
     --route hands the worklist to MouseReach's own CLI
@@ -53,11 +53,28 @@ from pathlib import Path
 import pandas as pd
 
 from mousedb import DEFAULT_DB_PATH
+from mousedb.config import ConfigError, require
 from mousedb.data_status import SNAPSHOT_DIR
 
 DEFAULT_DB = DEFAULT_DB_PATH
 DEFAULT_CACHE = SNAPSHOT_DIR
-DEFAULT_OUT = Path("never_reviewed_worklist.json")
+DEFAULT_OUT_NAME = "never_reviewed_worklist.json"
+
+
+def default_out() -> Path:
+    """Where the worklist goes when --out is not given:
+    ``<mousedb_root>/logs/never_reviewed_worklist.json``.
+
+    WHY a function resolved at run time, not a module constant: the earlier
+    default was a bare relative filename, so the scheduled task -- started by
+    the scheduler in whatever working directory it likes, in practice the
+    code folder -- dropped the worklist next to the source. The location is
+    this machine's configuration (mousedb_root, the folder that already
+    holds logs/). It is read when the scan runs, not when the module is
+    imported, so an unconfigured machine can still import this module and
+    the ConfigError, when it comes, names the exact command to fix it.
+    """
+    return require("mousedb_root") / "logs" / DEFAULT_OUT_NAME
 
 CURRENT_VERSION = "6.1.0"
 
@@ -120,7 +137,6 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
         (reach_rows, manual_scores)
     """
     if db_path is None:
-        from mousedb.config import require
         db_path = DEFAULT_DB or require("db_path")
     # Prefer the snapshot without being asked. Only fall through to the live
     # database when there is no snapshot AND no watcher is running.
@@ -263,27 +279,39 @@ def route(worklist_path, queue="triage", reason=ROUTE_REASON):
     return True
 
 
-def main():
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--out", type=Path, default=None,
+                    help="where to write the worklist JSON (default: "
+                         "<mousedb_root>/logs/%s)" % DEFAULT_OUT_NAME)
     ap.add_argument("--route", action="store_true",
                     help="also file the worklist into MouseReach's triage queue")
     ap.add_argument("--queue", default="triage", choices=["triage", "deep_review"],
                     help="queue to route into (default: triage)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+
+    # Resolve the output path BEFORE scanning, so an unconfigured machine
+    # stops with the one-line fix instead of after a full scan.
+    try:
+        out = Path(args.out) if args.out else default_out()
+    except ConfigError as e:  # WHY: the message already names the exact fix; a traceback hides it
+        print("[FAIL] %s" % e)
+        return 1
 
     worklist = build_worklist()
-    args.out.write_text(json.dumps(worklist, indent=2))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(worklist, indent=2))
     n_segments = sum(len(item["segment_nums"]) for item in worklist)
-    print("videos: %d  segments: %d  wrote: %s" % (len(worklist), n_segments, args.out))
+    print("videos: %d  segments: %d  wrote: %s" % (len(worklist), n_segments, out))
 
     if args.route:
         if not worklist:
             print("  nothing to route")
         else:
-            route(args.out, queue=args.queue)
+            route(out, queue=args.queue)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
