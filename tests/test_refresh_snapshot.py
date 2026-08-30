@@ -48,14 +48,14 @@ def db_ok_seen(monkeypatch):
 
 
 def test_successful_snapshot_vouches_for_the_database(configured, db_ok_seen, monkeypatch):
-    monkeypatch.setattr(rs, "watcher_running", lambda: False)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
     assert rs.main([]) == 0
     assert (configured / "pellet_scores.parquet").is_file()
     assert db_ok_seen == [True]
 
 
 def test_force_still_vouches(configured, db_ok_seen, monkeypatch):
-    monkeypatch.setattr(rs, "watcher_running", lambda: True)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: True)
     assert rs.main(["--force"]) == 0
     assert (configured / "reach_data.parquet").is_file()
     assert db_ok_seen == [True]
@@ -65,14 +65,14 @@ def test_watcher_appearing_after_the_snapshot_withholds_the_vouch(configured, db
     # first answer: the snapshot's own guard (idle); second: the re-check
     # before the exports (a watcher has started since)
     answers = iter([False, True])
-    monkeypatch.setattr(rs, "watcher_running", lambda: next(answers))
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: next(answers))
     assert rs.main([]) == 0
     assert (configured / "subjects.parquet").is_file()
     assert db_ok_seen == [False]
 
 
 def test_running_watcher_aborts_the_whole_run(configured, db_ok_seen, monkeypatch):
-    monkeypatch.setattr(rs, "watcher_running", lambda: True)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: True)
     with pytest.raises(RuntimeError):
         rs.main([])
     assert not (configured / "pellet_scores.parquet").exists()
