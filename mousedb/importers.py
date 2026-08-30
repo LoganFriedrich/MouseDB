@@ -924,7 +924,6 @@ class ExcelImporter:
                 pellet_score = PelletScore(
                     subject_id=subject_id,
                     session_date=date_val,
-                    test_phase='',  # placeholder to satisfy NOT NULL; overwritten by _assign_pellet_phases()
                     tray_type=tray_type,
                     tray_number=tray_number,
                     pellet_number=pellet_num,
