@@ -101,6 +101,31 @@ JOIN_HUMAN = ["subject_id", "session_date", "tray_type", "tray_number", "pellet_
 JOIN_ALGO = ["subject_id", "session_date", "tray_type", "run_number", "segment_num"]
 
 
+def watcher_blocks_db():
+    """Should database writers yield to a running MouseReach watcher?
+
+    Since 2026-08-28 the watcher writes the central database ONLY when
+    ``central_db`` is configured in ~/.mousereach/config.json (or the
+    MOUSEREACH_CENTRAL_DB environment variable) -- the lab deliberately leaves
+    it unset so mousedb pulls instead. A DLC-only or non-writing watcher must
+    not stall the hourly imports forever. WHY fail-safe stays: if the
+    mousereach config cannot be read, assume the watcher could write.
+    """
+    if not watcher_running():
+        return False
+    import json
+    import os
+    if os.environ.get("MOUSEREACH_CENTRAL_DB"):
+        return True
+    try:
+        cfg = Path.home() / ".mousereach" / "config.json"
+        if not cfg.is_file():
+            return False  # no config = watcher cannot resolve a central db
+        return bool(json.loads(cfg.read_text(encoding="utf-8")).get("central_db"))
+    except Exception:
+        return True  # unreadable config: assume the worst
+
+
 def watcher_running():
     """Is a MouseReach watcher running on this machine?
 
@@ -159,7 +184,7 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
         if segmap_path is None and (cache / "segmap.pkl").exists():
             segmap_path = cache / "segmap.pkl"
     else:
-        if watcher_running():
+        if watcher_blocks_db():
             raise RuntimeError(
                 "Refusing to read connectome.db: the MouseReach watcher is running. "
                 "The database is on a network share in rollback-journal mode, so a "

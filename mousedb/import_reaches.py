@@ -306,9 +306,19 @@ def import_file(conn: sqlite3.Connection, path: Path, dry_run: bool = False) -> 
 
 
 def watcher_running() -> bool:
+    """Kept for compatibility; the run() guard uses watcher_blocks_db (a watcher
+    that cannot write the central database must not stall imports)."""
     try:
         from .bench_scan import watcher_running as _wr
         return bool(_wr())
+    except Exception:
+        return False
+
+
+def watcher_blocks_db() -> bool:
+    try:
+        from .bench_scan import watcher_blocks_db as _wb
+        return bool(_wb())
     except Exception:
         return False
 
@@ -320,8 +330,8 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     db = require("db_path")
     if not db.is_file():
         raise FileNotFoundError("database not found at %s (run `mousedb init`)" % db)
-    if not dry_run and not force and watcher_running():
-        raise RuntimeError("a MouseReach watcher is running on this machine; the database must not be "
+    if not dry_run and not force and watcher_blocks_db():
+        raise RuntimeError("a MouseReach watcher that can WRITE the central database is running; it must not be "
                            "written concurrently over the share. Stop it, or pass --force for a deliberate run.")
     files = find_features_files(root, include_processing)
     res.scanned = len(files)
