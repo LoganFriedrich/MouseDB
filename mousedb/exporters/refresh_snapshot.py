@@ -54,6 +54,14 @@ DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts"]
 
 
+def watcher_blocks_db() -> bool:
+    """Block only when the running watcher can WRITE the central database
+    (central_db configured in ~/.mousereach/config.json). A DLC-only watcher
+    must not stall the hourly snapshot forever. See bench_scan.watcher_blocks_db."""
+    from mousedb.bench_scan import watcher_blocks_db as _wb
+    return _wb()
+
+
 def watcher_running() -> bool:
     """Is a MouseReach watcher running anywhere this process can see?
 
@@ -89,7 +97,7 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     """
     db_path = db_path or require("db_path")
     snapshot_dir = snapshot_dir or require("snapshot_dir")
-    if not force and watcher_running():
+    if not force and watcher_blocks_db():
         raise RuntimeError(
             "Refusing to read connectome.db: a MouseReach watcher is active. "
             "The database is on a network share in rollback-journal mode, so "
@@ -125,7 +133,7 @@ def import_sheets_first(force: bool = False) -> bool:
     workbooks). Never raises: a failed import means the snapshot refreshes
     from the data already in the db, which is strictly better than nothing.
     Returns True if the import ran cleanly."""
-    if not force and watcher_running():
+    if not force and watcher_blocks_db():
         print("  [skip] import: watcher active (same guard as the export)")
         return False
     try:
@@ -188,7 +196,7 @@ def main(argv=None) -> int:
     # 2026-08-28). The guard is asked once more because the snapshot can take
     # a while and a watcher may have started since; --force still overrides
     # (that caller vouches nothing else can be writing).
-    db_ok = args.force or (snapshot_ok and not watcher_running())
+    db_ok = args.force or (snapshot_ok and not watcher_blocks_db())
     if not db_ok:
         print("  [!] a watcher started after the snapshot; the ODC session "
               "exports are left from the previous refresh")
