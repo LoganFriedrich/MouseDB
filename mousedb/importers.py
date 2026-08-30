@@ -216,22 +216,96 @@ class ExcelImporter:
         return None
 
     def _detect_start_date(self, xl: pd.ExcelFile, sheets: List[str]) -> Optional[datetime]:
-        """Try to detect cohort start date from the data."""
-        # Try to get earliest date from weight or tray data
-        for sheet_name in ['1_Weight', '3b_Manual_Tray']:
+        """Detect cohort start date (Day 0 = the earliest food-dep weigh-in).
+
+        Day 0 is the first weigh-in, wherever it was recorded. In the current
+        (CNT_05) format that's the earliest date in 3d_Weights; in older cohorts the
+        first weigh-in lived in the ramp sheet (3a_Manual_Ramp). So we take the
+        EARLIEST date found across both sheets, which covers both layouts. Only if
+        neither exists do we fall back to 3b_Manual_Tray (training ~day 4, minus 4).
+        The legacy 1_Weight sheet is not consulted, and 3b_Manual_Tray is never used
+        for the primary anchor because it can carry stale/earlier date blocks (CNT_05).
+        """
+        from datetime import timedelta
+
+        candidates = []
+        # Earliest weigh-in from the weights sheet (3d preferred, else 3e)
+        for sheet_name in ('3d_Weights', '3e_Weights'):
             if sheet_name in sheets:
-                try:
-                    df = pd.read_excel(xl, sheet_name=sheet_name)
-                    if 'Date' in df.columns:
-                        dates = pd.to_datetime(df['Date'], errors='coerce')
-                        min_date = dates.min()
-                        if pd.notna(min_date):
-                            # Subtract 4 days (training starts day 4)
-                            from datetime import timedelta
-                            return (min_date - timedelta(days=4)).date()
-                except Exception:
-                    pass
+                d = self._earliest_weight_date(xl, sheet_name)
+                if d:
+                    candidates.append(d)
+                break
+        # Earliest weigh-in from the ramp sheet (old cohorts keep Day 0 here)
+        if '3a_Manual_Ramp' in sheets:
+            d = self._earliest_ramp_date(xl)
+            if d:
+                candidates.append(d)
+
+        if candidates:
+            return min(candidates)
+
+        # Fallback: manual tray sheet (training starts ~day 4)
+        if '3b_Manual_Tray' in sheets:
+            try:
+                df = pd.read_excel(xl, sheet_name='3b_Manual_Tray')
+                if 'Date' in df.columns:
+                    dates = pd.to_datetime(df['Date'], errors='coerce')
+                    min_date = dates.min()
+                    if pd.notna(min_date):
+                        return (min_date - timedelta(days=4)).date()
+            except Exception:
+                pass
         return None
+
+    def _earliest_ramp_date(self, xl: pd.ExcelFile) -> Optional[datetime]:
+        """Earliest date in the 3a_Manual_Ramp sheet, or None."""
+        try:
+            df = pd.read_excel(xl, sheet_name='3a_Manual_Ramp')
+        except Exception:
+            return None
+        if 'Date' not in df.columns:
+            return None
+        dates = [d for d in (self._parse_date(v) for v in df['Date']) if d]
+        return min(dates) if dates else None
+
+    def _earliest_weight_date(self, xl: pd.ExcelFile, sheet: str) -> Optional[datetime]:
+        """Earliest parseable date in a weights sheet (3d/3e_Weights), or None.
+
+        Mirrors _import_weights_transposed's format detection: a vertical layout
+        with a 'Date' column, or a transposed matrix with dates in row 0 or row 1.
+        """
+        try:
+            df = pd.read_excel(xl, sheet_name=sheet, header=None)
+        except Exception:
+            return None
+        if len(df) < 2:
+            return None
+
+        # Format A: vertical/long with a 'Date' column header
+        first_row = [str(df.iloc[0, i]).strip() if pd.notna(df.iloc[0, i]) else ''
+                     for i in range(min(6, len(df.columns)))]
+        if 'Date' in first_row:
+            try:
+                df2 = pd.read_excel(xl, sheet_name=sheet)
+                dates = pd.to_datetime(df2['Date'], errors='coerce')
+                return dates.min().date() if pd.notna(dates.min()) else None
+            except Exception:
+                return None
+
+        # Formats B/C: dates in row 0 or row 1 (whichever parses as dates)
+        dates_in_row0 = dates_in_row1 = 0
+        for col_idx in range(1, min(10, len(df.columns))):
+            if self._parse_date(df.iloc[0, col_idx]) is not None:
+                dates_in_row0 += 1
+            if self._parse_date(df.iloc[1, col_idx]) is not None:
+                dates_in_row1 += 1
+        date_row_idx = 1 if dates_in_row1 > dates_in_row0 else 0
+
+        parsed = [self._parse_date(df.iloc[date_row_idx, c])
+                  for c in range(1, len(df.columns))]
+        parsed = [d for d in parsed if d]
+        return min(parsed) if parsed else None
 
     def _import_metadata(self, xl: pd.ExcelFile, cohort_id: str,
                          session, dry_run: bool):
@@ -515,13 +589,31 @@ class ExcelImporter:
         """
         Import 3a_Manual_Ramp sheet (food deprivation phase).
 
-        Columns: Mouse ID, Date, Weight, % body weight, Tray Start (g), Tray End (g), Dif
+        Columns (old): Mouse ID, Date, Weight, % body weight, Tray Start (g), Tray End (g), Dif
+        Columns (new/CNT_05): Animal, Date, Day, Weight, Food_Start_(g), Food_End_(g), Food_Eaten_(g)
         """
         try:
             df = pd.read_excel(xl, sheet_name='3a_Manual_Ramp')
         except Exception as e:
             self.warnings.append(f"Failed to read 3a_Manual_Ramp: {e}")
             return
+
+        # Number ramp days anchored to Day 0 = the cohort start date (the earliest
+        # weigh-in, detected across the weights + ramp sheets). If a ramp date equals
+        # the start, it IS Day 0 -- older cohorts logged the pre-food-dep weigh-in in
+        # this sheet. In the CNT_05 format Day 0 lives in 3d_Weights, so the earliest
+        # ramp date becomes Day 1. Reads real dates; no calendar-gap arithmetic.
+        cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+        start = cohort.start_date if cohort else None
+        if 'Date' in df.columns:
+            ramp_dates = sorted({d for d in (self._parse_date(v) for v in df['Date']) if d})
+            if start:
+                ordered = sorted(set(ramp_dates) | {start})
+                ramp_day_map = {d: ordered.index(d) for d in ramp_dates}
+            else:
+                ramp_day_map = {d: i + 1 for i, d in enumerate(ramp_dates)}
+        else:
+            ramp_day_map = {}
 
         for _, row in df.iterrows():
             subject_id = row.get('Mouse ID') or row.get('Animal') or row.get('Subject_ID')
@@ -542,9 +634,12 @@ class ExcelImporter:
             # Import weight from ramp data
             weight_val = row.get('Weight')
             weight_pct = self._parse_float(row.get('% body weight'))
-            tray_start = self._parse_float(row.get('Tray Start (g)') or row.get('Tray_Start'))
-            tray_end = self._parse_float(row.get('Tray End (g)') or row.get('Tray_End'))
-            food_consumed = self._parse_float(row.get('Dif') or row.get('Food_Consumed'))
+            tray_start = self._parse_float(
+                row.get('Tray Start (g)') or row.get('Tray_Start') or row.get('Food_Start_(g)'))
+            tray_end = self._parse_float(
+                row.get('Tray End (g)') or row.get('Tray_End') or row.get('Food_End_(g)'))
+            food_consumed = self._parse_float(
+                row.get('Dif') or row.get('Food_Consumed') or row.get('Food_Eaten_(g)'))
 
             if pd.notna(weight_val):
                 try:
@@ -579,11 +674,9 @@ class ExcelImporter:
                 subject_id=subject_id, date=date_val
             ).first()
             if not existing_ramp and weight_val:
-                # Calculate ramp day (0-3) based on cohort start date
-                ramp_day = None
-                cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
-                if cohort and cohort.start_date:
-                    ramp_day = (date_val - cohort.start_date).days
+                # Ramp day comes from the sheet's own date ordering (earliest = Day 1),
+                # not from the cohort start date -- see ramp_day_map above.
+                ramp_day = ramp_day_map.get(date_val)
 
                 ramp_entry = RampEntry(
                     subject_id=subject_id,
@@ -601,6 +694,25 @@ class ExcelImporter:
                 if not dry_run:
                     session.add(ramp_entry)
                 self.imported_counts['ramp_entries'] += 1
+
+    def _surgery_was_performed(self, row, surgery_type: str) -> bool:
+        """True if a surgery row records an ACTUAL surgery rather than a planned/
+        template row. Auto-generated tracking sheets pre-fill a scheduled date + type
+        for every animal with no outcome data; those must not be imported as real
+        surgeries (see CNT_05, which had 32 planned-but-not-done rows)."""
+        if surgery_type == 'contusion':
+            fields = ('Actual_kd', 'Actual_displacement', 'Actual_Velocity', 'Actual_Dwell',
+                      'Force_kDyn', 'Force', 'Displacement_um', 'Displacement',
+                      'Velocity_mm_s', 'Velocity', 'Dwell_time_s', 'Surgeon', 'Survived')
+        else:  # tracing / SC injection
+            fields = ('Injected_Virus', 'Virus_Name', 'Virus_Titer', 'Virus_Lot',
+                      'Volume_nL', 'Volume', 'Injection_Volume_nL', 'Injection_Target',
+                      'Depths (D/V)', 'Coordinates (M/L)', 'Surgeon', 'Survived')
+        for f in fields:
+            v = row.get(f)
+            if pd.notna(v) and str(v).strip() != '':
+                return True
+        return False
 
     def _import_contusion_surgeries(self, xl: pd.ExcelFile, cohort_id: str,
                                      session, dry_run: bool):
@@ -629,6 +741,11 @@ class ExcelImporter:
 
             date_val = self._parse_date(row.get('Surgery_Date') or row.get('Date'))
             if not date_val:
+                continue
+
+            # Skip planned/template rows: auto-generated sheets pre-fill a scheduled
+            # date + type for every animal with no outcome data (see CNT_05).
+            if not self._surgery_was_performed(row, 'contusion'):
                 continue
 
             # Ensure subject exists
@@ -807,6 +924,7 @@ class ExcelImporter:
                 pellet_score = PelletScore(
                     subject_id=subject_id,
                     session_date=date_val,
+                    test_phase='',  # placeholder to satisfy NOT NULL; overwritten by _assign_pellet_phases()
                     tray_type=tray_type,
                     tray_number=tray_number,
                     pellet_number=pellet_num,
@@ -878,6 +996,10 @@ class ExcelImporter:
 
             date_val = self._parse_date(row.get('Surgery_Date') or row.get('Date'))
             if not date_val:
+                continue
+
+            # Skip planned/template rows with no actual surgery data (see CNT_05).
+            if not self._surgery_was_performed(row, surgery_type):
                 continue
 
             # Ensure subject exists
