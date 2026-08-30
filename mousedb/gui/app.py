@@ -380,18 +380,36 @@ class PelletEntryTab(QWidget):
                 # Query cohort fresh within this session to call get_valid_dates()
                 cohort = session.query(Cohort).filter_by(cohort_id=self.current_cohort_id).first()
                 if cohort:
-                    valid_dates = cohort.get_valid_dates()
+                    # Read the REAL session dates from the data (authoritative), and
+                    # fall back to the computed TIMELINE only for sessions not yet
+                    # entered -- so existing rows always show their true recorded date.
+                    from sqlalchemy import func
+                    real_rows = session.query(
+                        PelletScore.session_date,
+                        PelletScore.test_phase,
+                        PelletScore.tray_type,
+                        func.max(PelletScore.tray_number),
+                    ).filter_by(subject_id=subject_id).group_by(
+                        PelletScore.session_date, PelletScore.tray_type
+                    ).all()
+
+                    sessions = {}  # date -> (date, phase, tray_type, num_trays)
+                    for d, phase, tray_type, max_tray in real_rows:
+                        sessions[d] = (d, phase or '', tray_type or 'P', int(max_tray or 4))
+                    real_dates = set(sessions)
+
+                    # Computed schedule fills in only the days that have no data yet
+                    for d, phase, tray_type, trays in cohort.get_valid_dates():
+                        sessions.setdefault(d, (d, phase, tray_type, trays))
 
                     self.date_combo.clear()
                     self.date_combo.addItem("-- Select Date --", None)
-                    for d, phase, tray_type, trays in valid_dates:
-                        existing = session.query(PelletScore).filter_by(
-                            subject_id=subject_id, session_date=d
-                        ).first()
-                        status = " [has data]" if existing else ""
+                    for d in sorted(sessions):
+                        dd, phase, tray_type, trays = sessions[d]
+                        status = " [has data]" if d in real_dates else ""
                         self.date_combo.addItem(
-                            f"{d.strftime('%Y-%m-%d')} - {phase}{status}",
-                            (d, phase, tray_type, trays)
+                            f"{dd.strftime('%Y-%m-%d')} - {phase}{status}",
+                            (dd, phase, tray_type, trays)
                         )
 
     def _on_date_changed(self, index: int):
@@ -2818,26 +2836,49 @@ class BulkTrayEntryTab(QWidget):
                 else:
                     self.protocol_info_label.setVisible(False)
 
-                # Load valid dates - use protocol schedule if assigned, else TIMELINE
+                # Load dates: REAL recorded session dates first (authoritative, read
+                # from the data), then the computed schedule (protocol or TIMELINE)
+                # fills in only the days that have no data yet.
                 self.date_combo.clear()
                 self.date_combo.addItem("-- Select Date --", None)
                 # Add custom date option for new cohorts or any flexible entry
                 self.date_combo.addItem("📅 Custom Date...", "CUSTOM")
 
-                if cohort.protocol_id:
-                    # Use protocol-based schedule
-                    self._load_protocol_dates(session, cohort)
-                else:
-                    # Fall back to hardcoded TIMELINE
-                    valid_dates = cohort.get_valid_dates()
-                    for d, phase, tray_type, trays in valid_dates:
-                        self.date_combo.addItem(
-                            f"{d.strftime('%Y-%m-%d')} - {phase}",
-                            (d, phase, tray_type, trays)
-                        )
+                from sqlalchemy import func
+                real_rows = session.query(
+                    PelletScore.session_date, PelletScore.test_phase,
+                    PelletScore.tray_type, func.max(PelletScore.tray_number),
+                ).join(Subject, Subject.subject_id == PelletScore.subject_id).filter(
+                    Subject.cohort_id == cohort_id
+                ).group_by(PelletScore.session_date, PelletScore.tray_type).all()
 
-    def _load_protocol_dates(self, session, cohort):
-        """Load dates from protocol schedule for testing phases."""
+                real_dates = set()
+                for d, phase, tray_type, max_tray in sorted(real_rows, key=lambda r: r[0]):
+                    real_dates.add(d)
+                    self.date_combo.addItem(
+                        f"{d.strftime('%Y-%m-%d')} - {phase or ''} [has data]",
+                        (d, phase or '', tray_type or 'P', int(max_tray or 4))
+                    )
+
+                if cohort.protocol_id:
+                    # Protocol-based schedule for the days not yet entered
+                    self._load_protocol_dates(session, cohort, skip_dates=real_dates)
+                else:
+                    # Hardcoded TIMELINE for days not yet entered -- only planned dates
+                    # from today onward, so a finished cohort isn't cluttered with past
+                    # planned dates that never matched its real testing schedule.
+                    today = date.today()
+                    for d, phase, tray_type, trays in cohort.get_valid_dates():
+                        if d not in real_dates and d >= today:
+                            self.date_combo.addItem(
+                                f"{d.strftime('%Y-%m-%d')} - {phase}",
+                                (d, phase, tray_type, trays)
+                            )
+
+    def _load_protocol_dates(self, session, cohort, skip_dates=None):
+        """Load dates from protocol schedule for testing phases. Days already added
+        from real data (skip_dates) are omitted so they aren't listed twice."""
+        skip_dates = skip_dates or set()
         try:
             schedule = protocols.generate_schedule(session, cohort.cohort_id)
             today = date.today()
@@ -2853,6 +2894,8 @@ class BulkTrayEntryTab(QWidget):
 
                 for day_info in phase_info.get('schedule', []):
                     d = day_info['date']
+                    if d in skip_dates:
+                        continue
                     # Mark today's date
                     if d == today:
                         prefix = "🔵 "  # Today indicator
@@ -2868,8 +2911,9 @@ class BulkTrayEntryTab(QWidget):
         except Exception as e:
             # Fallback to TIMELINE if protocol schedule fails
             print(f"Protocol schedule error: {e}")
-            valid_dates = cohort.get_valid_dates()
-            for d, phase, tray_type, trays in valid_dates:
+            for d, phase, tray_type, trays in cohort.get_valid_dates():
+                if d in skip_dates:
+                    continue
                 self.date_combo.addItem(
                     f"{d.strftime('%Y-%m-%d')} - {phase}",
                     (d, phase, tray_type, trays)
@@ -3981,12 +4025,33 @@ class RampEntryTab(QWidget):
 
         self.ramp_day = self.day_combo.currentIndex()
 
-        # Calculate date
-        from datetime import timedelta
-        self.current_date = self.current_cohort_start_date + timedelta(days=self.ramp_day)
-        self.date_label.setText(self.current_date.strftime("%Y-%m-%d"))
+        # Show the REAL date recorded for this ramp day (read from the ramp rows),
+        # falling back to a start-based estimate only when nothing is recorded yet.
+        self.current_date = self._resolve_ramp_date(self.ramp_day)
+        self.date_label.setText(
+            self.current_date.strftime("%Y-%m-%d") if self.current_date else "-"
+        )
 
         self._load_existing_data()
+
+    def _resolve_ramp_date(self, ramp_day):
+        """Real stored date for this cohort's given ramp day, read from the ramp
+        entries themselves. Falls back to (cohort start + ramp_day) only when no
+        rows exist yet, so a not-yet-entered day still has a sensible default.
+        """
+        from datetime import timedelta
+        if self.current_cohort_id:
+            with self.db.session() as session:
+                entry = session.query(RampEntry).filter(
+                    RampEntry.subject_id.like(f"{self.current_cohort_id}%"),
+                    RampEntry.ramp_day == ramp_day,
+                    RampEntry.date.isnot(None),
+                ).first()
+                if entry and entry.date:
+                    return entry.date
+        if self.current_cohort_start_date:
+            return self.current_cohort_start_date + timedelta(days=ramp_day)
+        return None
 
     def _clear_grid(self):
         """Clear all widgets from the grid."""
@@ -4192,7 +4257,7 @@ class RampEntryTab(QWidget):
             for subject_id in self.weight_spins:
                 existing = session.query(RampEntry).filter_by(
                     subject_id=subject_id,
-                    date=self.current_date
+                    ramp_day=self.ramp_day
                 ).first()
 
                 status_label = self.grid_container.findChild(QLabel, f"status_{subject_id}")
@@ -4221,15 +4286,14 @@ class RampEntryTab(QWidget):
             QMessageBox.warning(self, "Error", "Cannot copy weights - no previous day.")
             return
 
-        from datetime import timedelta
-        previous_date = self.current_date - timedelta(days=1)
-
         with self.db.session() as session:
             copied = 0
             for subject_id in self.weight_spins:
+                # Previous ramp day by its day number, not by date arithmetic --
+                # reads the real prior row regardless of calendar gaps.
                 existing = session.query(RampEntry).filter_by(
                     subject_id=subject_id,
-                    date=previous_date
+                    ramp_day=self.ramp_day - 1
                 ).first()
 
                 if existing and existing.body_weight_grams:
@@ -4269,7 +4333,7 @@ class RampEntryTab(QWidget):
                 try:
                     existing = session.query(RampEntry).filter_by(
                         subject_id=subject_id,
-                        date=self.current_date
+                        ramp_day=self.ramp_day
                     ).first()
 
                     if existing:
