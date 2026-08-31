@@ -5047,7 +5047,7 @@ class CohortSetupTab(QWidget):
                           finished=_dt.now().isoformat(timespec="seconds"))
             self._append_sheet_ledger(_entry, path)
             QMessageBox.critical(self, "Import failed", f"{e}")
-            self._refresh_cohorts()
+            self._refresh_all_cohort_lists()
             return
         _entry.update(success=not result.get('errors'),
                       imported=result.get('imported'),
@@ -5068,7 +5068,22 @@ class CohortSetupTab(QWidget):
                 self, "Import complete",
                 f"Imported {cohort_id}:\n{done or '   (nothing)'}"
             )
+        self._refresh_all_cohort_lists()
+
+    def _refresh_all_cohort_lists(self):
+        """Refresh the cohort dropdown on this tab AND every sibling tab, so a
+        newly imported cohort appears everywhere without restarting the GUI."""
         self._refresh_cohorts()
+        win = self.window()
+        for attr in ('ramp_tab', 'testing_tab', 'surgery_tab', 'virus_prep_tab',
+                     'dashboard_tab', 'bulk_weight_tab', 'pellet_tab'):
+            tab = getattr(win, attr, None)
+            loader = getattr(tab, '_load_cohorts', None)
+            if callable(loader):
+                try:
+                    loader()
+                except Exception:
+                    pass
 
     def _append_sheet_ledger(self, entry, path):
         """Append one entry to sheet_sync's import ledger (same shape its own
