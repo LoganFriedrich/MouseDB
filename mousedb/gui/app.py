@@ -5022,13 +5022,16 @@ class CohortSetupTab(QWidget):
         if clicked is replace_btn:
             confirm = QMessageBox.question(
                 self, "Confirm replace",
-                f"This will DELETE all existing data for {cohort_id} and re-import it "
-                f"from the file.\n\nContinue?",
+                f"This will clear and re-import the Excel-derived data for {cohort_id} "
+                f"(weights, pellet scores, ramp, surgeries, ladder, virus preps) and "
+                f"update its start date.\n\nSubjects and pipeline/tissue data "
+                f"(reach_data, brain samples, etc.) are KEPT.\n\nContinue?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
             if confirm != QMessageBox.Yes:
                 return
-            self._delete_cohort_data(cohort_id)
+            self._clear_cohort_excel_data(cohort_id)
+            self._reapply_start_date(cohort_id, path, importer)
 
         # Real import. Record it in the sheet-import ledger either way: the
         # Tracking Sheets tab's status verdicts read the LEDGER, not the
@@ -5098,34 +5101,60 @@ class CohortSetupTab(QWidget):
         except Exception:
             pass
 
-    def _delete_cohort_data(self, cohort_id):
-        """Hard-delete a cohort and all its child rows so it can be re-imported
-        cleanly. FK enforcement is off in this schema, so children are removed
-        explicitly (child tables first, then subjects, then the cohort)."""
-        from sqlalchemy import text
+    # Tables the Excel importer owns. A Replace clears ONLY these and re-imports them.
+    # Everything else -- subjects, the cohort row, and all pipeline/tissue data
+    # (reach_data, brain_samples, pipeline_data, region_counts, ...) -- is left intact,
+    # because none of it comes from the spreadsheet.
+    _EXCEL_OWNED_TABLES = ('weights', 'pellet_scores', 'ramp_entries', 'surgeries',
+                           'ladder_entries', 'virus_preps', 'archived_summaries')
+
+    def _clear_cohort_excel_data(self, cohort_id):
+        """Clear only the Excel-derived measurement data for a cohort so it can be
+        re-imported cleanly, WITHOUT touching subjects, the cohort row, or any
+        pipeline/tissue data. Uses a raw connection with foreign keys off so it works
+        regardless of the app session's FK enforcement."""
+        import sqlite3
+        conn = sqlite3.connect(str(self.db.db_path), timeout=30)
+        try:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            cur = conn.cursor()
+            subs = [r[0] for r in cur.execute(
+                "SELECT subject_id FROM subjects WHERE cohort_id=?", (cohort_id,))]
+            for t in self._EXCEL_OWNED_TABLES:
+                cols = [r[1] for r in cur.execute(f'PRAGMA table_info("{t}")')]
+                if not cols:
+                    continue  # table not present in this schema version
+                # The importer only creates contusion and tracing surgery rows;
+                # perfusion surgeries are entered via the GUI Surgery tab and the
+                # sheet re-import cannot restore them -- so they are not
+                # Excel-owned and must survive a Replace.
+                extra = " AND surgery_type IN ('contusion','tracing')" if t == 'surgeries' else ""
+                if 'subject_id' in cols and subs:
+                    ph = ",".join("?" * len(subs))
+                    cur.execute(f'DELETE FROM "{t}" WHERE subject_id IN ({ph}){extra}', subs)
+                if 'cohort_id' in cols:
+                    cur.execute(f'DELETE FROM "{t}" WHERE cohort_id=?{extra}', (cohort_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _reapply_start_date(self, cohort_id, path, importer):
+        """Re-detect the cohort start date from the spreadsheet and update it in place.
+        The importer only sets start date when it *creates* a cohort, so on a Replace
+        of an existing cohort we apply any corrected start date here -- otherwise ramp-
+        day numbering and other start-relative values would keep the old value."""
+        try:
+            import pandas as pd
+            xl = pd.ExcelFile(path)
+            new_start = importer._detect_start_date(xl, xl.sheet_names)
+        except Exception:
+            return
+        if not new_start:
+            return
         with self.db.session() as session:
-            subj = [r[0] for r in session.execute(
-                text("SELECT subject_id FROM subjects WHERE cohort_id=:c"),
-                {"c": cohort_id}).fetchall()]
-            if subj:
-                ph = ",".join(f":s{i}" for i in range(len(subj)))
-                params = {f"s{i}": s for i, s in enumerate(subj)}
-                for tbl in ("pellet_scores", "weights", "ramp_entries", "surgeries",
-                            "ladder_entries", "session_exceptions", "reach_data",
-                            "pipeline_data", "subject_stagger_groups", "brain_samples"):
-                    try:
-                        session.execute(
-                            text(f"DELETE FROM {tbl} WHERE subject_id IN ({ph})"), params)
-                    except Exception:
-                        pass  # table may not exist in this schema version
-            for tbl in ("virus_preps", "archived_summaries"):
-                try:
-                    session.execute(
-                        text(f"DELETE FROM {tbl} WHERE cohort_id=:c"), {"c": cohort_id})
-                except Exception:
-                    pass
-            session.execute(text("DELETE FROM subjects WHERE cohort_id=:c"), {"c": cohort_id})
-            session.execute(text("DELETE FROM cohorts WHERE cohort_id=:c"), {"c": cohort_id})
+            cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+            if cohort:
+                cohort.start_date = new_start
             session.commit()
 
     def _archive_cohort(self):
