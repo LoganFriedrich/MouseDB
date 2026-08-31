@@ -4588,6 +4588,14 @@ class CohortSetupTab(QWidget):
         self.show_archived_cb.setToolTip("Include archived cohorts in the table above")
         self.show_archived_cb.stateChanged.connect(lambda: self._refresh_cohorts())
         cohort_actions.addWidget(self.show_archived_cb)
+        self.import_excel_btn = QPushButton("Import from Excel...")
+        self.import_excel_btn.setStyleSheet("background-color: #1976D2; color: white;")
+        self.import_excel_btn.setToolTip(
+            "Import a cohort tracking spreadsheet. The cohort is detected from the "
+            "filename; a dry-run preview is shown before anything is written."
+        )
+        self.import_excel_btn.clicked.connect(self._import_from_excel)
+        cohort_actions.addWidget(self.import_excel_btn)
         cohort_actions.addStretch()
         self.archive_cohort_btn = QPushButton("Archive Cohort...")
         self.archive_cohort_btn.setEnabled(False)
@@ -4933,6 +4941,177 @@ class CohortSetupTab(QWidget):
         # Refresh mini timeline
         if hasattr(self, 'mini_timeline'):
             self.mini_timeline.refresh()
+
+    def _import_from_excel(self):
+        """Import a cohort tracking spreadsheet. The cohort is detected from the
+        filename. A dry-run preview is shown first, then the user chooses:
+          - Import (add-only): runs the importer as-is (new cohorts import fully;
+            existing ones only gain rows they don't already have).
+          - Replace: deletes the existing cohort's data and re-imports it fresh
+            (the only way to pick up corrected start dates / edited rows).
+        """
+        from pathlib import Path
+        from ..importers import ExcelImporter
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select cohort tracking spreadsheet", "",
+            "Excel files (*.xlsx *.xls)"
+        )
+        if not path:
+            return
+
+        importer = ExcelImporter(self.db)
+        cohort_id = importer._extract_cohort_from_filename(Path(path).name)
+        if not cohort_id:
+            QMessageBox.warning(
+                self, "Import",
+                f"Could not determine the cohort from the filename:\n{Path(path).name}"
+            )
+            return
+
+        # Dry-run preview (writes nothing)
+        try:
+            preview = importer.import_cohort_file(Path(path), dry_run=True)
+        except Exception as e:
+            QMessageBox.critical(self, "Import failed", f"Could not read the file:\n{e}")
+            return
+
+        with self.db.session() as session:
+            exists = session.query(Cohort).filter_by(cohort_id=cohort_id).first() is not None
+
+        counts = {k: v for k, v in preview.get('imported', {}).items() if v}
+        warnings = preview.get('warnings', [])
+        errors = preview.get('errors', [])
+
+        lines = [
+            f"File:  {Path(path).name}",
+            f"Detected cohort:  {cohort_id}",
+            f"Already in database:  {'YES' if exists else 'no (will be created)'}",
+            "",
+            "Would import (dry-run estimate; 'subjects' may over-count):",
+            ("\n".join(f"   {k}: {v}" for k, v in counts.items()) or "   (nothing)"),
+        ]
+        if warnings:
+            lines += ["", f"Warnings ({len(warnings)}):"]
+            lines += [f"   - {w}" for w in warnings[:8]]
+            if len(warnings) > 8:
+                lines.append(f"   ... and {len(warnings) - 8} more")
+        if errors:
+            lines += ["", f"ERRORS ({len(errors)}):"] + [f"   - {e}" for e in errors[:8]]
+
+        box = QMessageBox(self)
+        box.setWindowTitle("Import preview (dry run)")
+        box.setText("\n".join(lines))
+        box.setIcon(QMessageBox.Warning if (warnings or errors) else QMessageBox.Information)
+
+        if errors:
+            box.setStandardButtons(QMessageBox.Close)
+            box.exec_()
+            return
+
+        add_btn = box.addButton("Import (add-only)", QMessageBox.AcceptRole)
+        replace_btn = (box.addButton("Replace (delete + re-import)",
+                                     QMessageBox.DestructiveRole) if exists else None)
+        box.addButton("Cancel", QMessageBox.RejectRole)
+        box.exec_()
+        clicked = box.clickedButton()
+
+        if clicked is None or clicked not in (add_btn, replace_btn):
+            return
+
+        if clicked is replace_btn:
+            confirm = QMessageBox.question(
+                self, "Confirm replace",
+                f"This will DELETE all existing data for {cohort_id} and re-import it "
+                f"from the file.\n\nContinue?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if confirm != QMessageBox.Yes:
+                return
+            self._delete_cohort_data(cohort_id)
+
+        # Real import. Record it in the sheet-import ledger either way: the
+        # Tracking Sheets tab's status verdicts read the LEDGER, not the
+        # database, so an unrecorded button-import would show the cohort as
+        # never-imported/stale -- a silent misreport.
+        from datetime import datetime as _dt
+        _entry = {"cohort_id": cohort_id, "sheet_name": Path(path).name,
+                  "sheet_path": str(path),
+                  "started": _dt.now().isoformat(timespec="seconds"),
+                  "triggered_by": "gui_cohort_setup", "dry_run": False}
+        try:
+            result = importer.import_cohort_file(Path(path), dry_run=False)
+        except Exception as e:
+            _entry.update(success=False,
+                          error=f"{type(e).__name__}: {e}",
+                          finished=_dt.now().isoformat(timespec="seconds"))
+            self._append_sheet_ledger(_entry, path)
+            QMessageBox.critical(self, "Import failed", f"{e}")
+            self._refresh_cohorts()
+            return
+        _entry.update(success=not result.get('errors'),
+                      imported=result.get('imported'),
+                      warnings=result.get('warnings', [])[:50],
+                      error="; ".join(result.get('errors', [])) or None,
+                      finished=_dt.now().isoformat(timespec="seconds"))
+        self._append_sheet_ledger(_entry, path)
+
+        if result.get('errors'):
+            QMessageBox.critical(
+                self, "Import finished with errors",
+                "\n".join(result['errors'][:12])
+            )
+        else:
+            done = "\n".join(f"   {k}: {v}"
+                             for k, v in result.get('imported', {}).items() if v)
+            QMessageBox.information(
+                self, "Import complete",
+                f"Imported {cohort_id}:\n{done or '   (nothing)'}"
+            )
+        self._refresh_cohorts()
+
+    def _append_sheet_ledger(self, entry, path):
+        """Append one entry to sheet_sync's import ledger (same shape its own
+        import_cohorts writes), so ledger-driven status displays stay truthful
+        for imports made through this button. A ledger failure must never break
+        the import itself, so this swallows exceptions."""
+        try:
+            from mousedb import sheet_sync
+            if "sheet_mtime" not in entry:
+                entry["sheet_mtime"] = sheet_sync._iso(Path(path).stat().st_mtime)
+            sheet_sync._append_ledger(entry)
+        except Exception:
+            pass
+
+    def _delete_cohort_data(self, cohort_id):
+        """Hard-delete a cohort and all its child rows so it can be re-imported
+        cleanly. FK enforcement is off in this schema, so children are removed
+        explicitly (child tables first, then subjects, then the cohort)."""
+        from sqlalchemy import text
+        with self.db.session() as session:
+            subj = [r[0] for r in session.execute(
+                text("SELECT subject_id FROM subjects WHERE cohort_id=:c"),
+                {"c": cohort_id}).fetchall()]
+            if subj:
+                ph = ",".join(f":s{i}" for i in range(len(subj)))
+                params = {f"s{i}": s for i, s in enumerate(subj)}
+                for tbl in ("pellet_scores", "weights", "ramp_entries", "surgeries",
+                            "ladder_entries", "session_exceptions", "reach_data",
+                            "pipeline_data", "subject_stagger_groups", "brain_samples"):
+                    try:
+                        session.execute(
+                            text(f"DELETE FROM {tbl} WHERE subject_id IN ({ph})"), params)
+                    except Exception:
+                        pass  # table may not exist in this schema version
+            for tbl in ("virus_preps", "archived_summaries"):
+                try:
+                    session.execute(
+                        text(f"DELETE FROM {tbl} WHERE cohort_id=:c"), {"c": cohort_id})
+                except Exception:
+                    pass
+            session.execute(text("DELETE FROM subjects WHERE cohort_id=:c"), {"c": cohort_id})
+            session.execute(text("DELETE FROM cohorts WHERE cohort_id=:c"), {"c": cohort_id})
+            session.commit()
 
     def _archive_cohort(self):
         """Archive (soft-delete) the selected cohort with confirmation."""
