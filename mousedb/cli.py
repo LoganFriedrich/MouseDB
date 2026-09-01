@@ -1044,6 +1044,15 @@ def cmd_import_reaches(args):
     raise SystemExit(_main(argv))
 
 
+def cmd_update(args):
+    """Bring the database current: every pull, in order, under one lock (see mousedb.update)."""
+    from .update import run_update, format_summary
+    res = run_update(triggered_by="cli", skip=tuple(args.skip or ()))
+    print()
+    print(format_summary(res))
+    raise SystemExit(0 if res.ok else 1)
+
+
 def cmd_import_analyses(args):
     """Mirror MouseBrain's analysis registry into the mousedb folders (see mousedb.import_analyses)."""
     from .import_analyses import main as _main
@@ -1100,6 +1109,15 @@ def main():
     ir.add_argument('--force', action='store_true', help='Write even if a MouseReach watcher is running')
     ir.add_argument('--limit', type=int, help='At most this many files')
     ir.set_defaults(func=cmd_import_reaches)
+
+    # mousedb update -- the "Update the database" button as a command: sheets,
+    # reaches, analyses, brains, then the snapshot, in order, under one lock.
+    up = subparsers.add_parser('update',
+                               help="Bring the database current: run every pull in order (sheets, "
+                                    "reaches, analyses, brains, snapshot) under one lock and report")
+    up.add_argument('--skip', action='append', choices=['sheets', 'reaches', 'analyses', 'brains', 'snapshot'],
+                    help='Leave this step out (repeatable)')
+    up.set_defaults(func=cmd_update)
 
     # mousedb import-analyses -- mirror MouseBrain's analysis registry (files only, no database)
     ia = subparsers.add_parser('import-analyses',

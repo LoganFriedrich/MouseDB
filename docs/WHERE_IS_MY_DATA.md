@@ -89,13 +89,49 @@ numbers as one line per analysis under the export files.
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 
+## The "Update the database now" button
+
+On the Where Is My Data tab, the green button **Update the database now**
+pulls everything that is new into the database and rewrites what you see,
+in this fixed order:
+
+1. Tracking sheets -> database (the hand-entered data; the sheet is
+   authoritative but late)
+2. MouseReach results -> reach_data (every new or changed video)
+3. MouseBrain analysis registry -> exports
+4. Brain region counts -> database
+5. Snapshot + current exports rewritten (so the tab and the CSVs show what
+   just landed)
+
+Press it whenever you are about to look at the data and want it current
+instead of up to an hour old. It takes a few minutes; the tab refreshes
+itself when it finishes, and a dialog lists every step with **[OK]** or
+**[FAIL]** and the step's own last line. The line under the snapshot time
+always shows when the last update ran, who started it, and whether
+everything landed.
+
+Only one update runs at a time -- if the scheduled hourly run or someone
+else's button press is still going, yours says so and does nothing. A
+failed step never stops the later ones (sheets failing must not keep a day's
+reaches out), and the update as a whole is marked failed if any step failed.
+
+From a terminal the same thing is `mousedb update` (`--skip sheets` etc.
+leaves a step out). Its full record is `logs/updates.jsonl` beside the
+database; the newest entry holds each step's last 15 lines of output.
+
+**When a step shows [FAIL]:** read its last line in the dialog. "database is
+locked" means something else was writing at that moment -- press the button
+again after a minute. Anything else, send the line to Logan; the full output
+is in `logs/updates.jsonl`.
+
 ## Why the numbers can lag by up to an hour
 
 The tab and the exports read an hourly *snapshot* of the database, not the
 live database. The live file may sit on a network share, and reading it
 while something writes to it can corrupt the read -- so everything
 human-facing works from the last safe copy. The tab shows the snapshot's
-time at the top.
+time at the top. If you need it current right now, press **Update the
+database now** (previous section) instead of waiting for the hour.
 
 ## When something looks wrong
 

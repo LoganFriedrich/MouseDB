@@ -104,6 +104,11 @@ class DataStatusTab(QWidget):
         self.snapshot_label.setWordWrap(True)
         root.addWidget(self.snapshot_label)
 
+        self.update_label = QLabel("")
+        self.update_label.setStyleSheet("color: #888;")
+        self.update_label.setWordWrap(True)
+        root.addWidget(self.update_label)
+
         self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             ["Cohort", "Animals", "Sheet", "Sessions scored", "Videos in DB",
@@ -120,6 +125,11 @@ class DataStatusTab(QWidget):
 
         row = QHBoxLayout()
         for text, slot, tip, style in (
+            ("Update the database now", self.update_database,
+             "Pull everything that is new -- tracking sheets, MouseReach results, MouseBrain "
+             "analyses, brain counts -- into the database, in order, then rewrite the snapshot "
+             "and the current exports. Takes a few minutes; the tab refreshes itself when done.",
+             "background:#2e7d32; color:white; font-weight:bold;"),
             ("Refresh", self.refresh, "Re-read the snapshot, the queues and the export manifest.", ""),
             ("Open exports folder", self.open_exports,
              "Open the folder of current CSVs (+ data dictionaries) in Explorer.",
@@ -150,8 +160,47 @@ class DataStatusTab(QWidget):
 
     def refresh(self):
         self.snapshot_label.setText("Reading...")
+        self._show_last_update()
         from ..data_status import status
         self._run(status, self._on_status)
+
+    # --- the "Update the database now" button --------------------------------
+    def _show_last_update(self):
+        from ..update import last_update
+        last = last_update()
+        if not last:
+            self.update_label.setText("Last database update: none recorded yet -- press "
+                                      "'Update the database now' to pull everything that is new.")
+            return
+        verdict = "everything landed" if last.get("ok") else ("FAILED -- " + (last.get("message") or ""))
+        self.update_label.setText("Last database update: %s (started by %s) -- %s"
+                                  % (last.get("finished") or last.get("started") or "?",
+                                     last.get("triggered_by") or "?", verdict))
+
+    def update_database(self):
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(self, "Update the database",
+                                    "A refresh is still running -- try again in a moment.")
+            return
+        from ..update import run_update
+        self.update_label.setText("Updating the database: tracking sheets, MouseReach results, "
+                                  "MouseBrain analyses, brain counts, then the snapshot. This takes "
+                                  "a few minutes; the tab refreshes itself when done.")
+        self._run(lambda: {"update": run_update(triggered_by="gui", log=lambda s: None)},
+                  self._on_update_done)
+
+    def _on_update_done(self, r: dict):
+        from ..update import format_summary
+        res = r.get("update")
+        if res is None:
+            QMessageBox.critical(self, "Update the database",
+                                 "The update could not run:\n" + "\n".join(r.get("problems", ["unknown failure"])))
+        else:
+            text = format_summary(res)
+            box = QMessageBox.information if res.ok else QMessageBox.warning
+            box(self, "Update the database", text)
+        self._show_last_update()
+        self.refresh()
 
     def _on_status(self, st: dict):
         self._status = st
