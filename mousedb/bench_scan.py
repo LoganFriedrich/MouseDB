@@ -192,7 +192,7 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
                 "leaves inconsistent output behind. Read the snapshot instead "
                 "(--cache), or stop the watcher first.")
         load_paired_pellets.snapshot_taken = None
-        con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=180)
+        con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
         try:
             rd = pd.read_sql(
                 "SELECT subject_id, session_date, tray_type, run_number, segment_num, "

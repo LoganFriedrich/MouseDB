@@ -6204,6 +6204,11 @@ class DataEntryWindow(QMainWindow):
 
 def main():
     """Main entry point for GUI."""
+    # The batch jobs wait up to 10 minutes for a locked database (see
+    # Database.__init__); a window must not. 30 s rides out a normal commit
+    # and then fails visibly instead of freezing the GUI for minutes.
+    import os
+    os.environ.setdefault("MOUSEDB_DB_TIMEOUT", "30")
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 

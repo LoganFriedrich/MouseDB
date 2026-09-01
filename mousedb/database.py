@@ -35,11 +35,22 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.log_path.mkdir(parents=True, exist_ok=True)
 
-        # Create engine and session factory
+        # Create engine and session factory.
+        #
+        # Busy timeout: the database lives on a network share in rollback-journal
+        # mode, where the hourly snapshot's reads take minutes and a bulk
+        # phase re-derivation commits for minutes. SQLite's default wait is 5 s,
+        # so any overlap made one job fail with "database is locked" -- the
+        # snapshot went stale and phase assignment silently skipped
+        # (2026-09-01). Batch jobs now wait long enough to serialize; the GUI
+        # sets MOUSEDB_DB_TIMEOUT low so a window never freezes for minutes.
+        import os
+        timeout = int(os.environ.get("MOUSEDB_DB_TIMEOUT", "600"))
         self.engine = create_engine(
             f"sqlite:///{self.db_path}",
             echo=False,
-            connect_args={"check_same_thread": False}  # For multi-threaded GUI
+            connect_args={"check_same_thread": False,  # For multi-threaded GUI
+                          "timeout": timeout}
         )
         self.SessionLocal = sessionmaker(bind=self.engine)
 
