@@ -108,7 +108,7 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     snapshot_dir = Path(snapshot_dir)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=180)
+    con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
     counts = {}
     try:
         for table in tables:

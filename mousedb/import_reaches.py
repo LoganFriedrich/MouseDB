@@ -359,7 +359,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         todo = todo[:limit]
     log("import-reaches: %d features files under %s; %d to import, %d unchanged" %
         (len(files), root, len(todo), res.skipped))
-    conn = sqlite3.connect(str(db), timeout=60)
+    conn = sqlite3.connect(str(db), timeout=600)
     try:
         if not dry_run:
             with conn:
@@ -389,6 +389,11 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             except Exception as e:
                 res.messages.append("phase assignment: %s" % e)
                 log("  [!] phase assignment failed: %s" % e)
+                # Rows landed without test_phase/phase_group. That is a
+                # failed import for anyone reading the data, so the job must
+                # exit nonzero -- it was exit 0, and the scheduler showed
+                # green through nine straight hourly failures (2026-09-01).
+                res.errors += 1
     log("import-reaches: %d videos imported (%d reaches), %d subjects created, %d errors%s" % (
         res.imported, res.reaches, res.subjects_created, res.errors, " [dry run]" if dry_run else ""))
     return res
