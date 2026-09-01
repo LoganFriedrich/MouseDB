@@ -373,6 +373,15 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                 res.cohorts_touched.add("_".join(subject_id.split("_")[:2]))
                 if not dry_run:
                     ledger[key] = h
+            except FileNotFoundError:
+                # The file existed when we listed the tree and is gone now:
+                # the disagreement router (or review-return) moved its bundle
+                # into a queue mid-run. That is normal traffic, not an import
+                # failure -- the file will be found again wherever it lands.
+                # (First seen 2026-09-01 13:20; it failed the whole run.)
+                res.skipped += 1
+                res.messages.append("%s: vanished mid-run (moved to a review queue?) -- skipped" % p.name)
+                log("  [skip] %s vanished mid-run (moved to a review queue?)" % p.name)
             except Exception as e:
                 res.errors += 1
                 res.messages.append("%s: %s" % (p.name, e))
