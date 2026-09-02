@@ -129,7 +129,24 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         sheets = {}
         out["problems"].append("sheet status unavailable: %s" % e)
 
-    all_cohorts = set(rd["cohort"]) | set(ps["cohort"]) | set(q_by_cohort) | set(sheets)
+    # The pipeline census (MouseReach's workload view), cached by the tab's
+    # "Refresh pipeline view" button, joined here with the snapshot's video
+    # list so "analyzed" means finished AND in the database AND on disk.
+    pc = None
+    pc_by_cohort: Dict[str, dict] = {}
+    try:
+        from .pipeline_census import load_cached, join_with_db
+        census = load_cached()
+        if census:
+            in_db = set(rd["video_name"].dropna().unique())
+            pc = join_with_db(census, in_db)
+            pc_by_cohort = pc.get("by_cohort") or {}
+    except Exception as e:
+        out["problems"].append("pipeline census unreadable: %s" % e)
+    out["pipeline"] = pc
+
+    all_cohorts = (set(rd["cohort"]) | set(ps["cohort"]) | set(q_by_cohort)
+                   | set(sheets) | set(pc_by_cohort))
     if cohorts is not None:
         all_cohorts |= set(cohorts["cohort_id"])
     for cid in sorted(c for c in all_cohorts if c and c != "?"):
@@ -158,6 +175,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "reaches_in_db": int(len(r)),
             "videos_in_review": q_by_cohort.get(cid, {"triage": 0, "deep_review": 0}),
             "segments_by_outcome_source": {k: int(v) for k, v in src.items()},
+            "pipeline": pc_by_cohort.get(cid),
         })
 
     manifest = require("mousedb_root") / "exports" / "current" / "MANIFEST.json"
@@ -192,6 +210,24 @@ def _print(st: dict) -> None:
             c["cohort_id"], c["animals"] if c["animals"] is not None else "?",
             c["sessions_scored"], c["videos_in_db"], c["reaches_in_db"],
             q["triage"], q["deep_review"], c["sheet"].get("state") or "-"))
+    pc = st.get("pipeline")
+    if pc:
+        t = pc.get("totals") or {}
+        print("Pipeline census (as of %s): %s sessions should exist; "
+              "%s finished on disk; analyzed (done+DB+files): %s"
+              % (pc.get("generated_at"), t.get("expected"),
+                 t.get("finished_files"),
+                 "?" if t.get("analyzed") is None else t.get("analyzed")))
+        inv = pc.get("invariant")
+        if inv is not None:
+            print("  finished-but-not-in-database (MUST be 0): %d" % inv["count"])
+            for sid in list(inv["sessions"])[:5]:
+                print("    %s -- %s" % (sid, inv["sessions"][sid]))
+        for cv in pc.get("caveats") or []:
+            print("  [!] %s" % cv)
+    else:
+        print("Pipeline census: none taken yet -- press 'Refresh pipeline view' "
+              "in the GUI, or run mousereach-census")
     ex = st.get("exports") or {}
     print("Exports: %s  written %s  ODC-complete=%s" % (ex.get("folder"), ex.get("generated_at"), ex.get("complete")))
     for line in analysis_lines(st.get("analyses") or []):
