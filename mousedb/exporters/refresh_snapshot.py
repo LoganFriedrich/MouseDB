@@ -108,17 +108,23 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     snapshot_dir = Path(snapshot_dir)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
+    # Under the cross-task mutex: these SELECT * reads are exactly the long
+    # SHARED locks that put a concurrently-committing import into PENDING
+    # starvation (22 minutes of "database is locked" for every reader,
+    # 2026-09-02). Serialized, this runs the moment the import finishes.
+    from ..task_mutex import hold
     counts = {}
-    try:
-        for table in tables:
-            df = pd.read_sql("SELECT * FROM %s" % table, con)
-            out = snapshot_dir / ("%s.parquet" % table)
-            df.to_parquet(out, index=False)
-            counts[table] = len(df)
-            print("  %s: %d rows -> %s" % (table, len(df), out))
-    finally:
-        con.close()
+    with hold(waiting_for="the reach/brain import"):
+        con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
+        try:
+            for table in tables:
+                df = pd.read_sql("SELECT * FROM %s" % table, con)
+                out = snapshot_dir / ("%s.parquet" % table)
+                df.to_parquet(out, index=False)
+                counts[table] = len(df)
+                print("  %s: %d rows -> %s" % (table, len(df), out))
+        finally:
+            con.close()
 
     return counts
 

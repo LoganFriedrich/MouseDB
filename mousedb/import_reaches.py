@@ -359,50 +359,57 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         todo = todo[:limit]
     log("import-reaches: %d features files under %s; %d to import, %d unchanged" %
         (len(files), root, len(todo), res.skipped))
-    conn = sqlite3.connect(str(db), timeout=600)
-    try:
+    # The db phase runs under the cross-task mutex (see task_mutex.py): this
+    # import overlapping the snapshot's long reads put the db in PENDING
+    # starvation for 22 minutes on 2026-09-02 -- neither task was slow at the
+    # db, the OVERLAP was the outage. Enumeration above stays outside the
+    # lock (it is pure filesystem and can take many minutes over the share).
+    from .task_mutex import hold
+    with hold(log=log, waiting_for="the snapshot or another import"):
+        conn = sqlite3.connect(str(db), timeout=600)
+        try:
+            if not dry_run:
+                with conn:
+                    ensure_columns(conn)
+            for p, key, h in todo:
+                try:
+                    subject_id, n, created = import_file(conn, p, dry_run=dry_run)
+                    res.imported += 1
+                    res.reaches += n
+                    res.subjects_created += int(created)
+                    res.cohorts_touched.add("_".join(subject_id.split("_")[:2]))
+                    if not dry_run:
+                        ledger[key] = h
+                except FileNotFoundError:
+                    # The file existed when we listed the tree and is gone now:
+                    # the disagreement router (or review-return) moved its bundle
+                    # into a queue mid-run. That is normal traffic, not an import
+                    # failure -- the file will be found again wherever it lands.
+                    # (First seen 2026-09-01 13:20; it failed the whole run.)
+                    res.skipped += 1
+                    res.messages.append("%s: vanished mid-run (moved to a review queue?) -- skipped" % p.name)
+                    log("  [skip] %s vanished mid-run (moved to a review queue?)" % p.name)
+                except Exception as e:
+                    res.errors += 1
+                    res.messages.append("%s: %s" % (p.name, e))
+                    log("  [FAIL] %s: %s" % (p.name, e))
+        finally:
+            conn.close()
         if not dry_run:
-            with conn:
-                ensure_columns(conn)
-        for p, key, h in todo:
-            try:
-                subject_id, n, created = import_file(conn, p, dry_run=dry_run)
-                res.imported += 1
-                res.reaches += n
-                res.subjects_created += int(created)
-                res.cohorts_touched.add("_".join(subject_id.split("_")[:2]))
-                if not dry_run:
-                    ledger[key] = h
-            except FileNotFoundError:
-                # The file existed when we listed the tree and is gone now:
-                # the disagreement router (or review-return) moved its bundle
-                # into a queue mid-run. That is normal traffic, not an import
-                # failure -- the file will be found again wherever it lands.
-                # (First seen 2026-09-01 13:20; it failed the whole run.)
-                res.skipped += 1
-                res.messages.append("%s: vanished mid-run (moved to a review queue?) -- skipped" % p.name)
-                log("  [skip] %s vanished mid-run (moved to a review queue?)" % p.name)
-            except Exception as e:
-                res.errors += 1
-                res.messages.append("%s: %s" % (p.name, e))
-                log("  [FAIL] %s: %s" % (p.name, e))
-    finally:
-        conn.close()
-    if not dry_run:
-        save_ledger(ledger)  # also persists refreshed stamps for unchanged files
-        if res.cohorts_touched:
-            try:
-                from .backfill import backfill_phases
-                for cohort in sorted(res.cohorts_touched):
-                    backfill_phases(cohort_id=cohort)
-            except Exception as e:
-                res.messages.append("phase assignment: %s" % e)
-                log("  [!] phase assignment failed: %s" % e)
-                # Rows landed without test_phase/phase_group. That is a
-                # failed import for anyone reading the data, so the job must
-                # exit nonzero -- it was exit 0, and the scheduler showed
-                # green through nine straight hourly failures (2026-09-01).
-                res.errors += 1
+            save_ledger(ledger)  # also persists refreshed stamps for unchanged files
+            if res.cohorts_touched:
+                try:
+                    from .backfill import backfill_phases
+                    for cohort in sorted(res.cohorts_touched):
+                        backfill_phases(cohort_id=cohort)
+                except Exception as e:
+                    res.messages.append("phase assignment: %s" % e)
+                    log("  [!] phase assignment failed: %s" % e)
+                    # Rows landed without test_phase/phase_group. That is a
+                    # failed import for anyone reading the data, so the job must
+                    # exit nonzero -- it was exit 0, and the scheduler showed
+                    # green through nine straight hourly failures (2026-09-01).
+                    res.errors += 1
     log("import-reaches: %d videos imported (%d reaches), %d subjects created, %d errors%s" % (
         res.imported, res.reaches, res.subjects_created, res.errors, " [dry run]" if dry_run else ""))
     return res
