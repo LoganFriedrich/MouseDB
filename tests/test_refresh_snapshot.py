@@ -20,7 +20,16 @@ from mousedb.exporters import refresh_snapshot as rs
 def configured(tmp_path, monkeypatch):
     """A tiny connectome.db holding every snapshotted table, and an empty
     snapshot folder, both under tmp_path and reachable through the config
-    environment variables."""
+    environment variables.
+
+    Also stubs out the cross-process task mutex: refresh() acquires the
+    PRODUCTION database lock (under the configured logs dir), and a unit
+    test must never contend for it -- when a real hourly task held that
+    lock, this suite silently hung for many minutes (2026-09-02)."""
+    import contextlib
+    from mousedb import task_mutex
+    monkeypatch.setattr(task_mutex, "hold",
+                        lambda *a, **k: contextlib.nullcontext())
     db = tmp_path / "connectome.db"
     con = sqlite3.connect(db)
     for table in rs.TABLES:

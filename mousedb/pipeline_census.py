@@ -72,9 +72,10 @@ def mousereach_python() -> Optional[Path]:
     return None
 
 
-def refresh(days: int = 14, timeout: int = 1800,
+def refresh(days: int = 14, timeout: int = 3600,
             cache: Optional[Path] = None) -> dict:
-    """Run the census now (a 2-5 minute scan over the NAS), cache and return it.
+    """Run the census now (a 5-25 minute folder scan, network-load dependent;
+    the first live run measured 23.6 minutes under load), cache and return it.
 
     Invoked as ``python -m mousereach.census`` rather than the console shim,
     so it works even when an environment's Scripts entry points are stale or
@@ -117,6 +118,29 @@ def save_cache(census: dict, cache: Optional[Path] = None) -> Path:
     return cache
 
 
+def _ledger_video_names(path) -> Set[str]:
+    """Video stems the reach importer has registered, from its ledger.
+
+    WHY: database membership tested through reach ROWS alone is blind to
+    ZERO-REACH videos -- a post-injury session where the animal never reached
+    imports successfully with no rows, and would sit in the finished-but-not-
+    landed alarm forever (209 of them did, on the first live join). The
+    ledger records every registered import, including empty ones. Missing or
+    unreadable ledger -> empty set (the reach-row source still stands).
+    """
+    try:
+        led = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    out: Set[str] = set()
+    if isinstance(led, dict):
+        for k in led:
+            name = str(k).replace("\\", "/").rsplit("/", 1)[-1]
+            if name.endswith("_features.json"):
+                out.add(name[: -len("_features.json")])
+    return out
+
+
 def load_cached(cache: Optional[Path] = None) -> Optional[dict]:
     """The last census taken, or None when none exists yet. Unreadable is
     reported by raising -- a corrupt cache must not read as 'no census'."""
@@ -128,8 +152,10 @@ def load_cached(cache: Optional[Path] = None) -> Optional[dict]:
 
 def join_with_db(census: dict, in_db_names: Optional[Set[str]]) -> dict:
     """Promote finished+landed sessions to ``analyzed`` and evaluate the
-    invariant. ``in_db_names`` is the set of video names the database holds
-    (from the snapshot); None means NO database view, in which case the
+    invariant. ``in_db_names`` is the set of video names the database has
+    REGISTERED -- reach rows from the snapshot unioned with the import
+    ledger, because a zero-reach video has no rows yet is landed (see
+    ``_ledger_video_names``). None means NO database view, in which case the
     analyzed count and the invariant are UNAVAILABLE (None) -- never zero,
     never guessed (see mousereach.census.locate_sessions for why refusing
     beats a plausible wrong answer).

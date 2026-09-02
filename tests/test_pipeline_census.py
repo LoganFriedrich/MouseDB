@@ -94,3 +94,23 @@ def test_corrupt_cache_raises_rather_than_reading_as_absent(tmp_path):
     p.write_text("{not json", encoding="utf-8")
     with pytest.raises(Exception):
         load_cached(p)
+
+
+def test_ledger_names_capture_zero_reach_videos(tmp_path):
+    """A zero-reach video imports with no reach rows; the ledger is what
+    proves it landed. Both path separators must parse."""
+    import json as _json
+    from mousedb.pipeline_census import _ledger_video_names
+    p = tmp_path / "reach_imports.json"
+    p.write_text(_json.dumps({
+        "Analyzed/ABC/ABC01/20240101_ABC0101_P1_features.json": {"hash": "x"},
+        "Analyzed\\ABC\\20240101_ABC0102_P1_features.json": {"hash": "y"},
+        "Analyzed/ABC/notes.txt": {"hash": "z"},
+    }), encoding="utf-8")
+    assert _ledger_video_names(p) == {"20240101_ABC0101_P1",
+                                      "20240101_ABC0102_P1"}
+
+
+def test_ledger_missing_is_empty_set(tmp_path):
+    from mousedb.pipeline_census import _ledger_video_names
+    assert _ledger_video_names(tmp_path / "none.json") == set()

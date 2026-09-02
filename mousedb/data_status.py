@@ -139,6 +139,12 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         census = load_cached()
         if census:
             in_db = set(rd["video_name"].dropna().unique())
+            # Union with the import ledger: a zero-reach video (post-injury,
+            # the animal never reached) imports with no reach rows and must
+            # still count as landed -- rows alone are blind to it.
+            from .pipeline_census import _ledger_video_names
+            in_db |= _ledger_video_names(
+                require("mousedb_root") / "logs" / "reach_imports.json")
             pc = join_with_db(census, in_db)
             pc_by_cohort = pc.get("by_cohort") or {}
     except Exception as e:

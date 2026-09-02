@@ -19,7 +19,7 @@ queue folders -- never the live database, so refreshing is always safe). The
 pipeline columns come from the cached MouseReach census
 (mousedb.pipeline_census), joined with the snapshot's video list so
 "Analyzed" means finished AND in the database AND on disk. The census cache
-is rewritten by the "Refresh pipeline view" button (a 2-5 minute folder scan
+is rewritten by the "Refresh pipeline view" button (a 5-25 minute, network-load-dependent folder scan
 through the MouseReach environment).
 """
 from __future__ import annotations
@@ -70,8 +70,9 @@ ESTIMATES: pace is measured from output-file timestamps over the trailing
 14 days and projected over the backlog. It is an estimate from recent pace,
 never a promise.
 
-"Refresh pipeline view" re-walks the pipeline folders (2-5 minutes, reads
-only). The other numbers refresh from the snapshot instantly.
+"Refresh pipeline view" re-walks the pipeline folders (5-25 minutes
+depending on network load; reads only). The other numbers refresh from the
+snapshot instantly.
 
 THE FILES: the bottom panel names the current export folder. It holds
 reach_data.csv (one row per reach), manual_scores.csv (one row per pellet
@@ -172,11 +173,12 @@ class DataStatusTab(QWidget):
              "and the current exports. Takes a few minutes; the tab refreshes itself when done.",
              "background:#2e7d32; color:white; font-weight:bold;"),
             ("Refresh", self.refresh, "Re-read the snapshot, the queues and the export manifest.", ""),
-            ("Refresh pipeline view (~2-5 min)", self.refresh_pipeline,
+            ("Refresh pipeline view (~5-25 min)", self.refresh_pipeline,
              "Walk the MouseReach pipeline folders (collages, queues, the Analyzed tree) "
              "through the MouseReach environment and rewrite the cached census that the "
              "'Should exist' / pipeline / 'Analyzed' columns read. Reads folders only -- "
-             "nothing is moved or modified. The table refreshes itself when done.", ""),
+             "nothing is moved or modified. Takes 5-25 minutes depending on network "
+             "load; the table refreshes itself when done.", ""),
             ("Open exports folder", self.open_exports,
              "Open the folder of current CSVs (+ data dictionaries) in Explorer.",
              "background:#16405a; color:white; font-weight:bold;"),
@@ -255,8 +257,8 @@ class DataStatusTab(QWidget):
                                     "A refresh is still running -- try again in a moment.")
             return
         self.update_label.setText("Scanning the pipeline folders through the MouseReach "
-                                  "environment (2-5 minutes over the network share; reads only). "
-                                  "The table refreshes itself when done.")
+                                  "environment (5-25 minutes depending on network load; reads "
+                                  "only). The table refreshes itself when done.")
         from ..pipeline_census import refresh as census_refresh
         self._run(lambda: {"census": census_refresh()}, self._on_pipeline_done)
 
