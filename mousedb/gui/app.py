@@ -6212,6 +6212,50 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 
+    # PRE-FLIGHT: if an hourly import holds the database's write lock, SAY SO
+    # and wait, instead of hanging for the query timeout and dying with no
+    # explanation. The contention window is designed (batch jobs may hold the
+    # lock for minutes); an unexplained hang is indistinguishable from a
+    # broken install, and the person at the screen cannot know to "just try
+    # again in five minutes" unless the tool tells them.
+    def _db_locked() -> bool:
+        try:
+            from mousedb import DEFAULT_DB_PATH
+            if not DEFAULT_DB_PATH:
+                return False  # unconfigured -> let init_database explain that
+            import sqlite3
+            con = sqlite3.connect(
+                "file:" + str(DEFAULT_DB_PATH).replace("\\", "/") + "?mode=ro",
+                uri=True, timeout=3)
+            con.execute("select 1 from sqlite_master limit 1").fetchone()
+            con.close()
+            return False
+        except sqlite3.OperationalError as e:
+            return "locked" in str(e).lower() or "readonly" in str(e).lower()
+        except Exception:
+            return False  # other problems -> let init_database raise visibly
+
+    if _db_locked():
+        from qtpy.QtWidgets import QProgressDialog
+        from qtpy.QtCore import Qt as _Qt
+        import time as _time
+        dlg = QProgressDialog(
+            "The hourly data import is running and has the database open.\n\n"
+            "This window will open automatically when it finishes\n"
+            "(usually a few minutes). You can also press Cancel and\n"
+            "try again later.", "Cancel", 0, 0)
+        dlg.setWindowTitle("Waiting for the data import")
+        dlg.setWindowModality(_Qt.ApplicationModal)
+        dlg.setMinimumDuration(0)
+        dlg.show()
+        while _db_locked():
+            for _ in range(20):  # ~2 s, keeping the dialog responsive
+                app.processEvents()
+                _time.sleep(0.1)
+                if dlg.wasCanceled():
+                    sys.exit(0)
+        dlg.close()
+
     window = DataEntryWindow()
     window.show()
 
