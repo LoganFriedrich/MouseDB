@@ -37,3 +37,13 @@ def test_context_manager_releases_on_exit(tmp_path):
     with TaskMutex(base_dir=tmp_path).acquire(wait_seconds=1, log=lambda *_: None):
         assert (tmp_path / ".central-db.task.lock").exists()
     assert not (tmp_path / ".central-db.task.lock").exists()
+
+
+def test_dead_holder_lock_breaks_immediately(tmp_path):
+    """A crashed holder's lock must not wedge the next 45 minutes: the pid in
+    the lockfile is dead, so the next acquirer breaks it at once."""
+    a = TaskMutex(base_dir=tmp_path)
+    a.path.write_text("999999999 2026-01-01T00:00:00")
+    b = TaskMutex(base_dir=tmp_path)
+    assert b.try_acquire()
+    b.release()

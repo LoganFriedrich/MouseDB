@@ -50,6 +50,18 @@ class TaskMutex:
             self._held = True
             return True
         except FileExistsError:
+            # A DEAD holder must not wedge the next 45 minutes: the lockfile
+            # carries the holder's pid, so break immediately when that process
+            # no longer exists (best-effort -- falls back to the age rule when
+            # psutil or the pid read are unavailable).
+            try:
+                import psutil
+                pid = int(self.path.read_text().split()[0])
+                if not psutil.pid_exists(pid):
+                    self.path.unlink()
+                    return self.try_acquire()
+            except Exception:
+                pass
             try:
                 if time.time() - self.path.stat().st_mtime > self.stale_seconds:
                     # A crashed holder; break the stale lock rather than wedge
