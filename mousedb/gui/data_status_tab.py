@@ -48,8 +48,8 @@ WHERE IS MY DATA -- one row per cohort:
 * Left to do: Should exist minus everything fully done.
 * Pipeline: where the unfinished ones are, as four numbers --
     not started    only the parent collage exists (Unanalyzed/Multi-Animal)
-    crop+DLC       being cropped or pose-estimated (DLC_Queue, Single_Animal)
-    algorithms     MouseReach's analysis (DLC_Complete, Processing), including
+    crop+DLC       being cropped or pose-estimated (DLC_Queue, Unanalyzed/Single_Animal)
+    algorithms     MouseReach's analysis (Processing/Posed, Processing), including
                    finished results not yet imported into the database
     quarantined    held out as unprocessable (Processing/Quarantine)
 * In review: videos waiting for a person in MouseReach's queues -- triage
