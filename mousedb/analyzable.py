@@ -120,8 +120,11 @@ def finished_videos_with_reasons(
 
     in_analyzed = None
     if require_analyzed:
+        from .pipeline_tree import iter_files
+        # A pruned walk: a superseded manifest under Analyzed/Archive would
+        # otherwise let a video that is held in review pass as "in Analyzed".
         in_analyzed = {p.name[: -len("_processing_manifest.json")]
-                       for p in _analyzed().rglob("*_processing_manifest.json")}
+                       for p in iter_files(_analyzed(), "*_processing_manifest.json")}
 
     ok: Set[str] = set()
     rejected: Dict[str, str] = {}

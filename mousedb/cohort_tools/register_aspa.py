@@ -120,8 +120,11 @@ def videos_for(letter: str) -> Dict[int, List[str]]:
         return {}
     found: Dict[int, List[str]] = defaultdict(list)
     pat = re.compile(r"(\d{8})_" + PROJECT + num + r"(\d{2})_")
+    from ..pipeline_tree import iter_files
     for root in _video_roots():
-        for f in root.rglob("*%s%s*_features.json" % (PROJECT, num)):
+        # A pruned walk: superseded copies under Analyzed/Archive keep the
+        # live names and would add the dates of sessions that were re-run.
+        for f in iter_files(root, "*%s%s*_features.json" % (PROJECT, num)):
             m = pat.search(f.name)
             if m:
                 found[int(m.group(2))].append(m.group(1))

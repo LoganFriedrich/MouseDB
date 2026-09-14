@@ -19,7 +19,10 @@ WHAT IT DOES
      (the database is a plain SQLite file; concurrent writers over a network
      share corrupt it). ``--force`` overrides for a deliberate run.
   2. Lists every ``*_features.json`` under ``<mousereach_pipeline_root>/Analyzed``
-     (and ``Processing`` with ``--include-processing``).
+     (and ``Processing`` with ``--include-processing``), never descending into
+     ``Archive``, ``DLC Model*``, ``Multi-Animal``, ``Folder Template``,
+     ``UNKNOWN`` or a folder starting ``.`` or ``_``: those hold files with the
+     live names that are not live results (``mousedb.pipeline_tree``).
   3. Skips files whose content hash is already in the ledger
      (``<mousedb_root>/logs/reach_imports.json``); ``--all`` re-imports everything.
   4. For each file: the animal is CREATED from the video name if the tracking
@@ -50,6 +53,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .config import require
+from .pipeline_tree import iter_files
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +170,14 @@ def file_hash(path: Path) -> str:
 # ---------------------------------------------------------------------------
 
 def find_features_files(root: Path, include_processing: bool = False) -> List[Path]:
+    # A pruned walk, never rglob. Superseded generations (Analyzed/Archive),
+    # pose-only DLC Model folders and scratch copies keep the live file names;
+    # importing one would DELETE the video's live rows and insert superseded
+    # kinematics in their place (mousedb.pipeline_tree says which folders).
     dirs = [root / "Analyzed"] + ([root / "Processing"] if include_processing else [])
     found: List[Path] = []
     for d in dirs:
-        if d.is_dir():
-            found.extend(p for p in d.rglob("*" + FEATURES_SUFFIX) if p.is_file())
+        found.extend(iter_files(d, "*" + FEATURES_SUFFIX))
     return sorted(set(found))
 
 
