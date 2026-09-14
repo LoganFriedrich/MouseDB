@@ -28,9 +28,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from . import DEFAULT_EXPORT_PATH
 
@@ -64,12 +65,46 @@ def _pipeline_root() -> Path:
     return require("mousereach_pipeline_root")
 
 
-def _queue_videos(name: str) -> List[str]:
+# MouseReach's review-queue folders under <pipeline root>/Processing/Review/.
+# mousedb reads them directly (it does not import mousereach), so the names are
+# restated here and must follow MouseReach's layout. The deep-review queue was
+# renamed from "flagged_for_review" to "deep_review" when the pipeline moved to
+# "the folder is the state" (2026-09-14); reading the old name after that
+# showed every cohort's deep-review count as a silent 0.
+TRIAGE_QUEUE = "triage"
+DEEP_REVIEW_QUEUE = "deep_review"
+
+# A real bundle is named by its video, which starts with an 8-digit date.
+# Queues also hold scratch and retired folders (_Problematic, .return_claims,
+# ...) that are not videos waiting for a person.
+_BUNDLE_NAME = re.compile(r"^\d{8}_")
+
+
+def _queue_videos(name: str) -> Optional[List[str]]:
+    """Video stems held in one review queue, or None when the queue folder
+    cannot be read. None is not zero: a missing or renamed folder must show
+    up as a problem, never as an empty queue."""
     d = _pipeline_root() / "Processing" / "Review" / name
     try:
-        return [p.name for p in d.iterdir() if p.is_dir()]
+        return [p.name for p in d.iterdir() if p.is_dir() and _BUNDLE_NAME.match(p.name)]
     except OSError:
-        return []
+        return None
+
+
+def review_queue_counts(problems: List[str]) -> Dict[str, Dict[str, int]]:
+    """{cohort: {"triage": n, "deep_review": n}} from the two queue folders.
+    An unreadable queue folder is appended to ``problems`` by path, so the
+    person sees "count unknown" instead of a reassuring zero."""
+    by_cohort: Dict[str, Dict[str, int]] = {}
+    for key, folder in (("triage", TRIAGE_QUEUE), ("deep_review", DEEP_REVIEW_QUEUE)):
+        vids = _queue_videos(folder)
+        if vids is None:
+            problems.append("review queue folder not readable: %s -- its count is unknown, not zero"
+                            % (_pipeline_root() / "Processing" / "Review" / folder))
+            continue
+        for v in vids:
+            by_cohort.setdefault(_cohort_of_video(v), {"triage": 0, "deep_review": 0})[key] += 1
+    return by_cohort
 
 
 def _cohort_of_video(video_id: str) -> str:
@@ -115,12 +150,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
 
     rd["cohort"] = rd["subject_id"].str.rsplit("_", n=1).str[0]
     ps["cohort"] = ps["subject_id"].str.rsplit("_", n=1).str[0]
-    triage = _queue_videos("triage")
-    deep = _queue_videos("flagged_for_review")
-    q_by_cohort: Dict[str, Dict[str, int]] = {}
-    for name, vids in (("triage", triage), ("deep_review", deep)):
-        for v in vids:
-            q_by_cohort.setdefault(_cohort_of_video(v), {"triage": 0, "deep_review": 0})[name] += 1
+    q_by_cohort = review_queue_counts(out["problems"])
 
     try:
         from .sheet_sync import status as sheet_status
