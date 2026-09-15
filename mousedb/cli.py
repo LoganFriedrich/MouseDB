@@ -1107,6 +1107,17 @@ def cmd_study_facts(args):
         print(sf.describe(args.project))
 
 
+def cmd_export_odc_reaches(args):
+    """mousedb export-odc-reaches (see mousedb.exporters.odc_reaches)."""
+    from .exporters.odc_reaches import main as _main
+    argv = []
+    for c in args.cohort or []:
+        argv += ['--cohort', c]
+    if args.out_dir:
+        argv += ['--out-dir', args.out_dir]
+    raise SystemExit(_main(argv))
+
+
 from .config import ConfigError
 
 
@@ -1141,6 +1152,15 @@ def main():
                               help="Set one fact (PROJECT may be 'default' for every project)")
     study_parser.add_argument('--unset', nargs=2, metavar=('PROJECT', 'FIELD'), help='Remove one fact')
     study_parser.set_defaults(func=cmd_study_facts)
+
+    # mousedb export-odc-reaches -- per-reach ODC files (animal + session on every row)
+    odc_r = subparsers.add_parser(
+        'export-odc-reaches',
+        help='Write ODC_reaches_<cohort>.csv (one row per reach, animal and session details '
+             'repeated) plus a data dictionary, from the snapshot')
+    odc_r.add_argument('--cohort', action='append', help='Cohort id (repeatable; default all)')
+    odc_r.add_argument('--out-dir', help='Folder to write into (default: the current exports folder)')
+    odc_r.set_defaults(func=cmd_export_odc_reaches)
 
     # mousedb import-reaches -- pull MouseReach's per-video results into reach_data
     ir = subparsers.add_parser('import-reaches',

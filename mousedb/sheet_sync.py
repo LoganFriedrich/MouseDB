@@ -200,6 +200,16 @@ def status() -> dict:
 # import
 # ---------------------------------------------------------------------------
 
+def _animal_records(imp, cohort_id, sheet, kind, dry_run):
+    """Copy the sheet's animal-level tabs into animal_records (see mousedb.animal_records).
+    None when the importer has no database (test doubles)."""
+    db = getattr(imp, "db", None)
+    if db is None:
+        return None
+    from .animal_records import sync_cohort
+    return sync_cohort(db, cohort_id, sheet, kind, dry_run=dry_run)
+
+
 def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
                    triggered_by: str = "manual") -> dict:
     """Import the chosen sheet of each cohort (all cohorts if None).
@@ -266,10 +276,21 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
                     from .task_mutex import hold
                     with hold(waiting_for="another database task"):
                         r = imp.import_cohort_file(sheet, dry_run=False)
-                entry.update(success=bool(r.get("success")),
-                             imported=r.get("imported"),
-                             warnings=r.get("warnings", [])[:50],
-                             error="; ".join(r.get("errors", [])) or None)
+                        rec = _animal_records(imp, cohort_id, sheet, "cohort", False)
+                if dry_run:
+                    rec = _animal_records(imp, cohort_id, sheet, "cohort", True)
+                errors = list(r.get("errors", []))
+                warnings = list(r.get("warnings", []))
+                imported = dict(r.get("imported") or {})
+                if rec is not None:
+                    imported["animal_records"] = rec["records"]
+                    warnings += rec["warnings"]
+                    if rec["error"]:
+                        errors.append("animal records not imported: %s" % rec["error"])
+                entry.update(success=bool(r.get("success")) and not (rec and rec["error"]),
+                             imported=imported,
+                             warnings=warnings[:50],
+                             error="; ".join(errors) or None)
             except Exception as e:
                 entry.update(success=False,
                              error="%s: %s" % (type(e).__name__, e),

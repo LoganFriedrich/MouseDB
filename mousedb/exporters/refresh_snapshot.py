@@ -52,7 +52,7 @@ DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.
-TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts"]
+TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records"]
 
 
 def watcher_blocks_db() -> bool:
@@ -124,6 +124,12 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
                 # run that took an hour on a busy share looked exactly like a
                 # hung one (only its header in the log), and one was stopped
                 # by hand for that reason (2026-09-14).
+                # A table newer than this database (animal_records before the first
+                # sheet import that creates it) is skipped, not a failed snapshot.
+                if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                                   (table,)).fetchone():
+                    print("  %s: not in this database yet; skipped" % table, flush=True)
+                    continue
                 print("  reading %s ..." % table, flush=True)
                 df = pd.read_sql("SELECT * FROM %s" % table, con)
                 out = snapshot_dir / ("%s.parquet" % table)

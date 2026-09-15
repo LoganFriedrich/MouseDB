@@ -94,7 +94,7 @@ REACH_DATA = [
     _row("segment_outcome", "Segment outcome", "The pellet outcome of the whole segment this reach belongs to (same vocabulary as outcome), on every reach of the segment.", "", "text", "retrieved; displaced_sa; displaced_outside; missed; triaged; uncertain; abnormal_exception", "see outcome"),
     _row("segment_outcome_confidence", "Segment outcome confidence", "The outcome detector's confidence in segment_outcome.", "dimensionless", "number", "", "", "0", "1"),
     _row("segment_outcome_flagged", "Segment flagged for review", "True if the outcome detector could not commit and flagged the segment for a human.", "", "boolean", "TRUE; FALSE"),
-    _row("attention_score", "Attention score", "Outcome detector's estimate of how engaged the animal was with the pellet in this segment.", "dimensionless", "number", "", "", "0", "1"),
+    _row("attention_score", "Attention score", "Outcome detector's estimate of how engaged the animal was with the pellet in this segment. Observed values run above 1 (tens), so treat it as a relative score, not a 0-1 fraction.", "", "number", "", "", "0"),
     _row("pellet_position_idealness", "Pellet position idealness", "Outcome detector's estimate of how well the pellet sat on its pillar (1 = ideal).", "dimensionless", "number", "", "", "0", "1"),
     _row("source_file", "Source file", "The _features.json file the row was synced from.", "", "text"),
     _row("extractor_version", "Extractor version", "Version of the kinematics extractor that produced the row.", "", "text"),
@@ -177,6 +177,73 @@ def _odc_session_rows() -> List[dict]:
 
 
 ODC_SESSIONS = _odc_session_rows()
+
+# ---------------------------------------------------------------------------
+# ODC reaches: one row per reach, animal + session details repeated on each row
+# (the per-reach shared-dataset shape). Reach columns reuse REACH_DATA; columns
+# copied from the tracking sheets are described by sheet_column_row().
+# ---------------------------------------------------------------------------
+
+ODC_REACH_ANIMAL = [
+    _row("SubjectID", "Subject identifier", "The lab's own animal id (a frozen letter cohort's animals decoded back to letter + number, e.g. K03; otherwise PROJECT_CC_SS).", "", "text"),
+    _row("SpeciesTyp", "Species", "Species. From the sheet's ODC tab when it has one, else the study facts (mousedb study-facts).", "", "text"),
+    _row("SpeciesStrainTyp", "Strain", "Strain or line. From the sheet's ODC tab when it has one, else the study facts.", "", "text"),
+    _row("Animal_origin", "Animal origin", "Supplier or colony. From the sheet's ODC tab when it has one, else the study facts.", "", "text"),
+    _row("AgeVal", "Age", "Age in weeks at the session when a date of birth is recorded; otherwise the age at surgery as written in the sheet's ODC tab; else empty.", "weeks", "text"),
+    _row("BodyWgtMeasrVal", "Body weight at surgery", "Weight recorded on the injury surgery row of the tracking sheet.", "g", "number", "", "", "0"),
+    _row("SexTyp", "Sex", "Animal sex, from the database subject record, else the tracking sheet.", "", "text"),
+    _row("InjGroupAssignTyp", "Group assignment", "Study group from the sheet's ODC tab when present, else the cohort id.", "", "text"),
+    _row("Laboratory", "Laboratory", "The laboratory (mousedb config lab_name).", "", "text"),
+    _row("StudyLeader", "Study leader", "Study leader (study facts).", "", "text"),
+    _row("Exclusion_in_origin_study", "Exclusion in origin study", "Total exclusion when a surgery row records Survived = N; No exclusion when every recorded surgery survived; empty when survival is not recorded.", "", "text", "Total exclusion; No exclusion", "Total exclusion=did not survive a surgery; No exclusion=survived every recorded surgery"),
+    _row("Exclusion_reason", "Exclusion reason", "Why the animal was excluded, when Exclusion_in_origin_study says so.", "", "text"),
+    _row("Cause_of_Death", "Cause of death", "Not derived by this export (empty); see the surgery columns for survival.", "", "text"),
+    _row("Injury_device", "Injury device", "Injury device from the sheet's ODC tab when it names one, else the study facts.", "", "text"),
+    _row("Injury_level", "Injury level", "Spinal level of the injury from the tracking sheet.", "", "text"),
+    _row("Injury_details", "Injury details", "Measured injury parameters from the tracking sheet (force, displacement, velocity, dwell) as text.", "", "text"),
+]
+
+ODC_REACH_SESSION = [
+    _row("Test_Date", "Test date", "Date of the recording session (YYYY-MM-DD).", "", "date"),
+    _row("Tray_ID", "Tray id", "Tray type letter and run number within the session: P = pillar, E = easy, F = flat; P2 = the second pillar tray that day.", "", "text"),
+    _row("Session_ID", "Session id", "SubjectID-YYYYMMDD-Tray_ID; unique per animal, day and tray.", "", "text"),
+    _row("Injury_Type", "Injury type", "Injury type from the tracking sheet, with the intended force for a contusion (e.g. Contusion-60kD).", "", "text"),
+    _row("Test_Type", "Test type", "Phase of the experiment the session belongs to (same as test_phase; see manual_scores dictionary).", "", "text"),
+    _row("Test_Type_Grouped", "Test type grouped", "Statistical grouping of Test_Type (same as phase_group).", "", "text"),
+    _row("Days_Post_Injury", "Days post injury", "Days from the injury surgery date to the session; empty before the injury or when no injury date is recorded.", "days", "integer", "", "", "0"),
+]
+
+ODC_REACH_TOTALS = [
+    _row("Total_Swipes_AI", "Reaches in the video", "Number of reaches the pipeline detected in this session video.", "count", "integer", "", "", "0"),
+    _row("Attention_AI", "Mean attention score", "Mean over the video's pellet segments of the outcome detector's attention score (same scale as attention_score).", "", "number", "", "", "0"),
+    _row("Video_Displaced", "Pellets displaced (video)", "Pellet segments in this video whose outcome is displaced_sa or displaced_outside. Counts pellets, not reaches.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Retrieved", "Pellets retrieved (video)", "Pellet segments in this video whose outcome is retrieved.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Contacted", "Pellets contacted (video)", "Video_Displaced + Video_Retrieved.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Displaced", "Pellets displaced (hand score)", "Pellets scored 1 (displaced) by post-hoc tray inspection for the same animal, date, tray type and tray number.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Retrieved", "Pellets retrieved (hand score)", "Pellets scored 2 (retrieved) for the same tray.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Contacted", "Pellets contacted (hand score)", "Manual_Displaced + Manual_Retrieved.", "count", "integer", "", "", "0", "20"),
+    _row("Contacted_Match", "Contacted difference", "Absolute difference between Manual_Contacted and Video_Contacted; empty when either is missing.", "count", "integer", "", "", "0", "20"),
+]
+
+
+def sheet_column_row(column: str, tab: str, field: str, record_no: int = 1) -> dict:
+    """Dictionary row for a column copied from a tracking-sheet tab (see animal_records)."""
+    which = "" if record_no == 1 else " (the animal's row %d on that tab)" % record_no
+    return _row(column, "%s: %s" % (tab, field),
+                "Copied as written from the '%s' column of the '%s' tab of this cohort's "
+                "tracking sheet%s. Text; dates as YYYY-MM-DD." % (field, tab, which), "", "text")
+
+
+def write_rows(rows: List[dict], out_path: Path) -> Path:
+    """Write dictionary rows built at run time (the per-reach export's columns vary by cohort)."""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=ODC_DICTIONARY_COLUMNS)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    return out_path
 
 DICTIONARIES: Dict[str, List[dict]] = {
     "reach_data": REACH_DATA,

@@ -81,6 +81,14 @@ ODC_sessions_<cohort>.csv One row per animal per session in the ODC-SCI
                           2_ODC_Animal_Tracking shape (per-tray and daily
                           counts and percentages, weight, injury). Definitions:
                           ODC_sessions_DATA_DICTIONARY.csv.
+ODC_reaches_<cohort>.csv  One row per reach, with that animal's details
+                          (strain, sex, surgery columns copied from the tracking
+                          sheet) and that session's details (date, tray, phase)
+                          repeated on every row, plus video and hand-score
+                          totals for the tray -- the flat per-reach shape shared
+                          with collaborators. Each has its own dictionary:
+                          ODC_reaches_<cohort>_DATA_DICTIONARY.csv (columns
+                          differ by cohort because sheets differ).
 MANIFEST.json             When these were written, from which snapshot, row
                           counts, and any problems (e.g. columns missing a
                           dictionary entry, which would fail an ODC upload).
@@ -139,6 +147,41 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
     }
 
 
+def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
+    """Per-cohort per-reach ODC files (see exporters.odc_reaches).
+
+    Skipped when nothing they are built from has changed since the last write
+    (same snapshot table sizes and row counts, same study-facts file): they are
+    large, and the hourly refresh would otherwise rewrite hundreds of MB on the
+    share for no change. The manifest then carries the previous entries."""
+    import pyarrow.parquet as pq
+    from . import odc_reaches
+    from .. import study_facts
+    sig = {}
+    for name in ("reach_data", "subjects", "pellet_scores", "animal_records"):
+        f = snapshot_dir / ("%s.parquet" % name)
+        if f.exists():
+            sig[name] = [f.stat().st_size, pq.ParquetFile(f).metadata.num_rows]
+    ff = study_facts.facts_path()
+    sig["study_facts"] = ff.read_text(encoding="utf-8") if ff.exists() else ""
+    sig_file = out_dir / ".odc_reaches_signature.json"
+    try:
+        old = json.loads(sig_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    if old.get("signature") == sig and old.get("files") and all(
+            (out_dir / n).exists() for n in old["files"] if old["files"][n].get("rows")):
+        manifest["files"].update(old["files"])
+        return
+    part = {"files": {}, "problems": []}
+    odc_reaches.export(snapshot_dir, out_dir, manifest=part)
+    manifest["files"].update(part["files"])
+    manifest["problems"].extend(part["problems"])
+    if not part["problems"]:
+        sig_file.write_text(json.dumps({"signature": sig, "files": part["files"]}, indent=1),
+                            encoding="utf-8")
+
+
 def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
     """Per-cohort ODC session tables. Needs the ORM (database read)."""
     from ..database import get_db
@@ -195,7 +238,7 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
         "files": {}, "problems": [], "complete": True,
         "odc_sessions_refreshed": bool(db_ok),
     }
-    for fn in (_reach_data_csv, _manual_scores_csv):
+    for fn in (_reach_data_csv, _manual_scores_csv, _odc_reaches_csvs):
         try:
             fn(snapshot_dir, out_dir, manifest)
         except Exception as e:

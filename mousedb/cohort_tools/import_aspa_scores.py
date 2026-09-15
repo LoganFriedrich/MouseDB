@@ -167,9 +167,16 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
             imp._insert_pellet_rows(session, cohort_id, rows, dry_run=not apply)
             if apply:
                 session.commit()
-        entry.update(success=True, parsed_trays=len(rows), parsed_pellets=n_pellets,
-                     imported=dict(imp.imported_counts),
-                     warnings=(warnings + imp.warnings)[:50], error=None)
+        # The workbook's ODC tab (each animal's surgery, drugs, strain, group ...)
+        # goes into animal_records for the per-reach ODC export. After the score
+        # session has closed: two open write transactions on one SQLite file lock.
+        from ..animal_records import sync_cohort
+        rec = sync_cohort(db, cohort_id, sheet, "odc", dry_run=not apply)
+        imported = dict(imp.imported_counts, animal_records=rec["records"])
+        entry.update(success=rec["error"] is None, parsed_trays=len(rows), parsed_pellets=n_pellets,
+                     imported=imported,
+                     warnings=(warnings + imp.warnings + rec["warnings"])[:50],
+                     error=("animal records not imported: %s" % rec["error"]) if rec["error"] else None)
     except Exception as e:
         import traceback
         entry.update(success=False, error="%s: %s" % (type(e).__name__, e),

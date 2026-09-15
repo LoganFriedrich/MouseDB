@@ -633,6 +633,30 @@ class Surgery(Base):
         return value.lower()
 
 
+class AnimalRecord(Base):
+    """One value a tracking sheet records about an animal, as written (long format).
+
+    WHY long and text: the typed Surgery table keeps a few columns; the sheets hold
+    many more (drugs, doses, virus, target, survival, ODC elements) and gain columns
+    over time. Stored as (subject, tab, record number, column, value), any column
+    lands without a schema change. Written only by mousedb.animal_records during the
+    sheet import, which replaces a cohort's rows for the tabs it read.
+    No foreign key to subjects: an animal named in a sheet is recorded even if no
+    video or other import has created its subject row yet.
+    """
+    __tablename__ = 'animal_records'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subject_id = Column(String(20), nullable=False, index=True)
+    cohort_id = Column(String(20), nullable=False, index=True)
+    source_tab = Column(String(60), nullable=False)
+    record_no = Column(Integer, nullable=False, default=1)  # 2 = the animal's second row on that tab
+    field = Column(String(120), nullable=False)
+    value = Column(Text)
+    source_file = Column(String(260))
+    imported_at = Column(DateTime, default=datetime.now)
+
+
 class VirusPrep(Base):
     """
     Virus preparation and injection calculations for tracing surgery.

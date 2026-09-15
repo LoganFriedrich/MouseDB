@@ -77,12 +77,15 @@ snapshot instantly.
 THE FILES: the bottom panel names the current export folder. It holds
 reach_data.csv (one row per reach), manual_scores.csv (one row per pellet
 scored from the tray), ODC_sessions_<cohort>.csv (one row per animal per
-session, ODC-SCI shape), each with a DATA_DICTIONARY.csv beside it, plus
+session, ODC-SCI shape), ODC_reaches_<cohort>.csv (one row per reach with
+the animal's surgery details and the session repeated on every row -- the
+file to share), each with a DATA_DICTIONARY.csv beside it, plus
 MANIFEST.json saying when they were written and whether they are complete
 for an ODC-SCI upload. "Open exports folder" opens it in Explorer.
 
 The folder is rewritten by the hourly job. "Refresh exports now" rewrites
-reach_data and manual_scores immediately from the latest snapshot.
+reach_data, manual_scores and the ODC_reaches files immediately from the
+latest snapshot.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
 TISSUE ANALYSES: below the export files, one line per MouseBrain analysis

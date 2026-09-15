@@ -14,8 +14,18 @@ each with a data dictionary beside it:
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
 | `manual_scores.csv` | pellet scored by hand from the tray (0 missed / 1 displaced / 2 retrieved) with the session's phase | `manual_scores_DATA_DICTIONARY.csv` |
 | `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
+| `ODC_reaches_<cohort>.csv` | reach, with that animal's details (strain, sex, every surgery column of the tracking sheet) and that session's details (date, tray, phase, days post injury) repeated on each row, plus the tray's video and hand-score totals -- the flat shape shared with collaborators | `ODC_reaches_<cohort>_DATA_DICTIONARY.csv` (one per cohort: sheets differ) |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |
+
+Where the `ODC_reaches` animal columns come from: each sheet import copies
+the animal-level tabs of the tracking sheet (metadata, contusion, spinal
+injection; a frozen letter cohort's `ODC` tab) into the database as written,
+and study-wide facts no sheet holds (strain, supplier, study leader, injury
+device) come from `mousedb study-facts`. A value no source records is left
+empty, never guessed; `MANIFEST.json` lists any animal column that is blank for
+a whole cohort. To write them for one cohort into another folder:
+`mousedb export-odc-reaches --cohort <cohort id> --out-dir <folder>`.
 
 An ODC-SCI submission is a dataset file **plus** its data dictionary; both
 are here. `MANIFEST.json` says `"complete": true` when every column in every
@@ -41,8 +51,8 @@ Below the table: the export folder, when it was last written, whether it is
 complete for an ODC upload, the row count of each file, and any problems.
 
 Buttons: **Refresh** re-reads everything. **Open exports folder** opens the
-folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`
-and `manual_scores.csv` immediately from the latest snapshot (the per-cohort
+folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`,
+`manual_scores.csv` and the `ODC_reaches_<cohort>.csv` files immediately from the latest snapshot (the per-cohort
 ODC session files refresh on the hourly run, which is the only time the
 database may be read safely).
 
