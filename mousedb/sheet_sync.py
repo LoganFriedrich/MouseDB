@@ -299,7 +299,41 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         results["cohorts"].append(entry)
         if not dry_run:
             _append_ledger(entry)
+
+    # A full import also refreshes each frozen letter cohort's ODC tab into
+    # animal_records. WHY: that tab is where those animals' surgery, strain and
+    # group are written, and the per-reach ODC export reads them from the
+    # database; the scores themselves stay on their own importer. Not written to
+    # the ledger (the ledger tracks score imports of those workbooks).
+    if cohorts is None:
+        results["aspa_animal_records"] = _aspa_animal_records(dry_run)
     return results
+
+
+def _aspa_animal_records(dry_run: bool) -> List[dict]:
+    from .cohort_sheets import available_aspa_cohorts, find_aspa_sheet, aspa_cohort_number
+    from .animal_records import sync_cohort
+    out = []
+    letters = available_aspa_cohorts()
+    if not letters:
+        return out
+    from .database import get_db
+    from .task_mutex import hold
+    db = get_db()
+    for L in letters:
+        cohort_id = "ASPA_%s" % aspa_cohort_number(L)
+        sheet = find_aspa_sheet(L)
+        if sheet is None:
+            out.append({"cohort_id": cohort_id, "records": 0, "warnings": [],
+                        "error": "no single workbook for this letter"})
+            continue
+        if dry_run:
+            r = sync_cohort(db, cohort_id, sheet, "odc", dry_run=True)
+        else:
+            with hold(waiting_for="another database task"):
+                r = sync_cohort(db, cohort_id, sheet, "odc", dry_run=False)
+        out.append(dict(r, cohort_id=cohort_id, sheet_name=sheet.name))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -355,9 +389,14 @@ def main(argv=None) -> int:
                 tag = "OK  " if c.get("success") else "FAIL"
                 print("%s %s %s %s" % (tag, c["cohort_id"], c.get("sheet_name") or "-",
                                        c.get("imported") or c.get("error")))
+            for a in r.get("aspa_animal_records", []):
+                print("%s %s %s animal_records %s" % ("FAIL" if a.get("error") else "OK  ", a["cohort_id"],
+                                                      a.get("sheet_name") or "-", a.get("error") or a["records"]))
             if r.get("problem"):
                 print("[!] %s" % r["problem"])
-        return 0 if all(c.get("success") for c in r["cohorts"]) else 1
+        ok = all(c.get("success") for c in r["cohorts"])
+        ok = ok and not any(a.get("error") for a in r.get("aspa_animal_records", []))
+        return 0 if ok else 1
     if args.cmd == "pin":
         print("pinned %s -> %s (in %s)" % (args.cohort, args.filename,
                                            pin_cohort_sheet(args.cohort, args.filename)))

@@ -41,6 +41,30 @@ def folder(tmp_path, monkeypatch):
     return d
 
 
+def test_full_import_refreshes_letter_cohort_odc_records(folder, monkeypatch, mutex_holds, tmp_path):
+    """WHY: frozen letter cohorts' animal details live in their ODC tab; without this
+    pass the per-reach export's animal columns stayed blank for them (2026-09-15)."""
+    import mousedb.importers as imp
+    import mousedb.animal_records as ar
+    import mousedb.database as dbmod
+
+    class Fake:
+        db = None
+        def import_cohort_file(self, *a, **k):
+            return {"success": True, "imported": {}, "warnings": [], "errors": []}
+    monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Fake())
+    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda *a, **k: ["K"])
+    monkeypatch.setattr(cs, "find_aspa_sheet", lambda *a, **k: tmp_path / "K.xlsx")
+    monkeypatch.setattr(dbmod, "get_db", lambda *a, **k: "db")
+    calls = []
+    monkeypatch.setattr(ar, "sync_cohort", lambda db, cid, sheet, kind, dry_run=False:
+                        calls.append((cid, kind, dry_run)) or {"records": 5, "warnings": [], "error": None})
+    r = ss.import_cohorts(None)
+    assert calls == [("ASPA_11", "odc", False)]
+    assert r["aspa_animal_records"][0]["records"] == 5
+    assert ss.import_cohorts(["CNT_05"]).get("aspa_animal_records") is None   # only on a full import
+
+
 class TestStatus:
     def test_never_imported(self, folder):
         c = ss.cohort_status("05")
