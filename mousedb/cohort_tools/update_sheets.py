@@ -99,15 +99,12 @@ ODC_COLUMNS.extend(["Source_File", "Source_Sheet", "Row_Notes"])
 # Create column index lookup
 ODC_COL_IDX = {name: i for i, name in enumerate(ODC_COLUMNS)}
 
-# Hard-coded values
-PROJECT_DEFAULTS = {
-    "SpeciesTyp": "Mouse",
-    "SpeciesStrainTyp": "C57BL/6J",
-    "AnimalSourceNam": "Jackson Laboratory",
-    "Laboratory": __import__("mousedb.config", fromlist=["lab_name"]).lab_name(),
-    "StudyLeader": "Adam Murray",
-    "Injury_device": "Infinite Horizon Impactor",
-}
+# Study-wide ODC facts (species, strain, supplier, study leader, injury device)
+# belong to one lab's study, so they come from the machine's study-facts file
+# (mousedb.study_facts; `mousedb study-facts --show`), never from this source.
+# An unset fact is written as an empty cell rather than guessed.
+from mousedb import study_facts
+from mousedb.config import lab_name
 
 
 # =============================================================================
@@ -469,10 +466,11 @@ def build_odc_row(animal_id, date, day_data, metadata, baseline_weights, contusi
     cohort = animal_id.rsplit('_', 1)[0] if '_' in animal_id else 'Unknown'
     
     # === Section 1: ODC-SCI Required CoDEs ===
+    facts = study_facts.facts(animal_id)
     row[ODC_COL_IDX['SubjectID']] = animal_id
-    row[ODC_COL_IDX['SpeciesTyp']] = PROJECT_DEFAULTS['SpeciesTyp']
-    row[ODC_COL_IDX['SpeciesStrainTyp']] = PROJECT_DEFAULTS['SpeciesStrainTyp']
-    row[ODC_COL_IDX['AnimalSourceNam']] = PROJECT_DEFAULTS['AnimalSourceNam']
+    row[ODC_COL_IDX['SpeciesTyp']] = facts.get('SpeciesTyp')
+    row[ODC_COL_IDX['SpeciesStrainTyp']] = facts.get('SpeciesStrainTyp')
+    row[ODC_COL_IDX['AnimalSourceNam']] = facts.get('AnimalSourceNam')
     
     # AgeVal - weeks from DOB
     dob = meta.get('dob')
@@ -483,8 +481,8 @@ def build_odc_row(animal_id, date, day_data, metadata, baseline_weights, contusi
     row[ODC_COL_IDX['BodyWgtMeasrVal']] = baseline
     row[ODC_COL_IDX['SexTyp']] = meta.get('sex') or day_data.get('sex')
     row[ODC_COL_IDX['InjGroupAssignTyp']] = cohort
-    row[ODC_COL_IDX['Laboratory']] = PROJECT_DEFAULTS['Laboratory']
-    row[ODC_COL_IDX['StudyLeader']] = PROJECT_DEFAULTS['StudyLeader']
+    row[ODC_COL_IDX['Laboratory']] = lab_name()
+    row[ODC_COL_IDX['StudyLeader']] = facts.get('StudyLeader')
     
     # Exclusion handling
     survived = cont.get('survived', 'Y')
@@ -499,7 +497,7 @@ def build_odc_row(animal_id, date, day_data, metadata, baseline_weights, contusi
     
     # Injury details
     row[ODC_COL_IDX['Injury_type']] = cont.get('type', 'Contusion')
-    row[ODC_COL_IDX['Injury_device']] = PROJECT_DEFAULTS['Injury_device']
+    row[ODC_COL_IDX['Injury_device']] = facts.get('Injury_device')
     row[ODC_COL_IDX['Injury_level']] = cont.get('location', '')
     
     # Build injury details string

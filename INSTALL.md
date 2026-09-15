@@ -206,6 +206,27 @@ Any command that needs a location that is not set stops with a message naming
 the exact `mousedb config --set` line to run. Values can also be given per run
 as environment variables (`mousedb config --show` lists them).
 
+### Study facts (once per study)
+
+ODC-SCI records repeat facts that are the same for every animal in a study:
+species, strain, supplier, study leader, injury device. They belong to your
+study, not to the tool, so mousedb has none built in. Set them per project
+(the letters before the first underscore of a cohort id), or under `default`
+for every project:
+
+```
+mousedb study-facts --set <PROJECT> SpeciesTyp "<species>"
+mousedb study-facts --set <PROJECT> SpeciesStrainTyp "<strain, as the supplier names it>"
+mousedb study-facts --set <PROJECT> AnimalSourceNam "<supplier or colony>"
+mousedb study-facts --set <PROJECT> StudyLeader "<name as it should appear in shared records>"
+mousedb study-facts --set <PROJECT> Injury_device "<device model and version>"
+mousedb study-facts --show
+```
+
+They are saved in `~/.mousedb/study_facts.json` (or the file named by
+`MOUSEDB_STUDY_FACTS`). A fact that is not set is left as an empty cell in
+generated sheets and exports -- never guessed.
+
 ## Scheduled jobs (the processing machine)
 
 mousedb is an integrator: it PULLS from the tools on a schedule. Register these

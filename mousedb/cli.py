@@ -1092,6 +1092,21 @@ def cmd_config(args):
         print(cfg.describe())
 
 
+def cmd_study_facts(args):
+    """mousedb study-facts: study-wide ODC facts per project (see mousedb.study_facts)."""
+    from . import study_facts as sf
+    if args.set:
+        project, field, value = args.set
+        path = sf.set_fact(project, field, value)
+        print("[OK] %s %s = %s  (saved to %s)" % (project, field, value, path))
+    if args.unset:
+        project, field = args.unset
+        path = sf.set_fact(project, field, None)
+        print("[OK] %s %s removed  (saved to %s)" % (project, field, path))
+    if args.show or not (args.set or args.unset):
+        print(sf.describe(args.project))
+
+
 from .config import ConfigError
 
 
@@ -1114,6 +1129,18 @@ def main():
     config_parser.add_argument('--set', nargs=2, metavar=('KEY', 'VALUE'), help='Set one key')
     config_parser.add_argument('--unset', metavar='KEY', help='Remove one key')
     config_parser.set_defaults(func=cmd_config)
+
+    # mousedb study-facts -- study-wide ODC facts per project (strain, supplier,
+    # study leader, injury device): one lab's facts, so kept on the machine
+    study_parser = subparsers.add_parser(
+        'study-facts',
+        help='Show or set study-wide ODC facts (strain, supplier, study leader, injury device) per project')
+    study_parser.add_argument('--show', action='store_true', help='Print every project and fact')
+    study_parser.add_argument('--project', help='With --show: only this project')
+    study_parser.add_argument('--set', nargs=3, metavar=('PROJECT', 'FIELD', 'VALUE'),
+                              help="Set one fact (PROJECT may be 'default' for every project)")
+    study_parser.add_argument('--unset', nargs=2, metavar=('PROJECT', 'FIELD'), help='Remove one fact')
+    study_parser.set_defaults(func=cmd_study_facts)
 
     # mousedb import-reaches -- pull MouseReach's per-video results into reach_data
     ir = subparsers.add_parser('import-reaches',

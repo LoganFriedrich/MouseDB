@@ -213,12 +213,10 @@ def _tray_stats(pellets: List[Optional[int]]) -> dict:
             "retrieved_pct": pct(retrieved), "contacted_pct": pct(contacted)}
 
 
-STUDY_CONSTANTS = {
-    "SpeciesTyp": "mouse",
-    "SpeciesStrainTyp": "C57BL/6J",
-    "AnimalSourceNam": "Jackson Labs",
-    "StudyLeader": "",          # see --study-leader; left blank rather than guessed
-}
+# Study-wide constants (species, strain, supplier, study leader ...) are not
+# written here: they are one lab's study facts, read per subject from the
+# machine's study-facts file (mousedb.study_facts). Command-line flags override
+# them for one run. Anything unset stays empty rather than guessed.
 
 
 def build_rows(wb, source_name: str, form_tabs=(), constants=None) -> List[dict]:
@@ -257,10 +255,12 @@ def build_rows(wb, source_name: str, form_tabs=(), constants=None) -> List[dict]
         row["SexTyp"] = s["sex"] or _norm(m.get("Sex"))
         from ..config import lab_name
         row["Laboratory"] = lab_name()
-        # Study-wide constants. Identical for every animal in every cohort, so they
-        # are configuration rather than data -- and were empty across all five
-        # cohorts simply because nobody had anywhere to put them.
-        for k, v in (constants or {}).items():
+        # Study-wide constants. Identical for every animal in a study, so they are
+        # configuration rather than data -- and were empty across all five
+        # cohorts simply because nobody had anywhere to put them. The study-facts
+        # file supplies them; explicit ``constants`` (command-line flags) win.
+        from .. import study_facts
+        for k, v in {**study_facts.facts(subject), **(constants or {})}.items():
             if v:
                 row[k] = v
         if m.get("Cohort") is not None:
@@ -401,11 +401,15 @@ def main(argv=None) -> int:
     parser.add_argument("--source", required=True, help="Cohort tracking .xlsx.")
     parser.add_argument("--out", default=None, help="Output .xlsx (default: <name>_ODC.xlsx alongside).")
     parser.add_argument("--study-leader", default="",
-                        help="ODC StudyLeader for every row (e.g. the lab PI).")
-    parser.add_argument("--species", default=STUDY_CONSTANTS["SpeciesTyp"])
-    parser.add_argument("--strain", default=STUDY_CONSTANTS["SpeciesStrainTyp"])
-    parser.add_argument("--source-name", default=STUDY_CONSTANTS["AnimalSourceNam"],
-                        help="Animal supplier (AnimalSourceNam).")
+                        help="ODC StudyLeader for every row, for this run only "
+                             "(default: the study-facts file; see mousedb study-facts).")
+    parser.add_argument("--species", default="",
+                        help="SpeciesTyp for this run only (default: the study-facts file).")
+    parser.add_argument("--strain", default="",
+                        help="SpeciesStrainTyp for this run only (default: the study-facts file).")
+    parser.add_argument("--source-name", default="",
+                        help="Animal supplier (AnimalSourceNam) for this run only "
+                             "(default: the study-facts file).")
     parser.add_argument(
         "--form-tabs", default="",
         help=("Comma-separated tabs that are blank TEMPLATES, not records "

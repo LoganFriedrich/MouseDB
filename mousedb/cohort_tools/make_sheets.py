@@ -19,6 +19,7 @@ Future Mode 2 (Fix Existing): Will standardize existing files
 """
 
 from mousedb.config import lab_name as _lab_name
+from mousedb import study_facts as _study_facts
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
@@ -127,15 +128,10 @@ INJURY_DAY = 17
 TRACING_DAY = 70
 PERFUSION_DAY = 84
 
-# Hard-coded values for this project
-PROJECT_DEFAULTS = {
-    "SpeciesTyp": "Mouse",
-    "SpeciesStrainTyp": "C57BL/6J",
-    "AnimalSourceNam": "Jackson Laboratory",
-    "Laboratory": __import__("mousedb.config", fromlist=["lab_name"]).lab_name(),
-    "StudyLeader": "Logan Friedrich",
-    "Injury_device": "Infinite Horizon Impactor",
-}
+# Study-wide ODC facts (species, strain, supplier, study leader, injury device)
+# are NOT written here: they belong to one lab's study, so they come from the
+# machine's study-facts file (mousedb.study_facts; `mousedb study-facts --show`).
+# An unset fact leaves the cell empty rather than guessing.
 
 
 # =============================================================================
@@ -1742,20 +1738,20 @@ def write_2_odc_with_formulas(ws, data, cohort_name):
     # Section 1: ODC-SCI Required CoDEs (17 columns)
     columns.extend([
         "SubjectID",           # Direct
-        "SpeciesTyp",          # Hard-coded
-        "SpeciesStrainTyp",    # Hard-coded
-        "AnimalSourceNam",     # Hard-coded
+        "SpeciesTyp",          # Study fact (mousedb study-facts)
+        "SpeciesStrainTyp",    # Study fact (mousedb study-facts)
+        "AnimalSourceNam",     # Study fact (mousedb study-facts)
         "AgeVal",              # Formula from 0a_Metadata
         "BodyWgtMeasrVal",     # Formula from 3a_Manual_Ramp baseline (CNT) or 0a_Metadata (ENCR)
         "SexTyp",              # Formula from 0a_Metadata
         "InjGroupAssignTyp",   # Cohort name
-        "Laboratory",          # Hard-coded
-        "StudyLeader",         # Hard-coded
+        "Laboratory",          # mousedb config lab_name
+        "StudyLeader",         # Study fact (mousedb study-facts)
         "Exclusion_in_origin_study",  # Formula from 4_Contusion.Survived
         "Exclusion_reason",    # Formula based on Survived
         "Cause_of_Death",      # Formula based on Survived
         "Injury_type",         # Formula from 4_Contusion
-        "Injury_device",       # Hard-coded
+        "Injury_device",       # Study fact (mousedb study-facts)
         "Injury_level",        # Formula from 4_Contusion
         "Injury_details"       # Formula concatenating 4_Contusion fields
     ])
@@ -1874,14 +1870,16 @@ def write_2_odc_with_formulas(ws, data, cohort_name):
             row = row_num
             
             # === SECTION 1: ODC-SCI Required CoDEs ===
+            # Study-wide facts come from the study-facts file; unset -> empty cell.
+            facts = _study_facts.facts(cohort_name)
             ws.cell(row=row, column=col_idx["SubjectID"], value=subject_id)
-            ws.cell(row=row, column=col_idx["SpeciesTyp"], value="Mouse")
-            ws.cell(row=row, column=col_idx["SpeciesStrainTyp"], value="C57BL/6J")
-            ws.cell(row=row, column=col_idx["AnimalSourceNam"], value="Jackson Laboratory")
+            ws.cell(row=row, column=col_idx["SpeciesTyp"], value=facts.get("SpeciesTyp"))
+            ws.cell(row=row, column=col_idx["SpeciesStrainTyp"], value=facts.get("SpeciesStrainTyp"))
+            ws.cell(row=row, column=col_idx["AnimalSourceNam"], value=facts.get("AnimalSourceNam"))
             ws.cell(row=row, column=col_idx["InjGroupAssignTyp"], value=cohort_name)
             ws.cell(row=row, column=col_idx["Laboratory"], value=_lab_name())
-            ws.cell(row=row, column=col_idx["StudyLeader"], value="Logan Friedrich")
-            ws.cell(row=row, column=col_idx["Injury_device"], value="Infinite Horizon Impactor")
+            ws.cell(row=row, column=col_idx["StudyLeader"], value=facts.get("StudyLeader"))
+            ws.cell(row=row, column=col_idx["Injury_device"], value=facts.get("Injury_device"))
             
             # AgeVal - from 0a_Metadata DOB to current date (weeks)
             # Only calculate if DOB exists (not blank)
@@ -3546,12 +3544,13 @@ def compute_odc_rows(extracted_data, cohort_name, source_file, report):
             day_info = days_data[test_date]
             
             row = {}
-            
+            facts = _study_facts.facts(cohort_name)
+
             # Section 1: ODC-SCI Required CoDEs
             row['SubjectID'] = animal
-            row['SpeciesTyp'] = 'Mouse'
-            row['SpeciesStrainTyp'] = 'C57BL/6J'
-            row['AnimalSourceNam'] = 'Jackson Laboratory'
+            row['SpeciesTyp'] = facts.get('SpeciesTyp', '')
+            row['SpeciesStrainTyp'] = facts.get('SpeciesStrainTyp', '')
+            row['AnimalSourceNam'] = facts.get('AnimalSourceNam', '')
             
             # AgeVal - weeks from DOB to test date
             dob = animal_info.get('dob')
@@ -3565,7 +3564,7 @@ def compute_odc_rows(extracted_data, cohort_name, source_file, report):
             row['SexTyp'] = animal_info.get('sex', '')
             row['InjGroupAssignTyp'] = cohort_name
             row['Laboratory'] = _lab_name()
-            row['StudyLeader'] = 'Logan Friedrich'
+            row['StudyLeader'] = facts.get('StudyLeader', '')
             
             # Exclusion based on survival
             survived = contusion.get('survived', 'Y')
@@ -3580,7 +3579,7 @@ def compute_odc_rows(extracted_data, cohort_name, source_file, report):
             
             # Injury details
             row['Injury_type'] = contusion.get('type', '')
-            row['Injury_device'] = 'Infinite Horizon Impactor' if contusion.get('type') else ''
+            row['Injury_device'] = facts.get('Injury_device', '') if contusion.get('type') else ''
             row['Injury_level'] = contusion.get('location', '')
             
             # Build injury details string
