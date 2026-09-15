@@ -56,6 +56,21 @@ FIELDS: Dict[str, str] = {
     "Injury_device": "Device used to make the injury (model and version).",
 }
 
+# Surgery-protocol values pre-filled into a NEW blank tracking sheet (sheet column
+# name -> description). Only starting text: each animal's real values are whatever
+# is typed into its sheet row.
+PROTOCOL_FIELDS: Dict[str, str] = {
+    "Contusion_Location": "Spinal level of the contusion.",
+    "Intended_kd": "Intended impact force (kdyn), a number.",
+    "Anesthetic": "Anesthetic used for surgery.",
+    "Anesthetic_Dose": "Anesthetic dose.",
+    "Analgesic": "Analgesic given after surgery.",
+    "Analgesic_Dose": "Analgesic dose.",
+    "Injection_Location": "Spinal cord injection target.",
+    "Depths (D/V)": "Injection depths (dorsal/ventral).",
+    "Coordinates (M/L)": "Injection coordinates (medial/lateral).",
+}
+
 
 def facts_path() -> Path:
     """The study-facts file for this machine (env override, else beside config.json)."""
@@ -138,7 +153,8 @@ def describe(project: Optional[str] = None) -> str:
         own = data.get(name, {})
         shown = own if name == DEFAULT_SECTION else facts(name)
         lines.append("[%s]" % name)
-        for field in list(FIELDS) + sorted(k for k in shown if k not in FIELDS):
+        known = list(FIELDS) + list(PROTOCOL_FIELDS)
+        for field in known + sorted(k for k in shown if k not in known):
             value = shown.get(field)
             if value:
                 src = "" if name == DEFAULT_SECTION or field in own else "  (from default)"

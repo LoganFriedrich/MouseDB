@@ -134,6 +134,27 @@ PERFUSION_DAY = 84
 # An unset fact leaves the cell empty rather than guessing.
 
 
+def _protocol(ident, field):
+    """A surgery-protocol value pre-filled into a NEW blank sheet (anesthetic,
+    doses, injury level, intended force, injection target/depths/coordinates).
+
+    WHY from the study-facts file: the protocol is one lab's, so it is not written
+    in this public source; a study sets it once (`mousedb study-facts --set`). The
+    real per-animal values are still whatever is typed into the sheet -- this is
+    only the starting text. Unset -> empty cell. Numbers stay numbers.
+    """
+    if isinstance(ident, (list, tuple)):
+        ident = ident[0] if ident else ""
+    value = _study_facts.get(ident, field)
+    if not value:
+        return None
+    try:
+        number = float(value)
+        return int(number) if number.is_integer() else number
+    except ValueError:
+        return value
+
+
 # =============================================================================
 # SHEET GENERATORS
 # =============================================================================
@@ -350,7 +371,8 @@ def write_0_virus_preparation(ws, data):
         ws.cell(row=current_row, column=1, value=group_name)
         ws.cell(row=current_row, column=2, value='')  # Animals - user fills in e.g., "01-03" or "04,06-08"
         ws.cell(row=current_row, column=3, value='')  # Surgery_Date - user fills in
-        ws.cell(row=current_row, column=4, value='Caudal C6')  # Default target
+        ws.cell(row=current_row, column=4,
+                value=_protocol(data.get('cohort_name'), 'Injection_Location'))  # Default target (study facts)
         ws.cell(row=current_row, column=5, value='')  # Notes
         current_row += 1
     
@@ -1268,15 +1290,15 @@ def create_4_contusion_injury_details(subject_ids, start_date):
             "Surgery_Date": injury_date,
             "Surgery_Type": "Contusion",
             "Surgery_Severity": None,  # e.g., "60kd"
-            "Contusion_Location": "C5",
+            "Contusion_Location": _protocol(subject_id, "Contusion_Location"),
             "Subject_Weight (g)": None,
-            "Anesthetic": "Ketamine/Xylazine",
-            "Anesthetic_Dose": "100mg/10mg/kg",
+            "Anesthetic": _protocol(subject_id, "Anesthetic"),
+            "Anesthetic_Dose": _protocol(subject_id, "Anesthetic_Dose"),
             "Anesthetic_Volume": None,  # Formula added in write function
-            "Analgesic": "Meloxicam",
-            "Analgesic_Dose": "5mg/kg",
+            "Analgesic": _protocol(subject_id, "Analgesic"),
+            "Analgesic_Dose": _protocol(subject_id, "Analgesic_Dose"),
             "Analgesic_Volume": None,  # Formula added in write function
-            "Intended_kd": 60,
+            "Intended_kd": _protocol(subject_id, "Intended_kd"),
             "Intended_Dwell": 0,
             "Stage_Height": None,
             "Actual_kd": None,
@@ -1387,14 +1409,14 @@ def create_5_sc_injection_details(subject_ids, start_date, max_viruses=3):
             "Surgery_Date": tracing_date,
             "Subject_Weight (g)": None,
             "Surgery_Type": "Spinal cord virus injection",
-            "Injection_Location": "Caudal C6",
-            "Depths (D/V)": "-0.6/-0.8",
-            "Coordinates (M/L)": "+0.3/-0.3",
-            "Anesthetic": "Ketamine/Xylazine",
-            "Anesthetic_Dose": "100mg/10mg/kg",
+            "Injection_Location": _protocol(subject_id, "Injection_Location"),
+            "Depths (D/V)": _protocol(subject_id, "Depths (D/V)"),
+            "Coordinates (M/L)": _protocol(subject_id, "Coordinates (M/L)"),
+            "Anesthetic": _protocol(subject_id, "Anesthetic"),
+            "Anesthetic_Dose": _protocol(subject_id, "Anesthetic_Dose"),
             "Anesthetic_Volume": None,
-            "Analgesic": "Meloxicam",
-            "Analgesic_Dose": "5mg/kg",
+            "Analgesic": _protocol(subject_id, "Analgesic"),
+            "Analgesic_Dose": _protocol(subject_id, "Analgesic_Dose"),
             "Analgesic_Volume": None,
             "Survived": None,
             "Signal Post Perfusion": None,

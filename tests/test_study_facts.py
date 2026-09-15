@@ -62,6 +62,16 @@ def test_describe_names_unset_facts(facts_file):
     assert "[PROJA]" in text and "species-x" in text and "NOT SET" in text
 
 
+def test_blank_sheet_protocol_comes_from_facts(facts_file):
+    from mousedb.cohort_tools.make_sheets import _protocol
+    assert _protocol(["PROJA_01_01"], "Anesthetic") is None      # unset -> empty cell
+    sf.set_fact("PROJA", "Anesthetic", "drug-x")
+    sf.set_fact("PROJA", "Intended_kd", "60")
+    assert _protocol(["PROJA_01_01"], "Anesthetic") == "drug-x"
+    assert _protocol("PROJA_01_02", "Intended_kd") == 60          # numbers stay numbers
+    assert _protocol([], "Anesthetic") is None
+
+
 def test_sheet_code_carries_no_study_facts():
     """The generators must read facts, not define them."""
     from mousedb.cohort_tools import make_sheets, odc_builder, update_sheets

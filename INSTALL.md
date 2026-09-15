@@ -223,6 +223,12 @@ mousedb study-facts --set <PROJECT> Injury_device "<device model and version>"
 mousedb study-facts --show
 ```
 
+The same command also holds the surgery protocol a NEW blank tracking sheet
+starts with (`Contusion_Location`, `Intended_kd`, `Anesthetic`,
+`Anesthetic_Dose`, `Analgesic`, `Analgesic_Dose`, `Injection_Location`,
+`Depths (D/V)`, `Coordinates (M/L)`); each animal's real values are still
+what is typed into its sheet.
+
 They are saved in `~/.mousedb/study_facts.json` (or the file named by
 `MOUSEDB_STUDY_FACTS`). A fact that is not set is left as an empty cell in
 generated sheets and exports -- never guessed.
