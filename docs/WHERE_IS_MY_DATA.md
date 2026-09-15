@@ -27,6 +27,13 @@ empty, never guessed; `MANIFEST.json` lists any animal column that is blank for
 a whole cohort. To write them for one cohort into another folder:
 `mousedb export-odc-reaches --cohort <cohort id> --out-dir <folder>`.
 
+**ASPA file names.** A frozen ASPA cohort's files are named `..._ASPA_NN_X`,
+e.g. `ODC_reaches_ASPA_04_D.csv`: `X` is the cohort letter the lab knows it by
+(its workbook and folder), `NN` is the same cohort as the pipeline encodes it
+(the letter's position in the alphabet). `MANIFEST.json` names the workbook
+each one came from. Files written before this naming are moved (not deleted)
+to `<mousedb_root>/_archived/exports_current/`.
+
 An ODC-SCI submission is a dataset file **plus** its data dictionary; both
 are here. `MANIFEST.json` says `"complete": true` when every column in every
 file has a dictionary entry -- if it says false, the problems list names the

@@ -94,6 +94,19 @@ def test_sex_from_scoring_tab_normalised_and_leader_from_author():
     assert (df["SexTyp"] == "F").all() and (df["StudyLeader"] == "First Last").all()
 
 
+def test_letter_cohort_file_names_carry_the_letter_and_old_names_are_archived(tmp_path):
+    out = tmp_path / "exports" / "current"
+    out.mkdir(parents=True)
+    (out / "ODC_reaches_ASPA_04.csv").write_text("old")
+    df, rows = _build(_records())
+    entry, label = ox.write_cohort(out, "ASPA_04", df, rows)
+    assert label == "ASPA_04_D" and (out / "ODC_reaches_ASPA_04_D.csv").exists()
+    assert not (out / "ODC_reaches_ASPA_04.csv").exists()
+    archived = list((tmp_path / "_archived" / "exports_current").rglob("ODC_reaches_ASPA_04.csv"))
+    assert len(archived) == 1 and archived[0].read_text() == "old"     # moved, never deleted
+    assert ox.cohort_label("PROJA_01") == "PROJA_01"
+
+
 def test_letter_cohort_ids_are_decoded():
     assert ox.lab_subject_id("ASPA_11_03") == "K03"
     assert ox.lab_subject_id("PROJA_01_01") == "PROJA_01_01"

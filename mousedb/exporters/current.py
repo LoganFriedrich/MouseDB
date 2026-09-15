@@ -89,6 +89,10 @@ ODC_reaches_<cohort>.csv  One row per reach, with that animal's details
                           with collaborators. Each has its own dictionary:
                           ODC_reaches_<cohort>_DATA_DICTIONARY.csv (columns
                           differ by cohort because sheets differ).
+ASPA_NN_X in a file name  A frozen ASPA cohort. X is the cohort letter the lab
+                          uses (its workbook and folder, e.g. D); NN is the same
+                          cohort encoded for the pipeline (the letter's position in
+                          the alphabet: D -> 04). MANIFEST.json names the workbook.
 MANIFEST.json             When these were written, from which snapshot, row
                           counts, and any problems (e.g. columns missing a
                           dictionary entry, which would fail an ODC upload).
@@ -164,6 +168,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
             sig[name] = [f.stat().st_size, pq.ParquetFile(f).metadata.num_rows]
     ff = study_facts.facts_path()
     sig["study_facts"] = ff.read_text(encoding="utf-8") if ff.exists() else ""
+    sig["file_naming"] = 2  # 2 = letter cohorts carry their letter (ASPA_04_D); bump to force a rewrite
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
@@ -191,21 +196,26 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
     db = get_db()
     with db.session() as s:
         cohorts = [c.cohort_id for c in s.query(Cohort).order_by(Cohort.cohort_id).all()]
+    from .odc_reaches import cohort_label, cohort_source, archive_old_names
     dd.write_dictionary("ODC_sessions", out_dir / "ODC_sessions_DATA_DICTIONARY.csv")
     for cid in cohorts:
         xlsx = out_dir / ("_tmp_%s_ODC.xlsx" % cid)
+        label = cohort_label(cid)  # letter cohorts carry their letter: ASPA_04 -> ASPA_04_D
         try:
             export_odc_format(db, cid, xlsx)
             if not xlsx.exists():
-                manifest["files"]["ODC_sessions_%s.csv" % cid] = {"rows": 0, "note": "no data"}
+                manifest["files"]["ODC_sessions_%s.csv" % label] = {"rows": 0, "note": "no data"}
                 continue
             df = pd.read_excel(xlsx)
-            out = out_dir / ("ODC_sessions_%s.csv" % cid)
+            out = out_dir / ("ODC_sessions_%s.csv" % label)
             df.to_csv(out, index=False)
             manifest["files"][out.name] = {
                 "rows": int(len(df)), "columns": int(len(df.columns)),
                 "undocumented_columns": dd.undocumented_columns("ODC_sessions", df.columns),
             }
+            if label != cid:
+                manifest["files"][out.name]["cohort"] = cohort_source(cid) or label
+                archive_old_names(out_dir, ["ODC_sessions_%s.csv" % cid], label)
         except Exception as e:
             manifest["problems"].append("ODC_sessions_%s: %s: %s" % (cid, type(e).__name__, e))
         finally:

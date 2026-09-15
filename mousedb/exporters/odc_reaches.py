@@ -241,19 +241,77 @@ def cohorts_in(reach: pd.DataFrame) -> List[str]:
     return sorted({s.rsplit("_", 1)[0] for s in reach["subject_id"].dropna().astype(str) if s.count("_") >= 2})
 
 
+def cohort_label(cohort_id: str) -> str:
+    """The cohort id as a person reads it in a file name.
+
+    WHY: frozen letter cohorts are ENCODED for the pipeline (cohort number = the
+    letter's alphabet position), so 'ASPA_04' means nothing to the person who knows
+    that cohort as D. The label keeps the encoded id (it is what the database and
+    the pipeline use) and adds the letter: ASPA_04 -> ASPA_04_D. Other ids unchanged."""
+    if str(cohort_id).upper().startswith("ASPA_"):
+        from ..cohort_sheets import aspa_letter
+        letter = aspa_letter(cohort_id)
+        if letter:
+            return "%s_%s" % (cohort_id, letter)
+    return cohort_id
+
+
+def cohort_source(cohort_id: str) -> str:
+    """Which workbook a letter cohort came from (its file name), or '' if not found."""
+    if not str(cohort_id).upper().startswith("ASPA_"):
+        return ""
+    try:
+        from ..cohort_sheets import aspa_letter, find_aspa_sheet
+        sheet = find_aspa_sheet(cohort_id)
+        return "cohort %s, workbook %s" % (aspa_letter(cohort_id), sheet.name) if sheet else \
+               "cohort %s" % aspa_letter(cohort_id)
+    except Exception:
+        return ""
+
+
+def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[str]:
+    """Move files left under a superseded name out of the exports folder (never deleted):
+    into <mousedb root>/_archived/exports_current/<timestamp>_<label>/ when out_dir is the
+    usual exports/current, else into out_dir/_superseded/."""
+    from datetime import datetime
+    out_dir = Path(out_dir)
+    moved = []
+    for name in old_names:
+        f = out_dir / name
+        if not f.exists():
+            continue
+        if out_dir.name == "current" and out_dir.parent.name == "exports":
+            dest = out_dir.parent.parent / "_archived" / "exports_current"
+        else:
+            dest = out_dir / "_superseded"
+        dest = dest / ("%s_%s" % (datetime.now().strftime("%Y-%m-%d_%H%M%S"), label))
+        dest.mkdir(parents=True, exist_ok=True)
+        f.replace(dest / name)
+        moved.append(str(dest / name))
+    return moved
+
+
 def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict]) -> dict:
-    """Write ODC_reaches_<cohort>.csv and its dictionary; returns the manifest entry."""
+    """Write ODC_reaches_<label>.csv and its dictionary; returns the manifest entry."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    data = out_dir / ("ODC_reaches_%s.csv" % cohort_id)
+    label = cohort_label(cohort_id)
+    data = out_dir / ("ODC_reaches_%s.csv" % label)
     tmp = data.with_name(data.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(data)
-    dd.write_rows(rows, out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % cohort_id))
+    dd.write_rows(rows, out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
     documented = {r["VariableName"] for r in rows}
-    return {"rows": int(len(df)), "columns": int(len(df.columns)),
-            "undocumented_columns": [c for c in df.columns if c not in documented],
-            "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
+    entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
+             "undocumented_columns": [c for c in df.columns if c not in documented],
+             "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
+    if label != cohort_id:
+        entry["cohort"] = cohort_source(cohort_id) or label
+        moved = archive_old_names(out_dir, ["ODC_reaches_%s.csv" % cohort_id,
+                                            "ODC_reaches_%s_DATA_DICTIONARY.csv" % cohort_id], label)
+        if moved:
+            entry["archived_old_name"] = moved
+    return entry, label
 
 
 def load_snapshot(snapshot_dir: Path) -> dict:
@@ -286,9 +344,10 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
                                     study_facts.facts, lab_name())
             if df.empty:
-                manifest["files"]["ODC_reaches_%s.csv" % cid] = {"rows": 0, "note": "no reaches"}
+                manifest["files"]["ODC_reaches_%s.csv" % cohort_label(cid)] = {"rows": 0, "note": "no reaches"}
                 continue
-            manifest["files"]["ODC_reaches_%s.csv" % cid] = write_cohort(out_dir, cid, df, rows)
+            entry, label = write_cohort(out_dir, cid, df, rows)
+            manifest["files"]["ODC_reaches_%s.csv" % label] = entry
         except Exception as e:
             manifest["problems"].append("ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e))
     return manifest
@@ -308,7 +367,8 @@ def main(argv=None) -> int:
     out = args.out_dir or (require("mousedb_root") / "exports" / "current")
     m = export(snap, out, args.cohort)
     for name, info in m["files"].items():
-        print("  %-32s %9s rows  %s" % (name, info.get("rows", "-"),
+        print("  %-32s %9s rows  %s%s" % (name, info.get("rows", "-"),
+                                           ("(%s) " % info["cohort"]) if info.get("cohort") else "",
                                          ("blank: " + ", ".join(info["blank_animal_columns"]))
                                          if info.get("blank_animal_columns") else ""))
     for p in m["problems"]:
