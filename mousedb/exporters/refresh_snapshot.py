@@ -38,6 +38,7 @@ run as:
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -118,11 +119,25 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
         con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
         try:
             for table in tables:
+                # flush=True: the scheduled task sends this output to a log
+                # file, where Python buffers it until the process ends -- a
+                # run that took an hour on a busy share looked exactly like a
+                # hung one (only its header in the log), and one was stopped
+                # by hand for that reason (2026-09-14).
+                print("  reading %s ..." % table, flush=True)
                 df = pd.read_sql("SELECT * FROM %s" % table, con)
                 out = snapshot_dir / ("%s.parquet" % table)
-                df.to_parquet(out, index=False)
+                # Write beside, then swap in. WHY: readers (bench scan, recipes)
+                # open these files at any time, and the task's time limit or a
+                # person can stop this process mid-write. Writing straight onto
+                # the final name left a truncated parquet that every reader then
+                # failed on until the next refresh; os.replace swaps whole files,
+                # so a reader sees the old snapshot or the new one, never half.
+                tmp = out.with_name(out.name + ".tmp")
+                df.to_parquet(tmp, index=False)
+                os.replace(tmp, out)
                 counts[table] = len(df)
-                print("  %s: %d rows -> %s" % (table, len(df), out))
+                print("  %s: %d rows -> %s" % (table, len(df), out), flush=True)
         finally:
             con.close()
 

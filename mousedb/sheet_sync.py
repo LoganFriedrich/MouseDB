@@ -253,7 +253,19 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         else:
             try:
                 imp = ExcelImporter()
-                r = imp.import_cohort_file(sheet, dry_run=dry_run)
+                if dry_run:
+                    r = imp.import_cohort_file(sheet, dry_run=True)
+                else:
+                    # Under the cross-task mutex, one cohort at a time. WHY:
+                    # this import commits to connectome.db like the reach and
+                    # brain imports, but did not take the mutex they share, so
+                    # on 2026-09-15 it overlapped a long import and four of six
+                    # cohorts failed "database is locked". Per cohort, not
+                    # around the whole loop: reading the workbooks is slow and
+                    # must not keep the hourly imports waiting.
+                    from .task_mutex import hold
+                    with hold(waiting_for="another database task"):
+                        r = imp.import_cohort_file(sheet, dry_run=False)
                 entry.update(success=bool(r.get("success")),
                              imported=r.get("imported"),
                              warnings=r.get("warnings", [])[:50],

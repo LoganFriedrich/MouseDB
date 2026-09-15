@@ -300,6 +300,25 @@ class TestImportBrains:
         with pytest.raises(config.ConfigError):
             cli.cmd_import_brains(args)
 
+    def test_a_real_import_waits_for_the_database_task_mutex(self, monkeypatch, tmp_path):
+        """WHY: import-brains commits to connectome.db but did not take the
+        mutex the reach import and snapshot share; three hourly runs in a row
+        failed "database is locked" (2026-09-15). A dry run touches nothing and
+        must not wait."""
+        import contextlib
+        from mousedb import cli, task_mutex
+        held, bodies = [], []
+        monkeypatch.setattr(task_mutex, "hold",
+                            lambda *a, **k: held.append(True) or contextlib.nullcontext())
+        monkeypatch.setattr(cli, "_import_brains_body",
+                            lambda args, summary_dir: bodies.append(args.dry_run))
+        base = dict(summary_dir=str(tmp_path), all=True, csv=None, calibration=None,
+                    brain=None, update=False)
+        cli.cmd_import_brains(argparse.Namespace(dry_run=False, **base))
+        assert held == [True] and bodies == [False]
+        cli.cmd_import_brains(argparse.Namespace(dry_run=True, **base))
+        assert held == [True] and bodies == [False, True]
+
 
 class TestElifeFromSummaryCsv:
     HEADER = ("brain,run_date,brain_id,subject,cohort,total_cells,total_left,total_right,"

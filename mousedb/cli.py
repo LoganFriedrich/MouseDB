@@ -783,11 +783,6 @@ def cmd_backfill_phases(args):
 
 def cmd_import_brains(args):
     """Import BrainGlobe brain data into connectome.db."""
-    import csv as csv_mod
-    from .database import init_database
-    from .importers import BrainGlobeImporter
-    from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
-
     # Where MouseBrain's 2_Data_Summary is: given, or derived from the configured
     # pipeline root. Resolved BEFORE the database is opened so an unconfigured
     # machine stops with the exact `mousedb config --set` line and touches
@@ -799,6 +794,26 @@ def cmd_import_brains(args):
     elif args.all:
         from .config import require
         summary_dir = require("mousebrain_pipeline_root") / "3D_Cleared" / "2_Data_Summary"
+
+    if args.dry_run:
+        return _import_brains_body(args, summary_dir)
+    # Under the cross-task mutex. WHY: this import commits to connectome.db like
+    # the reach import and the snapshot's long reads, but did not take the mutex
+    # they share -- on 2026-09-15 three hourly runs in a row failed "database is
+    # locked" while another task held the database. Waiting its turn costs
+    # seconds; failing costs an hour. The with-block also releases on the
+    # sys.exit calls inside the body.
+    from .task_mutex import hold
+    with hold(waiting_for="another database task"):
+        return _import_brains_body(args, summary_dir)
+
+
+def _import_brains_body(args, summary_dir):
+    """The database part of cmd_import_brains (see there)."""
+    import csv as csv_mod
+    from .database import init_database
+    from .importers import BrainGlobeImporter
+    from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
 
     db = init_database()
     # Ensure all tables exist (including new elife_region_counts)

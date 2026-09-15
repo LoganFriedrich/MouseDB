@@ -86,3 +86,35 @@ def test_running_watcher_aborts_the_whole_run(configured, db_ok_seen, monkeypatc
         rs.main([])
     assert not (configured / "pellet_scores.parquet").exists()
     assert db_ok_seen == []
+
+
+def test_refresh_leaves_no_temporary_files(configured, monkeypatch):
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    rs.refresh()
+    assert sorted(p.name for p in configured.iterdir()) == sorted(
+        "%s.parquet" % t for t in rs.TABLES)
+
+
+def test_a_write_that_fails_keeps_the_previous_snapshot_intact(configured, monkeypatch):
+    """WHY: readers open the snapshot at any time, and the task's time limit or
+    a person can stop the refresh mid-write. The previous file must survive a
+    write that does not complete."""
+    import pandas as pd
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    rs.refresh()
+    before = (configured / "reach_data.parquet").read_bytes()
+
+    real_to_parquet = pd.DataFrame.to_parquet
+
+    def failing_to_parquet(self, path, *args, **kwargs):
+        if "reach_data" in str(path):
+            with open(path, "wb") as fh:          # a partial write, then the stop
+                fh.write(b"PAR1-truncated")
+            raise KeyboardInterrupt("stopped mid-write")
+        return real_to_parquet(self, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", failing_to_parquet)
+    with pytest.raises(KeyboardInterrupt):
+        rs.refresh()
+    assert (configured / "reach_data.parquet").read_bytes() == before
+    assert pd.read_parquet(configured / "reach_data.parquet")["id"].tolist() == [1]
