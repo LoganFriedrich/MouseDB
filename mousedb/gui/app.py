@@ -6121,6 +6121,17 @@ class DataEntryWindow(QMainWindow):
         self.tabs = QTabWidget()
 
         # 1. COHORT SETUP - Create cohort with initial weights (first thing you do)
+        # 0. SETUP - where this machine keeps things. FIRST because nothing else
+        # works until it is right, and because until this tab existed the only way
+        # to set any of it was a terminal command -- which made the terminal a hard
+        # requirement for installing the tool at all.
+        try:
+            from .setup_tab import SetupTab
+            self.setup_tab = SetupTab(self.db)
+            self.tabs.addTab(self.setup_tab, "0. Setup")
+        except Exception as e:
+            print("[!] Setup tab unavailable: %s" % e)
+
         self.cohort_tab = CohortSetupTab(self.db)
         self.tabs.addTab(self.cohort_tab, "1. Cohort Setup")
 

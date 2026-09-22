@@ -185,18 +185,116 @@ def lab_name() -> str:
     return get("lab_name") or ""
 
 
-def describe() -> str:
-    """Human-readable table of every key, its value and where it came from."""
-    lines = ["mousedb configuration (%s)" % CONFIG_PATH, ""]
+# What each key is, in words a person who has never read this code can act on, and
+# what kind of thing it points at so a chooser can offer the right dialog.
+# KIND: "dir" a folder, "file" a single file, "text" free text.
+KEY_HELP = {
+    "mousedb_root": ("dir", "The folder mousedb keeps its own things in: the database "
+                            "file, the exports it writes, and its logs."),
+    "db_path": ("file", "The database file itself. Leave unset unless it lives "
+                        "somewhere other than inside the folder above."),
+    "snapshot_dir": ("dir", "Where the fast read-only copy of the database is kept. "
+                            "Analyses read this instead of the live database, so they "
+                            "work while the pipeline is writing. Put it on local disk."),
+    "mousereach_pipeline_root": ("dir", "The reaching pipeline's shared folder, the one "
+                                        "holding Analyzed/ and Processing/. Read only."),
+    "mousebrain_pipeline_root": ("dir", "The tissue pipeline's folder. Read only."),
+    "mousebrain_registry_root": ("dir", "Where the tissue tool records its analysis "
+                                        "outputs. Leave unset to use the standard place "
+                                        "inside the folder above."),
+    "cohort_sheets_dir": ("dir", "The folder holding the tracking workbooks. Read only "
+                                 "-- nothing here ever writes into it."),
+    "mousereach_route_cmd": ("text", "The command used to ask the reaching tool to hold "
+                                     "a video for review. Leave unset unless it was "
+                                     "installed somewhere unusual."),
+    "mousereach_env": ("text", "The environment the reaching tool is installed in, when "
+                               "it is not the same one as this tool."),
+    "lab_name": ("text", "The laboratory name written into generated sheets and shared "
+                         "exports."),
+}
+
+# Set before anything works. Everything else has a sensible fallback or is optional.
+REQUIRED_KEYS = ("mousedb_root", "snapshot_dir")
+
+# Locations this tool CREATES when it first needs them. Their not existing yet is the
+# normal state of a new machine, not a fault, so it is never reported as a problem --
+# telling someone who has just configured correctly that their setup is broken teaches
+# them to ignore the warnings that matter. Everything else is somewhere we only READ,
+# where a path that is not there means a typo, a renamed folder, or a share that is
+# not connected.
+CREATED_ON_DEMAND = ("db_path", "snapshot_dir")
+
+
+def status() -> list:
+    """One entry per key: what it is, its value, where that came from, and whether
+    the place it names actually exists.
+
+    Returned as data rather than text so the command line and the GUI show the SAME
+    answer -- two readers formatting one structure cannot drift, whereas two readers
+    each deciding what "derived" means will.
+
+    Each entry: {key, value, source, kind, help, required, exists}
+      source  "environment <VAR>" | "config file" | "derived" | "not set"
+      exists  True / False for a path, None when there is nothing to check
+    """
     cfg = read_config()
+    out = []
     for key, env in KEYS.items():
+        kind, help_text = KEY_HELP.get(key, ("text", ""))
         if os.environ.get(env):
-            src, val = "environment %s" % env, os.environ[env]
+            source, value = "environment %s" % env, os.environ[env]
         elif cfg.get(key):
-            src, val = "config file", cfg[key]
+            source, value = "config file", str(cfg[key])
         else:
             fn = _ACCESSORS.get(key)
             derived = fn() if fn else None
-            src, val = ("derived", str(derived)) if derived else ("NOT SET", "-")
-        lines.append("  %-26s %-40s [%s]" % (key, val, src))
+            source, value = ("derived", str(derived)) if derived else ("not set", "")
+        exists = None
+        if value and kind in ("dir", "file"):
+            try:
+                p = Path(value)
+                exists = p.is_dir() if kind == "dir" else p.is_file()
+            except OSError:
+                exists = False
+        out.append({"key": key, "value": value, "source": source, "kind": kind,
+                    "help": help_text, "required": key in REQUIRED_KEYS,
+                    "exists": exists})
+    return out
+
+
+def problems() -> list:
+    """Plain sentences for everything wrong with this machine's configuration.
+
+    Empty means the tool can run. Used by the setup screen so a person is told what
+    is wrong in one place instead of meeting one ConfigError at a time, hours apart.
+    """
+    found = []
+    for entry in status():
+        if entry["required"] and not entry["value"]:
+            found.append("%s is not set. %s" % (entry["key"], entry["help"]))
+        elif (entry["value"] and entry["exists"] is False
+              and entry["key"] not in CREATED_ON_DEMAND):
+            found.append("%s points at something that is not there: %s"
+                         % (entry["key"], entry["value"]))
+    return found
+
+
+def describe() -> str:
+    """Human-readable table of every key, its value and where it came from."""
+    lines = ["mousedb configuration (%s)" % CONFIG_PATH, ""]
+    for entry in status():
+        mark = ""
+        if entry["exists"] is False:
+            mark = "  <-- NOT THERE"
+        elif not entry["value"]:
+            mark = ""
+        lines.append("  %-26s %-40s [%s]%s"
+                     % (entry["key"], entry["value"] or "-",
+                        entry["source"].upper() if entry["source"] == "not set"
+                        else entry["source"], mark))
+    trouble = problems()
+    if trouble:
+        lines.append("")
+        lines.append("Problems:")
+        lines += ["  - %s" % p for p in trouble]
     return "\n".join(lines)
