@@ -168,7 +168,14 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
             sig[name] = [f.stat().st_size, pq.ParquetFile(f).metadata.num_rows]
     ff = study_facts.facts_path()
     sig["study_facts"] = ff.read_text(encoding="utf-8") if ff.exists() else ""
-    sig["file_naming"] = 2  # 2 = letter cohorts carry their letter (ASPA_04_D); bump to force a rewrite
+    # The signature covers the INPUTS. It cannot notice that the exporter itself now
+    # writes different columns or different words, so this number stands for the output
+    # format and is bumped by hand whenever that changes -- otherwise a node still
+    # holding the previous code skips the rewrite and the old files look current.
+    #   2 = letter cohorts carry their letter (ASPA_04_D)
+    #   3 = two documents per cohort (complete record + shareable summary), the extended
+    #       per-reach measurements included, and no empty cells in either
+    sig["output_format"] = 3
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
