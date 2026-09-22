@@ -31,6 +31,9 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 
 from . import data_dictionary as dd
+from . import extended_features as ext
+from . import missing
+from . import reach_summary
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
               "5_SC_Injection_Details": "Injection", "ODC": "ODC"}
@@ -223,8 +226,21 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
             cols["Manual_Contacted"] = cols["Manual_Displaced"] + cols["Manual_Retrieved"]
             cols["Contacted_Match"] = (cols["Manual_Contacted"] - cols["Video_Contacted"]).abs()
 
+    # 4b. the extended per-reach measurements, one column each. They go last because
+    # they are the widest block and a reader scanning the header should meet identity,
+    # then answers, then detail.
+    ext_columns: List[str] = []
+    ext_rows: List[dict] = []
+    if ext.SOURCE_COLUMN in rc.columns:
+        ext_keys = ext.keys_in(rc[ext.SOURCE_COLUMN])
+        ext_frame = ext.expand(rc[ext.SOURCE_COLUMN], index=rc.index, keys=ext_keys)
+        for c in ext_frame.columns:
+            cols[c] = ext_frame[c]
+        ext_columns = list(ext_frame.columns)
+        ext_rows = ext.dictionary_rows(ext_keys)
+
     columns = (ANIMAL_COLUMNS + SESSION_COLUMNS + [c for c, *_ in sheet_cols]
-               + reach_cols + TOTAL_COLUMNS)
+               + reach_cols + TOTAL_COLUMNS + ext_columns)
     out = pd.concat([cols[c].rename(c) for c in columns], axis=1)
     sort = [c for c in ("SubjectID", "Test_Date", "video_name", "segment_num", "reach_num") if c in out.columns]
     out = out.sort_values(sort, kind="stable")
@@ -233,7 +249,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     rows = (dd.ODC_REACH_ANIMAL + dd.ODC_REACH_SESSION
             + [dd.sheet_column_row(c, t, f, n) for c, t, f, n in sheet_cols]
             + [reach_rows[c] for c in reach_cols if c in reach_rows]
-            + dd.ODC_REACH_TOTALS)
+            + dd.ODC_REACH_TOTALS + ext_rows)
     return out, rows
 
 
@@ -291,18 +307,51 @@ def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[s
     return moved
 
 
-def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict]) -> dict:
-    """Write ODC_reaches_<label>.csv and its dictionary; returns the manifest entry."""
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    label = cohort_label(cohort_id)
-    data = out_dir / ("ODC_reaches_%s.csv" % label)
+def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> None:
+    """One table and its dictionary, written through a temporary name.
+
+    WHY the temporary: these files are read by people and by the next import while the
+    export runs, and a half-written CSV that still has yesterday's name is worse than
+    one that is briefly absent.
+    """
     tmp = data.with_name(data.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(data)
-    dd.write_rows(rows, out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
+    dd.write_rows(rows, dictionary)
+
+
+def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict]) -> dict:
+    """Write both documents for one cohort, plus a data dictionary for each.
+
+    Two files, because one table cannot be both things (see reach_summary):
+      ODC_reaches_<label>.csv          the complete record -- every measurement we hold,
+                                       including how it was produced and by whom
+      reaches_<label>_summary.csv      the shareable table -- what happened, in words,
+                                       no empty cells, no pipeline internals
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    label = cohort_label(cohort_id)
+
+    # The complete record carries no empty cells either: an ODC-SCI upload refuses them.
+    # A column empty on EVERY row is one no code computes; anything else is a gap in a
+    # source. missing.py explains why those are different words.
+    reasons = {c: missing.NOT_MEASURED for c in missing.all_blank_columns(df)}
+    full = missing.fill_frame(df, reasons)
+    full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
+                                   + missing.dictionary_comment(reasons, r["VariableName"])).strip())
+                 for r in rows]
+    _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
+           out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
+
+    summary, summary_rows = reach_summary.build(df)
+    _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
+           out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
+
     documented = {r["VariableName"] for r in rows}
     entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
+             "summary_columns": int(len(summary.columns)),
+             "never_measured_columns": sorted(reasons),
              "undocumented_columns": [c for c in df.columns if c not in documented],
              "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
     if label != cohort_id:
@@ -319,8 +368,11 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     import pyarrow.parquet as pq
     snapshot_dir = Path(snapshot_dir)
     names = pq.read_schema(snapshot_dir / "reach_data.parquet").names
+    # Only the surrogate key is left behind. extended_features IS read: it carries the
+    # 161 per-reach measurements the complete document exists to contain (see
+    # mousedb.exporters.extended_features for what dropping it used to cost).
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
-                                  columns=[c for c in names if c not in REACH_DROP])}
+                                  columns=[c for c in names if c != "id"])}
     for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records")):
         f = snapshot_dir / ("%s.parquet" % name)
         t[key] = pd.read_parquet(f) if f.exists() else None
