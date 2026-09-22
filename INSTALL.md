@@ -247,6 +247,32 @@ environment:
 | analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
 | bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree, writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere) and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
 
+Cadence is a judgement about how fresh the data needs to be, not a fixed part of
+the design. Pick it from how long each job actually takes on YOUR corpus: they
+share one database lock, so a job scheduled more often than it takes to run will
+queue behind itself, starve the others, and eventually be refused outright while
+still reporting a failure. Measure first, then schedule. Run them in dependency
+order with the snapshot LAST, because the snapshot is built from the database the
+imports fill -- on independent clocks it will regularly rebuild pre-import data.
+
 The jobs that write the database do not run while a MouseReach watcher is
 running on the same machine; they report that and exit. The analysis import
 writes files only (never the database), so it runs regardless.
+
+### The snapshot job also rewrites the exports -- including the per-reach files
+
+`refresh_snapshot` ends by calling `exporters.current.refresh_current()`, so it
+is the thing that regenerates `exports/current/` on a schedule. Two consequences
+that are easy to be caught by:
+
+- **Whatever code that machine has installed is the code that writes the
+  exports.** Correcting the exporter and regenerating by hand from a working copy
+  does not stick: the next scheduled snapshot rewrites those files using the
+  INSTALLED copy. Deploy first, then regenerate.
+- **The per-reach files are skipped when their inputs are unchanged**
+  (`_odc_reaches_csvs`, signature in `exports/current/.odc_reaches_signature.json`).
+  The signature covers the inputs -- snapshot table sizes and row counts, and the
+  study-facts file -- so it cannot notice that the exporter now writes different
+  columns or different words. When the OUTPUT format changes, bump
+  `sig["output_format"]` in `exporters/current.py`, or a machine still holding the
+  previous code will skip the rewrite and leave superseded files looking current.
