@@ -6181,6 +6181,18 @@ class DataEntryWindow(QMainWindow):
         except Exception as e:
             print("[!] Where Is My Data tab unavailable: %s" % e)
 
+        # 12. STUDY FACTS - the facts no sheet records, and the exceptions to them.
+        # WHY a tab: these fill columns in every export, and until this existed the
+        # only way to set one was a terminal command and the only way to write an
+        # exception was to hand-edit a JSON file -- so in practice a column stayed
+        # blank because the person who knew the answer had no way to enter it.
+        try:
+            from .study_facts_tab import StudyFactsTab
+            self.study_facts_tab = StudyFactsTab(self.db)
+            self.tabs.addTab(self.study_facts_tab, "12. Study Facts")
+        except Exception as e:
+            print("[!] Study Facts tab unavailable: %s" % e)
+
         # LEGACY TABS - kept for backward compatibility
         # Weight entry tab (for general weight tracking outside ramp)
         self.bulk_weight_tab = BulkWeightEntryTab(self.db)

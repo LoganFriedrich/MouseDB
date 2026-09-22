@@ -215,6 +215,49 @@ def set_fact(project: str, field: str, value: Optional[str]) -> Path:
     return path
 
 
+def set_rules(project: str, rule_list: list) -> Path:
+    """Replace a project's exception rules. An empty list removes them.
+
+    Whole-list rather than one-at-a-time because the rules are ORDERED -- a later one
+    wins over an earlier one -- so adding, removing and reordering are all the same
+    operation on the list, and an editor that could only append would make the order
+    impossible to correct.
+    """
+    project = str(project).strip()
+    if not project:
+        raise ValueError("a project (or 'default') is needed")
+    cleaned = []
+    for rule in rule_list or []:
+        if not isinstance(rule, dict):
+            continue
+        field = str(rule.get("field") or "").strip()
+        needle = str(rule.get("when_any_value_contains") or "").strip()
+        if not field or not needle:
+            # A rule with no column or no text matches nothing; storing it would only
+            # look like a setting that does something.
+            continue
+        entry = {"field": field, "value": str(rule.get("value", "")),
+                 "when_any_value_contains": needle}
+        only = rule.get("in_fields")
+        if isinstance(only, list):
+            only = [str(f).strip() for f in only if str(f).strip()]
+            if only:
+                entry["in_fields"] = only
+        cleaned.append(entry)
+    data = read_all()
+    section = data.setdefault(project, {})
+    if cleaned:
+        section[RULES_KEY] = cleaned
+    else:
+        section.pop(RULES_KEY, None)
+    if not section:
+        data.pop(project, None)
+    path = facts_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
 def describe(project: Optional[str] = None) -> str:
     """Human-readable table: each project's value for every known field, and any extras."""
     data = read_all()
