@@ -43,6 +43,23 @@ def _row(name, title, desc, unit="", dtype="", pv="", pvd="", mn="", mx="", comm
 NEVER_COMPUTED = ("Declared in the data model but never computed by any code; "
                   "always empty. Kept so the column set is stable.")
 
+
+def never_computed_names(rows=None) -> set:
+    """Columns that no code computes, by their own dictionary entry.
+
+    WHY this is asked of the dictionary rather than of the data: a column that happens
+    to be empty in one cohort is not the same as a column nothing computes. The frozen
+    ASPA workbooks record no species, so SpeciesTyp is empty in those files -- but
+    species is a fact a source failed to carry, not a measurement the code declines to
+    take, and an export that calls it 'not measured' tells the reader the lab failed to
+    look at a mouse. Emptiness is a symptom; this list is the diagnosis.
+    """
+    rows = rows if rows is not None else (
+        REACH_DATA + MANUAL_SCORES + ODC_REACH_ANIMAL + ODC_REACH_SESSION
+        + ODC_REACH_TOTALS)
+    return {r["VariableName"] for r in rows
+            if str(r.get("Description", "")).strip() == NEVER_COMPUTED.strip()}
+
 # ---------------------------------------------------------------------------
 # reach_data: one row per detected reach
 # ---------------------------------------------------------------------------

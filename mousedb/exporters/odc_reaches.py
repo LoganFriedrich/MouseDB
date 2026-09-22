@@ -43,6 +43,27 @@ SESSION_COLUMNS = [r["VariableName"] for r in dd.ODC_REACH_SESSION]
 TOTAL_COLUMNS = [r["VariableName"] for r in dd.ODC_REACH_TOTALS]
 DISPLACED = ("displaced_sa", "displaced_outside")
 
+# Columns whose empty cells mean the question cannot apply to that row, not that
+# anybody failed to answer it. Kept as a named list because each one is a judgement
+# about the experiment, not about the data:
+#   Days_Post_Injury    the session happened before the injury -- there is no day count
+#   Exclusion_reason    the animal was not excluded, so there is no reason to give
+#   interaction_frame   only the reach that met the pellet has a frame at which it did
+NOT_APPLICABLE_WHEN_EMPTY = {
+    "Days_Post_Injury": missing.NOT_APPLICABLE,
+    "Exclusion_reason": missing.NOT_APPLICABLE,
+    "interaction_frame": missing.NOT_APPLICABLE,
+}
+
+# Columns the dictionary does NOT mark as never-computed -- because a legacy detector
+# did populate them -- but which no current detector fills, so they are empty on every
+# row of every cohort we hold. 'Not measured' is the true word for such a row; the
+# dictionary entry keeps the fuller story, including that the legacy value measured the
+# sideways axis and should not be compared with anything here.
+NOT_MEASURED_BY_CURRENT_DETECTOR = {
+    "max_extent_pixels", "max_extent_ruler", "max_extent_mm",
+}
+
 
 def _blank(v) -> bool:
     if v is None:
@@ -334,9 +355,17 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     label = cohort_label(cohort_id)
 
     # The complete record carries no empty cells either: an ODC-SCI upload refuses them.
-    # A column empty on EVERY row is one no code computes; anything else is a gap in a
-    # source. missing.py explains why those are different words.
-    reasons = {c: missing.NOT_MEASURED for c in missing.all_blank_columns(df)}
+    # WHICH word is not guessed from emptiness. A column is 'Not measured' only when its
+    # own dictionary entry says no code computes it; a column a source failed to fill is
+    # 'Not recorded', and a question that cannot apply to the row is 'Not applicable'.
+    # Inferring the word from emptiness got this wrong in exactly the way that matters:
+    # the frozen ASPA workbooks record no species, so SpeciesTyp is empty in those
+    # cohorts, and an emptiness rule labelled a mouse's species 'Not measured'.
+    never = dd.never_computed_names() | NOT_MEASURED_BY_CURRENT_DETECTOR
+    reasons = {c: missing.NOT_MEASURED for c in never if c in df.columns}
+    for column, reason in NOT_APPLICABLE_WHEN_EMPTY.items():
+        if column in df.columns:
+            reasons[column] = reason
     full = missing.fill_frame(df, reasons)
     full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
                                    + missing.dictionary_comment(reasons, r["VariableName"])).strip())

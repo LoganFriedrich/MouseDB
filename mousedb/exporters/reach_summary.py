@@ -134,13 +134,25 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Manual_Contacted", "pellets_moved_hand_scored"),
 ]
 
-# Which word fills an empty cell, per column of THIS document.
+# Which word fills an empty cell, per column of THIS document. Each is a judgement
+# about WHY the cell is empty, taken from the measurement's own definition in the data
+# dictionary -- never inferred from the fact that it happens to be empty.
 REASONS: Dict[str, str] = {
-    "days_post_injury": missing.NOT_APPLICABLE,      # sessions before the injury
-    "exclusion_reason": missing.NOT_APPLICABLE,      # animals that were not excluded
+    # The question cannot apply to this row.
+    "days_post_injury": missing.NOT_APPLICABLE,        # session before the injury
+    "exclusion_reason": missing.NOT_APPLICABLE,        # the animal was not excluded
+    "speed_at_apex_mm_per_sec": missing.NOT_APPLICABLE,  # apex is the reach's last frame
+    "trajectory_smoothness": missing.NOT_APPLICABLE,     # reach shorter than 3 frames
+    # A source should carry it and does not: the hand scores are a separate
+    # measurement stream (post-hoc tray inspection), absent for some sessions; the
+    # head measurements need both ears tracked confidently and sometimes they are not.
     "pellets_retrieved_hand_scored": missing.NOT_RECORDED,
     "pellets_displaced_hand_scored": missing.NOT_RECORDED,
     "pellets_moved_hand_scored": missing.NOT_RECORDED,
+    "head_width_at_apex_mm": missing.NOT_RECORDED,
+    "nose_to_slit_at_apex_mm": missing.NOT_RECORDED,
+    "head_angle_at_apex_deg": missing.NOT_RECORDED,
+    "head_angle_change_deg": missing.NOT_RECORDED,
 }
 
 
@@ -199,12 +211,12 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
              + [n for s, n in KINEMATICS + SESSION_TOTALS if s in full.columns])
     out = pd.DataFrame({k: data[k] for k in order}, columns=order)
 
-    # No empty cells anywhere. Columns nobody classified are filled as not recorded,
-    # except ones that are empty on EVERY row, which means no code computes them.
+    # No empty cells anywhere. Anything not named in REASONS is a gap in a source, which
+    # is what the default says. Nothing here is ever 'Not measured': this document
+    # deliberately excludes the columns no code computes, carrying their working
+    # replacements from the extended block instead.
     reasons = dict(REASONS)
-    for column in missing.all_blank_columns(out):
-        reasons.setdefault(column, missing.NOT_MEASURED)
-    out = missing.fill_frame(out, reasons)
+    out = missing.fill_frame(out, reasons, default=missing.NOT_RECORDED)
 
     return out, _dictionary_rows(present, reasons)
 
