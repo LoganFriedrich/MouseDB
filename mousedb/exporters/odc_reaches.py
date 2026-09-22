@@ -156,7 +156,13 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict, l
         "Exclusion_reason": reason,
         "Cause_of_Death": "",
         "Injury_device": _first(sheet, "ODC_Injury_device") or (facts.get("Injury_device", "") if injury else ""),
-        "Injury_level": _first(sheet, "Contusion_Contusion_Location", "ODC_Spine_Injury_level"),
+        # A recorded level always wins. Where none is recorded, a study fact may supply
+        # one -- and because the level follows from the injury TYPE (a pyramidotomy is
+        # at the medullary pyramids in any lab; where a lab puts a contusion follows
+        # from what it studies), that fact is usually set by an exception rule keyed on
+        # the type rather than written flat. Both live in the lab's config, not here.
+        "Injury_level": (_first(sheet, "Contusion_Contusion_Location", "ODC_Spine_Injury_level")
+                         or facts.get("Injury_level", "")),
         "Injury_details": details,
         "Injury_Type": injury,
         "_injury_date": _date(sheet.get("Contusion_Surgery_Date")) or _date(sheet.get("ODC_Surgery_Date")),
