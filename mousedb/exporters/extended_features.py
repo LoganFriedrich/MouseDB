@@ -2,10 +2,10 @@
 
 WHY THIS EXISTS
 ---------------
-Every reach the pipeline produces carries an ``extended_features`` block: 161 measured
-values per reach (paw outline area, paw spread, per-landmark speed and path shape,
-extension past the nose, visibility). All 161 are populated, and none of them reached
-any export, because the exporter dropped the column outright.
+Every reach the pipeline produces carries an ``extended_features`` block: well over a
+hundred measured values per reach (paw outline area, paw spread, per-landmark speed and
+path shape, extension past the nose, visibility). They are populated, and none of them
+reached any export, because the exporter dropped the column outright.
 
 That mattered more than it looked. Several of the flat columns next to it are declared
 but never computed, and their working replacements were sitting inside this block the
@@ -14,10 +14,12 @@ not; ``lateral_deviation_mm`` is empty while ``righthand_lateral_deviation_mm`` 
 So the complete record was missing its best measurements AND showing blanks in their
 place.
 
-The keys are the same set for every project (checked across the whole corpus: 161 keys
-for CNT and 161 for ASPA, no project-only keys), so the column set is stable and can be
-documented. A reach whose block is missing a key gets the shared not-measured marker
-rather than a blank -- see ``mousedb.exporters.missing``.
+The key set is expected to be the same for every project -- verify that on your own
+corpus before relying on it -- so the column set is stable and can be documented. The
+columns are built from whatever keys are actually present, so a project that carries a
+different set still exports correctly; it simply gets its own columns. A reach whose
+block is missing a key gets the shared not-measured marker rather than a blank -- see
+``mousedb.exporters.missing``.
 """
 from __future__ import annotations
 

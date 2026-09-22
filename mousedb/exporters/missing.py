@@ -3,19 +3,18 @@
 WHY THIS EXISTS
 ---------------
 An ODC-SCI dataset cannot carry empty cells, and the obvious fix -- fill every blank
-with the same marker -- destroys real information. In the per-reach export a blank
-currently means at least four different things, measured on one finished cohort
-(61,495 reaches):
+with the same marker -- destroys real information. In a per-reach export a blank means
+at least four different things, and in a real dataset each of them is common:
 
-  * 65% of Days_Post_Injury is blank because the session happened BEFORE the injury.
-    There is no number to know. The question does not apply.
-  * 91% of the per-reach outcome is blank because only the reach that decided the
+  * Days_Post_Injury is blank for every session that happened BEFORE the injury. There
+    is no number to know. The question does not apply.
+  * The per-reach outcome is blank on most rows because only the reach that decided the
     pellet's fate carries one. Every other reach has a perfectly good answer -- it did
     not move the pellet -- that a blank hides.
-  * Thirteen columns are blank on every row because no code ever computes them. The
+  * Some columns are blank on every row because no code ever computes them. The
     measurement does not exist, and for several of them a working replacement sits in
     the extended features under another name.
-  * A few are blank because the source we would read it from does not record it.
+  * Some are blank because the source we would read them from does not record them.
 
 Collapsing those into one marker would tell a reader that a pre-injury session and an
 uncomputed column are the same kind of nothing. They are not, and the difference

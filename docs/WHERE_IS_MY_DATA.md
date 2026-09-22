@@ -14,18 +14,116 @@ each with a data dictionary beside it:
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
 | `manual_scores.csv` | pellet scored by hand from the tray (0 missed / 1 displaced / 2 retrieved) with the session's phase | `manual_scores_DATA_DICTIONARY.csv` |
 | `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
-| `ODC_reaches_<cohort>.csv` | reach, with that animal's details (strain, sex, every surgery column of the tracking sheet) and that session's details (date, tray, phase, days post injury) repeated on each row, plus the tray's video and hand-score totals -- the flat shape shared with collaborators | `ODC_reaches_<cohort>_DATA_DICTIONARY.csv` (one per cohort: sheets differ) |
+| `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_<cohort>_DATA_DICTIONARY.csv` (one per cohort: sheets differ) |
+| `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches, trimmed to what someone outside the lab needs, in plain words | `reaches_<cohort>_summary_DATA_DICTIONARY.csv` |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |
+
+### Which of the two per-reach files do I send someone?
+
+**`reaches_<cohort>_summary.csv`.** The other one is for you.
+
+They contain the same reaches. The difference is what each is *for*:
+
+- The **complete record** describes the reach AND how we arrived at it: which
+  version of each algorithm ran, which machine did it, which person reviewed
+  it, what the algorithm had said before they corrected it. That is how you
+  audit your own pipeline, and it is nobody else's business.
+- The **shareable table** answers the question a collaborator actually has and
+  nothing else. It contains no tool versions, no file paths, no machine names,
+  no reviewer names, and none of the columns that no code computes.
+
+Two columns in the shareable table carry the point:
+
+| column | what it says |
+|---|---|
+| `reach_result` | what THIS reach did to the pellet: `Retrieved`, `Displaced into the scoring area`, `Displaced out of reach`, `Did not move the pellet`, or `Undetermined` |
+| `pellet_result` | what became of the pellet this reach was aimed at, repeated on every reach aimed at it, so you never have to join anything |
+
+`Did not move the pellet` is an **answer**, not a missing value: the pellet's
+fate was decided by a different reach, or by none. It is deliberately not
+"missed" -- contact is not measured for a reach that did not decide the
+outcome, so claiming the paw missed would assert something nobody looked at.
+
+`reach_result` never says where the verdict came from. A verdict is a verdict;
+whether a human or an algorithm produced it is in the complete record.
+
+### No cell is ever empty -- and the word tells you why
+
+ODC-SCI rejects a dataset with empty cells, so both files fill every one. The
+filler is not a single "NA", because a blank means four different things and
+treating them alike would throw away what you actually know:
+
+| you will see | it means |
+|---|---|
+| `Not applicable` | the question cannot apply to this row -- days-post-injury for a session that happened before the injury |
+| `Not measured` | no code computes this value (the column exists so the column set stays stable) |
+| `Not recorded` | a source should carry it and does not -- nobody wrote it in the sheet |
+| `Undetermined` | it was looked at and could not be decided |
+
+If a column you expected is full of `Not recorded`, that is a gap in the
+records, not a bug: something has to be entered in the tracking sheet, or
+declared once with `mousedb study-facts` (below). `MANIFEST.json` lists any
+animal column blank for a whole cohort, so you can see it without opening the
+files.
 
 Where the `ODC_reaches` animal columns come from: each sheet import copies
 the animal-level tabs of the tracking sheet (metadata, contusion, spinal
 injection; a frozen letter cohort's `ODC` tab) into the database as written,
 and study-wide facts no sheet holds (strain, supplier, study leader, injury
-device) come from `mousedb study-facts`. A value no source records is left
-empty, never guessed; `MANIFEST.json` lists any animal column that is blank for
-a whole cohort. To write them for one cohort into another folder:
+device) come from `mousedb study-facts`. A value no source records is never
+guessed; `MANIFEST.json` lists any animal column that is blank for a whole
+cohort. To write them for one cohort into another folder:
 `mousedb export-odc-reaches --cohort <cohort id> --out-dir <folder>`.
+
+### Filling a column that reads `Not recorded` everywhere
+
+Some facts are true of every animal in a study and appear in no sheet -- the
+species, the supplier, who led the study. Declare each one **once** and it
+fills that column in every file, for every cohort, forever:
+
+```
+mousedb study-facts --show                                   # what is set now
+mousedb study-facts --set <PROJECT> SpeciesTyp "<species>"
+mousedb study-facts --set default AnimalSourceNam "<supplier>"
+```
+
+`default` applies to every project; a project's own value wins over it. A
+recorded value in a sheet always beats both -- these only fill gaps.
+
+**When the fact has exceptions.** A study fact is often only *nearly*
+constant: a colony can be one strain except for the animals on a transgenic
+line. Rather than leaving the column wrong or blank, add an exception rule to
+the study-facts file (`mousedb study-facts --show` prints its path). A rule
+says: *when this text appears anywhere in an animal's recorded values, this
+column takes this value.*
+
+```json
+"<PROJECT>": {
+  "SpeciesStrainTyp": "<the usual strain>",
+  "_rules": [
+    {"field": "SpeciesStrainTyp",
+     "value": "<the strain for the exceptional animals>",
+     "when_any_value_contains": "<text that marks them in the sheets>"}
+  ]
+}
+```
+
+Useful to know:
+
+- Matching ignores capitals, because sheets are typed by hand.
+- Add `"in_fields": ["<column>", "<column>"]` to search only named columns --
+  safer when the text might appear in a comment.
+- Later rules win, so a broad rule can be followed by a narrower exception.
+- A rule only ever fires on values that were actually **imported**. If the
+  marker lives in a sheet tab the importer does not read, the rule is correct
+  and still does nothing. Check with `mousedb study-facts --show` plus a look
+  at the exported column.
+- The same mechanism fills a column that FOLLOWS from another, such as the
+  spinal level of an injury following from the injury type.
+
+Nothing about your lab belongs in the code. The tool supplies the mechanism;
+the file supplies your facts.
 
 **ASPA file names.** A frozen ASPA cohort's files are named `..._ASPA_NN_X`,
 e.g. `ODC_reaches_ASPA_04_D.csv`: `X` is the cohort letter the lab knows it by
