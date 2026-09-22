@@ -47,6 +47,28 @@ from .config import CONFIG_PATH
 ENV_VAR = "MOUSEDB_STUDY_FACTS"
 DEFAULT_SECTION = "default"
 
+# Reserved key inside a project section holding per-animal EXCEPTIONS to its facts.
+# WHY this exists: a study fact is only nearly constant. A colony can be one strain
+# except for the animals on a transgenic line, and which line, what it is called, and
+# how it is recognisable in that lab's sheets are all facts about ONE lab -- exactly
+# the kind of thing that must never be typed into this repository. So the tool knows
+# only the SHAPE of an exception ("when this text appears in an animal's records, that
+# field takes this value") and the lab supplies the text and the value:
+#
+#     "PROJECT_A": {
+#       "SpeciesStrainTyp": "<the usual strain>",
+#       "_rules": [
+#         {"field": "SpeciesStrainTyp",
+#          "value": "<the strain for these animals>",
+#          "when_any_value_contains": "<text that marks them in the sheets>"}
+#       ]
+#     }
+#
+# Optional "in_fields" restricts the search to named record columns; without it every
+# recorded value for that animal is searched. Matching is case-insensitive substring,
+# because the sheets spell these by hand and inconsistently.
+RULES_KEY = "_rules"
+
 # ODC column name -> what a person should type there. Order is display order.
 FIELDS: Dict[str, str] = {
     "SpeciesTyp": "Species of the animals (e.g. mouse).",
@@ -79,17 +101,70 @@ def facts_path() -> Path:
 
 
 def read_all() -> Dict[str, Dict[str, str]]:
-    """Every section in the file; {} when the file is missing or unreadable."""
+    """Every section in the file; {} when the file is missing or unreadable.
+
+    Values are coerced to text so a number typed into the file cannot reach an export
+    as an int -- except RULES_KEY, which is a list and is passed through untouched.
+    """
     path = facts_path()
     try:
         if path.is_file():
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
-                return {str(k): {str(f): str(v) for f, v in (sec or {}).items()}
-                        for k, sec in data.items() if isinstance(sec, dict)}
+                out = {}
+                for k, sec in data.items():
+                    if not isinstance(sec, dict):
+                        continue
+                    section = {}
+                    for f, v in sec.items():
+                        if str(f) == RULES_KEY:
+                            section[RULES_KEY] = v if isinstance(v, list) else []
+                        else:
+                            section[str(f)] = str(v)
+                    out[str(k)] = section
+                return out
     except Exception:
         pass
     return {}
+
+
+def rules(project: Optional[str]) -> list:
+    """Exception rules for a project: the default section's, then the project's own."""
+    sections = read_all()
+    out = list(sections.get(DEFAULT_SECTION, {}).get(RULES_KEY) or [])
+    out += list(sections.get(project_of(project), {}).get(RULES_KEY) or [])
+    return [r for r in out if isinstance(r, dict)]
+
+
+def _rule_matches(rule: dict, records) -> bool:
+    needle = str(rule.get("when_any_value_contains") or "").strip().lower()
+    if not needle:
+        return False
+    only = rule.get("in_fields")
+    only = {str(f).lower() for f in only} if isinstance(only, list) else None
+    for field, value in (records or {}).items():
+        if only is not None and str(field).lower() not in only:
+            continue
+        if value is not None and needle in str(value).lower():
+            return True
+    return False
+
+
+def apply_rules(project: Optional[str], base: Dict[str, str], records) -> Dict[str, str]:
+    """``base`` with any matching exception rules applied for ONE animal.
+
+    ``records`` is that animal's recorded values (its tracking-sheet row, flattened).
+    Rules are applied in order, so a later rule wins over an earlier one -- which lets
+    a lab write a broad rule and then a narrower exception to it.
+    """
+    out = dict(base or {})
+    for rule in rules(project):
+        field = str(rule.get("field") or "").strip()
+        if not field:
+            continue
+        if _rule_matches(rule, records):
+            out[field] = str(rule.get("value", ""))
+    return out
 
 
 def project_of(identifier: Optional[str]) -> str:
@@ -102,8 +177,10 @@ def facts(project: Optional[str]) -> Dict[str, str]:
     """Every set fact for a project: "default" overlaid by the project's own values.
     Blank values are left out, so a caller can tell unset from set."""
     sections = read_all()
-    merged = {k: v for k, v in sections.get(DEFAULT_SECTION, {}).items() if v}
-    merged.update({k: v for k, v in sections.get(project_of(project), {}).items() if v})
+    merged = {k: v for k, v in sections.get(DEFAULT_SECTION, {}).items()
+              if v and k != RULES_KEY}
+    merged.update({k: v for k, v in sections.get(project_of(project), {}).items()
+                   if v and k != RULES_KEY})
     return merged
 
 
@@ -154,12 +231,18 @@ def describe(project: Optional[str] = None) -> str:
         shown = own if name == DEFAULT_SECTION else facts(name)
         lines.append("[%s]" % name)
         known = list(FIELDS) + list(PROTOCOL_FIELDS)
-        for field in known + sorted(k for k in shown if k not in known):
+        for field in known + sorted(k for k in shown if k not in known and k != RULES_KEY):
             value = shown.get(field)
             if value:
                 src = "" if name == DEFAULT_SECTION or field in own else "  (from default)"
                 lines.append("  %-18s %s%s" % (field, value, src))
             else:
                 lines.append("  %-18s NOT SET" % field)
+        for rule in (own.get(RULES_KEY) or []):
+            if isinstance(rule, dict):
+                lines.append("  exception: %s = %r when any value contains %r%s"
+                             % (rule.get("field"), rule.get("value"),
+                                rule.get("when_any_value_contains"),
+                                (" in %s" % rule["in_fields"]) if rule.get("in_fields") else ""))
         lines.append("")
     return "\n".join(lines)

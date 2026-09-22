@@ -111,6 +111,12 @@ def _date(v) -> Optional[date]:
 
 
 def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict, lab: str) -> dict:
+    # A study fact can have per-animal exceptions -- a colony that is one strain except
+    # for the animals on a transgenic line, say. WHICH animals, and what their value
+    # should be, are facts about one lab, so the rule lives in that lab's study-facts
+    # file and is matched here against this animal's own recorded values.
+    from .. import study_facts as _sf
+    facts = _sf.apply_rules(cohort_id, facts, sheet)
     survived = [str(v).strip().upper() for k, v in sheet.items()
                 if k.endswith("_Survived") and not _blank(v)]
     died = any(s in ("N", "NO") for s in survived)
