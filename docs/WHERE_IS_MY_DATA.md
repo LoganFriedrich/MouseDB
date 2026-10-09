@@ -5,7 +5,7 @@ This page is for the person doing the work. No codebase knowledge assumed.
 ## The short answer
 
 `<mousedb_root>/exports/current/` (run `mousedb config --show` to see the
-folder on this machine) -- rewritten by the hourly job with everything the
+folder on this machine) -- rewritten by the scheduled job with everything the
 database currently holds, as CSV files you can open in Excel, R or Python,
 each with a data dictionary beside it:
 
@@ -158,13 +158,13 @@ complete for an ODC upload, the row count of each file, and any problems.
 Buttons: **Refresh** re-reads everything. **Open exports folder** opens the
 folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`,
 `manual_scores.csv` and the `ODC_reaches_<cohort>.csv` files immediately from the latest snapshot (the per-cohort
-ODC session files refresh on the hourly run, which is the only time the
+ODC session files refresh on the scheduled run, which is the only time the
 database may be read safely).
 
 ## How reach data gets into the database
 
 MouseReach writes one `<video>_features.json` per video into its Analyzed
-tree and never touches this database. `mousedb import-reaches` (run hourly
+tree and never touches this database. `mousedb import-reaches` (run on a schedule
 where scheduled, or by hand) scans that tree, imports files that are new or
 changed, creates any animal it has not seen, and re-derives the protocol
 phase of every cohort it touched. `mousedb import-reaches --dry-run` says
@@ -178,7 +178,7 @@ sample which method and parameters made it, from which source files, when,
 and whether it is still current -- in a `Registry/` folder inside its own
 pipeline folder. It never writes into this tool's folders.
 
-`mousedb import-analyses` (run hourly where scheduled, or by hand) mirrors
+`mousedb import-analyses` (run on a schedule where set up, or by hand) mirrors
 that registry here:
 
 | what | where it lands |
@@ -219,13 +219,13 @@ in this fixed order:
    just landed)
 
 Press it whenever you are about to look at the data and want it current
-instead of up to an hour old. It takes a few minutes; the tab refreshes
+instead of as old as the last scheduled run. It takes a few minutes; the tab refreshes
 itself when it finishes, and a dialog lists every step with **[OK]** or
 **[FAIL]** and the step's own last line. The line under the snapshot time
 always shows when the last update ran, who started it, and whether
 everything landed.
 
-Only one update runs at a time -- if the scheduled hourly run or someone
+Only one update runs at a time -- if a scheduled run or someone
 else's button press is still going, yours says so and does nothing. A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
@@ -236,17 +236,54 @@ database; the newest entry holds each step's last 15 lines of output.
 
 **When a step shows [FAIL]:** read its last line in the dialog. "database is
 locked" means something else was writing at that moment -- press the button
-again after a minute. Anything else, send the line to Logan; the full output
+again after a minute (and see *When the database is locked* below). Anything
+else, pass the line to whoever looks after this installation; the full output
 is in `logs/updates.jsonl`.
 
-## Why the numbers can lag by up to an hour
+## Why the numbers can lag
 
-The tab and the exports read an hourly *snapshot* of the database, not the
-live database. The live file may sit on a network share, and reading it
-while something writes to it can corrupt the read -- so everything
-human-facing works from the last safe copy. The tab shows the snapshot's
-time at the top. If you need it current right now, press **Update the
-database now** (previous section) instead of waiting for the hour.
+The tab and the exports read a *snapshot* of the database, not the live
+database. The live file may sit on a network share, and reading it while
+something writes to it can corrupt the read -- so everything human-facing
+works from the last safe copy.
+
+So the numbers are as old as the last scheduled refresh. **The line at the top
+of the tab says exactly how old**, in words: "taken 2026-01-02T00:14 -- 7 hours
+old". If the refresh has not succeeded for longer than a day and a half, that
+line turns red and says so outright, because at that point work that has been
+analysed is missing from everything below it.
+
+If you need the numbers current right now, press **Update the database now**
+(previous section) instead of waiting for the next scheduled run.
+
+## When the database is locked
+
+The database is one file, and more than one program can open it: the scheduled
+jobs, this tool's own windows, a notebook someone left open, and the same
+things on other people's computers. While one of them is writing, everybody
+else is refused with "database is locked". That is normal and it is not a
+fault.
+
+What it means for you:
+
+- **A job you pressed** says the database is locked: wait a minute and press
+  again. Nothing was changed by the attempt.
+- **A scheduled job** that meets a lock no longer gives up at once. It waits
+  and tries again several times over about three quarters of an hour. Almost
+  every lock clears inside that.
+- **If it does not clear**, the job writes one line in its log saying so in
+  plain words, and does not run that time. Nothing is half-written: a job that
+  could not start the database work changed nothing at all. The numbers people
+  see stay as of the last successful run, and the tab's age line is what tells
+  you that happened.
+- **If that repeats for several runs**, somebody has a session open with a
+  write in progress -- a notebook, a console, or a window of this tool, on any
+  computer that can see the database. Find it and close it. The jobs will never
+  break someone else's lock to get in, because taking a lock away from a write
+  that is in flight is how a database file gets corrupted.
+
+The scheduled jobs also take turns with each other through a lockfile, so they
+are never the cause.
 
 ## When something looks wrong
 
@@ -257,7 +294,7 @@ database now** (previous section) instead of waiting for the hour.
 - **"complete for ODC upload: False"**: a new column reached the exports
   without a dictionary entry. The problems list names it; the definition is
   added in `mousedb/exporters/data_dictionary.py`.
-- **Nothing in the exports folder**: the hourly refresh has not run yet on
+- **Nothing in the exports folder**: the scheduled refresh has not run yet on
   this database; press *Refresh exports now*.
 
 From a terminal (MouseDB environment active):

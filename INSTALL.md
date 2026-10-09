@@ -255,9 +255,45 @@ still reporting a failure. Measure first, then schedule. Run them in dependency
 order with the snapshot LAST, because the snapshot is built from the database the
 imports fill -- on independent clocks it will regularly rebuild pre-import data.
 
+The cadences in the table are a starting suggestion, not a recommendation for
+every installation. Where a job takes tens of minutes, daily is the right
+answer; a corpus small enough that each job finishes in seconds can run them
+hourly.
+
 The jobs that write the database do not run while a MouseReach watcher is
 running on the same machine; they report that and exit. The analysis import
 writes files only (never the database), so it runs regardless.
+
+### What happens when another program has the database locked
+
+The database is a single SQLite file and anything that can see it can open it:
+these jobs, this tool's own windows, and a person's analysis session -- on this
+machine or any other that reaches the same file. While one of them writes, the
+rest are refused with "database is locked".
+
+Two separate mechanisms deal with that, and it is worth knowing which is which:
+
+- **Between these jobs**: a lockfile under `<mousedb_root>/logs`
+  (`mousedb/task_mutex.py`). Whoever gets it runs; the others wait and run
+  straight after. They never lock each other out, however they are scheduled.
+- **Against everything else**: `mousedb/db_contention.py`. A job that meets an
+  outside lock waits and retries across roughly a 45-minute window, then gives
+  up, logs one plain-English line, and exits non-zero. Leave enough clear air
+  after each job for that window, or a retrying job will still be going when
+  the next one starts.
+
+Neither mechanism ever breaks the other program's lock, and there is no option
+to: a lock means a write is in flight, and taking it away corrupts the file. A
+job that keeps giving up means a session somewhere is holding the database
+open, and the fix is to close that session.
+
+**How you find out it happened.** The failing job's log says so in one sentence,
+and `mousedb-data-status` and the GUI's Where Is My Data tab both report the
+snapshot's AGE in words and turn it red past `STALE_SNAPSHOT_HOURS`
+(`mousedb/data_status.py`, 36 h by default -- raise it if the snapshot job runs
+less often than daily). That age line is the thing that catches a job that has
+quietly not worked for days; the log alone does not, because nobody reads logs
+that have not announced a problem.
 
 ### The snapshot job also rewrites the exports -- including the per-reach files
 
