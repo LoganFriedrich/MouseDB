@@ -349,8 +349,22 @@ class DataStatusTab(QWidget):
 
     def _on_status(self, st: dict):
         self._status = st
-        self.snapshot_label.setText("Numbers as of the analysis snapshot taken %s"
-                                    % (st.get("snapshot_time") or "?"))
+        # Say how OLD, not just when. Everything on this tab is as of the
+        # snapshot, and the snapshot is rewritten by a scheduled job that can
+        # fail -- usually because another program had the database locked. When
+        # it does, these numbers quietly stop moving. A bare timestamp asks the
+        # reader to know how often the job runs and subtract; in the case this
+        # was written for, three days went by with nobody noticing.
+        age_hours = st.get("snapshot_age_hours")
+        from ..data_status import STALE_SNAPSHOT_HOURS
+        stale = age_hours is not None and age_hours > STALE_SNAPSHOT_HOURS
+        self.snapshot_label.setText(
+            "Numbers as of the analysis snapshot taken %s -- %s old.%s"
+            % (st.get("snapshot_time") or "?", st.get("snapshot_age") or "unknown",
+               "  The job that rewrites it has not succeeded since, so newly "
+               "analysed work is missing from everything below." if stale else ""))
+        self.snapshot_label.setStyleSheet(
+            "background:#b71c1c; color:white; padding:3px;" if stale else "color: #888;")
         self._render_pipeline_summary(st.get("pipeline"))
         cohorts = st.get("cohorts", [])
         self.table.setRowCount(len(cohorts))

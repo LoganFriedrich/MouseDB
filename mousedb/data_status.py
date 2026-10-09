@@ -40,6 +40,29 @@ from .import_analyses import MANIFEST_NAME as ANALYSES_MANIFEST_NAME
 
 SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set snapshot_dir ...)
 
+# When the snapshot counts as out of date. The job that rewrites it is normally
+# scheduled daily, so a day and a half allows for one late or slow run without
+# crying wolf, while still catching a job that has stopped working. Raise it if
+# the refresh is scheduled less often than daily.
+STALE_SNAPSHOT_HOURS = 36
+
+
+def describe_age(hours: Optional[float]) -> str:
+    """How old, in words -- "4 hours", "3 days" -- for a person, not a machine.
+
+    A timestamp alone makes the reader do arithmetic before they can tell
+    whether what they are looking at is current, and they mostly will not.
+    """
+    if hours is None:
+        return "unknown"
+    if hours < 1:
+        return "under an hour"
+    if hours < 48:
+        n = int(round(hours))
+        return "%d hour%s" % (n, "" if n == 1 else "s")
+    n = int(round(hours / 24))
+    return "%d day%s" % (n, "" if n == 1 else "s")
+
 
 def read_analyses_manifest(path: Path) -> List[dict]:
     """The per-analysis rows of exports/ANALYSES_MANIFEST.json; [] when no
@@ -107,15 +130,39 @@ def review_queue_counts(problems: List[str]) -> Dict[str, Dict[str, int]]:
     return by_cohort
 
 
+_ANIMAL_IN_NAME = re.compile(r"([A-Za-z]+)(\d+)")
+
+
 def _cohort_of_video(video_id: str) -> str:
-    """20250624_CNT0115_P2 -> CNT_01 ; 20220811_ASPA1011_P3 -> ASPA_10"""
-    try:
-        tok = video_id.split("_")[1]
-        letters = "".join(ch for ch in tok if ch.isalpha())
-        digits = "".join(ch for ch in tok if ch.isdigit())
-        return "%s_%s" % (letters, digits[:2])
-    except Exception:
+    """Which cohort a video belongs to, from its name.
+
+    20250624_PROJ0115_P2        -> PROJ_01   (one animal)
+    20220811_PROJ0501PROJ0502_P1 -> PROJ_05  (a collage of several)
+    anything unreadable          -> "?"
+
+    WHY the collage case needs saying: a multi-animal recording names every
+    animal in it, one after another. The old version pulled ALL the letters out
+    of the name and ALL the digits out of the name and glued them together, so
+    a collage of seven animals from one cohort reported itself as a cohort
+    called "PROJPROJPROJPROJPROJPROJPROJ_05". That is not only ugly in a
+    listing: those recordings were then counted under a cohort that does not
+    exist instead of under the real one, so every per-cohort workload figure
+    was short by however many of its collages had not been split up yet.
+
+    Each animal is matched separately and they must AGREE. A recording whose
+    animals come from different cohorts has no single cohort, and this returns
+    "?" rather than picking the first one -- the same choice the rest of this
+    census makes, for the same reason: refusing is recoverable, and a plausible
+    wrong number is not.
+    """
+    parts = video_id.split("_")
+    if len(parts) < 2:
         return "?"
+    found = {"%s_%s" % (m.group(1), m.group(2)[:2])
+             for m in _ANIMAL_IN_NAME.finditer(parts[1])}
+    if len(found) != 1:
+        return "?"
+    return found.pop()
 
 
 def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
@@ -140,13 +187,33 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         out["problems"].append("subjects/cohorts not in snapshot yet (refresh once more)")
 
     snap_time = None
+    snap_age_hours = None
     try:
         import datetime as _dt
-        snap_time = _dt.datetime.fromtimestamp(
-            (snapshot_dir / "reach_data.parquet").stat().st_mtime).isoformat(timespec="seconds")
+        taken = _dt.datetime.fromtimestamp(
+            (snapshot_dir / "reach_data.parquet").stat().st_mtime)
+        snap_time = taken.isoformat(timespec="seconds")
+        snap_age_hours = (_dt.datetime.now() - taken).total_seconds() / 3600.0
     except OSError:
         pass
     out["snapshot_time"] = snap_time
+    out["snapshot_age_hours"] = snap_age_hours
+    out["snapshot_age"] = describe_age(snap_age_hours)
+    # JUDGE the age, do not just report it. Every number below this line is as
+    # of the snapshot, and the snapshot is rewritten by a scheduled job. When
+    # that job fails -- most often because another program had the database
+    # locked -- the numbers simply stop moving, and a timestamp on screen does
+    # not tell anybody that: it asks them to know today's date, know how often
+    # the job is meant to run, and do the subtraction. In the one case this was
+    # written for, three days passed with nobody noticing.
+    if snap_age_hours is None:
+        out["problems"].append(
+            "the snapshot's age is unknown, so nothing below can be dated")
+    elif snap_age_hours > STALE_SNAPSHOT_HOURS:
+        out["problems"].append(
+            "every figure below is %s old: the snapshot was taken %s and the job "
+            "that rewrites it has not succeeded since. Newly analysed work will "
+            "not appear until it does." % (out["snapshot_age"], snap_time))
 
     rd["cohort"] = rd["subject_id"].str.rsplit("_", n=1).str[0]
     ps["cohort"] = ps["subject_id"].str.rsplit("_", n=1).str[0]
@@ -237,7 +304,8 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
 
 
 def _print(st: dict) -> None:
-    print("Snapshot: %s  (%s)" % (st.get("snapshot_dir"), st.get("snapshot_time")))
+    print("Snapshot: %s  (taken %s -- %s old)" % (
+        st.get("snapshot_dir"), st.get("snapshot_time"), st.get("snapshot_age")))
     print("%-9s %7s %8s %8s %9s %7s %6s  %s" % (
         "cohort", "animals", "sessions", "videos", "reaches", "triage", "deep", "sheet"))
     for c in st["cohorts"]:
