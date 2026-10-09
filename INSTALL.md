@@ -277,10 +277,19 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   (`mousedb/task_mutex.py`). Whoever gets it runs; the others wait and run
   straight after. They never lock each other out, however they are scheduled.
 - **Against everything else**: `mousedb/db_contention.py`. A job that meets an
-  outside lock waits and retries across roughly a 45-minute window, then gives
-  up, logs one plain-English line, and exits non-zero. Leave enough clear air
-  after each job for that window, or a retrying job will still be going when
-  the next one starts.
+  outside lock waits and retries across a bounded window, then gives up, logs
+  one plain-English line, and exits non-zero.
+
+  **Size that window to the clear air after the job, minus how long the job
+  takes when it succeeds** -- a retry restarts the job from the beginning, so a
+  window that looks generous can leave it still running when the next job is
+  due. The short imports use the 45-minute default; the snapshot refresh takes
+  `--retry-minutes` (default 25) because a full refresh of a multi-gigabyte
+  database over a network share can take over an hour on its own.
+
+  Retrying only ever rescues a lock that clears in minutes. A session left open
+  for an hour will outlast any window worth having, and that is what the
+  snapshot-age reporting below is for -- not more waiting.
 
 Neither mechanism ever breaks the other program's lock, and there is no option
 to: a lock means a write is in flight, and taking it away corrupts the file. A

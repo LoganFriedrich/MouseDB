@@ -269,8 +269,12 @@ What it means for you:
 - **A job you pressed** says the database is locked: wait a minute and press
   again. Nothing was changed by the attempt.
 - **A scheduled job** that meets a lock no longer gives up at once. It waits
-  and tries again several times over about three quarters of an hour. Almost
-  every lock clears inside that.
+  and tries again a few times. How long it keeps trying depends on the job: the
+  short ones try for about three quarters of an hour, the snapshot refresh for
+  about twenty minutes, because a retry starts it over from the beginning and
+  it must not still be running when the next job is due. This rescues a lock
+  that clears in minutes. It will not rescue one held for an hour, and is not
+  meant to -- the age line at the top of the tab is what tells you about those.
 - **If it does not clear**, the job writes one line in its log saying so in
   plain words, and does not run that time. Nothing is half-written: a job that
   could not start the database work changed nothing at all. The numbers people

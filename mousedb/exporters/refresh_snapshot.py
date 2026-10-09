@@ -2,21 +2,20 @@
 
 WHY THIS EXISTS
 ----------------
-``connectome.db`` sits on a network share (Y:) in SQLite rollback-journal mode
-(``journal_mode=delete``), not WAL -- deliberately, because WAL is unreliable
-over network filesystems and would risk real corruption, not just contention.
-That means a writer (the MouseReach watcher, or any node with
-``also_process`` on) blocks readers outright, and a read that dies partway
-through leaves nothing usable behind.
+``connectome.db`` is normally kept on a network share, in SQLite
+rollback-journal mode (``journal_mode=delete``) rather than WAL -- deliberately,
+because WAL is unreliable over network filesystems and would risk real
+corruption, not just contention. That means a writer (the MouseReach watcher,
+or any node with ``also_process`` on) blocks readers outright, and a read that
+dies partway through leaves nothing usable behind.
 
 The fix used throughout mousedb is to never read the live database
 from an analysis script -- read a snapshot instead
-(``<snapshot_dir>/*.parquet``, see ``mousedb config --show``). Until now that snapshot
-was a one-time file from 2026-08-20 with no refresh mechanism anywhere in
-either repo, so anything reading it never saw a bench score entered after
-that date. This script is that mechanism -- run it periodically (Windows Task
-Scheduler; see the module docstring bottom for the exact command) to keep the
-snapshot from going permanently stale.
+(``<snapshot_dir>/*.parquet``, see ``mousedb config --show``). This script is
+what keeps that snapshot current: run it periodically (through the operating
+system's scheduler; see the bottom of this docstring for the command) or the
+snapshot goes permanently stale and every analysis quietly works from the day
+it was first taken.
 
 SAFETY
 ------
@@ -31,10 +30,14 @@ USAGE
     python -m mousedb.exporters.refresh_snapshot
     mousedb-refresh-snapshot
 
-Windows Task Scheduler, hourly, running as the same user the watcher would
-run as:
-    schtasks /Create /SC HOURLY /TN "MouseDB Snapshot Refresh" /TR ^
+On a schedule, as the same user the watcher runs as (on Windows):
+    schtasks /Create /SC DAILY /ST 00:00 /TN "MouseDB Snapshot Refresh" /TR ^
       "<MouseDB env>\\python.exe -m mousedb.exporters.refresh_snapshot"
+
+How OFTEN is an installation's choice, not a property of this script: a full
+refresh is proportional to the size of the database and the speed of the share,
+and can take over an hour. Time one run, then schedule it with room to spare --
+see INSTALL.md, "Scheduled jobs".
 """
 from __future__ import annotations
 
@@ -199,6 +202,12 @@ def main(argv=None) -> int:
                          "process and so cannot be writing concurrently. "
                          "Also vouches the database is readable for the "
                          "per-cohort ODC session exports.")
+    ap.add_argument("--retry-minutes", type=int, default=25,
+                    help="How long to keep retrying if another program has the "
+                         "database locked (default 25). A retry restarts this "
+                         "whole refresh, so set this to the gap between this job "
+                         "and the next one on your schedule, minus how long a "
+                         "successful refresh takes. 0 disables retrying.")
     args = ap.parse_args(argv)
 
     print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"))
@@ -214,11 +223,32 @@ def main(argv=None) -> int:
     # every number anybody looked at was three days old and nothing said so.
     # Re-reading from the start is safe: a refresh that could not begin wrote
     # nothing, and each table is swapped into place whole.
-    from ..db_contention import DatabaseBusy, retry_while_locked
+    #
+    # A SHORT window on purpose, unlike the other jobs. Two reasons, both
+    # measured rather than guessed:
+    #
+    #  * This job is the long one. A successful refresh of a multi-gigabyte
+    #    database over a network share took 67 minutes on the machine this was
+    #    written for. A retry restarts it from the first table, so each extra
+    #    attempt costs another full run, and a generous window here would leave
+    #    the job still going when the next scheduled job starts -- the exact
+    #    overlap the mutex exists to prevent.
+    #  * A retry only ever rescues a SHORT lock. The locks that actually broke
+    #    this job lasted over an hour, and no window anybody would accept would
+    #    have outlived them. What catches those is the snapshot's age being
+    #    reported and flagged (see data_status.STALE_SNAPSHOT_HOURS), not more
+    #    waiting here.
+    #
+    # Size it to the clear air between this job and the next one on YOUR
+    # schedule, minus how long a successful run takes.
+    from ..db_contention import (DEFAULT_GAP_MINUTES, DatabaseBusy,
+                                 retry_while_locked)
     try:
         counts = retry_while_locked(
             lambda: refresh(force=args.force),
             what="The analysis snapshot refresh",
+            window_minutes=args.retry_minutes,
+            gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
             announce=lambda m: print(m, flush=True))
     except DatabaseBusy as busy:
         print("  [FAIL] %s" % busy, flush=True)

@@ -173,6 +173,26 @@ def test_giving_up_raises_rather_than_returning_quietly():
                               sleep=clock.sleep, clock=clock)
 
 
+def test_a_zero_window_tries_once_and_does_not_wait():
+    """How a long job opts out: retrying it is more expensive than skipping it.
+
+    A job that takes an hour has to restart from the beginning on every retry,
+    so for some jobs the right window is none at all.
+    """
+    clock = FakeClock()
+    attempts = []
+
+    def work():
+        attempts.append(1)
+        raise locked_error()
+
+    with pytest.raises(dc.DatabaseBusy):
+        dc.retry_while_locked(work, what="The job", window_minutes=0,
+                              sleep=clock.sleep, clock=clock)
+    assert len(attempts) == 1
+    assert clock.slept == []
+
+
 def test_the_original_error_is_kept_as_the_cause_for_whoever_debugs_it():
     """A person gets the sentence; a developer can still reach the real error."""
     clock = FakeClock()
