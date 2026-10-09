@@ -48,7 +48,7 @@ def test_finished_but_not_landed_is_the_invariant_gap():
     assert inv["count"] == 1
     assert "20240101_ABC0102_P1" in inv["sessions"]
     # the reason names the transient path so a fresh finish is not an alarm
-    assert "next hourly import" in inv["sessions"]["20240101_ABC0102_P1"]
+    assert "next scheduled import" in inv["sessions"]["20240101_ABC0102_P1"]
 
 
 def test_held_sessions_are_never_violations():

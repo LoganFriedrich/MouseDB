@@ -192,7 +192,7 @@ def join_with_db(census: dict, in_db_names: Optional[Set[str]]) -> dict:
             else:
                 violations[sid] = (
                     "finished on disk but not in the database -- new results "
-                    "land on the next hourly import; investigate only if a "
+                    "land on the next scheduled import; investigate only if a "
                     "video stays here across imports")
 
         by_element[el] = by_element.get(el, 0) + 1
