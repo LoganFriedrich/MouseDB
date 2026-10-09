@@ -803,9 +803,24 @@ def cmd_import_brains(args):
     # locked" while another task held the database. Waiting its turn costs
     # seconds; failing costs an hour. The with-block also releases on the
     # sys.exit calls inside the body.
+    #
+    # The retry wrapper handles the blockage the mutex CANNOT: a lock held by a
+    # program outside this tool (see db_contention). This import normally
+    # finishes in seconds, so a run that fails is almost always one that met a
+    # neighbour, and without a retry it then skipped a whole day.
     from .task_mutex import hold
-    with hold(waiting_for="another database task"):
-        return _import_brains_body(args, summary_dir)
+    from .db_contention import DatabaseBusy, retry_while_locked
+
+    def once():
+        with hold(waiting_for="another database task"):
+            return _import_brains_body(args, summary_dir)
+
+    try:
+        return retry_while_locked(once, what="The brain import",
+                                  announce=lambda m: print(m, flush=True))
+    except DatabaseBusy as busy:
+        print("  [FAIL] %s" % busy, flush=True)
+        return 1
 
 
 def _import_brains_body(args, summary_dir):

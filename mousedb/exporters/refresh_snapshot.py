@@ -206,7 +206,23 @@ def main(argv=None) -> int:
         import_sheets_first(force=args.force)
     # A running watcher makes refresh() raise, and that aborts this whole
     # run: nothing below may read the database while a writer is active.
-    counts = refresh(force=args.force)
+    #
+    # The retry wrapper is for the OTHER kind of blockage: a program this tool
+    # does not control holding a database lock (see db_contention). The
+    # cross-task mutex above cannot help there, and without a retry one locked
+    # moment cost a whole day's refresh -- three days running, at which point
+    # every number anybody looked at was three days old and nothing said so.
+    # Re-reading from the start is safe: a refresh that could not begin wrote
+    # nothing, and each table is swapped into place whole.
+    from ..db_contention import DatabaseBusy, retry_while_locked
+    try:
+        counts = retry_while_locked(
+            lambda: refresh(force=args.force),
+            what="The analysis snapshot refresh",
+            announce=lambda m: print(m, flush=True))
+    except DatabaseBusy as busy:
+        print("  [FAIL] %s" % busy, flush=True)
+        return 1
     snapshot_ok = True
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
 
