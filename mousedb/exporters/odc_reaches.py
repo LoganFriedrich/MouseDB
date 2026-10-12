@@ -154,7 +154,19 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict, l
         "StudyLeader": facts.get("StudyLeader", "") or author,
         "Exclusion_in_origin_study": excl,
         "Exclusion_reason": reason,
-        "Cause_of_Death": "",
+        # Cause of death, in the order the records can actually answer it:
+        #   1. the sheet, if it says;
+        #   2. a surgery the animal did not survive -- the sheet records survival
+        #      per surgery, so this is read, never inferred from how close a date
+        #      is to a surgery day;
+        #   3. the lab's standing meaning for a blank, from its study facts.
+        # (3) matters because a blank here is not ignorance in most colonies: a
+        # lab that euthanises at the end of study knows what a blank means, and
+        # writing "Not recorded" in a shared file would assert nobody knows. What
+        # the blank means is a fact about one lab, so it is configuration.
+        "Cause_of_Death": (_first(sheet, "ODC_Cause_of_Death", "Cause_of_Death")
+                           or (reason if died else "")
+                           or facts.get("Cause_of_Death", "")),
         "Injury_device": _first(sheet, "ODC_Injury_device") or (facts.get("Injury_device", "") if injury else ""),
         # A recorded level always wins. Where none is recorded, a study fact may supply
         # one -- and because the level follows from the injury TYPE (a pyramidotomy is
