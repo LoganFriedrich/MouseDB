@@ -216,7 +216,7 @@ ODC_REACH_ANIMAL = [
     _row("Exclusion_in_origin_study", "Exclusion in origin study", "Total exclusion when a surgery row records Survived = N; No exclusion when every recorded surgery survived; empty when survival is not recorded.", "", "text", "Total exclusion; No exclusion", "Total exclusion=did not survive a surgery; No exclusion=survived every recorded surgery"),
     _row("Exclusion_reason", "Exclusion reason", "Why the animal was excluded, when Exclusion_in_origin_study says so.", "", "text"),
     _row("Cause_of_Death", "Cause of death",
-         "From the sheet where it names one; otherwise the surgery the animal did not survive, which the sheet records per surgery; otherwise the laboratory's standing meaning for a blank, taken from its study facts. A blank is NOT reported as unknown when a lab has declared what a blank means.",
+         "Why this animal's participation ended. Useful mainly for the exceptions: when everything goes to plan the animal is perfused, which is what ends it, and that is what this says. A named cause from the sheet wins; otherwise a surgery the animal did not survive, which the sheet records per surgery; otherwise the laboratory's standing end-of-study procedure from its study facts. EMPTY means the animal may still be on study -- it is never filled in for a cohort that has not finished, because saying a living animal died is worse than saying nothing.",
          "", "text"),
     _row("Injury_device", "Injury device", "Injury device from the sheet's ODC tab when it names one, else the study facts.", "", "text"),
     _row("Injury_level", "Injury level", "Spinal level of the injury from the tracking sheet.", "", "text"),

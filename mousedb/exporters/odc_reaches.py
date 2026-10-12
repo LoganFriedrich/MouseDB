@@ -120,7 +120,14 @@ def _date(v) -> Optional[date]:
 # are still arriving. Recency cannot see either. In this lab's own records one
 # cohort's last session was ten days old while the owner knew the cohort was
 # finished -- so a tool deciding from dates alone would have called it live.
-STILL_ON_STUDY_DAYS = 180
+#
+# WHY A FORTNIGHT: sessions run on a near-daily cadence, so a fortnight of
+# nothing is already far longer than any gap within a running study. Past that,
+# the cohort is at least finished with behaviour. It is deliberately a short
+# window rather than a cautious one, because what follows from it is not a claim
+# of death -- a cohort still inside the window is simply left unanswered, and the
+# lab's own declaration overrides this either way.
+STILL_ON_STUDY_DAYS = 14
 STUDY_STATUS_FIELD = "Study_Status"
 
 
