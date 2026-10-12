@@ -31,11 +31,12 @@ the complete record.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 
 from . import data_dictionary as dd
+from . import extended_features as extended
 from . import missing
 
 # --- the committed vocabulary -------------------------------------------------------
@@ -124,6 +125,32 @@ KINEMATICS: List[Tuple[str, str]] = [
     ("head_angle_at_apex_deg", "head_angle_at_apex_deg"),
     ("head_angle_change_deg", "head_angle_change_deg"),
 ]
+
+def extra_kinematics(columns: Iterable[str]) -> List[Tuple[str, str]]:
+    """Every remaining extended per-reach measurement, in a stable order.
+
+    WHY this document carries all of them and not a chosen few: the twenty-odd
+    measures in KINEMATICS above are the ones a collaborator's own analysis
+    happened to use. Which measures matter is their question to ask, not ours to
+    pre-answer, and a measurement left out of the shared file is one they cannot
+    ask about at all -- they would have to come back and request it, or re-derive
+    it from video we are not sending. So the identifying and outcome columns stay
+    trimmed and readable, and the measurements are complete.
+
+    The curated ones keep their plain-English names and stay at the front, where
+    a reader meets them first. Everything else follows, named by dropping the
+    ``ext_`` prefix that only means "came from the extended block" -- an
+    implementation detail, not something a reader needs.
+    """
+    taken = {src for src, _ in KINEMATICS}
+    pairs = []
+    for column in sorted(columns):
+        if not column.startswith(extended.PREFIX) or column in taken:
+            continue
+        pairs.append((column, column[len(extended.PREFIX):]))
+    return pairs
+
+
 SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Total_Swipes_AI", "reaches_in_session"),
     ("Video_Retrieved", "pellets_retrieved_in_session"),
@@ -185,7 +212,9 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series) -> pd.Series:
 
 def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     """(summary frame, dictionary rows) from the complete per-reach frame."""
-    pairs = ANIMAL + SESSION + REACH_IDENTITY + KINEMATICS + SESSION_TOTALS
+    extra = extra_kinematics(full.columns)
+    pairs = (ANIMAL + SESSION + REACH_IDENTITY + KINEMATICS + extra
+             + SESSION_TOTALS)
     present = [(src, name) for src, name in pairs if src in full.columns]
 
     data: Dict[str, pd.Series] = {}
@@ -202,13 +231,14 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     data["reach_decided_the_pellet"] = causal.map(
         lambda v: "Yes" if str(v).strip().lower() in ("1", "true", "t", "yes") else "No")
 
-    for src, name in KINEMATICS + SESSION_TOTALS:
+    for src, name in KINEMATICS + extra + SESSION_TOTALS:
         if src in full.columns:
             data[name] = full[src]
 
     order = ([n for s, n in ANIMAL + SESSION + REACH_IDENTITY if s in full.columns]
              + ["reach_result", "pellet_result", "reach_decided_the_pellet"]
-             + [n for s, n in KINEMATICS + SESSION_TOTALS if s in full.columns])
+             + [n for s, n in KINEMATICS + extra + SESSION_TOTALS
+                if s in full.columns])
     out = pd.DataFrame({k: data[k] for k in order}, columns=order)
 
     # No empty cells anywhere. Anything not named in REASONS is a gap in a source, which
@@ -222,9 +252,17 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
 
 
 def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) -> List[dict]:
+    # The extended measurements' own dictionary rows are included, keyed by their
+    # ext_ names. Without them every extended column would fall through to the
+    # generic "Per-reach measurement." below -- a row that satisfies the upload
+    # and tells the reader nothing, which is the failure this document exists to
+    # avoid. Their real text carries the unit and what the measure means.
+    extended_keys = [src for src, _ in present if src.startswith(extended.PREFIX)]
     source_rows = {r["VariableName"]: r for r in
                    (dd.REACH_DATA + dd.ODC_REACH_ANIMAL + dd.ODC_REACH_SESSION
-                    + dd.ODC_REACH_TOTALS)}
+                    + dd.ODC_REACH_TOTALS
+                    + extended.dictionary_rows(
+                        [k[len(extended.PREFIX):] for k in extended_keys]))}
     rows = []
     for src, name in present:
         base = source_rows.get(src)

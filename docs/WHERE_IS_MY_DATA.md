@@ -15,7 +15,7 @@ each with a data dictionary beside it:
 | `manual_scores.csv` | pellet scored by hand from the tray (0 missed / 1 displaced / 2 retrieved) with the session's phase | `manual_scores_DATA_DICTIONARY.csv` |
 | `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_<cohort>_DATA_DICTIONARY.csv` (one per cohort: sheets differ) |
-| `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches, trimmed to what someone outside the lab needs, in plain words | `reaches_<cohort>_summary_DATA_DICTIONARY.csv` |
+| `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_<cohort>_summary_DATA_DICTIONARY.csv` |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |
 
@@ -32,6 +32,19 @@ They contain the same reaches. The difference is what each is *for*:
 - The **shareable table** answers the question a collaborator actually has and
   nothing else. It contains no tool versions, no file paths, no machine names,
   no reviewer names, and none of the columns that no code computes.
+
+**What is trimmed is the process, not the measurements.** Every measurement held
+for a reach is in the shareable table -- not a selection of them. The familiar
+ones come first, under plain names (`extension_past_nose_mm`,
+`peak_speed_mm_per_frame`), and the rest of the per-paw-point block follows.
+
+That is deliberate, and it was the other way round for a while. Which measures
+matter is the collaborator's question to ask; a measure left out is one they
+cannot ask about at all, and they would have to come back for it or re-derive it
+from video nobody is sending them. So the trimming is of columns that describe
+*our* work -- how the number was produced, by which version, checked by whom --
+not of the numbers themselves. Every column, including each measurement, has its
+own row in the dictionary beside it, with its unit and what it means.
 
 Two columns in the shareable table carry the point:
 
