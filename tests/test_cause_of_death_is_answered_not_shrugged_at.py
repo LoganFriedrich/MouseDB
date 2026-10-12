@@ -65,3 +65,71 @@ def test_the_surviving_animal_is_not_given_a_cause_of_death():
     assert out["Cause_of_Death"] == "Euthanasia", (
         "the end-of-study default still applies; it is not a surgical death")
     assert "survive" not in out["Cause_of_Death"].lower()
+
+
+# ------------------------------------------------- animals that may still be alive
+#
+# Every animal reaches an endpoint, so the lab's default is right for one that
+# has reached it -- and wrong in the worst direction for one that has not.
+
+def test_an_animal_that_may_still_be_alive_is_given_no_cause_of_death():
+    out = odc_reaches._animal("PROJ_01_01", "PROJ_01", {}, {},
+                              {"Cause_of_Death": "Perfusion/fixation"},
+                              "A Laboratory", still_on_study=True)
+    assert out["Cause_of_Death"] == ""
+
+
+def test_a_surgical_death_is_still_reported_in_a_running_cohort():
+    """An animal lost in surgery is dead whatever the cohort's state."""
+    out = odc_reaches._animal("PROJ_01_01", "PROJ_01", {"Contusion_Survived": "N"},
+                              {}, {"Cause_of_Death": "Perfusion/fixation"},
+                              "A Laboratory", still_on_study=True)
+    assert "survive" in out["Cause_of_Death"].lower()
+
+
+def test_a_declaration_beats_recency_in_both_directions(monkeypatch):
+    """The lab knows; the dates only guess.
+
+    A cohort can finish its behaviour weeks before its endpoint, and can finish
+    long ago while its last videos are still arriving. Recency sees neither.
+    """
+    import pandas as pd
+    recent = pd.DataFrame({"video_name": ["20991231_PROJ0101_P1"]})
+    old = pd.DataFrame({"video_name": ["20000101_PROJ0101_P1"]})
+
+    monkeypatch.setattr(odc_reaches, "_declared_study_status",
+                        lambda cohort: "completed")
+    assert odc_reaches._cohort_still_on_study("PROJ_01", recent, {}) is False
+
+    monkeypatch.setattr(odc_reaches, "_declared_study_status",
+                        lambda cohort: "in_progress")
+    assert odc_reaches._cohort_still_on_study("PROJ_01", old, {}) is True
+
+
+def test_with_nothing_declared_recency_decides(monkeypatch):
+    import pandas as pd
+    monkeypatch.setattr(odc_reaches, "_declared_study_status", lambda cohort: "")
+    assert odc_reaches._cohort_still_on_study(
+        "PROJ_01", pd.DataFrame({"video_name": ["20991231_PROJ0101_P1"]}), {}) is True
+    assert odc_reaches._cohort_still_on_study(
+        "PROJ_01", pd.DataFrame({"video_name": ["20000101_PROJ0101_P1"]}), {}) is False
+
+
+def test_knowing_nothing_falls_back_to_saying_nothing(monkeypatch):
+    """The alternative is announcing that animals we know nothing about are dead."""
+    import pandas as pd
+    monkeypatch.setattr(odc_reaches, "_declared_study_status", lambda cohort: "")
+    assert odc_reaches._cohort_still_on_study("PROJ_01", pd.DataFrame(), {}) is True
+    assert odc_reaches._cohort_still_on_study(
+        "PROJ_01", pd.DataFrame({"video_name": ["not-a-date"]}), {}) is True
+
+
+def test_study_status_is_read_per_cohort_and_not_inherited_from_the_project():
+    """CNT_06 can be running while CNT_05 is finished.
+
+    facts() resolves by project, because a strain or supplier belongs to a whole
+    project. Whether a study has finished belongs to one cohort.
+    """
+    import inspect
+    source = inspect.getsource(odc_reaches._declared_study_status)
+    assert "read_all" in source, "must not go through the project-scoped facts()"

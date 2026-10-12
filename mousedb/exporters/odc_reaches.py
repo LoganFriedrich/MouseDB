@@ -110,7 +110,65 @@ def _date(v) -> Optional[date]:
         return None
 
 
-def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict, lab: str) -> dict:
+# A cohort whose animals may still be alive. Anything a lab has not declared is
+# decided by how long ago its last recorded session was -- a proxy, and only ever
+# used to decide whether to stay SILENT about an animal's fate. It never asserts
+# a death on its own.
+#
+# WHY the declaration has to win: a cohort can finish its behaviour and still be
+# weeks away from its endpoint, and it can finish long ago while its last videos
+# are still arriving. Recency cannot see either. In this lab's own records one
+# cohort's last session was ten days old while the owner knew the cohort was
+# finished -- so a tool deciding from dates alone would have called it live.
+STILL_ON_STUDY_DAYS = 180
+STUDY_STATUS_FIELD = "Study_Status"
+
+
+def _declared_study_status(cohort_id: str) -> str:
+    """``Study_Status`` written against this exact cohort, if the lab wrote one.
+
+    Read from the raw sections rather than through facts(), on purpose: facts()
+    resolves by PROJECT, because a strain or a supplier is a property of a whole
+    project. Whether a study has finished is a property of ONE COHORT -- CNT_06
+    can be running while CNT_05 is done -- so it is looked up by the cohort's own
+    name and deliberately does not inherit from the project.
+    """
+    from .. import study_facts as _sf
+    try:
+        section = (_sf.read_all() or {}).get(str(cohort_id), {})
+    except Exception:
+        return ""
+    return str(section.get(STUDY_STATUS_FIELD, "")).strip().lower()
+
+
+def _cohort_still_on_study(cohort_id: str, reaches, cohort_facts: dict) -> bool:
+    """True when this cohort's animals must not be given a cause of death.
+
+    The lab's own declaration first (``Study_Status`` against the cohort:
+    ``in_progress`` or ``completed``). With nothing declared, fall back to
+    recency, and fall back towards SILENCE: a cohort with no datable sessions
+    counts as still on study, because the alternative is announcing that animals
+    we know nothing about are dead.
+    """
+    declared = (_declared_study_status(cohort_id)
+                or str(cohort_facts.get(STUDY_STATUS_FIELD, "")).strip().lower())
+    if declared in ("in_progress", "in progress", "running", "active"):
+        return True
+    if declared in ("completed", "complete", "done", "finished"):
+        return False
+
+    import pandas as pd
+    if reaches is None or len(reaches) == 0 or "video_name" not in reaches:
+        return True
+    when = pd.to_datetime(reaches["video_name"].astype(str).str.slice(0, 8),
+                          format="%Y%m%d", errors="coerce").max()
+    if pd.isna(when):
+        return True
+    return (pd.Timestamp.today().normalize() - when).days < STILL_ON_STUDY_DAYS
+
+
+def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
+            lab: str, still_on_study: bool = False) -> dict:
     # A study fact can have per-animal exceptions -- a colony that is one strain except
     # for the animals on a transgenic line, say. WHICH animals, and what their value
     # should be, are facts about one lab, so the rule lives in that lab's study-facts
@@ -164,9 +222,14 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict, l
         # lab that euthanises at the end of study knows what a blank means, and
         # writing "Not recorded" in a shared file would assert nobody knows. What
         # the blank means is a fact about one lab, so it is configuration.
+        # (4) and an animal that may still be alive gets NOTHING. Every animal
+        # reaches an endpoint eventually, so the lab's default is right for
+        # animals that have reached theirs -- and wrong, in the worst direction,
+        # for one that has not.
         "Cause_of_Death": (_first(sheet, "ODC_Cause_of_Death", "Cause_of_Death")
                            or (reason if died else "")
-                           or facts.get("Cause_of_Death", "")),
+                           or ("" if still_on_study
+                               else facts.get("Cause_of_Death", ""))),
         "Injury_device": _first(sheet, "ODC_Injury_device") or (facts.get("Injury_device", "") if injury else ""),
         # A recorded level always wins. Where none is recorded, a study fact may supply
         # one -- and because the level follows from the injury TYPE (a pyramidotomy is
@@ -211,7 +274,9 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     subj = {}
     if subjects is not None and not subjects.empty:
         subj = {r["subject_id"]: r for r in subjects.to_dict("records")}
-    animals = {sid: _animal(sid, cohort_id, wide.get(sid, {}), subj.get(sid, {}), facts(sid) or {}, lab)
+    on_study = _cohort_still_on_study(cohort_id, rc, facts(cohort_id) or {})
+    animals = {sid: _animal(sid, cohort_id, wide.get(sid, {}), subj.get(sid, {}),
+                            facts(sid) or {}, lab, on_study)
                for sid in rc["subject_id"].unique()}
 
     # 4 + 2. reach columns and the per-row session columns
