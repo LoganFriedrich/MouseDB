@@ -121,13 +121,17 @@ def _date(v) -> Optional[date]:
 # cohort's last session was ten days old while the owner knew the cohort was
 # finished -- so a tool deciding from dates alone would have called it live.
 #
-# WHY A FORTNIGHT: sessions run on a near-daily cadence, so a fortnight of
-# nothing is already far longer than any gap within a running study. Past that,
-# the cohort is at least finished with behaviour. It is deliberately a short
-# window rather than a cautious one, because what follows from it is not a claim
-# of death -- a cohort still inside the window is simply left unanswered, and the
-# lab's own declaration overrides this either way.
-STILL_ON_STUDY_DAYS = 14
+# WHY A MONTH: sessions run on a near-daily cadence, so even a fortnight of
+# silence is longer than any gap inside a running study -- but a real study has
+# real interruptions: a break between stages, a holiday, equipment down, a person
+# away. A month clears all of those without having to enumerate them.
+#
+# Erring long is the cheap direction. The window never asserts anything: inside
+# it a cohort is left UNANSWERED, so a window that is too long costs only a few
+# blank cells, while one that is too short starts naming an end for animals that
+# have not reached one. And the lab's own declaration overrides it either way, so
+# the window only ever decides the cases nobody has spoken for.
+STILL_ON_STUDY_DAYS = 30
 STUDY_STATUS_FIELD = "Study_Status"
 
 
