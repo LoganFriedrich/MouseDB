@@ -76,13 +76,22 @@ ANIMAL: List[Tuple[str, str]] = [
     ("SpeciesStrainTyp", "strain"),
     ("Animal_origin", "animal_source"),
     ("SexTyp", "sex"),
+    ("AgeVal", "age_weeks"),
     ("BodyWgtMeasrVal", "body_weight_g"),
     ("InjGroupAssignTyp", "study_group"),
     ("Injury_Type", "injury_type"),
     ("Injury_level", "injury_level"),
     ("Injury_details", "injury_details"),
+    ("Injury_device", "injury_device"),
     ("Exclusion_in_origin_study", "excluded_from_study"),
     ("Exclusion_reason", "exclusion_reason"),
+    ("Cause_of_Death", "cause_of_death"),
+    # Provenance a reader of a shared file needs in order to cite it. These are
+    # lab-added columns, not ODC fields, and they are constant down the file --
+    # which is the point: a shared table should say whose data it is without the
+    # reader having to be told separately.
+    ("Laboratory", "laboratory"),
+    ("StudyLeader", "study_leader"),
 ]
 SESSION: List[Tuple[str, str]] = [
     ("Session_ID", "session"),
@@ -91,6 +100,12 @@ SESSION: List[Tuple[str, str]] = [
     ("Test_Type_Grouped", "test_phase_group"),
     ("Days_Post_Injury", "days_post_injury"),
     ("Tray_ID", "tray"),
+    # Which tray was presented decides whether a per-pellet outcome means
+    # anything at all: on the easy and flat training trays a displaced pellet can
+    # simply be retried. Leaving it out let someone pool training sessions with
+    # scored ones without being able to tell.
+    ("tray_type", "tray_type"),
+    ("Attention_AI", "mean_attention_score_in_session"),
 ]
 REACH_IDENTITY: List[Tuple[str, str]] = [
     ("video_name", "session_video"),
@@ -180,6 +195,12 @@ REASONS: Dict[str, str] = {
     "nose_to_slit_at_apex_mm": missing.NOT_RECORDED,
     "head_angle_at_apex_deg": missing.NOT_RECORDED,
     "head_angle_change_deg": missing.NOT_RECORDED,
+    # Sheet fields that a cohort's records may simply not carry. 'Not recorded'
+    # is the honest word: nobody wrote it down, as distinct from a measurement
+    # that was attempted and failed.
+    "age_weeks": missing.NOT_RECORDED,
+    "cause_of_death": missing.NOT_RECORDED,
+    "injury_device": missing.NOT_RECORDED,
 }
 
 
