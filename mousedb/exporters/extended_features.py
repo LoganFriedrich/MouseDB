@@ -100,39 +100,183 @@ def _unit_for(key: str) -> str:
     return ""
 
 
-def _describe(key: str) -> str:
-    """A sentence for a key whose name is its own description.
+# How each measurement is actually computed, taken from the kinematics extractor
+# that produces it. A dictionary Description has to say what the value IS; for a
+# calculated value that means saying how it was calculated, or a reader cannot
+# tell what they are comparing.
+#
+# This replaces descriptions generated from the column NAME. Restating a name
+# ("Paw outline area mean") defines nothing: it gives the reader the words they
+# just read, and leaves them unable to tell whether an area is a convex hull, a
+# bounding box or a polygon, or over what the mean was taken.
+#
+# Composed from three parts rather than written out 161 times -- the landmark,
+# the measure, the variant. Each part is written once and is accurate for every
+# column that uses it, which is both less text and fewer chances to be wrong.
 
-    These are machine-generated on purpose. Writing 161 descriptions by hand would
-    produce 161 chances to describe a measurement wrongly; naming the parts the
-    pipeline itself used is accurate by construction, and anything needing real prose
-    gets an entry in ``_NOTES`` below.
-    """
-    body = key
+_LANDMARKS = {
+    "righthand": "the right hand",
+    "lefthand": "the left hand",
+    "rhleft": "the left edge of the right hand",
+    "rhright": "the right edge of the right hand",
+    "rhout": "the outer edge of the right hand",
+    "nose": "the nose",
+    "head": "the head",
+    "tray": "the tray",
+    "paw": "",      # inter-paw measures name their own subject
+    "frames": "",
+}
+
+# Every trajectory measure is computed on the paw position with the NOSE
+# SUBTRACTED, bracketed by two synthetic anchors: the midpoint of nose and left
+# box edge at the first frame, and of nose and right box edge at the last. Said
+# once here so each description below can be about its own formula.
+_BASIS = ("Measured on the path of %s relative to the nose, bracketed by a "
+          "synthetic start point at the midpoint of nose and left box edge and a "
+          "synthetic end point at the midpoint of nose and right box edge, so "
+          "reaches are comparable regardless of where the animal stood.")
+
+_MEASURES = {
+    "apex_frame":
+        "The frame within the reach at which %s is furthest out through the slit "
+        "(greatest distance past the nose).",
+    "extension_past_nose":
+        "How far %s got past the nose at the furthest point of the reach.",
+    "total_path":
+        "Total distance %s travelled, summed frame to frame along the whole path.",
+    "lateral_spread":
+        "The full side-to-side range of %s during the reach: its rightmost "
+        "position minus its leftmost.",
+    "swept_area":
+        "The area enclosed by the path of %s, as the polygon through every "
+        "tracked position in order (shoelace formula).",
+    "path_directness":
+        "How straight the reach was: straight-line distance from the start anchor "
+        "to the end anchor divided by the total distance %s actually travelled. "
+        "1 is a perfectly straight path; smaller values wander more.",
+    "motion_smoothness":
+        "How smooth the motion of %s was, as 1 / (1 + mean absolute jerk), where "
+        "jerk is the third frame-to-frame difference of position. Approaches 1 "
+        "for smooth motion and falls towards 0 as the path becomes jerky.",
+    "lateral_deviation":
+        "How far %s departed sideways from a straight reach: the greatest "
+        "perpendicular distance from any tracked position to the straight line "
+        "between the start and end anchors.",
+    "mean_speed":
+        "Average speed of %s: total distance travelled divided by the number of "
+        "frame-to-frame steps.",
+    "peak_speed":
+        "Fastest single frame-to-frame step made by %s during the reach.",
+    "apex_speed":
+        "Speed of %s at the furthest point of the reach: the length of the "
+        "frame-to-frame step straddling the apex frame.",
+    "visibility":
+        "How confidently the tracker placed %s -- its reported likelihood, where "
+        "values below 0.5 are treated as unreliable everywhere else in this "
+        "pipeline.",
+    "apex_lead":
+        "The number of frames between the earliest and the latest of the four paw "
+        "points reaching their own furthest extension, as the difference between "
+        "the largest and smallest of their four apex frames -- the paw's internal "
+        "timing spread.",
+    "any_paw_low_confidence":
+        "Number of frames in the reach where at least one of the four tracked paw "
+        "points fell below a likelihood of 0.5, so the paw was not fully tracked.",
+    "contact_duration":
+        "Number of frames in the reach showing pellet or tray movement while the "
+        "wrist could not be confidently tracked: pellet x position varying by more "
+        "than 2 px over a rolling window of 4 frames, with both wrist and pillar "
+        "likelihood below 0.5. It is evidence the paw was at the tray while hidden "
+        "from the camera, not a measured contact.",
+    "width_proxy":
+        "Distance between the left and right edges of the right hand -- the "
+        "stand-in for how open the paw is, since grasp aperture itself is not "
+        "measured.",
+    "outline_area":
+        "Area of the polygon through the four tracked paw points, taken in order "
+        "of their angle around the centre of the four, which is the paw outline "
+        "as tracked. Not a bounding box and not a convex hull.",
+    "spread_max":
+        "The largest distance between any two of the four tracked paw points -- "
+        "how far apart the paw is at its widest, whichever pair that happens to "
+        "be.",
+    "velocity_correlation":
+        "How alike the four tracked paw points move: the average Pearson "
+        "correlation between their frame-to-frame speed profiles, over every "
+        "pair. Near 1 means they speed up and slow down together.",
+    "apex_lead_frames":
+        "How many frames separate the earliest and the latest of the four paw "
+        "points in reaching their own furthest extension -- the paw's internal "
+        "timing spread.",
+    "leading_point":
+        "Which of the four tracked paw points led the reach, as the one whose "
+        "own furthest extension falls at the earliest frame.",
+}
+
+_VARIANTS = {
+    "at_apex": "Taken at the furthest point of the reach.",
+    "at_contact": "Taken at the frame the paw met the pellet.",
+    "at_start": "Taken at the first frame of the reach.",
+    "at_end": "Taken at the last frame of the reach.",
+    "max": "The largest value over the frames of the reach.",
+    "min": "The smallest value over the frames of the reach.",
+    "mean": "Averaged over the frames of the reach.",
+    "range": "The largest value over the reach minus the smallest.",
+}
+
+_TRAJECTORY_MEASURES = {
+    "apex_frame", "extension_past_nose", "total_path", "lateral_spread",
+    "swept_area", "path_directness", "motion_smoothness", "lateral_deviation",
+    "mean_speed", "peak_speed", "apex_speed",
+}
+
+
+def _split_key(key):
+    """(landmark, measure, variant) for one extended-feature name."""
     landmark = ""
-    for name in ("righthand", "rhleft", "rhright", "paw", "tray", "frames"):
+    body = key
+    for name in sorted(_LANDMARKS, key=len, reverse=True):
         if body.startswith(name + "_"):
-            landmark = name
-            body = body[len(name) + 1:]
+            landmark, body = name, body[len(name) + 1:]
             break
-    words = body.replace("_", " ")
-    where = ""
-    for marker, phrase in (("at apex", "at the apex of the reach"),
-                           ("at contact", "at the frame the paw met the pellet"),
-                           ("at start", "at the first frame of the reach"),
-                           ("at end", "at the last frame of the reach")):
-        if words.endswith(marker):
-            words, where = words[: -len(marker)].strip(), phrase
+
+    for suffix, _unit in _SUFFIX_UNITS:          # drop the unit suffix
+        if body.endswith(suffix):
+            body = body[: -len(suffix)].rstrip("_")
             break
-    text = "%s%s" % (words[:1].upper() + words[1:], (", %s" % where) if where else "")
-    if landmark:
-        text += " (%s)" % {"righthand": "right hand landmark",
-                           "rhleft": "left edge of the right hand",
-                           "rhright": "right edge of the right hand",
-                           "paw": "paw outline",
-                           "tray": "tray",
-                           "frames": "frame count"}.get(landmark, landmark)
-    return text + "."
+
+    variant = ""
+    for name in sorted(_VARIANTS, key=len, reverse=True):
+        if body.endswith("_" + name):
+            variant, body = name, body[: -(len(name) + 1)]
+            break
+
+    return landmark, body, variant
+
+
+def _describe(key: str) -> str:
+    """What this measurement is and, being calculated, how it is calculated.
+
+    Built from the landmark, the measure and the variant, so one accurate
+    sentence per measure covers every column that uses it. A key this cannot take
+    apart says it has no definition yet -- honest about saying little, which
+    beats prose that sounds like a definition and is not.
+    """
+    landmark, measure, variant = _split_key(key)
+    template = _MEASURES.get(measure)
+    if not template:
+        return ("%s. No written definition yet for this measurement; its name is "
+                "all that is known here." % key.replace("_", " ").capitalize())
+
+    subject = _LANDMARKS.get(landmark, "") or "the paw"
+    text = template % subject if "%s" in template else template
+
+    if variant and _VARIANTS.get(variant):
+        text += " " + _VARIANTS[variant]
+    if measure in _TRAJECTORY_MEASURES and landmark in (
+            "righthand", "lefthand", "rhleft", "rhright", "rhout"):
+        text += " " + (_BASIS % subject)
+    return text
 
 
 _NOTES = {

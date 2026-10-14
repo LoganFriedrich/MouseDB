@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 ODC_DICTIONARY_COLUMNS = [
     "VariableName", "Title", "Description", "Unit_of_Measure", "DataType",
@@ -246,12 +246,28 @@ ODC_REACH_TOTALS = [
 ]
 
 
-def sheet_column_row(column: str, tab: str, field: str, record_no: int = 1) -> dict:
-    """Dictionary row for a column copied from a tracking-sheet tab (see animal_records)."""
+def sheet_column_row(column: str, tab: str, field: str, record_no: int = 1,
+                     definitions: Optional[dict] = None) -> dict:
+    """Dictionary row for a column copied from a tracking-sheet tab (see animal_records).
+
+    Description says what the column MEANS; provenance -- which tab and column it
+    was copied from -- goes in Comments, where provenance belongs. The meaning of
+    a lab's own sheet column is a lab fact, so it comes from that lab's
+    definitions file (see field_definitions). Where none has been written the
+    Description says so plainly and names the file to edit, rather than printing
+    provenance in a field a reader will take for a definition.
+    """
+    from . import field_definitions as _fd
+
     which = "" if record_no == 1 else " (the animal's row %d on that tab)" % record_no
+    provenance = ("Copied as written from the '%s' column of the '%s' tab of this "
+                  "cohort's tracking sheet%s. Text; dates as YYYY-MM-DD."
+                  % (field, tab, which))
+    meaning = _fd.lookup(tab, field, definitions)
     return _row(column, "%s: %s" % (tab, field),
-                "Copied as written from the '%s' column of the '%s' tab of this cohort's "
-                "tracking sheet%s. Text; dates as YYYY-MM-DD." % (field, tab, which), "", "text")
+                meaning or _fd.undefined_text(tab, field),
+                _fd.unit_for(tab, field, definitions), "text",
+                comments=provenance)
 
 
 def write_rows(rows: List[dict], out_path: Path) -> Path:

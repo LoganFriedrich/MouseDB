@@ -175,7 +175,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #   2 = letter cohorts carry their letter (ASPA_04_D)
     #   3 = two documents per cohort (complete record + shareable summary), the extended
     #       per-reach measurements included, and no empty cells in either
-    sig["output_format"] = 5
+    sig["output_format"] = 6
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
