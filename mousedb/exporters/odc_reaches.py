@@ -33,6 +33,7 @@ import pandas as pd
 from . import data_dictionary as dd
 from . import extended_features as ext
 from . import missing
+from . import analysis_reaches
 from . import reach_summary
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
@@ -444,11 +445,20 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> 
 def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict]) -> dict:
     """Write both documents for one cohort, plus a data dictionary for each.
 
-    Two files, because one table cannot be both things (see reach_summary):
+    Three files, because one table cannot be all three things:
       ODC_reaches_<label>.csv          the complete record -- every measurement we hold,
                                        including how it was produced and by whom
       reaches_<label>_summary.csv      the shareable table -- what happened, in words,
                                        no empty cells, no pipeline internals
+      reaches_<label>_analysis.csv     the analysis table -- the same reaches in the
+                                       shape an analysis collaborator sent back, so
+                                       their existing work runs against it: numbers in
+                                       numeric columns, NA for absent, nothing to join
+
+    The first two spell an absent value as a WORD saying why it is absent, which an
+    ODC upload requires and a person reading the file wants. That word is also what
+    stops a statistics package loading the column as numbers, which is why the third
+    exists rather than one of the first two being bent to cover it.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -477,9 +487,14 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
            out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
 
+    analysis, analysis_rows = analysis_reaches.build(df)
+    _write(analysis, analysis_rows, out_dir / ("reaches_%s_analysis.csv" % label),
+           out_dir / ("reaches_%s_analysis_DATA_DICTIONARY.csv" % label))
+
     documented = {r["VariableName"] for r in rows}
     entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
              "summary_columns": int(len(summary.columns)),
+             "analysis_columns": int(len(analysis.columns)),
              "never_measured_columns": sorted(reasons),
              "undocumented_columns": [c for c in df.columns if c not in documented],
              "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
