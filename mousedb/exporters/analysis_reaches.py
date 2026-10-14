@@ -57,6 +57,7 @@ from . import extended_features as extended
 from . import reach_summary
 
 MISSING = "NA"
+ROW_NUMBER = "entry_index"
 NAME_RULE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # Identity and context, repeated onto every row so the file stands alone.
@@ -265,7 +266,16 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
             data["experiment_stage"] = experiment_stage(full[source])
             break
 
-    order = ([n for _s, n in IDENTITY if n in data]
+    # A plain counter, first column, so the file can be sorted in a spreadsheet
+    # and put back exactly as it was. Nothing is derived from it and nothing
+    # should be: it means "this was row N as written", not anything about the
+    # reach. It exists because sorting a sheet is a one-way door otherwise --
+    # the order here is chronological within each animal and session, which no
+    # combination of the other columns reproduces once it has been lost.
+    data[ROW_NUMBER] = range(1, len(full) + 1)
+
+    order = ([ROW_NUMBER]
+             + [n for _s, n in IDENTITY if n in data]
              + [n for n in ("experiment_stage", "reach_outcome", "pellet_outcome",
                             "pellet_state_at_this_reach") if n in data]
              + [n for _s, n in NAMED_KINEMATICS + extra + SESSION_TOTALS if n in data])
@@ -294,7 +304,17 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
     answers = {r["VariableName"]: r for r in reach_summary._dictionary_rows([], {})}
     rows = []
     for name in order:
-        if name == "experiment_stage":
+        if name == ROW_NUMBER:
+            base = dd._row(
+                name, "Entry index",
+                "A plain counter over the rows of this file, starting at 1. It "
+                "carries no meaning about the reach: it is here so the file can "
+                "be sorted in a spreadsheet and then put back in the order it "
+                "was written, which is chronological within each animal and "
+                "session and is not reproducible from the other columns once "
+                "lost.",
+                "", "integer", "", "", "1")
+        elif name == "experiment_stage":
             base = dd._row(
                 name, "Stage of the experiment",
                 "Where the animal was in the experiment when this session was run, "

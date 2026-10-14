@@ -180,3 +180,44 @@ def test_all_three_phase_columns_travel():
     out, _ = ar.build(frame())
     for name in ("test_type", "test_type_grouped", "experiment_stage"):
         assert name in out.columns
+
+
+# -------------------------------------------------------------- the row number
+#
+# Sorting a sheet is a one-way door otherwise. The order written here is
+# chronological within each animal and session, and no combination of the other
+# columns reproduces it once it has been lost.
+
+def test_every_row_carries_a_number():
+    out, _ = ar.build(frame())
+    assert ar.ROW_NUMBER in out.columns
+    assert list(out[ar.ROW_NUMBER]) == [1, 2]
+
+
+def test_the_number_comes_first_so_it_is_visible_on_opening():
+    out, _ = ar.build(frame())
+    assert list(out.columns)[0] == ar.ROW_NUMBER
+
+
+def test_it_is_a_number_not_text():
+    """It must sort as 1, 2, 10 rather than 1, 10, 2."""
+    out, _ = ar.build(frame())
+    assert ar.ROW_NUMBER not in ar.TEXT_COLUMNS
+    assert all(isinstance(v, (int, float)) for v in out[ar.ROW_NUMBER])
+
+
+def test_it_is_never_absent():
+    out, _ = ar.build(frame())
+    assert ar.MISSING not in list(out[ar.ROW_NUMBER].astype(str))
+
+
+def test_it_is_unique():
+    out, _ = ar.build(frame())
+    assert out[ar.ROW_NUMBER].nunique() == len(out)
+
+
+def test_its_dictionary_entry_says_it_means_nothing_about_the_reach():
+    _out, rows = ar.build(frame())
+    entry = next(r for r in rows if r["VariableName"] == ar.ROW_NUMBER)
+    assert "carries no meaning" in entry["Description"]
+    assert "put back in the order" in entry["Description"]
