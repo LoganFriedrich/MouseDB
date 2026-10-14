@@ -340,8 +340,25 @@ ODC_REACH_ANIMAL = [
          "", "text", "Yes; No",
          "Yes=came through every recorded surgery; "
          "No=at least one surgery is recorded as not survived"),
-    _row("Exclusion_in_origin_study", "Exclusion in origin study", "Total exclusion when a surgery row records Survived = N; No exclusion when every recorded surgery survived; empty when survival is not recorded.", "", "text", "Total exclusion; No exclusion", "Total exclusion=did not survive a surgery; No exclusion=survived every recorded surgery"),
-    _row("Exclusion_reason", "Exclusion reason", "Why the animal was excluded, when Exclusion_in_origin_study says so.", "", "text"),
+    # THIS DESCRIPTION WAS WRONG UNTIL 2026-10-14 and said so in detail: it
+    # described the export deciding an exclusion itself, writing "Total exclusion"
+    # for any animal that died in a surgery. That logic was removed (see _animal in
+    # odc_reaches: the decision is the reader's, and the surgery fact is carried in
+    # Survived_All_Surgeries instead), but the description stayed behind, telling a
+    # reader a rule the file no longer follows.
+    _row("Exclusion_in_origin_study", "Exclusion in origin study",
+         "Whether the study this data came from excluded this animal, exactly as that "
+         "study's own tracking sheet records it. Nothing here is inferred: no animal is "
+         "excluded by this export, for any reason. No cohort's sheet carries an exclusion "
+         "column at present, so the value is 'Not recorded' throughout -- which means no "
+         "exclusion has been DECLARED, not that every animal was deliberately included. "
+         "If you are looking for animals that died during a surgery, that is "
+         "Survived_All_Surgeries, and it is a fact about the animal rather than a "
+         "judgement about its data.",
+         "", "text", "", ""),
+    _row("Exclusion_reason", "Exclusion reason",
+         "Why, when Exclusion_in_origin_study names an exclusion. Copied from the same "
+         "sheet and, like it, not recorded in any cohort yet.", "", "text"),
     _row("Cause_of_Death", "Cause of death",
          "Why this animal's participation ended. Useful mainly for the exceptions: when everything goes to plan the animal is perfused, which is what ends it, and that is what this says. A named cause from the sheet wins; otherwise a surgery the animal did not survive, which the sheet records per surgery; otherwise the laboratory's standing end-of-study procedure from its study facts. EMPTY means the animal may still be on study -- it is never filled in for a cohort that has not finished, because saying a living animal died is worse than saying nothing.",
          "", "text"),
