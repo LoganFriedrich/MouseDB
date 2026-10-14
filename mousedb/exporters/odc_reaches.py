@@ -30,6 +30,7 @@ from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 
+from . import csv_safety
 from . import data_dictionary as dd
 from . import extended_features as ext
 from . import missing
@@ -464,6 +465,13 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> 
     which it writes itself.)
     """
     df, rows = dd.apply_odc_names(df, rows)
+    # And made safe to read back: a comma inside a data cell is the classic way a
+    # CSV survives being written and dies in someone else's reader, and the
+    # tracking sheets put commas in cells ("Pyramid, left"). See csv_safety --
+    # every substitution is recorded in that column's own dictionary entry.
+    df, changes = csv_safety.make_frame_safe(df)
+    rows = csv_safety.note_substitutions(rows, changes)
+    rows = csv_safety.make_rows_safe(rows)
     tmp = data.with_name(data.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(data)
@@ -524,11 +532,17 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # other document, so that stays true of a column added later by someone who has
     # not read ODC's naming guide.
     analysis, analysis_rows = dd.apply_odc_names(analysis, analysis_rows)
+    analysis, changes = csv_safety.make_frame_safe(analysis)
+    analysis_rows = csv_safety.make_rows_safe(
+        csv_safety.note_substitutions(analysis_rows, changes))
     analysis.to_csv(out_dir / ("reaches_%s_analysis.csv" % label), index=False)
 
     sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
     if len(sessions):
         sessions, session_rows = dd.apply_odc_names(sessions, session_rows)
+        sessions, changes = csv_safety.make_frame_safe(sessions)
+        session_rows = csv_safety.make_rows_safe(
+            csv_safety.note_substitutions(session_rows, changes))
         sessions.to_csv(out_dir / ("sessions_%s_analysis.csv" % label), index=False)
 
     documented = {r["VariableName"] for r in rows}

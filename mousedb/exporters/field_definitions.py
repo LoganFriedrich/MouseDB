@@ -61,7 +61,10 @@ ANY_TAB = "*"
 # like a definition and is not, is worse than an empty cell.
 UNDEFINED = ("NO DEFINITION YET for this column. Its meaning is a property of "
              "this laboratory's own tracking sheet, so it has to be written down "
-             "by the laboratory: add \"%s\" to %s. Until then, only the "
+             # SINGLE quotes, not double: this text lands in a CSV cell, and a
+             # double quote inside a quoted CSV field is the construct
+             # hand-written parsers get wrong most often.
+             "by the laboratory: add '%s' to %s. Until then, only the "
              "column's provenance is known -- see Comments.")
 
 
