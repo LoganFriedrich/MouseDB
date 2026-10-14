@@ -24,6 +24,7 @@ a submission must not imply a value exists when it never does.
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -31,6 +32,122 @@ ODC_DICTIONARY_COLUMNS = [
     "VariableName", "Title", "Description", "Unit_of_Measure", "DataType",
     "PermittedValues", "PVDescribed", "MinimumValue", "MaximumValue", "Comments",
 ]
+
+
+# -- ODC's rules for what a variable may be called ----------------------------
+#
+# From ODC's own guide to naming variables (read 2026-10-14; linked from the
+# Data Dictionary specification, which defers to it):
+#
+#   * a name MUST START WITH A LETTER;
+#   * it may contain letters, underscores and periods (digits appear throughout
+#     their own examples, so those are kept too);
+#   * special characters are forbidden -- the examples given are "&" and "%";
+#   * SPACES are forbidden: "use underscores instead";
+#   * "nothing longer than 64 characters".
+#
+# WHY A FUNCTION, RATHER THAN JUST NAMING THINGS CAREFULLY. Nearly every column
+# in this project is named in this file and is legal because it was written
+# legally. The complete per-reach record is the exception: its columns are
+# COPIED from each cohort's tracking workbook, so their names are whatever a
+# person typed into a spreadsheet header. Sixteen illegal names were going out
+# -- a weight in grams carrying "(g)", a surgeon count carrying "#", a group id
+# with a space in it, four test scores with hyphens. Fixing those sixteen by
+# hand would hold only until the next cohort invents a new header, so names are
+# repaired on the way out, from the rule, every time.
+#
+# NOTHING IS LOST BY THE RENAME. The dictionary row for a copied column keeps
+# the original header in Title ("<tab>: <field>") and names the exact tab and
+# column it came from in Comments. What is being made legal is the
+# machine-readable name; the human-readable one is untouched.
+ODC_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*$")
+ODC_NAME_MAX = 64
+
+# Characters that MEAN something, spelled out rather than deleted: "cat#" is a
+# catalogue number and "%" is a percentage, and dropping either would quietly
+# change what the column says it holds.
+_NAME_WORDS = {"#": " number ", "%": " percent ", "&": " and ",
+               "+": " plus ", "@": " at "}
+
+
+def odc_name(raw: str) -> str:
+    """A legal ODC variable name for `raw`, as close to it as the rules allow.
+
+    Legal, but not guaranteed UNIQUE: two different headers can normalise to the
+    same name, and a 65th character being cut off is one way that happens. Use
+    odc_names() for a whole table, which is the only place a collision can be
+    seen -- and must be, because two columns sharing a name means two columns
+    sharing one dictionary row.
+    """
+    text = str(raw)
+    for char, word in _NAME_WORDS.items():
+        text = text.replace(char, word)
+    # Anything else outside the allowed set becomes an underscore: spaces,
+    # brackets, slashes, hyphens. "Subject_Weight (g)" -> "Subject_Weight_g",
+    # which is the same convention the ODC sheet builder already uses for that
+    # very column.
+    text = re.sub(r"[^A-Za-z0-9_.]+", "_", text)
+    text = re.sub(r"_{2,}", "_", text).strip("_")
+    if not text:
+        return "unnamed"
+    if not text[0].isalpha():
+        # Must start with a letter, and this one does not. "v" for variable, so
+        # a header beginning with a digit reads as "v4_Contusion".
+        text = "v" + text
+    if len(text) > ODC_NAME_MAX:
+        text = text[:ODC_NAME_MAX].rstrip("_.")
+    return text
+
+
+def odc_names(names: Iterable[str]) -> Dict[str, str]:
+    """{original: legal name} for a whole table, with collisions broken.
+
+    Uniqueness can only be settled with the whole list in hand, and two headers
+    really can land on one name -- "Weight (g)" and "Weight/g", or two long
+    headers that agree for their first 64 characters. A collision would leave
+    two columns sharing one dictionary row, so the second one gets a numeric
+    tail instead.
+    """
+    out: Dict[str, str] = {}
+    taken = set()
+    for original in names:
+        name = odc_name(original)
+        if name in taken:
+            stem = name[:ODC_NAME_MAX - 3].rstrip("_.")
+            n = 2
+            while "%s_%d" % (stem, n) in taken:
+                n += 1
+            name = "%s_%d" % (stem, n)
+        taken.add(name)
+        out[original] = name
+    return out
+
+
+def apply_odc_names(df, rows: List[dict]):
+    """Rename a table's columns AND its dictionary rows together. (frame, rows)
+
+    One call does both, because the only thing worse than an illegal column name
+    is a legal one whose dictionary row still carries the old one: the export
+    refuses to call itself complete when a column has no dictionary row, and
+    renaming the two in separate places is exactly how that happens.
+    """
+    mapping = odc_names([str(c) for c in df.columns])
+    changed = {k: v for k, v in mapping.items() if k != v}
+    if not changed:
+        return df, rows
+    df = df.rename(columns=mapping)
+    out = []
+    for row in rows:
+        name = str(row.get("VariableName", ""))
+        if name in changed:
+            row = dict(row)   # these can be module-level constants
+            row["VariableName"] = changed[name]
+            note = ("Named '%s' in the source it was copied from; renamed here "
+                    "because ODC variable names allow only letters, digits, "
+                    "underscores and periods." % name)
+            row["Comments"] = (str(row.get("Comments", "")) + " " + note).strip()
+        out.append(row)
+    return df, out
 
 
 def _row(name, title, desc, unit="", dtype="", pv="", pvd="", mn="", mx="", comments=""):

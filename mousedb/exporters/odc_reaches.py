@@ -454,7 +454,16 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> 
     WHY the temporary: these files are read by people and by the next import while the
     export runs, and a half-written CSV that still has yesterday's name is worse than
     one that is briefly absent.
+
+    WHY THE RENAME HAPPENS HERE: a table and its dictionary have to be renamed in the
+    same breath or the dictionary is left describing a column name that no longer
+    exists, and this is the last moment both are in hand. Doing it earlier would be
+    worse than untidy: the tracking-sheet values are looked up BY their sheet header
+    while the table is being built (see _animal), so a rename before that point would
+    break the lookups. (write_cohort applies the same rule to the analysis documents,
+    which it writes itself.)
     """
+    df, rows = dd.apply_odc_names(df, rows)
     tmp = data.with_name(data.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(data)
@@ -511,10 +520,15 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # their dictionary is written once for all of them (see export), not thirteen
     # identical times under thirteen names.
     analysis, analysis_rows = analysis_reaches.build(df)
+    # Named in code, so legal already -- but passed through the same rule as every
+    # other document, so that stays true of a column added later by someone who has
+    # not read ODC's naming guide.
+    analysis, analysis_rows = dd.apply_odc_names(analysis, analysis_rows)
     analysis.to_csv(out_dir / ("reaches_%s_analysis.csv" % label), index=False)
 
     sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
     if len(sessions):
+        sessions, session_rows = dd.apply_odc_names(sessions, session_rows)
         sessions.to_csv(out_dir / ("sessions_%s_analysis.csv" % label), index=False)
 
     documented = {r["VariableName"] for r in rows}
