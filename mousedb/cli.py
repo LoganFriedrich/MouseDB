@@ -1122,6 +1122,42 @@ def cmd_study_facts(args):
         print(sf.describe(args.project))
 
 
+def cmd_export_example(args):
+    """mousedb export-example (see mousedb.exporters.example_export).
+
+    The loop this serves: look at the file, say what is wrong, change it, look
+    again. So it prints what it wrote, how long each part took, and -- unless
+    asked not to -- a few random rows, because the next thing anyone does after
+    building it is look at some rows.
+    """
+    from .exporters import example_export as ex
+
+    result = ex.build(cohort=args.cohort, target_rows=args.rows,
+                      out_dir=args.out_dir, use_cache=not args.no_cache)
+    if not result["files"]:
+        print("%s: %s" % (result["cohort"], result.get("reason", "nothing written")))
+        return 1
+    print("EXAMPLE %s -- %d sessions sampled" % (result["cohort"],
+                                                 result["sessions_sampled"]))
+    for entry in result["files"]:
+        if "left_alone" in entry:
+            print("  [!] %-44s %s -- close it and run this again"
+                  % (entry["file"], entry["left_alone"]))
+        else:
+            print("  %-44s %6d rows %4d cols"
+                  % (entry["file"], entry["rows"], entry["columns"]))
+    s = result["seconds"]
+    print("")
+    print("load %.1fs  build %.1fs  write %.1fs  TOTAL %.1fs"
+          % (s["load"], s["build"], s["write"], s["total"]))
+    print(result["out_dir"])
+    if args.sample:
+        print()
+        print(ex.sample(cohort=result["cohort"], rows=args.sample,
+                        out_dir=args.out_dir))
+    return 0
+
+
 def cmd_export_odc_reaches(args):
     """mousedb export-odc-reaches (see mousedb.exporters.odc_reaches)."""
     from .exporters.odc_reaches import main as _main
@@ -1167,6 +1203,28 @@ def main():
                               help="Set one fact (PROJECT may be 'default' for every project)")
     study_parser.add_argument('--unset', nargs=2, metavar=('PROJECT', 'FIELD'), help='Remove one fact')
     study_parser.set_defaults(func=cmd_study_facts)
+
+    # mousedb export-example -- one cohort, fast, for looking at while changing it
+    ex_p = subparsers.add_parser(
+        'export-example',
+        help='Build ONE cohort of the analysis documents into exports/current/Example, '
+             'from a sample of its sessions, in a few seconds -- for checking the format '
+             'while changing it. Same code as the full export.')
+    ex_p.add_argument('--cohort', default='CNT_01', help='Cohort id (default CNT_01)')
+    ex_p.add_argument('--rows', type=int, default=5000,
+                      help='About how many reach rows to include (default 5000). Whole '
+                           'sessions are taken evenly through the cohort, so every phase '
+                           'of the experiment is represented.')
+    ex_p.add_argument('--sample', type=int, default=3, metavar='N',
+                      help='Also print N random rows, one column per line (default 3; '
+                           '0 for none)')
+    ex_p.add_argument('--out-dir', help='Folder to write into (default: the Example folder '
+                                       'inside the current exports folder)')
+    ex_p.add_argument('--no-cache', action='store_true',
+                      help="Re-read the cohort's rows from the snapshot instead of the "
+                           "local cache. The cache is keyed to the snapshot's own "
+                           "timestamp, so this is rarely needed.")
+    ex_p.set_defaults(func=cmd_export_example)
 
     # mousedb export-odc-reaches -- per-reach ODC files (animal + session on every row)
     odc_r = subparsers.add_parser(
