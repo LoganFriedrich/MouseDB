@@ -331,3 +331,33 @@ def test_the_two_analysis_documents_write_a_number_the_same_way():
     from mousedb.exporters import analysis_sessions as asess
     import inspect
     assert "write_number" in inspect.getsource(asess.build)
+
+
+def test_the_trackers_confidence_is_called_confidence():
+    """"visibility" is the extractor's word and it says the opposite of what it means.
+
+    It is DeepLabCut's reported likelihood for a tracked point -- a measure of the
+    data, not of the animal. The tracker can be confident about a point that is
+    partly occluded and unsure about one in plain view, so a reader who takes the
+    column for an occlusion measure is reading a different quantity.
+    """
+    out, rows = ar.build(frame())
+    assert not [c for c in out.columns if "visibility" in c]
+    assert ar.analysis_name("rhleft_visibility_mean") == "rhleft_confidence_mean"
+    assert ar.analysis_name("rhout_visibility_at_apex") == "rhout_confidence_at_apex"
+    # a word that only looks similar is left alone
+    assert ar.analysis_name("paw_velocity_correlation") == "paw_velocity_correlation"
+
+
+def test_a_renamed_column_says_what_the_extractor_calls_it():
+    """Otherwise nobody can line this file up against the complete record.
+
+    Checked on the dictionary builder directly: the minimal frame the other
+    tests use carries no extended features, and these columns only exist when it
+    does.
+    """
+    names = ["rhleft_confidence_mean", "rhout_confidence_at_apex"]
+    rows = ar._dictionary_rows([], names)
+    assert len(rows) == len(names)
+    for row in rows:
+        assert "visibility" in row["Comments"], row["VariableName"]

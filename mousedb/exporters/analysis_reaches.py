@@ -248,10 +248,33 @@ def _blank(value) -> bool:
     return str(value).strip() == ""
 
 
+# WHAT A COLUMN IS CALLED HERE WHEN THE EXTRACTOR'S NAME MISLEADS.
+#
+# "visibility" is the kinematics extractor's word for the tracker's own reported
+# likelihood for a point -- how sure DeepLabCut is that it put that point in the
+# right place in that frame. It is a quality measure for the row, not something
+# the animal did, and the name says the opposite of what it means: it reads as
+# "the paw was visible in the video", which is not it. The tracker can be
+# confident about a point that is partly occluded and unsure about one in plain
+# view, so a reader who takes the column for an occlusion measure is reading a
+# different quantity than the one in the cell.
+#
+# This document is the one shaped for a reader, so it uses the honest word. The
+# complete record keeps the extractor's name, as it does for every other column,
+# and the dictionary entry here names the original so the two can be lined up.
+RENAMED_WORDS = {"visibility": "confidence"}
+
+
+def analysis_name(extended_key: str) -> str:
+    """What a per-reach measurement is called in this document."""
+    parts = extended_key.split("_")
+    return "_".join(RENAMED_WORDS.get(part, part) for part in parts)
+
+
 def other_kinematics(columns) -> List[Tuple[str, str]]:
     """Every extended measurement not already carried under a named column."""
     taken = {src for src, _ in NAMED_KINEMATICS}
-    return [(c, c[len(extended.PREFIX):]) for c in sorted(columns)
+    return [(c, analysis_name(c[len(extended.PREFIX):])) for c in sorted(columns)
             if c.startswith(extended.PREFIX) and c not in taken]
 
 
@@ -422,8 +445,24 @@ _UNIT_SUFFIXES = [("_mm2", "_px2"), ("_mm_per_frame", "_px_per_frame"),
 
 
 def _unit_partner(name: str, columns) -> str:
-    """A sentence naming this column's same-measurement-other-unit partner."""
+    """A sentence naming what this column is called elsewhere, when that differs.
+
+    Two reasons a name differs, and a reader needs both: the five measurements
+    renamed to the analysis collaborator's own words (swipe_length and the rest),
+    and the word changed because the extractor's was misleading (visibility ->
+    confidence).
+    """
     present = set(columns)
+    for ours, theirs in RENAMED_WORDS.items():
+        if ("_%s_" % theirs) in name or name.endswith("_%s" % theirs):
+            extractor = name.replace("_%s_" % theirs, "_%s_" % ours)
+            if extractor.endswith("_%s" % theirs):
+                extractor = extractor[: -len(theirs)] + ours
+            return ("The kinematics extractor calls this %s. It is renamed here "
+                    "because it is the tracker's own confidence in where it put "
+                    "the point, which is a measure of the data rather than of "
+                    "the animal, and 'visibility' reads as a claim about whether "
+                    "the paw could be seen." % extractor)
     original = _RENAMED_FROM.get(name)
     if original:
         for mm, px in _UNIT_SUFFIXES:
