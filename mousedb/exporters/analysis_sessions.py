@@ -121,7 +121,9 @@ def build(reaches: pd.DataFrame,
         else:
             numbers = pd.to_numeric(
                 out[name].map(lambda v: None if ar._blank(v) else v), errors="coerce")
-            out[name] = numbers.map(lambda v: ar.MISSING if pd.isna(v) else v)
+            # Same number formatting as the reach file, from the same function:
+            # a count of 13 must not read "13" there and "13.0" here.
+            out[name] = numbers.map(ar.write_number)
 
     return out, _dictionary_rows(list(out.columns), reach_dictionary or [])
 

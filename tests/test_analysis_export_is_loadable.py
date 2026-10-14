@@ -270,3 +270,64 @@ def test_no_value_carries_punctuation_that_belongs_in_prose():
 def test_survival_is_yes_or_no():
     out, _ = ar.build(frame(Survived_All_Surgeries=["Yes", "No"]))
     assert set(out["survived_all_surgeries"]) <= {"Yes", "No", ar.MISSING}
+
+
+# ---------------------------------------------------------- how numbers are written
+
+def test_a_number_is_not_written_more_precisely_than_it_was_measured():
+    """A paw position comes from a video frame; one pixel is about 0.25 mm.
+
+    Writing 3.638133375394476 for a 4 mm measurement claims resolution the
+    camera does not have, and in a column of them it is unreadable.
+    """
+    assert ar.write_number(3.638133375394476) == 3.63813
+    assert ar.write_number(0.9904333821364811) == 0.990433
+    assert ar.write_number(116.10143337305635) == 116.101
+
+
+def test_a_whole_number_has_no_decimal_point():
+    """The hand-scored counts came out '13.0' beside the algorithm's '13'."""
+    for raw in (13.0, 47.0, 0, 12142):
+        written = ar.write_number(raw)
+        assert isinstance(written, int), raw
+        assert "." not in str(written)
+
+
+def test_a_number_too_small_to_see_is_written_as_zero_not_as_an_exponent():
+    """'4.7e-08' in a column of millimetres reads as an error, not as a number."""
+    for raw in (1e-7, 4.7e-8, 1.234e-6):
+        assert ar.write_number(raw) == 0
+    for raw in (0.000123, 0.0138):
+        assert ar.write_number(raw) == raw
+
+
+def test_an_absent_number_is_still_the_word_NA():
+    assert ar.write_number(None) == ar.MISSING
+    assert ar.write_number(float("nan")) == ar.MISSING
+
+
+def test_no_value_in_the_built_frame_carries_sixteen_digits():
+    out, _ = ar.build(frame())
+    for column in out.columns:
+        for value in out[column]:
+            text = str(value)
+            if "." in text and text.replace(".", "").replace("-", "").isdigit():
+                decimals = len(text.split(".")[1])
+                assert len(text.replace("-", "").replace(".", "").lstrip("0")) <= 6, (
+                    "%s carries %r" % (column, value))
+
+
+def test_the_dictionary_says_how_numbers_are_written():
+    _out, rows = ar.build(frame())
+    numeric = [r for r in rows if r["VariableName"] not in ar.TEXT_COLUMNS
+               and r["VariableName"] != ar.ROW_NUMBER]
+    assert numeric
+    for row in numeric:
+        assert "significant digits" in row["Comments"], row["VariableName"]
+
+
+def test_the_two_analysis_documents_write_a_number_the_same_way():
+    """Same function, so a count cannot read 13 in one file and 13.0 in the other."""
+    from mousedb.exporters import analysis_sessions as asess
+    import inspect
+    assert "write_number" in inspect.getsource(asess.build)

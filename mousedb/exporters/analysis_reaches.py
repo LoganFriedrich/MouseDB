@@ -299,9 +299,45 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
         else:
             numbers = pd.to_numeric(
                 out[name].map(lambda v: None if _blank(v) else v), errors="coerce")
-            out[name] = numbers.map(lambda v: MISSING if pd.isna(v) else v)
+            out[name] = numbers.map(write_number)
 
     return out, _dictionary_rows(present, order)
+
+
+# How many digits a number is written with.
+#
+# WHY NOT ALL OF THEM. A paw position comes from a video frame, and one pixel is
+# about a quarter of a millimetre. Writing a 4 mm measurement as
+# 3.638133375394476 claims to know it to a ten-thousandth of the width of an
+# atom of resolution the camera does not have, and claiming precision that is not
+# there is not a harmless habit: it makes two values look different when the
+# difference is float arithmetic, and it makes a column unreadable at a glance.
+#
+# Six significant digits is far more than the measurement supports and still
+# short enough to read. Whole numbers are written without a decimal point at all,
+# which is what fixes a hand-scored count of 13 pellets printing as "13.0" beside
+# the algorithm's "13" for the same session.
+SIGNIFICANT_DIGITS = 6
+
+
+def write_number(value):
+    """One number as it should appear in the file: trimmed, and not falsely precise."""
+    if value is None or pd.isna(value):
+        return MISSING
+    number = float(value)
+    if number == int(number) and abs(number) < 1e15:
+        return int(number)
+    rounded = float("%.*g" % (SIGNIFICANT_DIGITS, number))
+    # A number small enough to round to zero at six digits is written as 0
+    # rather than as an exponent, because in these columns -- distances in
+    # millimetres, speeds per frame -- it IS zero to anything the camera could
+    # see, and "4.7e-08" in a spreadsheet column of millimetres reads as an
+    # error rather than as a very small number.
+    # 1e-04 is exactly the point below which Python prints an exponent, so this
+    # is the same rule as "never write an exponent in these columns".
+    if rounded != 0 and abs(rounded) < 1e-04:
+        return 0
+    return int(rounded) if rounded == int(rounded) else rounded
 
 
 def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[dict]:
@@ -356,6 +392,58 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
         note = ("Absent values are written as NA, so the column loads as numbers."
                 if name not in TEXT_COLUMNS
                 else "Absent values are written as NA.")
-        base["Comments"] = (str(base.get("Comments", "")) + " " + note).strip()
+        pair = _unit_partner(name, order)
+        # A reader comparing this file with another of ours needs to know the
+        # numbers were rounded, and to what -- otherwise a difference in the
+        # seventh digit looks like a difference in the data.
+        digits = ("" if name in TEXT_COLUMNS else
+                  "Numbers are written to %d significant digits, which is more "
+                  "than the measurement supports: a paw position comes from a "
+                  "video frame and one pixel is about a quarter of a millimetre. "
+                  "A whole number is written without a decimal point."
+                  % SIGNIFICANT_DIGITS)
+        base["Comments"] = " ".join(
+            x for x in (str(base.get("Comments", "")), pair, note, digits) if x).strip()
         rows.append(base)
     return rows
+
+
+# The five measurements this document renames to the names the analysis
+# collaborator's own file used. A reader of the file sees, for instance,
+# righthand_extension_past_nose_px with no millimetre partner beside it, and
+# cannot tell that the millimetre version is the column called swipe_length --
+# the two descriptions are identical and neither mentions the other. So each
+# half is told about the other half, by name.
+_RENAMED_FROM = {new_name: src[len(extended.PREFIX):]
+                 for src, new_name in NAMED_KINEMATICS
+                 if src.startswith(extended.PREFIX)}
+_UNIT_SUFFIXES = [("_mm2", "_px2"), ("_mm_per_frame", "_px_per_frame"),
+                  ("_mm", "_px")]
+
+
+def _unit_partner(name: str, columns) -> str:
+    """A sentence naming this column's same-measurement-other-unit partner."""
+    present = set(columns)
+    original = _RENAMED_FROM.get(name)
+    if original:
+        for mm, px in _UNIT_SUFFIXES:
+            if original.endswith(mm):
+                other = original[: -len(mm)] + px
+                if other in present:
+                    # The name carries its own unit (_mm / _mm2 /
+                    # _mm_per_frame), so the sentence does not restate it and
+                    # cannot restate it wrongly.
+                    return ("This is the measurement the kinematics extractor "
+                            "calls %s; the same measurement in pixels is the "
+                            "column %s." % (original, other))
+        return "Named %s by the kinematics extractor." % original
+    for mm, px in _UNIT_SUFFIXES:
+        if name.endswith(px):
+            stem = name[: -len(px)] + mm
+            for renamed, source in _RENAMED_FROM.items():
+                if source == stem:
+                    return ("The same measurement in millimetres is carried in "
+                            "this file under the name %s, which is what the "
+                            "analysis collaborator's own file called it."
+                            % renamed)
+    return ""
