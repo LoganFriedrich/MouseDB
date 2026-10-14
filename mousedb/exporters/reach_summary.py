@@ -44,7 +44,12 @@ RETRIEVED = "Retrieved"
 DISPLACED_IN = "Displaced into the scoring area"
 DISPLACED_OUT = "Displaced out of reach"
 NEVER_TOUCHED = "Never touched"
-NO_EFFECT = "Did not move the pellet"
+# A REACH CAN DO THREE THINGS: miss, displace, retrieve. Nothing else is a reach
+# outcome. This used to read "Did not move the pellet", which is a description of
+# a miss rather than the name of one -- and naming an outcome by what did not
+# happen invites a reader to treat it as an absence and drop the row. A miss is a
+# reach: the animal reached, and the pellet stayed where it was.
+MISSED = "Missed"
 
 # The pipeline's internal words for a pellet's fate -> what they mean in English.
 # 'triaged', 'uncertain' and 'abnormal_exception' are not things a mouse did: they are
@@ -62,7 +67,9 @@ PELLET_WORDS = {
 }
 MOVED = {RETRIEVED, DISPLACED_IN, DISPLACED_OUT}
 
-REACH_RESULT_PV = "; ".join([RETRIEVED, DISPLACED_IN, DISPLACED_OUT, NO_EFFECT,
+# Ordered as the three things a reach can do -- missed; displaced (either
+# destination); retrieved -- then the pipeline's "not decided yet".
+REACH_RESULT_PV = "; ".join([MISSED, DISPLACED_IN, DISPLACED_OUT, RETRIEVED,
                              missing.UNDETERMINED])
 PELLET_RESULT_PV = "; ".join([RETRIEVED, DISPLACED_IN, DISPLACED_OUT, NEVER_TOUCHED,
                               missing.UNDETERMINED])
@@ -211,20 +218,23 @@ def _pellet_result(segment_outcome: pd.Series) -> pd.Series:
 
 
 def _reach_result(causal: pd.Series, pellet_result: pd.Series) -> pd.Series:
-    """What THIS reach did to the pellet.
+    """What THIS reach did to the pellet: missed, displaced it, or retrieved it.
 
-    Three cases, and the middle one is the whole point of the column:
+    Those three are the only things a reach can do. Which one applies follows from
+    one question -- did this reach decide the pellet's fate:
       * the segment could not be decided        -> Undetermined
-      * this reach decided a pellet that moved  -> what it did
-      * anything else                           -> it did not move the pellet
+      * this reach decided a pellet that moved  -> displaced (either destination)
+                                                   or retrieved
+      * anything else                           -> Missed
 
-    The last case is an answer, not an absence. It is written as 'did not move the
-    pellet' and NOT as 'no contact', because the pipeline never measures contact for a
-    non-causal reach -- it infers it from not being the causal one. Saying 'no contact'
-    would assert something nobody looked at.
+    MISSED IS AN ANSWER, NOT AN ABSENCE. The animal reached and the pellet stayed
+    where it was, either because a different reach is the one that moved it or
+    because nothing did. It is NOT a claim about contact: the pipeline does not
+    measure whether the paw touched the pellet on a reach that did not move it, so
+    "missed" says only what the pellet did.
     """
     is_causal = causal.map(lambda v: str(v).strip().lower() in ("1", "true", "t", "yes"))
-    out = pd.Series(NO_EFFECT, index=causal.index, dtype="object")
+    out = pd.Series(MISSED, index=causal.index, dtype="object")
     out = out.where(pellet_result != missing.UNDETERMINED, missing.UNDETERMINED)
     moved_here = is_causal & pellet_result.isin(MOVED)
     out[moved_here] = pellet_result[moved_here]
@@ -299,15 +309,17 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
                                 "Per-reach measurement.", comments=note))
     answers = [
         dd._row("reach_result", "What this reach did to the pellet",
-                "The committed answer for THIS reach. 'Did not move the pellet' is an "
-                "answer, not a missing value: it means the pellet's fate was decided by "
-                "another reach, or not at all. It is not a claim that the paw never "
-                "touched the pellet, which is not measured.",
+                "The committed answer for THIS reach. A reach can do three things -- "
+                "miss the pellet, displace it, or retrieve it -- and this says which. "
+                "'Missed' is an answer, not a missing value: the animal reached and the "
+                "pellet stayed where it was, because another reach moved it or because "
+                "none did. It is not a claim that the paw never touched the pellet, "
+                "which is not measured on a reach that moved nothing.",
                 "", "text", REACH_RESULT_PV,
-                "Retrieved=the animal got the pellet; "
+                "Missed=the reach did not move the pellet; "
                 "Displaced into the scoring area=knocked into the scoring area; "
                 "Displaced out of reach=knocked away, unrecoverable; "
-                "Did not move the pellet=another reach decided this pellet, or none did; "
+                "Retrieved=the animal got the pellet; "
                 "Undetermined=not yet decided"),
         dd._row("pellet_result", "What happened to this pellet",
                 "The fate of the pellet this reach was aimed at, repeated on every reach "
