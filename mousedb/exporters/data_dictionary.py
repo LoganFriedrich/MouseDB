@@ -220,10 +220,9 @@ ODC_REACH_ANIMAL = [
          "a later surgery still made every reach it made before that, and those are "
          "ordinary measurements. Whether to include them depends on the question being "
          "asked, and that is the reader's to decide.",
-         "", "text", "Yes; No -- did not survive a surgery",
+         "", "text", "Yes; No",
          "Yes=came through every recorded surgery; "
-         "No -- did not survive a surgery=at least one surgery is recorded as not "
-         "survived"),
+         "No=at least one surgery is recorded as not survived"),
     _row("Exclusion_in_origin_study", "Exclusion in origin study", "Total exclusion when a surgery row records Survived = N; No exclusion when every recorded surgery survived; empty when survival is not recorded.", "", "text", "Total exclusion; No exclusion", "Total exclusion=did not survive a surgery; No exclusion=survived every recorded surgery"),
     _row("Exclusion_reason", "Exclusion reason", "Why the animal was excluded, when Exclusion_in_origin_study says so.", "", "text"),
     _row("Cause_of_Death", "Cause of death",

@@ -248,3 +248,25 @@ def test_the_dictionary_says_the_decision_is_the_readers():
     entry = next((r for r in rows if r["VariableName"] == "survived_all_surgeries"), None)
     assert entry is not None
     assert "reader" in entry["Description"].lower() or "question" in entry["Description"].lower()
+
+
+def test_no_value_carries_punctuation_that_belongs_in_prose():
+    """A category is a label, not a sentence.
+
+    "No -- did not survive a surgery" was one value of one column. It reads as an
+    explanation, and an explanation inside the data is a worse place for it than
+    the dictionary: it makes an awkward factor level, it cannot be matched on
+    without quoting the dash, and it is the kind of thing that differs by one
+    character between two files.
+    """
+    out, _ = ar.build(frame(Survived_All_Surgeries=["Yes", "No"]))
+    for name in out.columns:
+        if name not in ar.TEXT_COLUMNS:
+            continue
+        for value in out[name].astype(str).unique():
+            assert "--" not in value, "%s holds %r" % (name, value)
+
+
+def test_survival_is_yes_or_no():
+    out, _ = ar.build(frame(Survived_All_Surgeries=["Yes", "No"]))
+    assert set(out["survived_all_surgeries"]) <= {"Yes", "No", ar.MISSING}

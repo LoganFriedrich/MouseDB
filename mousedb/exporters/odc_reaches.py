@@ -206,7 +206,7 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
                 if k.endswith("_Survived") and not _blank(v)]
     died = any(s in ("N", "NO") for s in survived)
     if died:
-        survival = "No -- did not survive a surgery"
+        survival = "No"
     elif survived:
         survival = "Yes"
     else:
