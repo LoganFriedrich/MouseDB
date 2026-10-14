@@ -57,7 +57,13 @@ def test_animal_and_session_values():
     assert first["SpeciesStrainTyp"] == "strain-x" and first["StudyLeader"] == "leader-x"
     assert first["Laboratory"] == "lab-x" and first["SexTyp"] == "F"
     assert first["Injury_Type"] == "Contusion-60kD" and first["Injury_level"] == "C5"
-    assert first["Exclusion_in_origin_study"] == "No exclusion"
+    # The export carries the FACT of surgery survival, and leaves the exclusion
+    # column to whatever the sheet itself records -- which is nothing. Deciding
+    # that an animal is excluded is the reader's, and an animal that did not
+    # finish still has every reach it made before that, which this project's
+    # approach keeps and uses.
+    assert first["Survived_All_Surgeries"] == "Yes"
+    assert first["Exclusion_in_origin_study"] == ""
     by_date = df.groupby("Test_Date")["Days_Post_Injury"].first()
     assert pd.isna(by_date["2025-07-01"]) and by_date["2025-07-10"] == 8   # empty before injury
     assert df["Session_ID"].iloc[0].startswith("PROJA_01_01-")

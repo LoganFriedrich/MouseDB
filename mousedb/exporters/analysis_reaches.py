@@ -75,7 +75,12 @@ IDENTITY: List[Tuple[str, str]] = [
     ("InjGroupAssignTyp", "study_group"),
     ("SexTyp", "sex"),
     ("SpeciesStrainTyp", "strain"),
-    ("Exclusion_in_origin_study", "animal_inclusion"),
+    # The FACT, not a verdict: whether the animal came through its surgeries.
+    # Whether that means its reaches belong in an analysis is the reader's
+    # decision, and it depends on the question -- an animal lost in its injury
+    # surgery still has a full set of ordinary baseline reaches.
+    ("Survived_All_Surgeries", "survived_all_surgeries"),
+    ("Exclusion_in_origin_study", "excluded_in_origin_study"),
     ("video_name", "video_name"),
     ("segment_num", "pellet_number"),
     ("reach_num", "swipe_id"),
@@ -110,7 +115,8 @@ NAMED_KINEMATICS: List[Tuple[str, str]] = [
 TEXT_COLUMNS = {
     "subject_id", "test_date", "session_id", "tray_id", "tray_type", "test_type",
     "test_type_grouped", "injury_type", "injury_level", "study_group", "sex",
-    "strain", "animal_inclusion", "video_name", "reach_outcome", "pellet_outcome",
+    "strain", "survived_all_surgeries", "excluded_in_origin_study",
+    "video_name", "reach_outcome", "pellet_outcome",
     "pellet_state_at_this_reach", "experiment_stage",
 }
 
@@ -154,7 +160,12 @@ def pellet_state(frame) -> "pd.Series":
     is_causal = causal.map(
         lambda v: str(v).strip().lower() in ("1", "1.0", "true", "t", "yes"))
 
-    order = pd.to_numeric(frame.get("reach_num"), errors="coerce")
+    # frame.get returns None for a missing column, and pd.to_numeric(None) is a
+    # scalar, not a series -- so ask for the column explicitly and fall back to a
+    # series of the right length when it is not there.
+    order = (pd.to_numeric(frame["reach_num"], errors="coerce")
+             if "reach_num" in frame.columns
+             else pd.Series([pd.NA] * len(frame), index=frame.index, dtype="Float64"))
     # Group by the pellet within its own video, never by pellet number alone:
     # every video has a pellet 1.
     keys = [frame[c] for c in ("video_name", "segment_num") if c in frame.columns]

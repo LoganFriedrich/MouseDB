@@ -34,6 +34,7 @@ from . import data_dictionary as dd
 from . import extended_features as ext
 from . import missing
 from . import analysis_reaches
+from . import analysis_sessions
 from . import reach_summary
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
@@ -187,15 +188,31 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     # file and is matched here against this animal's own recorded values.
     from .. import study_facts as _sf
     facts = _sf.apply_rules(cohort_id, facts, sheet)
+    # WHAT HAPPENED, NOT WHETHER IT COUNTS.
+    #
+    # This used to read the per-surgery Survived columns and write "Total
+    # exclusion" for any animal that died. That is a verdict, and it is not ours
+    # to reach: nothing in the tracking sheet excludes an animal, and whether an
+    # animal belongs in an analysis depends on the question being asked.
+    #
+    # It was also wrong in a way that costs data. An animal that died during its
+    # injury surgery still has every pre-surgery reach it ever made -- 6,124 of
+    # them in one cohort alone -- and those are ordinary baseline measurements.
+    # Labelling them "Total exclusion" invites a reader to drop them.
+    #
+    # So the survival fact is carried plainly and the exclusion column is left to
+    # whatever the sheet itself records, which at present is nothing.
     survived = [str(v).strip().upper() for k, v in sheet.items()
                 if k.endswith("_Survived") and not _blank(v)]
     died = any(s in ("N", "NO") for s in survived)
     if died:
-        excl, reason = "Total exclusion", "Did not survive a surgery (tracking sheet Survived = N)"
+        survival = "No -- did not survive a surgery"
     elif survived:
-        excl, reason = "No exclusion", ""
+        survival = "Yes"
     else:
-        excl, reason = "", ""
+        survival = ""
+    excl = _first(sheet, "ODC_Exclusion_in_origin_study", "Exclusion_in_origin_study")
+    reason = _first(sheet, "ODC_Exclusion_reason", "Exclusion_reason")
     details = "; ".join("%s %s" % (label, sheet[k]) for k, label in (
         ("Contusion_Actual_kd", "force (kdyn)"), ("Contusion_Actual_displacement", "displacement (um)"),
         ("Contusion_Actual_Velocity", "velocity (mm/s)"), ("Contusion_Actual_Dwell", "dwell (s)"),
@@ -222,6 +239,7 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
         "InjGroupAssignTyp": _first(sheet, "ODC_Study_Group") or cohort_id,
         "Laboratory": lab,
         "StudyLeader": facts.get("StudyLeader", "") or author,
+        "Survived_All_Surgeries": survival,
         "Exclusion_in_origin_study": excl,
         "Exclusion_reason": reason,
         # Cause of death, in the order the records can actually answer it:
@@ -239,7 +257,8 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
         # animals that have reached theirs -- and wrong, in the worst direction,
         # for one that has not.
         "Cause_of_Death": (_first(sheet, "ODC_Cause_of_Death", "Cause_of_Death")
-                           or (reason if died else "")
+                           or ("Did not survive a surgery (the tracking sheet "
+                               "records Survived = N)" if died else "")
                            or ("" if still_on_study
                                else facts.get("Cause_of_Death", ""))),
         "Injury_device": _first(sheet, "ODC_Injury_device") or (facts.get("Injury_device", "") if injury else ""),
@@ -487,17 +506,27 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
            out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
 
+    # The analysis documents have the SAME columns for every cohort -- unlike the
+    # complete record, whose columns follow each cohort's own tracking sheet. So
+    # their dictionary is written once for all of them (see export), not thirteen
+    # identical times under thirteen names.
     analysis, analysis_rows = analysis_reaches.build(df)
-    _write(analysis, analysis_rows, out_dir / ("reaches_%s_analysis.csv" % label),
-           out_dir / ("reaches_%s_analysis_DATA_DICTIONARY.csv" % label))
+    analysis.to_csv(out_dir / ("reaches_%s_analysis.csv" % label), index=False)
+
+    sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
+    if len(sessions):
+        sessions.to_csv(out_dir / ("sessions_%s_analysis.csv" % label), index=False)
 
     documented = {r["VariableName"] for r in rows}
     entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
              "summary_columns": int(len(summary.columns)),
-             "analysis_columns": int(len(analysis.columns)),
              "never_measured_columns": sorted(reasons),
              "undocumented_columns": [c for c in df.columns if c not in documented],
              "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
+    entry["analysis_columns"] = int(len(analysis.columns))
+    entry["session_rows"] = int(len(sessions))
+    entry["_analysis_dictionary"] = analysis_rows
+    entry["_sessions_dictionary"] = session_rows
     if label != cohort_id:
         entry["cohort"] = cohort_source(cohort_id) or label
         moved = archive_old_names(out_dir, ["ODC_reaches_%s.csv" % cohort_id,
@@ -535,6 +564,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             "ODC_reaches: the snapshot has no animal_records table yet (it appears after the next "
             "tracking-sheet import and snapshot); sheet columns are missing from these files")
     wanted = [c.upper() for c in cohorts] if cohorts else cohorts_in(t["reach"])
+    analysis_dict, sessions_dict = {}, {}
     for cid in wanted:
         try:
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
@@ -543,9 +573,28 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                 manifest["files"]["ODC_reaches_%s.csv" % cohort_label(cid)] = {"rows": 0, "note": "no reaches"}
                 continue
             entry, label = write_cohort(out_dir, cid, df, rows)
+            for key, store in (("_analysis_dictionary", analysis_dict),
+                               ("_sessions_dictionary", sessions_dict)):
+                for row in entry.pop(key, []) or []:
+                    store.setdefault(row["VariableName"], row)
             manifest["files"]["ODC_reaches_%s.csv" % label] = entry
         except Exception as e:
             manifest["problems"].append("ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e))
+
+    # One dictionary for every analysis file of each kind. Their columns do not
+    # vary by cohort, so thirteen copies under thirteen names would be thirteen
+    # things to keep in step -- and the first time they fell out of step, nothing
+    # would say so. A cohort missing a measurement simply has no column for a row
+    # that is described here, which is the harmless direction: an upload requires
+    # every column to have an entry, not every entry to have a column.
+    for rows_by_name, stem in ((analysis_dict, "reaches_analysis"),
+                               (sessions_dict, "sessions_analysis")):
+        if rows_by_name:
+            dd.write_rows(list(rows_by_name.values()),
+                          out_dir / ("%s_DATA_DICTIONARY.csv" % stem))
+            manifest["files"]["%s_DATA_DICTIONARY.csv" % stem] = {
+                "columns": len(rows_by_name),
+                "note": "shared by every cohort's %s file" % stem.split("_")[0]}
     return manifest
 
 

@@ -221,3 +221,30 @@ def test_its_dictionary_entry_says_it_means_nothing_about_the_reach():
     entry = next(r for r in rows if r["VariableName"] == ar.ROW_NUMBER)
     assert "carries no meaning" in entry["Description"]
     assert "put back in the order" in entry["Description"]
+
+
+# ----------------------------------------------- facts, not verdicts, about animals
+#
+# This project keeps the data of animals that did not finish. A mouse lost in its
+# injury surgery still made every reach it made beforehand, and those are ordinary
+# measurements. Deciding whether they belong in an analysis depends on the
+# question being asked, so the export states what happened and stops there.
+
+def test_the_export_states_survival_rather_than_declaring_an_exclusion():
+    out, _ = ar.build(frame(Survived_All_Surgeries=["No -- did not survive a surgery"] * 2))
+    assert "survived_all_surgeries" in out.columns
+    assert out["survived_all_surgeries"].iloc[0].startswith("No")
+
+
+def test_no_column_announces_a_verdict_about_whether_an_animal_counts():
+    out, _ = ar.build(frame())
+    for name in out.columns:
+        assert "inclusion" not in name, (
+            "%s reads as a decision about whether the animal counts" % name)
+
+
+def test_the_dictionary_says_the_decision_is_the_readers():
+    _out, rows = ar.build(frame(Survived_All_Surgeries=["Yes"] * 2))
+    entry = next((r for r in rows if r["VariableName"] == "survived_all_surgeries"), None)
+    assert entry is not None
+    assert "reader" in entry["Description"].lower() or "question" in entry["Description"].lower()
