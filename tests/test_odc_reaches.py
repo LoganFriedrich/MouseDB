@@ -30,6 +30,8 @@ def _records():
          ("4_Contusion_Injury_Details", 1, "Actual_kd", "65"),
          ("4_Contusion_Injury_Details", 1, "Contusion_Location", "C5"),
          ("4_Contusion_Injury_Details", 1, "Survived", "Y"),
+         # a Survived flag counts only on a surgery proven by the day's weight
+         ("4_Contusion_Injury_Details", 1, "Subject_Weight (g)", "22.4"),
          ("5_SC_Injection_Details", 2, "Injected_Virus", "virus-b")]
     return pd.DataFrame([{"subject_id": "PROJA_01_01", "cohort_id": "PROJA_01", "source_tab": t,
                           "record_no": n, "field": f, "value": v} for t, n, f, v in r])

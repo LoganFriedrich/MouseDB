@@ -39,7 +39,7 @@ def _animal(sheet):
 
 
 def test_an_animal_that_died_in_surgery_is_not_declared_excluded():
-    row = _animal({"Contusion_Survived": "N"})
+    row = _animal({"Contusion_Survived": "N", "Contusion_Subject_Weight (g)": "22.4"})
     assert row["Survived_All_Surgeries"] == "No"
     assert row["Exclusion_in_origin_study"] == ""
     assert row["Exclusion_reason"] == ""
@@ -47,14 +47,14 @@ def test_an_animal_that_died_in_surgery_is_not_declared_excluded():
 
 def test_an_animal_that_survived_is_not_declared_included_either():
     """Inclusion is a decision too; the sheet says nothing, so neither do we."""
-    row = _animal({"Contusion_Survived": "Y"})
+    row = _animal({"Contusion_Survived": "Y", "Contusion_Subject_Weight (g)": "22.4"})
     assert row["Survived_All_Surgeries"] == "Yes"
     assert row["Exclusion_in_origin_study"] == ""
 
 
 def test_an_exclusion_the_sheet_states_is_carried_through():
     """Not inferring one is not the same as ignoring one that was recorded."""
-    row = _animal({"Contusion_Survived": "Y",
+    row = _animal({"Contusion_Survived": "Y", "Contusion_Subject_Weight (g)": "22.4",
                    "Exclusion_in_origin_study": "Total exclusion",
                    "Exclusion_reason": "Apparatus failure"})
     assert row["Exclusion_in_origin_study"] == "Total exclusion"
@@ -89,3 +89,17 @@ def test_the_surgery_fact_says_it_is_a_fact_and_not_a_judgement():
     row = _entry("Survived_All_Surgeries")
     assert set(v.strip() for v in row["PermittedValues"].split(";")) == {"Yes", "No"}
     assert "not a" in row["Description"].lower()
+
+
+def test_a_death_on_an_unproven_surgery_does_not_count():
+    """Survived is pre-filled on planned rows and is carried along when a
+    workbook is copied from the previous cohort -- which is how six animals
+    that had not yet been operated on were reported as not surviving surgery.
+    Only a surgery with the day's weight typed can say anything about survival."""
+    row = _animal({"Contusion_Survived": "N"})
+    assert row["Survived_All_Surgeries"] == ""
+
+
+def test_a_death_on_a_proven_surgery_still_counts():
+    row = _animal({"Contusion_Survived": "N", "Contusion_Subject_Weight (g)": "21.8"})
+    assert row["Survived_All_Surgeries"] == "No"

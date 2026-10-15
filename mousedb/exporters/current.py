@@ -188,7 +188,10 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #       names obey ODC's naming rules, and no cell can break a CSV reader
     #  11 = the body-weight percentage in one unit: cohorts stored as whole
     #       percentages were being multiplied by 100 again (9,000%)
-    sig["output_format"] = 11
+    #  12 = entries with an identified problem are left out of the analysis
+    #       documents (export_exclusions), with an analysis_EXCLUSIONS.csv
+    #       report; survival counts only on a surgery proven by its weight
+    sig["output_format"] = 12
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))

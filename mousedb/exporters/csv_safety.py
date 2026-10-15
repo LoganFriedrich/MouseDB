@@ -146,7 +146,14 @@ def make_frame_safe(frame, allow_comma: bool = False):
     out = frame.copy()
     for column in out.columns:
         if out[column].dtype == object:
-            out[column] = out[column].map(lambda v: safe_cell(v, allow_comma))
+            # Each DISTINCT value is made safe once and the result mapped back.
+            # Calling safe_cell on every cell was millions of Python calls per
+            # cohort for columns that hold a few dozen distinct words; the result
+            # is identical because safe_cell depends only on the value.
+            distinct = out[column].dropna().unique()
+            table = {v: safe_cell(v, allow_comma) for v in distinct}
+            out[column] = out[column].map(lambda v: table.get(v, "") if v is not None and v == v
+                                          else safe_cell(v, allow_comma))
     return out, changes
 
 

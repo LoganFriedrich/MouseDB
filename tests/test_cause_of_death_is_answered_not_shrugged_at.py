@@ -28,7 +28,7 @@ def test_the_sheet_wins_when_it_names_a_cause():
 
 def test_a_surgery_the_animal_did_not_survive_is_read_from_the_records():
     """Not guessed from dates: the sheet records survival per surgery."""
-    out = animal(sheet={"Contusion_Survived": "N"})
+    out = animal(sheet={"Contusion_Survived": "N", "Contusion_Subject_Weight (g)": "22.4"})
     assert "survive" in out["Cause_of_Death"].lower()
 
 
@@ -44,7 +44,7 @@ def test_a_named_cause_is_not_overwritten_by_the_default():
 
 
 def test_a_surgical_death_is_not_overwritten_by_the_default():
-    out = animal(sheet={"Contusion_Survived": "N"},
+    out = animal(sheet={"Contusion_Survived": "N", "Contusion_Subject_Weight (g)": "22.4"},
                  facts={"Cause_of_Death": "Euthanasia"})
     assert "survive" in out["Cause_of_Death"].lower()
 
@@ -60,7 +60,7 @@ def test_a_lab_that_has_declared_nothing_still_gets_an_empty_cell():
 
 
 def test_the_surviving_animal_is_not_given_a_cause_of_death():
-    out = animal(sheet={"Contusion_Survived": "Y"},
+    out = animal(sheet={"Contusion_Survived": "Y", "Contusion_Subject_Weight (g)": "22.4"},
                  facts={"Cause_of_Death": "Euthanasia"})
     assert out["Cause_of_Death"] == "Euthanasia", (
         "the end-of-study default still applies; it is not a surgical death")
@@ -81,7 +81,7 @@ def test_an_animal_that_may_still_be_alive_is_given_no_cause_of_death():
 
 def test_a_surgical_death_is_still_reported_in_a_running_cohort():
     """An animal lost in surgery is dead whatever the cohort's state."""
-    out = odc_reaches._animal("PROJ_01_01", "PROJ_01", {"Contusion_Survived": "N"},
+    out = odc_reaches._animal("PROJ_01_01", "PROJ_01", {"Contusion_Survived": "N", "Contusion_Subject_Weight (g)": "22.4"},
                               {}, {"Cause_of_Death": "Perfusion/fixation"},
                               "A Laboratory", still_on_study=True)
     assert "survive" in out["Cause_of_Death"].lower()

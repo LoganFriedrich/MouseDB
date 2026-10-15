@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Optional
 import pandas as pd
 
 from . import csv_safety
+from . import export_exclusions
 from . import data_dictionary as dd
 from . import extended_features as ext
 from . import missing
@@ -203,8 +204,19 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     #
     # So the survival fact is carried plainly and the exclusion column is left to
     # whatever the sheet itself records, which at present is nothing.
+    # A Survived flag counts only on a surgery that PROVABLY happened: one whose
+    # weight on the day is typed. Survived is pre-filled on planned rows, and a
+    # workbook copied from the previous cohort carries that cohort's deaths -- that
+    # is how animals that had not yet been operated on were reported as not having
+    # survived surgery. Unproven surgeries say nothing about survival.
+    def _proven(key):
+        weight = sheet.get(key[:-len("_Survived")] + "_Subject_Weight (g)")
+        try:
+            return float(str(weight).replace("g", "").replace(",", ".").strip()) > 0
+        except (TypeError, ValueError):
+            return False
     survived = [str(v).strip().upper() for k, v in sheet.items()
-                if k.endswith("_Survived") and not _blank(v)]
+                if k.endswith("_Survived") and not _blank(v) and _proven(k)]
     died = any(s in ("N", "NO") for s in survived)
     if died:
         survival = "No"
@@ -478,7 +490,8 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> 
     dd.write_rows(rows, dictionary)
 
 
-def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict]) -> dict:
+def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict],
+                 exclusions=None, analysis_only: bool = False) -> dict:
     """Write both documents for one cohort, plus a data dictionary for each.
 
     Three files, because one table cannot be all three things:
@@ -512,22 +525,34 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     for column, reason in NOT_APPLICABLE_WHEN_EMPTY.items():
         if column in df.columns:
             reasons[column] = reason
-    full = missing.fill_frame(df, reasons)
-    full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
-                                   + missing.dictionary_comment(reasons, r["VariableName"])).strip())
-                 for r in rows]
-    _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
-           out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
+    # analysis_only skips the complete record and the shareable table. It exists
+    # for the case where only the analysis documents are needed in a hurry: those
+    # two are most of the bytes written, and writing them was most of an hour.
+    summary = pd.DataFrame()
+    if not analysis_only:
+        full = missing.fill_frame(df, reasons)
+        full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
+                                       + missing.dictionary_comment(reasons, r["VariableName"])).strip())
+                     for r in rows]
+        _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
+               out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
 
-    summary, summary_rows = reach_summary.build(df)
-    _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
-           out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
+        summary, summary_rows = reach_summary.build(df)
+        _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
+               out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
 
     # The analysis documents have the SAME columns for every cohort -- unlike the
     # complete record, whose columns follow each cohort's own tracking sheet. So
     # their dictionary is written once for all of them (see export), not thirteen
     # identical times under thirteen names.
     analysis, analysis_rows = analysis_reaches.build(df)
+    # Entries with an identified problem are left out of the analysis documents,
+    # at the smallest scope that contains the problem (see export_exclusions). The
+    # sessions file is built from these rows, so it inherits the same exclusions.
+    exclusion_report = []
+    if exclusions is not None:
+        analysis, exclusion_report = export_exclusions.apply(analysis, exclusions,
+                                                             cohort_id=cohort_id)
     # Named in code, so legal already -- but passed through the same rule as every
     # other document, so that stays true of a column added later by someone who has
     # not read ODC's naming guide.
@@ -538,12 +563,18 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     analysis.to_csv(out_dir / ("reaches_%s_analysis.csv" % label), index=False)
 
     sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
+    sessions_file = out_dir / ("sessions_%s_analysis.csv" % label)
     if len(sessions):
         sessions, session_rows = dd.apply_odc_names(sessions, session_rows)
         sessions, changes = csv_safety.make_frame_safe(sessions)
         session_rows = csv_safety.make_rows_safe(
             csv_safety.note_substitutions(session_rows, changes))
-        sessions.to_csv(out_dir / ("sessions_%s_analysis.csv" % label), index=False)
+        sessions.to_csv(sessions_file, index=False)
+    elif sessions_file.exists():
+        # Every reach of this cohort was left out, so there are no sessions to
+        # write -- and a sessions file from an earlier run beside an empty reach
+        # file would claim sessions that are not there. Archived, never deleted.
+        archive_old_names(out_dir, [sessions_file.name], label)
 
     documented = {r["VariableName"] for r in rows}
     entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
@@ -555,6 +586,7 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     entry["session_rows"] = int(len(sessions))
     entry["_analysis_dictionary"] = analysis_rows
     entry["_sessions_dictionary"] = session_rows
+    entry["_exclusion_report"] = exclusion_report
     if label != cohort_id:
         entry["cohort"] = cohort_source(cohort_id) or label
         moved = archive_old_names(out_dir, ["ODC_reaches_%s.csv" % cohort_id,
@@ -638,8 +670,15 @@ def load_snapshot(snapshot_dir: Path) -> dict:
 
 
 def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = None,
-           manifest: Optional[dict] = None) -> dict:
-    """Write the per-reach ODC files for ``cohorts`` (all with reaches if None)."""
+           manifest: Optional[dict] = None, analysis_only: bool = False,
+           staging_dir: Optional[Path] = None) -> dict:
+    """Write the per-reach ODC files for ``cohorts`` (all with reaches if None).
+
+    staging_dir: write every file there first and copy the finished set into
+    out_dir at the end. Writing a table straight to a network share runs at a
+    small fraction of local-disk speed; copying a finished file is far cheaper
+    than formatting it onto the share a number at a time.
+    """
     from .. import study_facts
     from ..config import lab_name
     manifest = manifest if manifest is not None else {"files": {}, "problems": []}
@@ -650,6 +689,24 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             "tracking-sheet import and snapshot); sheet columns are missing from these files")
     wanted = [c.upper() for c in cohorts] if cohorts else cohorts_in(t["reach"])
     analysis_dict, sessions_dict = {}, {}
+    final_dir = Path(out_dir)
+    write_dir = Path(staging_dir) if staging_dir else final_dir
+    write_dir.mkdir(parents=True, exist_ok=True)
+
+    # The exclusion checks run once, against the whole snapshot, before any cohort
+    # is written. If they cannot run, the analysis files are NOT written: shipping
+    # them unfiltered would put entries already known to be wrong in front of the
+    # people analysing them, which is the one outcome the checks exist to prevent.
+    try:
+        from ..config import get as _cfg, mousereach_pipeline_root
+        exclusions = export_exclusions.compute(
+            snapshot_dir, mousereach_pipeline_root(), _cfg("cohort_sheets_dir"))
+    except Exception as e:
+        manifest["problems"].append(
+            "analysis exclusions could not be computed (%s: %s) -- the analysis "
+            "files were not written rather than written unfiltered" % (type(e).__name__, e))
+        return manifest
+    exclusion_report = []
     for cid in wanted:
         try:
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
@@ -657,7 +714,9 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             if df.empty:
                 manifest["files"]["ODC_reaches_%s.csv" % cohort_label(cid)] = {"rows": 0, "note": "no reaches"}
                 continue
-            entry, label = write_cohort(out_dir, cid, df, rows)
+            entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
+                                        analysis_only=analysis_only)
+            exclusion_report.extend(entry.pop("_exclusion_report", []) or [])
             for key, store in (("_analysis_dictionary", analysis_dict),
                                ("_sessions_dictionary", sessions_dict)):
                 for row in entry.pop(key, []) or []:
@@ -676,10 +735,54 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                                (sessions_dict, "sessions_analysis")):
         if rows_by_name:
             dd.write_rows(list(rows_by_name.values()),
-                          out_dir / ("%s_DATA_DICTIONARY.csv" % stem))
+                          write_dir / ("%s_DATA_DICTIONARY.csv" % stem))
             manifest["files"]["%s_DATA_DICTIONARY.csv" % stem] = {
                 "columns": len(rows_by_name),
                 "note": "shared by every cohort's %s file" % stem.split("_")[0]}
+
+    # What was left out and why, beside the files it was left out of. A reader of
+    # the analysis files is owed this: a missing session should never look like a
+    # session that was not filmed.
+    report_cols = ["cohort", "left_out", "video_name", "subject_id", "date", "rows",
+                   "fields", "reason"]
+    report = pd.DataFrame(exclusion_report, columns=report_cols)
+    previous = final_dir / "analysis_EXCLUSIONS.csv"
+    if cohorts and previous.exists():
+        # A partial export must not throw away the other cohorts' entries: keep
+        # every row that belongs to a cohort not being written now. A row whose
+        # cohort cannot be told (written before the report carried one) is
+        # dropped: it is regenerated when its cohort is next exported, and a
+        # stale line in this report is worse than a missing one.
+        kept = pd.read_csv(previous, dtype=str, keep_default_na=False)
+        if "cohort" not in kept.columns:
+            # Written before the report carried a cohort: recover it from the
+            # animal id where that id still contains one. Where it does not
+            # (a decoded id such as F01), the row is stale and goes.
+            kept["cohort"] = kept["subject_id"].str.rsplit("_", n=1).str[0]
+            kept["cohort"] = kept["cohort"].where(kept["video_name"] != "(whole cohort)",
+                                                  kept["subject_id"])
+        known = set(cohorts_in(t["reach"]))
+        kept = kept[kept["cohort"].isin(known) & ~kept["cohort"].isin(wanted)]
+        report = pd.concat([kept[report_cols], report.astype(str)], ignore_index=True)
+    # Same rule as every dataset we ship: no comma, quote or odd character in a
+    # cell, because this file goes to the same readers as the data.
+    report, _changes = csv_safety.make_frame_safe(report.astype(str))
+    report.to_csv(write_dir / "analysis_EXCLUSIONS.csv", index=False)
+    manifest["files"]["analysis_EXCLUSIONS.csv"] = {
+        "rows": int(len(report)),
+        "reach_rows_left_out": int(pd.to_numeric(
+            report.loc[report["left_out"] == "reach rows", "rows"], errors="coerce").sum()),
+        "note": "every entry left out of the analysis files, and why"}
+    for note in exclusions.notes:
+        manifest["problems"].append("analysis exclusions: " + note)
+
+    if write_dir != final_dir:
+        import shutil
+        final_dir.mkdir(parents=True, exist_ok=True)
+        for f in sorted(write_dir.glob("*.csv")):
+            tmp = final_dir / (f.name + ".tmp")
+            shutil.copyfile(f, tmp)
+            tmp.replace(final_dir / f.name)
     return manifest
 
 
