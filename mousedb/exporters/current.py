@@ -186,7 +186,9 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  10 = every measurement we hold is carried (the flat per-reach columns, the
     #       whole-hand speeds, per-reach attention, the day's body weight), column
     #       names obey ODC's naming rules, and no cell can break a CSV reader
-    sig["output_format"] = 10
+    #  11 = the body-weight percentage in one unit: cohorts stored as whole
+    #       percentages were being multiplied by 100 again (9,000%)
+    sig["output_format"] = 11
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
