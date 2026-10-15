@@ -55,7 +55,14 @@ DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.
-TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records"]
+# "weights" was missing until 2026-10-14, and with it the only per-session
+# measurement the lab records by hand for every animal on every testing day: body
+# weight in grams and as a percentage of free-feeding weight. The exports read
+# this snapshot, so a table absent from here is absent from every export that
+# reads it, however complete the database is. Food restriction state is not a
+# small covariate in a task where the animal works for food.
+TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records",
+          "weights"]
 
 
 def watcher_blocks_db() -> bool:

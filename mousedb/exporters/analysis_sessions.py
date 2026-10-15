@@ -54,8 +54,13 @@ TEXT_COLUMNS = ar.TEXT_COLUMNS
 
 
 def _rate(part, whole):
-    """Percent, or None when there is nothing to take a percentage of."""
-    if whole in (None, 0) or pd.isna(whole):
+    """Percent, or None when either side is missing.
+
+    The numerator can be absent as well as the denominator: a session nobody
+    hand-scored has no retrieved count, and asking for a percentage of it is a
+    question with no answer rather than a zero.
+    """
+    if whole in (None, 0) or pd.isna(whole) or part is None or pd.isna(part):
         return None
     return round(100.0 * float(part) / float(whole), 4)
 

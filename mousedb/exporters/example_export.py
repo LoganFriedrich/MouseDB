@@ -50,6 +50,9 @@ from . import analysis_sessions as asess
 from . import odc_reaches
 
 FOLDER_NAME = "Example"
+
+# How an absent value is written in these files.
+MISSING_WORD = "NA"
 DEFAULT_ROWS = 5000
 CACHE_NAME = "example_slice_%s_%s.parquet"
 
@@ -127,6 +130,12 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
         Path(require("mousedb_root")) / "exports" / "current" / FOLDER_NAME)
 
     reach = cohort_slice(cohort, target_rows, use_cache)
+    # The same weight join the real export does when it loads the snapshot. This
+    # path reads the parquet files directly for speed, which means every join
+    # done in load_snapshot has to be done here too -- or the example quietly
+    # lacks a column the real export has, which defeats the point of it.
+    reach = odc_reaches.attach_weights(
+        reach, odc_reaches.session_weights(snapshot_dir()))
     if reach.empty:
         return {"cohort": cohort, "files": [], "reason": "no reaches for this cohort"}
     loaded = time.time()
@@ -196,7 +205,21 @@ def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None
     # purpose, and pandas would otherwise turn it into a blank -- hiding the
     # very thing being checked.
     frame = pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
-    picked = frame.sample(min(rows, len(frame)), random_state=seed)
+
+    # NEVER sample a row whose session has a problem nobody can fix now. The
+    # three "Unscheduled" dates in CNT_01 are days 6-8 after injury: filmed, but
+    # never hand-scored, because they are not protocol timepoints. Their rows are
+    # correct and they stay in the export -- but showing one as an EXAMPLE wastes
+    # the reader's attention on a known dead end, because every hand-scored
+    # column reads NA and none of that is about the format being checked.
+    clean = frame
+    if "test_type" in frame.columns:
+        clean = clean[clean["test_type"] != "Unscheduled"]
+    if "manual_retrieved" in clean.columns:
+        clean = clean[clean["manual_retrieved"] != MISSING_WORD]
+    if clean.empty:
+        clean = frame
+    picked = clean.sample(min(rows, len(clean)), random_state=seed)
 
     width = max(len(c) for c in frame.columns)
     lines = ["%s" % path,

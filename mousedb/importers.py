@@ -136,6 +136,9 @@ class ExcelImporter:
                 self._import_weights(xl, cohort_id, session, dry_run)
 
             # Pellet scores - same format in both
+            # The grids above carry grams only; the percentage is on the tray tab.
+            self._import_weight_percent_from_tray(xl, cohort_id, session, dry_run)
+
             if '3b_Manual_Tray' in available_sheets:
                 self._import_pellet_scores(xl, cohort_id, session, dry_run)
 
@@ -516,6 +519,77 @@ class ExcelImporter:
                 if not dry_run:
                     session.add(weight)
                 self.imported_counts['weights'] += 1
+
+    def _import_weight_percent_from_tray(self, xl, cohort_id: str, session, dry_run: bool):
+        """Fill weight_percent from 3b_Manual_Tray's "Weight %" column.
+
+        The weight GRIDS (3e_Weights and its older cousins) carry grams only, so
+        every session weight was stored with no percentage -- while the tray tab
+        held one on every row, for every cohort, unread. This fills them in by
+        animal and date.
+
+        It UPDATES existing rows rather than inserting: by the time this runs the
+        weight row exists, put there by the grid importer. A row that already has
+        a percentage is left alone, so the ramp tab's own numbers are not
+        overwritten.
+        """
+        if '3b_Manual_Tray' not in xl.sheet_names:
+            return
+        try:
+            df = pd.read_excel(xl, sheet_name='3b_Manual_Tray')
+        except Exception as e:
+            self.warnings.append("Failed to read 3b_Manual_Tray for weight %%: %s" % e)
+            return
+
+        # The column has been spelled a few ways across cohorts; take whichever
+        # is present rather than failing on a sheet that has the data under a
+        # different heading.
+        pct_column = None
+        for candidate in ('Weight %', 'Weight_%', 'Weight_Pct', 'Weight Pct',
+                          '% body weight', 'Weight_Pct_Baseline'):
+            if candidate in df.columns:
+                pct_column = candidate
+                break
+        if pct_column is None or 'Animal' not in df.columns or 'Date' not in df.columns:
+            return
+
+        seen = set()
+        filled = 0
+        for _, row in df.iterrows():
+            raw_id = row.get('Animal')
+            if raw_id is None or pd.isna(raw_id):
+                continue
+            subject_id = self._normalize_subject_id(str(raw_id), cohort_id)
+            date_val = self._parse_date(row.get('Date'))
+            if not subject_id or not date_val:
+                continue
+            key = (subject_id, date_val)
+            if key in seen:
+                # Four tray rows per animal per day, all carrying the same
+                # weight: the first is enough and the rest are the same number.
+                continue
+            seen.add(key)
+
+            pct = self._parse_float(row.get(pct_column))
+            if pct is None:
+                continue
+            # The sheet writes it as a fraction (0.87); the table stores it the
+            # same way, so a value above 2 is a sheet that wrote 87 instead and
+            # is converted rather than stored as an 8700%% animal.
+            if pct > 2:
+                pct = pct / 100.0
+
+            existing = session.query(Weight).filter_by(
+                subject_id=subject_id, date=date_val).first()
+            if existing is None or existing.weight_percent is not None:
+                continue
+            if not dry_run:
+                existing.weight_percent = pct
+            filled += 1
+
+        if filled:
+            self.imported_counts['weight_percent_filled'] = (
+                self.imported_counts.get('weight_percent_filled', 0) + filled)
 
     def _import_weights_vertical(self, df: pd.DataFrame, cohort_id: str,
                                   session, dry_run: bool):

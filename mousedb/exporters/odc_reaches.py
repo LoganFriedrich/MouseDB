@@ -564,6 +564,51 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     return entry, label
 
 
+def session_weights(snapshot_dir) -> "pd.DataFrame":
+    """The hand-recorded body weight for each animal on each day, or empty.
+
+    Absent on an older snapshot, which is not an error: the table was added to
+    the snapshot on 2026-10-14 and a snapshot taken before that simply has no
+    weights. The columns are then missing from the export rather than wrong,
+    which is the behaviour every other optional table already has.
+    """
+    path = Path(snapshot_dir) / "weights.parquet"
+    if not path.exists():
+        return pd.DataFrame()
+    weights = pd.read_parquet(path)
+    keep = [c for c in ("subject_id", "date", "weight_grams", "weight_percent")
+            if c in weights.columns]
+    if len(keep) < 4:
+        return pd.DataFrame()
+    weights = weights[keep].copy()
+    weights["date"] = weights["date"].astype(str).str[:10]
+    # weight_percent is stored as a fraction (0.87); a percentage column that
+    # reads 0.87 invites somebody to multiply by 100 twice or not at all.
+    weights["weight_percent"] = pd.to_numeric(
+        weights["weight_percent"], errors="coerce") * 100.0
+    # One weight per animal per day. Where a day somehow holds two, the first is
+    # taken and the duplicate dropped rather than the reach rows being doubled
+    # by the join -- a silent row explosion is far worse than a repeated weight.
+    return weights.drop_duplicates(subset=["subject_id", "date"], keep="first")
+
+
+def attach_weights(reach: "pd.DataFrame", weights: "pd.DataFrame") -> "pd.DataFrame":
+    """Add Session_Weight_g and Session_Weight_Pct to the reach rows."""
+    if reach.empty or weights.empty:
+        return reach
+    if "subject_id" not in reach.columns or "session_date" not in reach.columns:
+        return reach
+    out = reach.copy()
+    out["_day"] = out["session_date"].astype(str).str[:10]
+    joined = out.merge(
+        weights.rename(columns={"date": "_day",
+                                "weight_grams": "Session_Weight_g",
+                                "weight_percent": "Session_Weight_Pct"}),
+        on=["subject_id", "_day"], how="left")
+    joined.index = out.index
+    return joined.drop(columns=["_day"])
+
+
 def load_snapshot(snapshot_dir: Path) -> dict:
     """The snapshot tables this export reads; animal_records may be absent (older snapshot)."""
     import pyarrow.parquet as pq
@@ -577,6 +622,9 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records")):
         f = snapshot_dir / ("%s.parquet" % name)
         t[key] = pd.read_parquet(f) if f.exists() else None
+    # The day's body weight rides on the reach rows from here on, so every
+    # document built from them carries it and none can be the one that forgot.
+    t["reach"] = attach_weights(t["reach"], session_weights(snapshot_dir))
     return t
 
 
