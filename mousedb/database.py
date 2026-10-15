@@ -4,6 +4,7 @@ Database connection and session management for Connectome Data Entry.
 
 import os
 import json
+import threading
 from pathlib import Path
 from datetime import datetime
 from contextlib import contextmanager
@@ -14,6 +15,26 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from . import DEFAULT_DB_PATH, DEFAULT_LOG_PATH
 from .schema import Base, create_default_projects, create_default_tray_types, AuditLog
+
+
+def _begin_before_savepoint(conn, name):
+    """Open a real transaction before a SAVEPOINT if the driver has not.
+
+    WHY: Python's sqlite3 driver only starts a transaction (BEGIN) in front
+    of an INSERT/UPDATE/DELETE. When a SAVEPOINT is the first statement of a
+    transaction -- session.begin_nested() before anything was written --
+    SQLite treats the SAVEPOINT itself as the transaction, and releasing it
+    COMMITS. The surrounding rollback then undoes nothing, while the ORM (and
+    the audit hooks below) believe it undid everything: data that was meant
+    to be discarded stays in the database. Issuing BEGIN first makes the
+    SAVEPOINT nest inside the real transaction, as the ORM assumes.
+
+    Only transactions that use SAVEPOINTs are touched; every other
+    transaction, and its locking, is exactly as before.
+    """
+    dbapi_conn = conn.connection.dbapi_connection
+    if not dbapi_conn.in_transaction:
+        dbapi_conn.execute("BEGIN")
 
 
 class Database:
@@ -52,7 +73,22 @@ class Database:
             connect_args={"check_same_thread": False,  # For multi-threaded GUI
                           "timeout": timeout}
         )
+        # Without this, a begin_nested() that opens a transaction commits on
+        # release and the outer rollback undoes nothing (see the function).
+        event.listen(self.engine, 'savepoint', _begin_before_savepoint)
         self.SessionLocal = sessionmaker(bind=self.engine)
+
+        # Audit file lines wait on the session until its transaction commits
+        # (see _register_audit_hooks). The lock keeps two threads' committed
+        # batches from interleaving inside one day file (the GUI is
+        # multi-threaded). unwritten_audit_lines holds any committed line the
+        # file append refused, so a caller can report it instead of losing it.
+        self._audit_file_lock = threading.Lock()
+        self.unwritten_audit_lines: list = []
+        # Registered BEFORE the phase hooks: both run on after_commit, and the
+        # record of a committed change should be on disk before a phase
+        # refresh that can take minutes (or die with the process).
+        self._register_audit_hooks()
 
         # Auto-refresh phase_group / test_phase after any GUI/ORM write that
         # could invalidate them (cohort start_date, subject cohort_id,
@@ -121,6 +157,13 @@ class Database:
                             dirty.add(subj.cohort_id)
 
         def _run_scoped_backfill(session):
+            # SQLAlchemy also fires after_commit when a SAVEPOINT is released.
+            # That change is not committed yet, and the outer transaction
+            # still holds the SQLite write lock, so a backfill here (it writes
+            # on its own connection) would wait out the whole busy timeout and
+            # then fail. Keep the dirty set for the real commit instead.
+            if session.in_nested_transaction():
+                return
             dirty = session.info.pop('_phases_dirty_cohorts', None)
             if not dirty:
                 return
@@ -138,6 +181,130 @@ class Database:
 
         event.listen(self.SessionLocal, 'before_flush', _collect_dirty_cohorts)
         event.listen(self.SessionLocal, 'after_commit', _run_scoped_backfill)
+
+    # Key in session.info where log_change parks file lines until a commit.
+    # Each entry is (transaction, file_name, line): the transaction says which
+    # rollback would undo the change, the file name is fixed when the change
+    # is logged so a line lands in the file of the day it was made.
+    _AUDIT_PENDING_KEY = '_audit_pending_lines'
+
+    def _register_audit_hooks(self):
+        """Install session events that write audit file lines only after a commit.
+
+        WHY: log_change records a change twice -- an AuditLog row in the
+        database and a line in logs/<date>_changes.jsonl. The row lives and
+        dies with its transaction; a file append does not. Appending at call
+        time meant a rolled-back transaction left a line claiming a change the
+        database never received: a false audit trail. So log_change parks the
+        line on the session, and these hooks decide its fate:
+
+        - after_commit: append every parked line once the change is durable,
+          one append per day file for the whole transaction rather than one
+          file open per change (an import logs thousands of changes, and the
+          log folder is usually on a network share). SQLAlchemy also fires
+          after_commit when a SAVEPOINT is released; that is NOT durable --
+          the outer transaction can still roll back -- so it is ignored and
+          the lines stay parked.
+        - after_soft_rollback: drop the lines whose changes this rollback
+          undid -- everything, or only those logged inside the SAVEPOINT that
+          was rolled back (and any SAVEPOINT nested within it).
+        - after_transaction_end of the outermost transaction: drop whatever is
+          still parked. A commit has written its lines by then, so anything
+          left belongs to a transaction that ended without committing (for
+          example session.close() with no commit) and must never reach the
+          file, nor leak into a later commit on the same session.
+        """
+        key = self._AUDIT_PENDING_KEY
+
+        def _write_after_commit(session):
+            if session.in_nested_transaction():
+                return  # SAVEPOINT release: not durable yet (see docstring)
+            pending = session.info.pop(key, None)
+            if pending:
+                self._append_audit_lines(pending)
+
+        def _drop_rolled_back(session, previous_transaction):
+            pending = session.info.get(key)
+            if not pending:
+                return
+            # The database undoes the nearest SAVEPOINT or the outermost
+            # transaction at or above the one rollback was called on; a
+            # flush's internal sub-transaction is only a marker inside one of
+            # those, so climb to the boundary that actually rolled back.
+            boundary = previous_transaction
+            while not boundary.nested and boundary.parent is not None:
+                boundary = boundary.parent
+            kept = [entry for entry in pending
+                    if not _is_inside(entry[0], boundary)]
+            if kept:
+                session.info[key] = kept
+            else:
+                session.info.pop(key, None)
+
+        def _drop_uncommitted(session, transaction):
+            # Only the outermost transaction's end means "this session's
+            # changes are settled"; a SAVEPOINT ending is handled above.
+            if transaction.parent is None:
+                session.info.pop(key, None)
+
+        def _is_inside(tagged, boundary):
+            # True when the transaction a line was logged in is the rolled
+            # back one or nested somewhere within it.
+            t = tagged
+            while t is not None:
+                if t is boundary:
+                    return True
+                t = t.parent
+            return False
+
+        event.listen(self.SessionLocal, 'after_commit', _write_after_commit)
+        event.listen(self.SessionLocal, 'after_soft_rollback', _drop_rolled_back)
+        event.listen(self.SessionLocal, 'after_transaction_end', _drop_uncommitted)
+
+    def _append_audit_lines(self, pending):
+        """Append committed audit lines: one open and one write per day file.
+
+        Runs inside after_commit, when the database change is ALREADY
+        committed. It must not raise: an exception here would surface from
+        session.commit() and the caller would report a failed save for data
+        that was in fact saved. A refused append is printed and kept in
+        self.unwritten_audit_lines instead; the AuditLog rows in the database
+        are unaffected, so only the file copy is missing.
+        """
+        by_file = {}
+        for _txn, file_name, line in pending:
+            by_file.setdefault(file_name, []).append(line)
+        for file_name, lines in by_file.items():
+            log_file = self.log_path / file_name
+            try:
+                with self._audit_file_lock:
+                    # The folder is created at start-up, but it lives on a
+                    # share someone can tidy away while a long job runs.
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    # One write call so a transaction's lines stay together
+                    # even if another process appends to the same day file.
+                    with open(log_file, 'a', encoding='utf-8') as f:
+                        f.write(''.join(lines))
+            except Exception as exc:
+                self.unwritten_audit_lines.extend(lines)
+                message = (
+                    f"[!] Audit log: {len(lines)} committed change(s) could not "
+                    f"be appended to {log_file}: {exc}. The changes are saved "
+                    f"and recorded in the audit_log table; only the file copy "
+                    f"is missing."
+                )
+                # The folder path and the system's error text can hold
+                # characters a legacy code page cannot print (a user name, a
+                # localised message). print() would then raise from inside
+                # the commit -- exactly what this function must not do -- so
+                # escape to plain ASCII.
+                message = message.encode('ascii', 'backslashreplace').decode('ascii')
+                try:
+                    print(message)
+                except Exception:
+                    # A closed or broken stdout must not fail a saved change
+                    # either; the lines are still in unwritten_audit_lines.
+                    pass
 
     def init_db(self):
         """Create all tables, run migrations, and seed default data."""
@@ -223,36 +390,77 @@ class Database:
         """
         Log a data change for audit trail.
 
+        Records the change twice: an AuditLog row added to ``session``, and a
+        line in ``<log_path>/<date>_changes.jsonl``. The row commits or rolls
+        back with the change it describes. The file line is NOT written here:
+        it is held on the session and appended only after that session's
+        transaction commits (see _register_audit_hooks). If the transaction
+        rolls back, or the session is closed without committing, neither
+        record survives -- the file can never claim a change the database does
+        not hold. Every line from one commit is appended in a single write.
+
         Args:
-            session: Active database session
+            session: Active database session. It must come from this Database
+                (``db.session()`` or ``db.SessionLocal()``): only those carry
+                the commit hooks that write the file line.
             action: INSERT, UPDATE, or DELETE
             table_name: Name of the affected table
             record_id: Primary key of the affected record
-            old_values: Previous values (for UPDATE/DELETE)
-            new_values: New values (for INSERT/UPDATE)
+            old_values: Previous values (for UPDATE/DELETE); JSON-serialisable
+            new_values: New values (for INSERT/UPDATE); JSON-serialisable
+
+        Raises:
+            TypeError: ``session`` was not made by this Database. Its file line
+                would never be written (or would be written by another
+                Database into its own log folder), so refuse rather than drop
+                it silently.
         """
+        if not isinstance(session, self.SessionLocal.class_):
+            raise TypeError(
+                "log_change needs a session from this Database "
+                "(db.session() or db.SessionLocal()); any other session has "
+                "no commit hook to write the audit file line."
+            )
+
+        # One timestamp for both records so the table row and the file line
+        # can be matched exactly (the row's own default would be the later
+        # flush time).
+        now = datetime.now()
+        # Serialise before touching the session: a value JSON cannot encode
+        # fails here, in the caller's hands, and leaves no half-logged change
+        # -- rather than inside the commit, after the data is saved.
+        old_json = json.dumps(old_values) if old_values else None
+        new_json = json.dumps(new_values) if new_values else None
+        line = json.dumps({
+            'timestamp': now.isoformat(),
+            'user': self.current_user,
+            'action': action,
+            'table': table_name,
+            'record_id': str(record_id),
+            'old': old_values,
+            'new': new_values,
+        }) + '\n'
+
         log_entry = AuditLog(
+            timestamp=now,
             user=self.current_user,
             action=action,
             table_name=table_name,
             record_id=str(record_id),
-            old_values=json.dumps(old_values) if old_values else None,
-            new_values=json.dumps(new_values) if new_values else None,
+            old_values=old_json,
+            new_values=new_json,
         )
+        # add() begins the session's transaction if none is open yet, so the
+        # transaction lookup below always finds the one this row belongs to.
         session.add(log_entry)
 
-        # Also write to daily log file
-        log_file = self.log_path / f"{datetime.now().strftime('%Y-%m-%d')}_changes.jsonl"
-        with open(log_file, 'a') as f:
-            f.write(json.dumps({
-                'timestamp': datetime.now().isoformat(),
-                'user': self.current_user,
-                'action': action,
-                'table': table_name,
-                'record_id': str(record_id),
-                'old': old_values,
-                'new': new_values,
-            }) + '\n')
+        # Tag the line with the innermost transaction that can be rolled back
+        # on its own (a SAVEPOINT if one is open, else the whole transaction),
+        # so a rollback drops exactly the lines whose changes it undid.
+        txn = session.get_nested_transaction() or session.get_transaction()
+        file_name = f"{now.strftime('%Y-%m-%d')}_changes.jsonl"
+        session.info.setdefault(self._AUDIT_PENDING_KEY, []).append(
+            (txn, file_name, line))
 
     def get_stats(self) -> dict:
         """Get database statistics."""
