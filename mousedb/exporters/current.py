@@ -172,10 +172,21 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     # writes different columns or different words, so this number stands for the output
     # format and is bumped by hand whenever that changes -- otherwise a node still
     # holding the previous code skips the rewrite and the old files look current.
+    # BUMP THIS whenever the exporter writes a different column, a different word
+    # in a cell, or a different dictionary entry. Forgetting is not a small
+    # mistake: the run silently skips the export, reuses the previous run's
+    # record of what it wrote, and reports the state of files it did not look
+    # at -- which happened on 2026-10-14, where two freshly written dictionary
+    # entries were reported missing because nothing had been rewritten.
     #   2 = letter cohorts carry their letter (ASPA_04_D)
     #   3 = two documents per cohort (complete record + shareable summary), the extended
     #       per-reach measurements included, and no empty cells in either
-    sig["output_format"] = 9
+    #   9 = the analysis document: numbers in numeric columns, NA for absent, an
+    #       entry index, the session totals on every reach row
+    #  10 = every measurement we hold is carried (the flat per-reach columns, the
+    #       whole-hand speeds, per-reach attention, the day's body weight), column
+    #       names obey ODC's naming rules, and no cell can break a CSV reader
+    sig["output_format"] = 10
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))

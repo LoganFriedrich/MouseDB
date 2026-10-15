@@ -27,7 +27,7 @@ def test_only_the_deciding_reach_reports_what_happened():
         {"video_name": "V", "segment_num": 1, "reach_num": 2,
          "causal_reach": 1, "segment_outcome": "retrieved"},
     ]))
-    assert list(out["reach_result"]) == [rs.NO_EFFECT, rs.RETRIEVED]
+    assert list(out["reach_result"]) == [rs.MISSED, rs.RETRIEVED]
     assert list(out["reach_decided_the_pellet"]) == ["No", "Yes"]
 
 
@@ -62,7 +62,7 @@ def test_an_untouched_pellet_is_never_reported_as_an_effect():
         {"video_name": "V", "segment_num": 1, "reach_num": 1,
          "causal_reach": 1, "segment_outcome": "untouched"},
     ]))
-    assert out["reach_result"].iloc[0] == rs.NO_EFFECT
+    assert out["reach_result"].iloc[0] == rs.MISSED
     assert out["pellet_result"].iloc[0] == rs.NEVER_TOUCHED
 
 

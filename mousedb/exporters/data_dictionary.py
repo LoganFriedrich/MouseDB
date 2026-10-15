@@ -182,6 +182,19 @@ def never_computed_names(rows=None) -> set:
 # ---------------------------------------------------------------------------
 
 REACH_DATA = [
+    _row("Session_Weight_g", "Body weight on the day of the session",
+         "What the animal weighed when it was weighed before this session, in grams, "
+         "recorded by hand in the cohort's tracking sheet. The same for every reach the "
+         "animal made that day.",
+         "g", "number", "", "", "10", "40"),
+    _row("Session_Weight_Pct", "Body weight as a percentage of free-feeding weight",
+         "The animal's weight on the day as a percentage of the weight it held when fed "
+         "freely, which is how food restriction is managed and judged. A value near 100 "
+         "means the animal was close to its unrestricted weight; the lower it is, the "
+         "hungrier it was when it reached. Worth treating as a covariate rather than a "
+         "housekeeping number: an animal works harder for a pellet the further it is "
+         "below its free-feeding weight.",
+         "percent", "number", "", "", "50", "110"),
     _row("subject_id", "Subject identifier", "Animal id in PROJECT_CC_SS form (project, cohort number, subject number), e.g. CNT_05_03.", "", "text"),
     _row("video_name", "Video name", "Session video the reach was detected in: YYYYMMDD_{PROJECT}{CCSS}_{tray type}{run}, e.g. 20250624_CNT0115_P2.", "", "text"),
     _row("session_date", "Session date", "Date of the recording, from the video name.", "", "date"),
