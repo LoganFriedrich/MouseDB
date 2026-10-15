@@ -28,13 +28,16 @@ conda activate <env_dir>
 # 2b. Tell mousedb where things are on this machine (see "Configuration" below)
 mousedb config --set mousedb_root <folder for connectome.db, exports/, logs/>
 
+# 2c. ...and where the tracking workbooks (Connectome_NN_Animal_Tracking.xlsx) are
+mousedb-sheets set-dir <folder holding the tracking workbooks>
+
 # 3. Initialize the database
 mousedb init
 
-# 4. Import existing Excel data (preview first)
+# 4. Import the tracking sheets (preview first: reads every cohort's sheet, imports nothing)
 mousedb import --all --dry-run
 
-# 5. Import for real
+# 5. Import for real (one line per cohort, OK or FAIL; exit code 1 if any cohort failed)
 mousedb import --all
 
 # 6. Launch the GUI
@@ -57,6 +60,14 @@ cache directories. The endpoint_ck_analysis smoke test executes a notebook
 against the bundled database and is slower than the unit tests; if you
 just want fast feedback while editing the core package, run
 `pytest tests/`.
+
+`manual_setup_check.py`, in the repo root, is an interactive check of an
+install, not a test: `python manual_setup_check.py`. It opens the configured
+database, shows its row counts, lists the tracking sheets the way
+`mousedb-sheets status` does and -- only into a database that holds no
+animals yet -- offers to import them, a dry run first. That import is the same
+recorded import as `mousedb-sheets import`: it waits for the database lock and
+is written to `logs/sheet_imports.jsonl` as `manual_setup_check`.
 
 ## GUI Features
 
@@ -97,12 +108,15 @@ The GUI has three tabs:
 | `mousedb status` | Show database stats |
 | `mousedb init` | Initialize/create database |
 | `mousedb new-cohort CNT_06 --start-date 2025-02-01 --mice 16` | Create new cohort |
-| `mousedb import --all` | Import all Excel files |
-| `mousedb import --file path/to/file.xlsx` | Import single file |
-| `mousedb import --all --dry-run` | Validate without importing |
+| `mousedb import --all` | Import each cohort's tracking sheet from the configured sheets folder: ONE file per cohort (the pinned one, else the newest), the same import as the Tracking Sheets tab. Each cohort's outcome goes into `logs/sheet_imports.jsonl`; exit code 1 if any cohort failed. See [`docs/TRACKING_SHEETS.md`](docs/TRACKING_SHEETS.md) |
+| `mousedb import --file path/to/file.xlsx` | Import one cohort's workbook, the same way (when the import saves, it also replaces that cohort's copy of the animal details; a failed import leaves them as they were). Refused, with what to run instead, if it sits in an archive/snapshot folder or is not named as a sheet (a copy, an Excel lock file, a tool's export) |
+| `mousedb import --all --dry-run` | Read every sheet and report what would be imported, without importing |
+| `mousedb-sheets status` | Per cohort: which file is its sheet, when it was edited, when it was imported, whether that worked |
+| `mousedb-make-sheets --new --cohort CNT_07 --start-date 2026-01-31 --output-dir <folder>` | Create a NEW cohort's empty tracking workbook (the Tracking Sheets tab's "New cohort sheet..." button). It never writes over a file: unless the name is exactly `PREFIX_NN` and that cohort has no workbook in the folder yet, it prints `REFUSED: <reason>`, writes nothing and exits with code 3. See [`docs/TRACKING_SHEETS.md`](docs/TRACKING_SHEETS.md), "Starting a new cohort" |
 | `mousedb export --cohort CNT_05` | Export to legacy Excel format |
 | `mousedb export --cohort CNT_05 --odc` | Export ODC format (calculated stats) |
 | `mousedb export --cohort CNT_05 --all-formats` | Export all formats |
+| `mousedb export ... --output <path>` | Write the export to `<path>`. Refused before the database is opened (`REFUSED` / `Why` / `Instead`, exit code 1) when `<path>` is inside the tracking-sheets folder or the ASPA folder, or is named like a cohort's tracking sheet: the export would empty the workbook that is there |
 | `mousedb export --unified` | Export unified reaches parquet |
 | `mousedb entry` | Launch GUI |
 | `mousedb import-reaches` | Pull new or changed MouseReach `*_features.json` results into `reach_data` (`--dry-run` to count only) |
@@ -139,7 +153,7 @@ All subjects with session summaries for analysis:
 | Location | Purpose |
 |----------|---------|
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
-| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`reach_imports.json`, `analysis_imports.json`) |
+| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`) |
 | `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
 | `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarised in `exports/ANALYSES_MANIFEST.json` |
 | `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |
@@ -183,7 +197,10 @@ pip install -e <repo>
 ```
 
 ### Database locked
-- Only one user should run `mousedb import` at a time
+- Imports started from mousedb (the GUI's import buttons, `mousedb import`,
+  `mousedb-sheets import`, the scheduled jobs) take turns and wait for one
+  another -- see "What happens when another program has the database
+  locked" below
 - GUI can have multiple users reading simultaneously
 - Writes are serialized automatically
 
