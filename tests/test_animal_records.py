@@ -16,14 +16,18 @@ def _cnt_workbook(path):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "4_Contusion_Injury_Details"
-    ws.append(["Subject_ID", "Surgery_Date", "Surgery_Type", "Anesthetic", "Intended_kd", "Actual_kd", "Survived"])
-    ws.append(["PROJA_01_01", datetime(2025, 7, 2), "Contusion", "drug-x", 60, 65.0, "Y"])
-    ws.append(["PROJA_01_02", datetime(2025, 7, 2), "Contusion", "drug-x", 60, None, None])  # planned, not done
-    ws.append(["PROJB_01_01", datetime(2025, 7, 2), "Contusion", "drug-x", 60, 61, "Y"])     # other cohort
+    # A surgery row counts only when the weight on the day is typed in (see
+    # animal_records.surgery_verdict), so the performed rows carry one and the
+    # planned row does not.
+    ws.append(["Subject_ID", "Surgery_Date", "Surgery_Type", "Anesthetic", "Intended_kd",
+               "Subject_Weight (g)", "Actual_kd", "Survived"])
+    ws.append(["PROJA_01_01", datetime(2025, 7, 2), "Contusion", "drug-x", 60, 25.0, 65.0, "Y"])
+    ws.append(["PROJA_01_02", datetime(2025, 7, 2), "Contusion", "drug-x", 60, None, None, None])  # planned, not done
+    ws.append(["PROJB_01_01", datetime(2025, 7, 2), "Contusion", "drug-x", 60, 26.0, 61, "Y"])     # other cohort
     sc = wb.create_sheet("5_SC_Injection_Details")
-    sc.append(["Subject_ID", "Surgery_Date", "Injected_Virus", "Survived"])
-    sc.append(["PROJA_01_01", datetime(2025, 8, 1), "virus-a", "Y"])
-    sc.append(["PROJA_01_01", datetime(2025, 9, 1), "virus-b", "N"])
+    sc.append(["Subject_ID", "Surgery_Date", "Subject_Weight (g)", "Injected_Virus", "Survived"])
+    sc.append(["PROJA_01_01", datetime(2025, 8, 1), 24.0, "virus-a", "Y"])
+    sc.append(["PROJA_01_01", datetime(2025, 9, 1), 24.5, "virus-b", "N"])
     meta = wb.create_sheet("0a_Metadata")
     meta.append(["SubjectID", "Sex", "Notes"])
     meta.append(["PROJA_01_01", "F", "?"])
@@ -61,7 +65,9 @@ def test_cnt_tabs_copied_as_written(tmp_path):
     assert got[("PROJA_01_03", "3b_Manual_Tray", 1, "Sex")] == "Female"    # sex from the scoring tab
     assert not any(k[0] == "PROJA_01_02" for k in got)                     # planned row skipped
     assert not any(k[0].startswith("PROJB") for k in got)                   # other cohort skipped
-    assert any("PROJB_01_01" in m for m in w)                               # ...and said so
+    # ...and not said here: the sheet importer reads the same tab, refuses the same
+    # row and names it, and one import must not say it twice.
+    assert not any("PROJB_01_01" in m for m in w)
 
 
 def test_odc_tab_header_found_below_notes(tmp_path):
