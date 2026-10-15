@@ -165,6 +165,122 @@ def _cohort_of_video(video_id: str) -> str:
     return found.pop()
 
 
+# How long a health report may go unwritten before its silence is the finding.
+# The check runs daily, so a report older than two days means the check itself
+# stopped.
+STALE_HEALTH_HOURS = 48
+
+
+def health_file() -> Path:
+    """Where the nightly health check leaves its report."""
+    # require() stops with the exact command to run when the root is unset,
+    # which is how every other path in this module already behaves.
+    return Path(require("mousedb_root")) / "logs" / "health.json"
+
+
+def _failing_jobs_sentence(report: dict) -> str:
+    """One sentence naming each failing job ONCE, with how many runs failed.
+
+    The health report lists one line per failing run, so three bad nights of
+    the same job are three lines. A person needs "import brains failed its last
+    3 runs", not the job's log filename repeated three times.
+    """
+    # A failing job shows up twice in the report: once per bad run in its own
+    # log ("snapshot_refresh.log"), and once as its task's exit code ("(task)
+    # MouseDB analysis snapshot refresh"). Runs are counted from the logs, and
+    # a task line is kept only when no log already accounts for that job -- the
+    # task name contains the log's name ("...snapshot refresh"), so containment
+    # is the match.
+    #
+    # The health check's own entries are dropped outright: it is the observer,
+    # and an observer that reports itself as failing never stops doing so.
+    counts: Dict[str, int] = {}
+    task_names: List[str] = []
+    for line in report.get("detail") or []:
+        line = str(line).strip()
+        if "|" not in line or line.startswith("[FAIL]"):
+            continue
+        name = line.split("|")[0].strip()
+        if "health check" in name.replace("_", " ").lower():
+            continue
+        if name.startswith("(task)"):
+            task_names.append(name[len("(task)"):].strip())
+            continue
+        if name.endswith(".log"):
+            name = name[:-4]
+        name = name.replace("_", " ")
+        counts[name] = counts.get(name, 0) + 1
+    for task in task_names:
+        if not any(known.lower() in task.lower() for known in counts):
+            counts[task] = counts.get(task, 0) + 1
+    if not counts:
+        return ("an overnight job is failing (checked %s); see "
+                "Databases\\logs\\tasks\\health_check.log" % report.get("checked_age"))
+    parts = ["%s (%d run%s)" % (n, c, "" if c == 1 else "s")
+             for n, c in sorted(counts.items())]
+    return ("overnight jobs failing, checked %s: %s. Every figure below stops "
+            "moving until they succeed again."
+            % (report.get("checked_age"), "; ".join(parts)))
+
+
+def scheduled_job_health(problems: List[str]) -> Optional[dict]:
+    """What the nightly health check found, and a problem line when it found one.
+
+    Separate from the snapshot's age on purpose -- see the module note at the
+    call site. The age says whether the numbers are current; this says whether
+    the jobs that produce them are working, which a hand-run refresh cannot
+    fake.
+    """
+    import datetime as _dt
+    import json
+
+    path = health_file()
+    if not path.exists():
+        problems.append(
+            "nothing has checked whether the overnight jobs succeeded: no health "
+            "report at %s. The 'MouseDB nightly health check' task writes it." % path)
+        return None
+    try:
+        report = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        problems.append("the overnight job health report could not be read: %s" % e)
+        return None
+
+    checked = report.get("checked_at")
+    age_hours = None
+    if checked:
+        try:
+            age_hours = (_dt.datetime.now()
+                         - _dt.datetime.fromisoformat(checked)).total_seconds() / 3600.0
+        except ValueError:
+            age_hours = None
+    report["checked_age"] = describe_age(age_hours) if age_hours is not None else "unknown"
+
+    if age_hours is not None and age_hours > STALE_HEALTH_HOURS:
+        problems.append(
+            "the check that watches the overnight jobs has not run for %s, so "
+            "nothing is currently watching them" % report["checked_age"])
+
+    if report.get("failing"):
+        problems.append(_failing_jobs_sentence(report))
+
+    # Any task whose own exit result says it was stopped at its time limit.
+    # The pre-deploy check whitelists that result as "stopped on purpose", which
+    # is how a job being killed every night stayed invisible for weeks.
+    jobs = report.get("jobs") or []
+    if isinstance(jobs, dict):
+        # PowerShell writes a one-element list as a bare object.
+        jobs = [jobs]
+    killed = sorted(j.get("task", "?") for j in jobs
+                    if j.get("last_result") == 267014
+                    and "health check" not in str(j.get("task", "")).lower())
+    if killed:
+        problems.append(
+            "stopped at its time limit before finishing, on its last run: %s"
+            % ", ".join(killed))
+    return report
+
+
 def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     snapshot_dir = snapshot_dir or require("snapshot_dir")
     import pandas as pd
@@ -214,6 +330,8 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "every figure below is %s old: the snapshot was taken %s and the job "
             "that rewrites it has not succeeded since. Newly analysed work will "
             "not appear until it does." % (out["snapshot_age"], snap_time))
+
+    out["jobs"] = scheduled_job_health(out["problems"])
 
     rd["cohort"] = rd["subject_id"].str.rsplit("_", n=1).str[0]
     ps["cohort"] = ps["subject_id"].str.rsplit("_", n=1).str[0]
