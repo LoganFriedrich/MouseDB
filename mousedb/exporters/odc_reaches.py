@@ -582,10 +582,19 @@ def session_weights(snapshot_dir) -> "pd.DataFrame":
         return pd.DataFrame()
     weights = weights[keep].copy()
     weights["date"] = weights["date"].astype(str).str[:10]
-    # weight_percent is stored as a fraction (0.87); a percentage column that
-    # reads 0.87 invites somebody to multiply by 100 twice or not at all.
-    weights["weight_percent"] = pd.to_numeric(
-        weights["weight_percent"], errors="coerce") * 100.0
+    # weight_percent is stored in TWO UNITS, depending on which import path wrote
+    # it: cohorts whose weights came from the transposed weight grid and the tray
+    # tab hold a fraction (0.87), while cohorts imported through the vertical
+    # weight tab hold the sheet's own percentage (87). Multiplying everything by
+    # 100 -- what this did until 2026-10-15 -- turned one cohort's 90% into 9,000%.
+    #
+    # The value itself says which it is, and unambiguously: no animal is kept at
+    # 2% of its free-feeding weight, and none weighs 200% of it. So anything at or
+    # below 2 is a fraction and is scaled; anything above is already a percentage.
+    # This is the same threshold the importer's tray path uses, and it stays here
+    # until the import boundary stores one unit (see the sheet ingest plan, K5).
+    pct = pd.to_numeric(weights["weight_percent"], errors="coerce")
+    weights["weight_percent"] = pct.where(pct > 2, pct * 100.0)
     # One weight per animal per day. Where a day somehow holds two, the first is
     # taken and the duplicate dropped rather than the reach rows being doubled
     # by the join -- a silent row explosion is far worse than a repeated weight.
