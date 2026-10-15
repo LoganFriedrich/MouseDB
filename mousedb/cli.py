@@ -10,6 +10,7 @@ Commands:
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -113,7 +114,7 @@ def cmd_cohort_sheets(args):
     """
     from .cohort_sheets import (
         describe, discover, set_cohort_sheets_dir, available_cohorts,
-        find_cohort_sheet, is_stale_source, CONFIG_PATH)
+        find_cohort_sheet, CONFIG_PATH)
 
     if getattr(args, 'set_aspa', None):
         target = Path(args.set_aspa)
@@ -133,23 +134,28 @@ def cmd_cohort_sheets(args):
         return
 
     if args.set:
-        target = Path(args.set)
+        from .sheet_sync import snapshot_folder_of, _ascii
+        # Recorded as an ABSOLUTE path. WHY: a folder typed relative to where
+        # this was run was saved as typed, and every later run from anywhere
+        # else (the scheduled job, the GUI) found no such folder and said "not
+        # configured". abspath, not resolve(): a mapped drive letter is kept.
+        target = Path(os.path.abspath(args.set))
         if not target.is_dir():
-            print(f"Not a directory: {target}")
+            print(_ascii(f"Not a directory: {target}"))
             sys.exit(1)
         found = available_cohorts(target)
         if not found:
-            print(f"No cohort tracking sheets in {target}")
+            print(_ascii(f"No cohort tracking sheets in {target}"))
             print("Expected files named Connectome_NN_Animal_Tracking.xlsx")
             sys.exit(1)
-        if is_stale_source(target):
-            print(f"REFUSING: {target} looks like a snapshot folder, not the")
+        if snapshot_folder_of(target):
+            print(_ascii(f"REFUSING: {target} looks like a snapshot folder, not the"))
             print("live sheets. Snapshots go stale -- point at the working copy.")
             sys.exit(1)
         cfg = set_cohort_sheets_dir(target)
-        print(f"Cohort sheets: {target}")
+        print(_ascii(f"Cohort sheets: {target}"))
         print(f"  cohorts with a sheet: {', '.join(found)}")
-        print(f"  saved to {cfg} (local to this machine, never committed)")
+        print(_ascii(f"  saved to {cfg} (local to this machine, never committed)"))
         return
 
     if args.discover:
@@ -172,68 +178,127 @@ def cmd_cohort_sheets(args):
 
     print(describe())
     if args.cohort:
-        sheet = find_cohort_sheet(args.cohort)
+        # The cohort is read by the same rule as every other command that takes
+        # one. WHY: this used to keep only the trailing number, so asking for
+        # another project's cohort 01 (or an animal id ending in 01) showed
+        # CNT_01's sheet under the name that was asked for.
+        from .sheet_sync import requested_cohort_id, _ascii
+        cohort_id, why = requested_cohort_id(args.cohort)
         print()
+        if why:
+            print(_ascii(why))
+            sys.exit(1)
+        sheet = find_cohort_sheet(cohort_id)
         if sheet is None:
-            print(f"No sheet found for {args.cohort}")
+            print(f"No sheet found for {cohort_id}")
         else:
             import datetime
             m = datetime.date.fromtimestamp(sheet.stat().st_mtime)
-            print(f"{args.cohort}: {sheet}")
+            print(_ascii(f"{cohort_id}: {sheet}"))
             print(f"  {sheet.stat().st_size // 1024} KB, last edited {m}")
 
 
 def cmd_import(args):
-    """Import Excel tracking sheets."""
-    from .database import init_database
-    from .importers import ExcelImporter, import_all_cohorts
+    """Import Excel tracking sheets -- through mousedb.sheet_sync, like every
+    other route (the Tracking Sheets tab, the scheduled job, the update button).
 
-    init_database()
+    WHY it delegates: until 2026-10 this command called the importer itself.
+    ``--all`` threw every cohort's errors and warnings away, recorded nothing
+    in the import ledger (so the Tracking Sheets tab could not see it), did not
+    wait for the database lock the other imports share, and exited 0 even when
+    every cohort failed -- and the "Update the database" button ran exactly
+    this. Now each cohort's outcome is printed with its warning count, written
+    to the ledger (unless --dry-run), and any failure exits 1.
 
-    from .cohort_sheets import cohort_sheets_dir, describe, is_stale_source
+    Every refusal of a folder (none configured, missing, a snapshot) or of a
+    named file (missing, in a snapshot folder, named as a copy, a lock file or
+    a tool's export) happens BEFORE the database is opened, so it touches
+    nothing at all. One refusal comes later: a --file whose name says no
+    cohort at all is refused by the importer's own naming rule, after the
+    database is opened but before anything is read from the file or imported.
+    """
+    from . import sheet_sync
+    from .cohort_sheets import cohort_sheets_dir, describe
+
+    if not args.all and not args.file:
+        # WHY a sentence: with neither, this used to crash on Path(None).
+        print("Say what to import: --all (every cohort's sheet) or --file <workbook>.")
+        sys.exit(1)
 
     if args.all:
         # Where the sheets actually are, not where they used to be. The old
         # default pointed at a folder that no longer existed -- so this command
         # found nothing and said so in
         # a way that read like "nothing to import".
-        cohorts_dir = Path(args.directory) if args.directory else cohort_sheets_dir()
+        if args.directory:
+            # Absolute, so the ledger records where the sheets were read from.
+            cohorts_dir = Path(os.path.abspath(args.directory))
+            if not cohorts_dir.is_dir():
+                # WHY its own sentence: this used to print only the CONFIGURED
+                # folder's description, which says nothing about the folder
+                # that was actually named.
+                print(sheet_sync._ascii(f"Not a folder: {cohorts_dir} -- nothing was imported."))
+                sys.exit(1)
+        else:
+            cohorts_dir = cohort_sheets_dir()
         if cohorts_dir is None or not cohorts_dir.exists():
             print(describe())
             sys.exit(1)
-        print(f"Reading cohort sheets from: {cohorts_dir}")
-        if is_stale_source(cohorts_dir):
-            print("REFUSING: that is a snapshot folder, not the live sheets.")
-            print("The archived copies are out of date -- the cohort 05 copy there")
-            print("is a stub with an empty subject table while the live sheet has")
-            print("the full scoring record. Point at the live folder instead:")
+        print(sheet_sync._ascii(f"Reading cohort sheets from: {cohorts_dir}"))
+        snapshot = sheet_sync.snapshot_folder_of(cohorts_dir)
+        if snapshot:
+            print(sheet_sync._ascii(
+                f"REFUSED: that folder is inside '{snapshot}', a snapshot or archive "
+                "folder, not the live sheets."))
+            # WHY each sentence: a snapshot copy stops at the day it was taken,
+            # and can be nearly empty while the live sheet holds the full record.
+            # This route replaces each cohort's animal records with what the
+            # sheet holds and only ADDS its other rows, so an old copy would
+            # both wipe newer records and leave rows no later import removes.
+            print("Copies kept there go out of date -- one can be nearly empty while")
+            print("the live sheet holds the full record. Importing them would replace")
+            print("each cohort's animal records with the old copy's, and the rows they")
+            print("add stay in the database for good. Point at the live folder instead:")
             print(describe())
             sys.exit(1)
-        results = import_all_cohorts(cohorts_dir, dry_run=args.dry_run)
     else:
-        # Import single file
         excel_path = Path(args.file)
-        if not excel_path.exists():
-            print(f"Error: File not found: {excel_path}")
+        if not excel_path.is_file():
+            print(sheet_sync._ascii(f"Error: File not found: {excel_path}"))
             sys.exit(1)
-        if is_stale_source(excel_path):
-            print(f"WARNING: {excel_path} is in a snapshot folder, not the live")
-            print("cohort sheets. It may be out of date. The live folder is:")
-            print(describe())
-        importer = ExcelImporter()
-        result = importer.import_cohort_file(excel_path, dry_run=args.dry_run)
+        # REFUSED, not warned about. WHY: this route REPLACES the cohort's
+        # animal records with the file's contents, so a stale copy (it used to
+        # be imported after a warning) overwrote good records until the next
+        # scheduled import, and its rows stayed for good. The same files the
+        # folder route never reads are refused here -- see
+        # sheet_sync.refuse_sheet_file.
+        refusal = sheet_sync.refuse_sheet_file(excel_path)
+        if refusal:
+            why, instead = refusal
+            print(sheet_sync._ascii(f"REFUSED: {excel_path} was not imported."))
+            print(sheet_sync._ascii(f"  Why: {why}."))
+            # No full stop after it: the instruction can end in a command,
+            # and a copied full stop would become part of that command.
+            print(sheet_sync._ascii(f"  Instead: {instead}"))
+            sys.exit(1)
 
-        if result['errors']:
-            print("\nErrors:")
-            for error in result['errors']:
-                print(f"  - {error}")
+    from .database import init_database
+    init_database()
 
-        if result['warnings']:
-            print("\nWarnings:")
-            for warning in result['warnings'][:10]:  # Limit warnings shown
-                print(f"  - {warning}")
-            if len(result['warnings']) > 10:
-                print(f"  ... and {len(result['warnings']) - 10} more warnings")
+    if args.all:
+        # One chosen sheet per cohort (a pinned file, else the newest), the
+        # same choice the Tracking Sheets tab shows -- not every file whose
+        # name matches, which is what this route used to import.
+        result = sheet_sync.import_cohorts(
+            None, dry_run=args.dry_run, triggered_by="mousedb-import",
+            sheets_dir=cohorts_dir if args.directory else None)
+        ok = sheet_sync.print_import_result(result)
+    else:
+        result = sheet_sync.import_sheet_file(
+            excel_path, dry_run=args.dry_run, triggered_by="mousedb-import --file")
+        # Ten warnings shown, as this route always showed; the count says how
+        # many more there were.
+        ok = sheet_sync.print_import_result(result, show_warnings=10)
 
     # Auto-run completeness check after successful (non-dry-run) import
     if not args.dry_run:
@@ -252,9 +317,102 @@ def cmd_import(args):
         except Exception as e:
             print(f"\nWarning: Could not run completeness check: {e}")
 
+    # Last, after the report: a failed cohort fails the command. WHY: the
+    # update button and any scheduler read the exit code, and this command
+    # used to exit 0 whatever happened, so a failing import looked green.
+    if not ok:
+        print("[FAIL] the import did not complete for every cohort -- the reasons are above")
+        raise SystemExit(1)
+
+
+def _sheet_folders():
+    """Every folder this machine names as holding the animal sheets mousedb
+    imports from: the cohort sheets folder and the ASPA folder, both as
+    configured and as found. WHY both: the finders return a folder only while
+    it holds sheets, and a configured folder that is briefly offline or empty
+    is still the source of record."""
+    from . import cohort_sheets as cs
+    from .config import get as config_get
+    found = []
+    for lookup in (lambda: config_get("cohort_sheets_dir"),
+                   lambda: config_get("aspa_data_dir"),
+                   lambda: os.environ.get(cs.ENV_VAR),
+                   lambda: os.environ.get(cs.ASPA_ENV_VAR),
+                   cs.cohort_sheets_dir, cs.aspa_data_dir):
+        try:
+            value = lookup()
+        except Exception:  # an unreadable setting must not stop the check
+            value = None
+        if value:
+            found.append(Path(value))
+    return found
+
+
+def _is_inside(path, folder):
+    """True if ``path`` is ``folder`` or lies under it, judged on the typed
+    path and on the resolved one. WHY both: a mapped drive letter and the
+    network name behind it are the same folder."""
+    def forms(p):
+        out = {os.path.normcase(os.path.abspath(str(p)))}
+        try:
+            out.add(os.path.normcase(os.path.realpath(str(p))))
+        except (OSError, ValueError):
+            pass
+        return out
+    for p in forms(path):
+        for f in forms(folder):
+            if p == f or p.startswith(f.rstrip("\\/") + os.sep):
+                return True
+    return False
+
+
+def _export_refusal(output, is_folder):
+    """Why ``mousedb export`` must not write to ``output``, or None.
+
+    WHY this exists: the export writes with pandas' ExcelWriter, which empties
+    whatever file is at the path without asking. Pointed at a tracking
+    workbook, it replaced the sheet -- the lab's record -- with a rebuild from
+    the database: no formulas, and none of the columns the database does not
+    hold. So an export is never written:
+      * inside a folder the sheets are read from (they are read-only to
+        mousedb's exports), whatever its name;
+      * under a name the sheet finder takes for a cohort's tracking sheet,
+        wherever it is. That name would empty the workbook already there, and
+        a file so named that later reaches the sheets folder would be imported
+        as the cohort's sheet, replacing its animal records with the rebuild's.
+    """
+    target = Path(os.path.abspath(output))
+    for folder in _sheet_folders():
+        if _is_inside(target, folder):
+            return ("it is inside %s, a folder the animal sheets are read from, and an "
+                    "export never writes there" % folder)
+    if not is_folder:
+        from .cohort_sheets import _sheet_cohort
+        if _sheet_cohort(target.name):
+            return ("'%s' is named as a cohort's tracking sheet; saved under that name, the "
+                    "export would empty any workbook already there and could later be "
+                    "imported as that cohort's sheet" % target.name)
+    return None
+
 
 def cmd_export(args):
-    """Export data to Excel or Parquet."""
+    """Export data to Excel or Parquet.
+
+    An --output that is inside a sheets folder, or that is named as a cohort's
+    tracking sheet, is refused before the database is opened -- see
+    _export_refusal for why."""
+    if args.output:
+        from .sheet_sync import _ascii
+        why = _export_refusal(args.output, is_folder=bool(args.all_formats))
+        if why:
+            print(_ascii("REFUSED: nothing was exported to %s" % os.path.abspath(args.output)))
+            print(_ascii("  Why: %s." % why))
+            # No full stop after it: the advice ends in an option a person
+            # may copy, and a copied full stop would become part of it.
+            print("  Instead: give an --output in another folder, or leave --output out to "
+                  "write into mousedb's exports folder")
+            sys.exit(1)
+
     from .database import get_db, init_database
     from .exporters import (
         export_cohort_to_excel, export_unified_to_parquet,
@@ -799,15 +957,16 @@ def cmd_import_brains(args):
         return _import_brains_body(args, summary_dir)
     # Under the cross-task mutex. WHY: this import commits to connectome.db like
     # the reach import and the snapshot's long reads, but did not take the mutex
-    # they share -- on 2026-09-15 three hourly runs in a row failed "database is
-    # locked" while another task held the database. Waiting its turn costs
-    # seconds; failing costs an hour. The with-block also releases on the
-    # sys.exit calls inside the body.
+    # they share -- on 2026-09-15 three scheduled runs in a row failed "database
+    # is locked" while another task held the database. Waiting its turn costs
+    # seconds; failing costs everything until the next scheduled run. The
+    # with-block also releases on the sys.exit calls inside the body.
     #
     # The retry wrapper handles the blockage the mutex CANNOT: a lock held by a
     # program outside this tool (see db_contention). This import normally
     # finishes in seconds, so a run that fails is almost always one that met a
-    # neighbour, and without a retry it then skipped a whole day.
+    # neighbour, and without a retry the whole interval until the next
+    # scheduled run was lost (a whole day, for a daily job).
     from .task_mutex import hold
     from .db_contention import DatabaseBusy, retry_while_locked
 
@@ -1275,9 +1434,14 @@ def main():
     new_cohort_parser.set_defaults(func=cmd_new_cohort)
 
     # mousedb-import
-    import_parser = subparsers.add_parser('import', help='Import Excel files')
-    import_parser.add_argument('--file', help='Single Excel file to import')
-    import_parser.add_argument('--all', action='store_true', help='Import all cohorts from directory')
+    import_parser = subparsers.add_parser(
+        'import', help='Import tracking sheets (same import, ledger and exit code as mousedb-sheets import)')
+    import_parser.add_argument(
+        '--file', help="One cohort's workbook; replaces that cohort's animal records. "
+                       "Refused if it sits in a snapshot/archive folder or is not "
+                       "named as a sheet (a copy, a lock file, a tool's export)")
+    import_parser.add_argument('--all', action='store_true',
+                               help="Import every cohort's chosen sheet (pinned, else newest) from the folder")
     sheets_parser = subparsers.add_parser(
         'cohort-sheets',
         help="Show/set where this machine's cohort tracking sheets are")
@@ -1301,7 +1465,11 @@ def main():
     export_parser.add_argument('--unified', action='store_true', help='Export unified reaches parquet')
     export_parser.add_argument('--odc', action='store_true', help='Export in ODC format (calculated stats)')
     export_parser.add_argument('--all-formats', action='store_true', help='Export all formats')
-    export_parser.add_argument('--output', '-o', help='Output path (file or directory)')
+    export_parser.add_argument(
+        '--output', '-o',
+        help="Output path (file or directory). Refused inside a sheets folder or under a "
+             "tracking sheet's name (Connectome_NN_Animal_Tracking.xlsx): an export must "
+             "never replace a sheet")
     export_parser.set_defaults(func=cmd_export)
 
     # mousedb-entry

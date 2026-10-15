@@ -4,15 +4,17 @@ WHY THIS EXISTS
 ---------------
 Five scheduled jobs each pulled one kind of data into connectome.db on their
 own clocks (sheets, reaches, analyses, brains, then the snapshot). The
-database is a single SQLite file on a network share, so two of them touching
-it at once meant one failed with "database is locked" -- and the failures
-were quiet: rows landed without phase labels, the snapshot went stale, and
-Task Scheduler stayed green (2026-09-01). Logan's correction: a person
-presses ONE button, "Update the database", and the pulls run in a fixed order,
-one after another, under a lock, and the result is spelled out.
+database is a single SQLite file that every one of them opens, so two of them
+touching it at once meant one failed with "database is locked" -- and the
+failures were quiet: rows landed without phase labels, the snapshot went
+stale, and the scheduler still showed every job as succeeded (2026-09-01).
+The fix: a person presses ONE button, "Update the database", and the pulls
+run in a fixed order, one after another, under a lock, and the result is
+spelled out.
 
-The scheduled hourly run can call this same command, so on-demand and
-scheduled updates are the same code path and can never collide.
+A scheduled run, at whatever cadence an installation picks (INSTALL.md,
+"Scheduled jobs"), can call this same command, so on-demand and scheduled
+updates are the same code path and can never collide.
 
 ORDER (fixed, and why): hand data first (tracking sheets -- the sheet is
 authoritative but late), then machine data (MouseReach reaches, MouseBrain
@@ -38,15 +40,30 @@ from typing import Callable, List, Optional, Sequence, Tuple
 from .config import require
 
 # (key, label a person reads, command)
+#
+# Each step runs the SAME command its scheduled job runs, so pressing the
+# button and waiting for the schedule can never do different things. Two
+# steps did not, until 2026-10:
+#   sheets -- ran "mousedb.cli import --all", which discarded every cohort's
+#     errors and warnings, wrote nothing to the import ledger, did not wait for
+#     the database lock, and exited 0 even when cohorts failed, so this step
+#     showed OK over a failed import. sheet_sync is the path that records each
+#     cohort in the ledger (the Tracking Sheets tab reads it), takes the lock,
+#     and exits 1 when any cohort fails; its last line is the summary this
+#     dialog shows.
+#   brains -- ran "import-brains" with no target, which only prints "Specify
+#     --all, --csv, or --calibration" and exits 1, so this step failed on
+#     every press and never imported a brain. --all is the whole-folder brain
+#     import (INSTALL.md), the same command a scheduled brain import runs.
 STEPS: List[Tuple[str, str, List[str]]] = [
     ("sheets", "Tracking sheets -> database",
-     [sys.executable, "-m", "mousedb.cli", "import", "--all"]),
+     [sys.executable, "-m", "mousedb.sheet_sync", "import", "--triggered-by", "update"]),
     ("reaches", "MouseReach results -> reach_data",
      [sys.executable, "-m", "mousedb.cli", "import-reaches"]),
     ("analyses", "MouseBrain analysis registry -> exports",
      [sys.executable, "-m", "mousedb.cli", "import-analyses"]),
     ("brains", "Brain region counts -> database",
-     [sys.executable, "-m", "mousedb.cli", "import-brains"]),
+     [sys.executable, "-m", "mousedb.cli", "import-brains", "--all"]),
     ("snapshot", "Snapshot + current exports rewritten",
      [sys.executable, "-m", "mousedb.exporters.refresh_snapshot"]),
 ]
@@ -57,6 +74,7 @@ LAST_NAME = "last_update.json"
 LEDGER_NAME = "updates.jsonl"
 STALE_LOCK_SECONDS = 2 * 3600   # an update older than this is presumed dead
 STEP_TIMEOUT_SECONDS = 3600     # no single step may run longer than an hour
+OUTPUT_TAIL_LINES = 15          # how much of each step's output the ledger keeps
 
 
 @dataclass
@@ -162,7 +180,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
             rc, out = runner(cmd)
             step = StepResult(key=key, label=label, ok=(rc == 0), seconds=round(time.time() - t0, 1),
                               summary=_last_line(out), returncode=rc,
-                              output_tail=[ln for ln in out.splitlines() if ln.strip()][-15:])
+                              output_tail=[ln for ln in out.splitlines() if ln.strip()][-OUTPUT_TAIL_LINES:])
             res.steps.append(step)
             log("   %s (%.0f s): %s" % ("OK  " if step.ok else "FAIL", step.seconds, step.summary))
         res.finished = datetime.now().isoformat(timespec="seconds")
@@ -199,6 +217,15 @@ def format_summary(res: UpdateResult) -> str:
     lines.append("")
     lines.append(res.message)
     if not res.ok:
-        lines.append("Each failed step's last line is above; its full output is the newest entry in "
-                     "%s." % (_logs_dir() / LEDGER_NAME))
+        # Never raises. WHY: the GUI calls this from its "update finished" slot,
+        # where an exception closes the whole application, and _logs_dir() can
+        # fail right then -- an unreachable mousedb folder is a usual reason the
+        # steps failed in the first place. The ledger keeps each step's last
+        # OUTPUT_TAIL_LINES lines, not its whole output, so the text says so.
+        try:
+            where = str(_logs_dir() / LEDGER_NAME)
+        except Exception:
+            where = "%s in mousedb's logs folder, which cannot be reached right now" % LEDGER_NAME
+        lines.append("Each failed step's last line is above; its last %d lines of output are in "
+                     "the newest entry of %s." % (OUTPUT_TAIL_LINES, where))
     return "\n".join(lines)

@@ -1,25 +1,88 @@
 #!/usr/bin/env python
 """
-Quick test script for MouseDB.
+Interactive smoke check of a MouseDB install (not collected by pytest).
 
 Run with:
-    python test_setup.py
+    python manual_setup_check.py
 
-This will:
-1. Install the package (if needed)
-2. Initialize the database
-3. Import existing Excel data
-4. Show database stats
-5. Test the QueryExporter
+It:
+1. checks that the package imports
+2. opens the configured database (creating it if it does not exist yet)
+3. shows the database's row counts
+4. lists the tracking sheets and, ONLY if the database holds no animals yet,
+   offers to import them: a dry run first (reads every sheet, writes
+   nothing), then -- if you answer y again -- the real import
+5. tries the QueryExporter
+6. checks whether the GUI's Qt library is installed
+
+Step 4 imports through mousedb.sheet_sync.import_cohorts, the route every
+other sheet import takes (the scheduled job, the Tracking Sheets tab,
+`mousedb import --all`, `mousedb-sheets import`). WHY: this script used to
+call the importer directly (importers.import_all_cohorts), so its import was
+not written to the sheet-import ledger (the Tracking Sheets tab then showed
+the cohorts as never imported), did not wait for the lock that keeps two
+database tasks from writing at once, did not refresh each animal's details
+(animal_records), and read every file whose name matched a pattern -- so a
+cohort with a second matching file (a sync-conflict copy, an export made
+from the sheet) was imported from both. Now each cohort is imported from its
+ONE chosen sheet and recorded like any other import, with triggered_by
+"manual_setup_check".
 """
 
 import sys
-import subprocess
 from pathlib import Path
 
 # Add package to path for development
 package_dir = Path(__file__).parent
 sys.path.insert(0, str(package_dir))
+
+# How this script's sheet imports are labelled in the sheet-import ledger.
+TRIGGERED_BY = "manual_setup_check"
+
+
+def _indented(line):
+    """Print one line of an import result under this script's step heading."""
+    print("    " + line)
+
+
+def _check_tracking_sheets(db, stats):
+    """Step 4: list the tracking sheets and, only into a database that holds no
+    animals yet, offer to import them -- a dry run first, then the real import."""
+    from mousedb import sheet_sync
+    st = sheet_sync.status()
+    # The same listing 'mousedb-sheets status' prints: which file is each
+    # cohort's sheet, when it was edited and imported, and any file that is
+    # not read as a sheet (with the reason).
+    sheet_sync.main(["status"])
+    has_sheets = any(c.get("sheet") for c in st.get("cohorts", [])
+                     if c.get("project") == sheet_sync.SHEET_FOLDER_PROJECT)
+    if st.get("problem") or not has_sheets:
+        print("    Nothing to import (see above).")
+    elif stats.get('subjects', 0) != 0:
+        print("    The database already holds animals, so nothing is imported here. "
+              "Import from the Tracking Sheets tab, or: mousedb-sheets import")
+    else:
+        print("\n    Database is empty. Import the tracking sheets? (y/n): ", end="")
+        response = input().strip().lower()
+        if response == 'y':
+            print("\n    Dry run first (reads every sheet, writes nothing)...")
+            results = sheet_sync.import_cohorts(None, dry_run=True, triggered_by=TRIGGERED_BY)
+            sheet_sync.print_import_result(results, log=_indented)
+            if results.get("problem"):
+                print("    [!] Nothing can be imported until the problem above is fixed.")
+            else:
+                print("\n    Looks good? Import for real? (y/n): ", end="")
+                response = input().strip().lower()
+                if response == 'y':
+                    results = sheet_sync.import_cohorts(None, dry_run=False,
+                                                        triggered_by=TRIGGERED_BY)
+                    if sheet_sync.print_import_result(results, log=_indented):
+                        print("\n    Import complete!")
+                    else:
+                        print("\n    [!] Import finished with failures: see the FAIL lines "
+                              "above. 'mousedb-sheets status' shows each cohort's state.")
+                    print(f"    New stats: {db.get_stats()}")
+
 
 def main():
     print("=" * 60)
@@ -32,7 +95,7 @@ def main():
         from mousedb.database import init_database, get_db
         from mousedb.schema import Project, Cohort, Subject, PelletScore
         from mousedb.exporters import QueryExporter
-        from mousedb.importers import ExcelImporter, import_all_cohorts
+        from mousedb import importers, sheet_sync  # noqa: F401 (the import check itself)
         print("    All imports successful!")
     except ImportError as e:
         print(f"    Import error: {e}")
@@ -51,6 +114,9 @@ def main():
 
     # Step 3: Show stats
     print("\n[3] Database stats:")
+    # Empty unless read: a database whose counts cannot be read must not crash
+    # the steps below (they ask whether it holds any animals).
+    stats = {}
     try:
         stats = db.get_stats()
         for key, value in stats.items():
@@ -58,37 +124,19 @@ def main():
     except Exception as e:
         print(f"    Error: {e}")
 
-    # Step 4: Check for Excel files to import
-    print("\n[4] Checking for Excel files to import...")
-    from mousedb.cohort_sheets import cohort_sheets_dir
-    cohorts_dir = cohort_sheets_dir()  # configured with: mousedb-sheets set-dir <folder>
-    if cohorts_dir is None:
-        print("    [!] no tracking-sheet folder configured (mousedb-sheets set-dir <folder>)")
-    elif cohorts_dir.exists():
-        excel_files = list(cohorts_dir.glob("Connectome_*.xlsx"))
-        print(f"    Found {len(excel_files)} Excel files in {cohorts_dir}")
-        for f in excel_files[:5]:
-            print(f"      - {f.name}")
-        if len(excel_files) > 5:
-            print(f"      ... and {len(excel_files) - 5} more")
-
-        # Ask user if they want to import
-        if stats.get('subjects', 0) == 0 and excel_files:
-            print("\n    Database is empty. Import Excel files? (y/n): ", end="")
-            response = input().strip().lower()
-            if response == 'y':
-                print("\n    Importing (dry run first)...")
-                results = import_all_cohorts(cohorts_dir, dry_run=True)
-
-                print("\n    Looks good? Import for real? (y/n): ", end="")
-                response = input().strip().lower()
-                if response == 'y':
-                    results = import_all_cohorts(cohorts_dir, dry_run=False)
-                    print("\n    Import complete!")
-                    stats = db.get_stats()
-                    print(f"    New stats: {stats}")
-    else:
-        print(f"    Directory not found: {cohorts_dir}")
+    # Step 4: The tracking sheets -- listed, and imported only into an empty
+    # database, through sheet_sync like every other sheet import (see the
+    # module docstring for why).
+    print("\n[4] Checking the tracking sheets...")
+    try:
+        _check_tracking_sheets(db, stats)
+    except Exception as e:
+        # Reported, not raised, like steps 2 and 3: a smoke check that dies
+        # here never reaches steps 5 and 6. sheet_sync can raise where the old
+        # folder listing could not -- e.g. its import history lives in
+        # mousedb_root's logs folder, and a machine that configured only the
+        # database file has no such folder yet.
+        print(f"    Error: {type(e).__name__}: {e}")
 
     # Step 5: Test QueryExporter
     print("\n[5] Testing QueryExporter...")
