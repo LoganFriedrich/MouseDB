@@ -8,6 +8,7 @@ A bulletproof data entry system for undergrads:
 """
 
 import sys
+from contextlib import contextmanager
 from datetime import datetime, date
 from typing import Optional, List, Dict, Tuple
 from pathlib import Path
@@ -42,7 +43,7 @@ except ImportError:
 from ..database import get_db, init_database
 from ..schema import (
     Project, Cohort, Subject, Weight, PelletScore, Surgery, TIMELINE,
-    RampEntry, SessionException, VirusPrep,
+    RampEntry, SessionException, VirusPrep, LadderEntry, ArchivedSummary,
     BrainSample, RegionCount, DetectedCell, CalibrationRun,
     Protocol, ProtocolPhase, TrayType
 )
@@ -4371,6 +4372,17 @@ class RampEntryTab(QWidget):
                         ).first()
 
                         if existing_weight:
+                            # A changed weight is now the person's, not the
+                            # sheet's: re-mark it, as the Weights tab does. A
+                            # Replace removes only rows still marked as the
+                            # sheet import's, so without this it would delete
+                            # the correction and silently put the sheet's old
+                            # value back. Unchanged values keep their mark, so
+                            # re-saving the form does not stop a Replace from
+                            # refreshing them.
+                            if existing_weight.weight_grams != weight_val:
+                                existing_weight.entered_by = self.db.current_user
+                                existing_weight.entered_at = datetime.now()
                             existing_weight.weight_grams = weight_val
                             existing_weight.weight_percent = pct
                         else:
@@ -4399,6 +4411,352 @@ class RampEntryTab(QWidget):
 
         # Refresh status labels
         self._load_existing_data()
+
+
+# =============================================================================
+# REPLACE: re-import a cohort's tracking sheet over what earlier imports wrote
+# =============================================================================
+# Module-level and free of Qt on purpose: the Cohort Setup tab's Replace button
+# only asks the questions and shows the answers, so what a Replace deletes,
+# keeps and commits can be tested without a display.
+
+# What the sheet importer writes into entered_by on every row it creates. It is
+# the only proof that a row came from the sheet: the GUI entry tabs write the
+# person's user name there instead. A row typed in by hand cannot be rebuilt by
+# re-reading the sheet, so a Replace must never delete one (the old Replace
+# deleted them in every table; hand-entered surgery-day weights would have
+# gone with the first Replace of their cohort).
+SHEET_IMPORT_MARK = 'excel_import'
+
+# The tables a Replace clears and the importer refills, one line each:
+#   (table, what one row is called in messages, model, owned via,
+#    date column, carries entered_by)
+# "owned via" says how a row belongs to the cohort being replaced:
+#   'subject' -- the row's animal is in this cohort (these tables have no
+#                cohort column, so the animal is the only link);
+#   'cohort'  -- the row's own cohort_id is this cohort.
+# Everything else is never touched: subjects and the cohort row stay as they
+# are (the re-import only adds what is missing), and animal_records and all
+# pipeline/tissue data (reach_data, brain_samples, region_counts, ...) are not
+# what this importer writes.
+_SHEET_OWNED_TABLES = (
+    ('weights', 'body weight', Weight, 'subject', 'date', True),
+    ('pellet_scores', 'pellet score', PelletScore, 'subject', 'session_date', True),
+    ('ramp_entries', 'ramp entry', RampEntry, 'subject', 'date', True),
+    # Every surgery type is matched the same way. The importer's rows are told
+    # apart by entered_by, not by type: a perfusion (only ever entered in the
+    # Surgery tab) survives because a person entered it, and so does a
+    # contusion or tracing row a person typed in -- the old type filter
+    # deleted those.
+    ('surgeries', 'surgery', Surgery, 'subject', 'surgery_date', True),
+    ('ladder_entries', 'ladder entry', LadderEntry, 'subject', 'date', True),
+    # Cohort-level rows with no animal column. The Virus Preparation tab writes
+    # these too, under the user's name, so entered_by decides here as well
+    # (the old Replace deleted every virus prep of the cohort).
+    ('virus_preps', 'virus prep', VirusPrep, 'cohort', 'prep_date', True),
+    # No entered_by column, deliberately handled: every row is the importer's
+    # copy of the sheet's own summary and stats tabs, and nothing else in this
+    # program writes the table, so all of the cohort's rows go. Matched on the
+    # row's cohort_id (the workbook that wrote it), NOT on the animals: a
+    # workbook's summary tab can carry another cohort's animal ids, and those
+    # rows belong to that workbook -- re-importing this cohort's sheet could
+    # never put them back.
+    ('archived_summaries', 'archived summary value', ArchivedSummary,
+     'cohort', None, False),
+)
+
+
+def clear_cohort_sheet_rows(session, cohort_id, delete=True):
+    """Remove the rows that earlier imports of a cohort's sheet wrote -- only those.
+
+    Runs inside the caller's open transaction and commits nothing. WHY: the
+    caller commits only once the re-import has succeeded, so a failed
+    re-import leaves every row where it was (see replace_cohort_from_sheet).
+
+    With delete=False nothing changes and the same counts come back: the
+    preview a person sees before confirming a Replace.
+
+    Returns:
+        {'removed': {table: rows removed (or that would be)},
+         'kept': [one dict per table/animal/date/person: table, label, owner,
+                  date, entered_by, rows]}
+        'kept' is every row of these tables that belongs to the cohort but was
+        not written by the importer (typed in by hand, or with no record of who
+        wrote it). Those survive the Replace.
+    """
+    from sqlalchemy import func, or_, select
+
+    cohort_animals = select(Subject.subject_id).where(Subject.cohort_id == cohort_id)
+    removed, kept = {}, []
+    for table, label, model, owned_via, date_col, marked in _SHEET_OWNED_TABLES:
+        if owned_via == 'subject':
+            owner_col = model.subject_id
+            belongs = owner_col.in_(cohort_animals)
+        else:
+            owner_col = model.cohort_id
+            belongs = owner_col == cohort_id
+        ours = [belongs]
+        if marked:
+            ours.append(model.entered_by == SHEET_IMPORT_MARK)
+            # A NULL entered_by counts as NOT the importer's: the importer marks
+            # every row it writes, so an unmarked row came from somewhere else
+            # and the sheet cannot rebuild it. (In SQL, NULL != 'x' is NULL,
+            # not true -- hence the explicit IS NULL.)
+            not_ours = or_(model.entered_by.is_(None),
+                           model.entered_by != SHEET_IMPORT_MARK)
+            when = getattr(model, date_col)
+            # Grouped by animal, date and person: one hand-entered tray is 20
+            # pellet rows, and a person needs one line about it, not twenty.
+            groups = (session.query(owner_col, when, model.entered_by, func.count())
+                      .filter(belongs, not_ours)
+                      .group_by(owner_col, when, model.entered_by)
+                      .order_by(owner_col, when)
+                      .all())
+            for owner, day, who, n in groups:
+                kept.append({'table': table, 'label': label, 'owner': owner,
+                             'date': _iso_day(day), 'entered_by': who,
+                             'rows': n})
+        if delete:
+            # synchronize_session=False: nothing from these tables is loaded in
+            # the session, and the importer re-reads the database after this,
+            # so there is no in-memory copy to keep in step.
+            removed[table] = (session.query(model).filter(*ours)
+                              .delete(synchronize_session=False))
+        else:
+            # count(column), not Query.count(): the latter selects every mapped
+            # column, and the live tables' DDL is older than the ORM in places.
+            removed[table] = (session.query(func.count(owner_col))
+                              .filter(*ours).scalar() or 0)
+    return {'removed': removed, 'kept': kept}
+
+
+def _iso_day(value):
+    """A date as YYYY-MM-DD for messages and the ledger (None stays None)."""
+    return value.isoformat() if value is not None else None
+
+
+def _kept_row_notice(k):
+    """One plain sentence about rows a Replace kept, for the person who ran it."""
+    if k['entered_by']:
+        who = "typed in by %s" % k['entered_by']
+    else:
+        who = "with no record of who entered it"
+    rows = "%d %s row%s" % (k['rows'], k['label'], '' if k['rows'] == 1 else 's')
+    where = k['owner'] + (" on %s" % k['date'] if k['date'] else "")
+    return ("Replace kept %s for %s, %s: only rows the sheet import wrote are "
+            "replaced. If the sheet also has a %s for this, the sheet's value "
+            "was NOT imported -- the kept value stands. Correct it by hand if "
+            "the sheet is right." % (rows, where, who, k['label']))
+
+
+def _shortfall_notices(removed, imported):
+    """A notice for each table where the re-import put back fewer rows than the
+    Replace removed. WHY: that is either the point of the Replace (rows taken
+    out of the sheet) or rows the importer skipped; either way a person should
+    see that the database now holds fewer of them, not discover it later."""
+    out = []
+    for table, label, *_ in _SHEET_OWNED_TABLES:
+        gone = removed.get(table, 0) or 0
+        back = imported.get(table, 0) or 0
+        if back < gone:
+            out.append(
+                "Replace removed %d %s rows that earlier imports of this sheet "
+                "had written, and the sheet gave back %d. The other %d are no "
+                "longer in the sheet, were skipped by the importer (see the "
+                "other warnings), or a kept hand-entered row stands in their "
+                "place." % (gone, label, back, gone - back))
+    return out
+
+
+def replace_preview_lines(would):
+    """Lines for the import preview: what a Replace would remove and keep.
+    ``would`` is clear_cohort_sheet_rows(..., delete=False)."""
+    labels = {t[0]: t[1] for t in _SHEET_OWNED_TABLES}
+    removed = {t: n for t, n in would['removed'].items() if n}
+    kept = sum(k['rows'] for k in would['kept'])
+    lines = ["   remove %d rows that earlier imports of this sheet wrote"
+             % sum(removed.values())]
+    lines += ["      %s: %d" % (labels[t], n) for t, n in removed.items()]
+    lines.append("   keep %d rows typed in by hand (listed after the import)" % kept)
+    return lines
+
+
+class _OneTransaction:
+    """Stands in for the Database while the importer runs during a Replace.
+
+    Every session the importer opens is the Replace's own open session, so the
+    deletion, the start date and everything the importer writes are ONE SQLite
+    transaction, committed once at the end or not at all. WHY: the old Replace
+    deleted and committed first and imported second, so an import that failed
+    part way left the cohort with its sheet data deleted and nothing (or half)
+    put back. Two sessions cannot share the work: SQLite would make the
+    importer's connection wait on the lock the deletion's connection holds.
+    """
+
+    def __init__(self, db, session):
+        self._db = db
+        self._session = session
+
+    def __getattr__(self, name):
+        # Anything else the importer asks of the database (path, user, ...)
+        # is the real Database's.
+        return getattr(self._db, name)
+
+    @contextmanager
+    def session(self):
+        # No commit, rollback or close on the way out: replace_cohort_from_sheet
+        # decides those once the whole import is over.
+        yield self._session
+
+
+@contextmanager
+def _commit_deferred(session):
+    """While the importer runs, its session.commit() only flushes and its
+    session.close() does nothing; a session.rollback() it asks for really rolls
+    back, and is remembered.
+
+    WHY: the importer commits its own work when it finishes, and here that
+    commit would also commit the deletion before Replace has seen whether the
+    import succeeded. A rollback the importer asks for is honoured (it means
+    its work is bad), and the whole Replace then counts as failed: the deletion
+    went with it, and whatever was written after it is not the whole sheet.
+    """
+    state = {'rolled_back': False}
+
+    def _rollback():
+        state['rolled_back'] = True
+        type(session).rollback(session)
+
+    session.commit = session.flush
+    session.close = lambda: None
+    session.rollback = _rollback
+    try:
+        yield state
+    finally:
+        # Dropping the instance attributes brings back the real methods.
+        for name in ('commit', 'close', 'rollback'):
+            session.__dict__.pop(name, None)
+
+
+def replace_cohort_from_sheet(db, sheet_path, cohort_id, start_date=None,
+                              importer_factory=None, hold=None):
+    """Replace what earlier imports of a cohort's sheet wrote with a fresh import.
+
+    In order, all while holding the cross-task database lock and inside ONE
+    database transaction:
+      1. the cohort's start date is set to ``start_date`` (when given and
+         different from the stored one);
+      2. the rows earlier imports of the sheet wrote are deleted
+         (clear_cohort_sheet_rows -- rows typed in by hand are kept);
+      3. the sheet is imported again;
+      4. if the import raised, reported errors or rolled itself back, all of
+         the above is rolled back and the database is exactly as it was;
+         otherwise all of it is committed together.
+
+    WHY the lock: the scheduled imports take it (see task_mutex). A Replace
+    that ran beside one could delete rows while that import was writing, or
+    fail half way with "database is locked".
+
+    Args:
+        db: the Database.
+        sheet_path: the cohort's tracking workbook.
+        cohort_id: the cohort to replace. It must already be in the database
+            (a new cohort is imported, not replaced).
+        start_date: the start date read from the sheet, or None to keep the
+            stored one. Read it BEFORE calling: reading a workbook is slow, and
+            the scheduled jobs wait for as long as the lock is held.
+        importer_factory: makes the importer from a database (tests pass a
+            stand-in). Default: ExcelImporter.
+        hold: the lock, with task_mutex.hold's signature. Default:
+            task_mutex.hold.
+
+    Returns:
+        The importer's result dict. ``success`` is False when the Replace was
+        undone, and the first error then says nothing was changed. On success
+        the kept-row and fewer-rows notices are added to ``warnings``. Either
+        way there is a ``replace`` entry: committed, removed (per table), kept
+        (row count), start_date ({'old', 'new'} when it changed, else None).
+
+    Raises:
+        Whatever stopped it (the lock not freeing up in time, a database error,
+        the importer raising). The transaction has been rolled back by then, so
+        nothing has changed.
+    """
+    if importer_factory is None:
+        from ..importers import ExcelImporter as importer_factory
+    if hold is None:
+        # Looked up at call time, so a test can stand in for the lock.
+        from .. import task_mutex
+        hold = task_mutex.hold
+
+    with hold(waiting_for="another database task"):
+        session = db.SessionLocal()
+        try:
+            cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+            if cohort is None:
+                raise ValueError(
+                    "%s is not in the database. Replace is for a cohort that has "
+                    "been imported before; use Import instead." % cohort_id)
+            old_start = cohort.start_date
+            start_change = None
+            if start_date is not None and start_date != old_start:
+                cohort.start_date = start_date
+                start_change = {'old': _iso_day(old_start),
+                                'new': _iso_day(start_date)}
+
+            cleared = clear_cohort_sheet_rows(session, cohort_id)
+            importer = importer_factory(_OneTransaction(db, session))
+            with _commit_deferred(session) as state:
+                result = importer.import_cohort_file(Path(sheet_path), dry_run=False)
+
+            result = dict(result or {})
+            errors = list(result.get('errors') or [])
+            warnings = list(result.get('warnings') or [])
+            report = {'committed': False,
+                      'removed': cleared['removed'],
+                      'kept': sum(k['rows'] for k in cleared['kept']),
+                      # Every kept group, so the ledger lists them all even
+                      # when the warnings list there is cut short.
+                      'kept_rows': cleared['kept'],
+                      'start_date': start_change}
+
+            if errors or state['rolled_back']:
+                # A Replace is all or nothing: an import that did not finish
+                # cleanly must not leave the deletion behind it.
+                session.rollback()
+                if state['rolled_back'] and not errors:
+                    errors.append("The importer abandoned its own work part way.")
+                # None of what the importer counted reached the database, and
+                # the ledger records 'imported' as rows written: zero it there
+                # so the entry cannot be read as data that landed. The
+                # importer's own count is kept under 'replace' for diagnosis.
+                counted = dict(result.get('imported') or {})
+                report['undone_import'] = counted
+                result.update(
+                    imported={table: 0 for table in counted},
+                    success=False,
+                    errors=["Replace of %s undone -- nothing in the database was "
+                            "changed, because the re-import did not finish "
+                            "cleanly. Fix what is below, then try again."
+                            % cohort_id] + errors,
+                    warnings=warnings, replace=report)
+                return result
+
+            # The Replace's own notices go first: they are about data a person
+            # entered or lost, and the ledger keeps only the first warnings.
+            notices = [_kept_row_notice(k) for k in cleared['kept']]
+            notices += _shortfall_notices(cleared['removed'],
+                                          result.get('imported') or {})
+            warnings = notices + warnings
+            session.commit()
+            report['committed'] = True
+            result.update(warnings=warnings, replace=report)
+            return result
+        except BaseException:
+            session.rollback()
+            raise
+        finally:
+            session.close()
 
 
 class CohortSetupTab(QWidget):
@@ -4550,7 +4908,21 @@ class CohortSetupTab(QWidget):
         help_header = QHBoxLayout()
         help_btn = HelpButton("Cohort Setup",
             "Create new cohorts, manage subjects, set initial weights, and assign "
-            "protocols. Select a cohort in the table to view and edit its subjects below.")
+            "protocols. Select a cohort in the table to view and edit its subjects below.\n\n"
+            "Import from Excel: pick a cohort's tracking sheet. A preview comes "
+            "first and writes nothing. Then choose:\n\n"
+            "- Import (add-only): adds the rows the database does not have yet. "
+            "Nothing already in the database changes.\n\n"
+            "- Replace (delete + re-import), for a cohort already in the database: "
+            "removes the rows earlier imports of this sheet wrote and imports the "
+            "sheet again, so corrected or deleted cells take effect. Rows typed in "
+            "by hand in this program are KEPT and listed when it finishes; where "
+            "one exists, the sheet's value for that animal and date is not "
+            "imported, so correct the kept row by hand if the sheet is right. If "
+            "the re-import fails, nothing at all is changed.\n\n"
+            "Both wait for a scheduled database task that is running to finish "
+            "first (you are asked before the window waits), so they never write "
+            "at the same time as one.")
         help_header.addWidget(help_btn)
         help_header.addStretch()
         right_layout.addLayout(help_header)
@@ -4592,7 +4964,8 @@ class CohortSetupTab(QWidget):
         self.import_excel_btn.setStyleSheet("background-color: #1976D2; color: white;")
         self.import_excel_btn.setToolTip(
             "Import a cohort tracking spreadsheet. The cohort is detected from the "
-            "filename; a dry-run preview is shown before anything is written."
+            "filename; a dry-run preview is shown before anything is written. "
+            "A Replace keeps rows typed in by hand (see ? above)."
         )
         self.import_excel_btn.clicked.connect(self._import_from_excel)
         cohort_actions.addWidget(self.import_excel_btn)
@@ -4947,10 +5320,14 @@ class CohortSetupTab(QWidget):
         filename. A dry-run preview is shown first, then the user chooses:
           - Import (add-only): runs the importer as-is (new cohorts import fully;
             existing ones only gain rows they don't already have).
-          - Replace: deletes the existing cohort's data and re-imports it fresh
-            (the only way to pick up corrected start dates / edited rows).
+          - Replace: removes the rows earlier imports of this sheet wrote and
+            re-imports it (the only way to pick up corrected or removed cells),
+            through replace_cohort_from_sheet: rows typed in by hand are kept,
+            and the removal and the re-import are committed together or not
+            at all.
+        Both write only while holding the cross-task database lock, the one the
+        scheduled imports take, so neither can write while one of them does.
         """
-        from pathlib import Path
         from ..importers import ExcelImporter
 
         path, _ = QFileDialog.getOpenFileName(
@@ -4991,6 +5368,17 @@ class CohortSetupTab(QWidget):
             "Would import (dry-run estimate; 'subjects' may over-count):",
             ("\n".join(f"   {k}: {v}" for k, v in counts.items()) or "   (nothing)"),
         ]
+        if exists:
+            # What Replace would remove and keep, counted now (read-only) so the
+            # choice is made knowing it -- the counts above are only rows the
+            # database does not have yet, which says nothing about a Replace.
+            try:
+                with self.db.session() as session:
+                    would = clear_cohort_sheet_rows(session, cohort_id, delete=False)
+                lines += ["", "If you choose Replace (delete + re-import):"]
+                lines += replace_preview_lines(would)
+            except Exception as e:
+                lines += ["", f"(Could not count what Replace would remove: {e})"]
         if warnings:
             lines += ["", f"Warnings ({len(warnings)}):"]
             lines += [f"   - {w}" for w in warnings[:8]]
@@ -5019,59 +5407,132 @@ class CohortSetupTab(QWidget):
         if clicked is None or clicked not in (add_btn, replace_btn):
             return
 
-        if clicked is replace_btn:
+        replacing = clicked is replace_btn
+        new_start = None
+        if replacing:
+            # Read the sheet's start date now, before the database lock is
+            # taken: reading a workbook is slow, and the scheduled jobs wait
+            # for as long as the lock is held.
+            new_start = self._sheet_start_date(path, importer)
+            with self.db.session() as session:
+                cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+                old_start = cohort.start_date if cohort else None
+            if new_start and new_start != old_start:
+                start_line = (f"Its start date changes from {old_start} to {new_start} "
+                              f"(as the importer reads it from the sheet).")
+            else:
+                start_line = f"Its start date stays {old_start}."
             confirm = QMessageBox.question(
                 self, "Confirm replace",
-                f"This will clear and re-import the Excel-derived data for {cohort_id} "
-                f"(weights, pellet scores, ramp, surgeries, ladder, virus preps) and "
-                f"update its start date.\n\nSubjects and pipeline/tissue data "
-                f"(reach_data, brain samples, etc.) are KEPT.\n\nContinue?",
+                f"This removes the rows earlier imports of this sheet wrote for "
+                f"{cohort_id} (weights, pellet scores, ramp, surgeries, ladder, "
+                f"virus preps, archived summaries) and imports the sheet again.\n\n"
+                f"Rows typed in by hand in this program are KEPT, and listed when "
+                f"it finishes. Subjects and pipeline/tissue data (reach_data, "
+                f"brain samples, etc.) are not touched.\n\n"
+                f"{start_line}\n\n"
+                f"If the re-import fails, nothing at all is changed.\n\nContinue?",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No
             )
             if confirm != QMessageBox.Yes:
                 return
-            self._clear_cohort_excel_data(cohort_id)
-            self._reapply_start_date(cohort_id, path, importer)
+
+        if not self._may_wait_for_database_lock():
+            return
 
         # Real import. Record it in the sheet-import ledger either way: the
         # Tracking Sheets tab's status verdicts read the LEDGER, not the
         # database, so an unrecorded button-import would show the cohort as
         # never-imported/stale -- a silent misreport.
         from datetime import datetime as _dt
+        from .. import task_mutex
         _entry = {"cohort_id": cohort_id, "sheet_name": Path(path).name,
                   "sheet_path": str(path),
                   "started": _dt.now().isoformat(timespec="seconds"),
-                  "triggered_by": "gui_cohort_setup", "dry_run": False}
+                  "triggered_by": "gui_cohort_setup", "dry_run": False,
+                  "mode": "replace" if replacing else "add-only"}
+        result, failure = None, None
+        # The wait for the lock and the import both run on this window's
+        # thread; the busy cursor says so.
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            result = importer.import_cohort_file(Path(path), dry_run=False)
+            if replacing:
+                result = replace_cohort_from_sheet(
+                    self.db, Path(path), cohort_id, start_date=new_start)
+            else:
+                # The same lock the scheduled sheet import takes around this
+                # very call (sheet_sync): without it a button import could
+                # write while a scheduled import does, and one of them fails
+                # with "database is locked".
+                with task_mutex.hold(waiting_for="another database task"):
+                    result = importer.import_cohort_file(Path(path), dry_run=False)
         except Exception as e:
+            failure = e
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if failure is not None:
             _entry.update(success=False,
-                          error=f"{type(e).__name__}: {e}",
+                          error=f"{type(failure).__name__}: {failure}",
                           finished=_dt.now().isoformat(timespec="seconds"))
             self._append_sheet_ledger(_entry, path)
-            QMessageBox.critical(self, "Import failed", f"{e}")
+            # replace_cohort_from_sheet rolls back whatever stopped it, so for
+            # a Replace this sentence is a guarantee, not a hope.
+            prefix = "Nothing in the database was changed.\n\n" if replacing else ""
+            QMessageBox.critical(self, "Import failed", f"{prefix}{failure}")
             self._refresh_all_cohort_lists()
             return
+        result_warnings = result.get('warnings', [])
         _entry.update(success=not result.get('errors'),
                       imported=result.get('imported'),
-                      warnings=result.get('warnings', [])[:50],
+                      warnings=result_warnings[:50],
+                      # The ledger keeps 50 warnings; the count says whether
+                      # that was all of them.
+                      warning_count=len(result_warnings),
                       error="; ".join(result.get('errors', [])) or None,
                       finished=_dt.now().isoformat(timespec="seconds"))
+        if replacing:
+            _entry["replace"] = result.get('replace')
         self._append_sheet_ledger(_entry, path)
 
         if result.get('errors'):
             QMessageBox.critical(
-                self, "Import finished with errors",
+                self, "Replace undone" if replacing else "Import finished with errors",
                 "\n".join(result['errors'][:12])
             )
         else:
             done = "\n".join(f"   {k}: {v}"
                              for k, v in result.get('imported', {}).items() if v)
-            QMessageBox.information(
-                self, "Import complete",
-                f"Imported {cohort_id}:\n{done or '   (nothing)'}"
-            )
+            if replacing:
+                text = self._replace_summary(cohort_id, result, done)
+            else:
+                text = f"Imported {cohort_id}:\n{done or '   (nothing)'}"
+            QMessageBox.information(self, "Import complete", text)
         self._refresh_all_cohort_lists()
+
+    @staticmethod
+    def _replace_summary(cohort_id, result, done):
+        """The message shown after a Replace that committed: what went, what
+        came back, and every notice about rows it kept or did not get back."""
+        rep = result.get('replace') or {}
+        removed = "\n".join(f"   {k}: {v}"
+                            for k, v in (rep.get('removed') or {}).items() if v)
+        text = (f"Replaced {cohort_id}.\n\n"
+                f"Removed (written by earlier imports of this sheet):\n"
+                f"{removed or '   (nothing)'}\n\n"
+                f"Imported from the sheet:\n{done or '   (nothing)'}\n\n"
+                f"Kept (typed in by hand): {rep.get('kept', 0)} rows")
+        change = rep.get('start_date')
+        if change:
+            text += f"\n\nStart date: {change['old']} -> {change['new']}"
+        notes = [w for w in result.get('warnings', []) if w.startswith("Replace ")]
+        if notes:
+            text += f"\n\nNotices ({len(notes)}):\n"
+            text += "\n".join(f"   - {w}" for w in notes[:8])
+            if len(notes) > 8:
+                text += (f"\n   ... and {len(notes) - 8} more (every kept row is "
+                         f"listed in the import ledger, under 'replace')")
+        return text
 
     def _refresh_all_cohort_lists(self):
         """Refresh the cohort dropdown on this tab AND every sibling tab, so a
@@ -5101,61 +5562,56 @@ class CohortSetupTab(QWidget):
         except Exception:
             pass
 
-    # Tables the Excel importer owns. A Replace clears ONLY these and re-imports them.
-    # Everything else -- subjects, the cohort row, and all pipeline/tissue data
-    # (reach_data, brain_samples, pipeline_data, region_counts, ...) -- is left intact,
-    # because none of it comes from the spreadsheet.
-    _EXCEL_OWNED_TABLES = ('weights', 'pellet_scores', 'ramp_entries', 'surgeries',
-                           'ladder_entries', 'virus_preps', 'archived_summaries')
+    # What a Replace clears, keeps and commits lives in the module-level
+    # replace_cohort_from_sheet / clear_cohort_sheet_rows (above this class),
+    # so it can be tested without a display.
 
-    def _clear_cohort_excel_data(self, cohort_id):
-        """Clear only the Excel-derived measurement data for a cohort so it can be
-        re-imported cleanly, WITHOUT touching subjects, the cohort row, or any
-        pipeline/tissue data. Uses a raw connection with foreign keys off so it works
-        regardless of the app session's FK enforcement."""
-        import sqlite3
-        conn = sqlite3.connect(str(self.db.db_path), timeout=30)
+    def _may_wait_for_database_lock(self):
+        """True when the cross-task database lock is free now, or the person
+        agrees to wait for it.
+
+        WHY ask: the wait happens on this window's thread, so the window does
+        not respond until the other task lets go of the lock. Without a word
+        beforehand that looks like a crash, and a person kills the program.
+        """
+        from .. import task_mutex
         try:
-            conn.execute("PRAGMA foreign_keys=OFF")
-            cur = conn.cursor()
-            subs = [r[0] for r in cur.execute(
-                "SELECT subject_id FROM subjects WHERE cohort_id=?", (cohort_id,))]
-            for t in self._EXCEL_OWNED_TABLES:
-                cols = [r[1] for r in cur.execute(f'PRAGMA table_info("{t}")')]
-                if not cols:
-                    continue  # table not present in this schema version
-                # The importer only creates contusion and tracing surgery rows;
-                # perfusion surgeries are entered via the GUI Surgery tab and the
-                # sheet re-import cannot restore them -- so they are not
-                # Excel-owned and must survive a Replace.
-                extra = " AND surgery_type IN ('contusion','tracing')" if t == 'surgeries' else ""
-                if 'subject_id' in cols and subs:
-                    ph = ",".join("?" * len(subs))
-                    cur.execute(f'DELETE FROM "{t}" WHERE subject_id IN ({ph}){extra}', subs)
-                if 'cohort_id' in cols:
-                    cur.execute(f'DELETE FROM "{t}" WHERE cohort_id=?{extra}', (cohort_id,))
-            conn.commit()
-        finally:
-            conn.close()
+            probe = task_mutex.TaskMutex()
+            free = probe.try_acquire()
+        except OSError:
+            # The lock's folder cannot be reached. Say yes here and let the real
+            # attempt report the problem in its own words.
+            return True
+        if free:
+            probe.release()
+            return True
+        answer = QMessageBox.question(
+            self, "Database busy",
+            "Another database task (for example a scheduled import) is writing "
+            "to the database right now.\n\n"
+            "Wait for it to finish, then import? This window will not respond "
+            "while it waits (up to 25 minutes).\n\n"
+            "No = nothing is changed; try again later.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        return answer == QMessageBox.Yes
 
-    def _reapply_start_date(self, cohort_id, path, importer):
-        """Re-detect the cohort start date from the spreadsheet and update it in place.
-        The importer only sets start date when it *creates* a cohort, so on a Replace
-        of an existing cohort we apply any corrected start date here -- otherwise ramp-
-        day numbering and other start-relative values would keep the old value."""
+    def _sheet_start_date(self, path, importer):
+        """The cohort start date as the importer reads it from the spreadsheet,
+        or None when it cannot tell (the stored date is then kept).
+
+        WHY a Replace needs it: the importer only sets a start date when it
+        CREATES a cohort, so without this a Replace of an existing cohort would
+        keep the old value and ramp-day numbering and other start-relative
+        values with it. Reading only: replace_cohort_from_sheet applies it in
+        the same transaction as the re-import.
+        """
         try:
             import pandas as pd
             xl = pd.ExcelFile(path)
-            new_start = importer._detect_start_date(xl, xl.sheet_names)
+            return importer._detect_start_date(xl, xl.sheet_names) or None
         except Exception:
-            return
-        if not new_start:
-            return
-        with self.db.session() as session:
-            cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
-            if cohort:
-                cohort.start_date = new_start
-            session.commit()
+            return None
 
     def _archive_cohort(self):
         """Archive (soft-delete) the selected cohort with confirmation."""
