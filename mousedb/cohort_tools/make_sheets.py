@@ -1,5 +1,5 @@
 """
-Script 0: 0_Make_or_Fix_Sheets.py
+Cohort tracking workbook builder (``mousedb-make-sheets``).
 
 Creates new cohort Excel files OR fixes existing files to have all required sheets.
 
@@ -11,11 +11,40 @@ Mode 1 (New Cohort): Creates a complete template with:
 - Only manually-entered data left blank (pellet scores, weights, surgery details)
 
 Usage:
-    python 0_Make_or_Fix_Sheets.py --new --cohort CNT_05 --start-date 2025-02-01 --mice 16
-    python 0_Make_or_Fix_Sheets.py --new --cohort CNT_05 --start-date 2025-02-01  # defaults to 16 mice
+    mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01 --mice 16
+    mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01  # defaults to 16 mice
 
-Future Mode 2 (Fix Existing): Will standardize existing files
-    python 0_Make_or_Fix_Sheets.py --fix path/to/existing_file.xlsx
+A NEW SHEET NEVER REPLACES A FILE. The folder a new sheet is written into is
+usually the folder of live tracking sheets (the Tracking Sheets tab's "New
+cohort sheet..." button writes there), where every existing name is a cohort's
+source-of-record workbook. So ``--new`` / create_new_cohort_file:
+
+  * accepts the cohort name only in the exact form PREFIX_NN -- a project
+    prefix this builder knows (NEW_SHEET_PROJECTS), one underscore, two digits,
+    nothing before or after -- and takes the file name's cohort number from
+    that parse. (It used to take whatever followed the LAST underscore, so
+    another project's id, or any text ending "_01", named cohort 01's existing
+    workbook and replaced it with an empty one.)
+  * refuses when the folder already holds a workbook for that cohort, under
+    the exact name or a variant of it ("..._Animal_Tracking1.xlsx", a "(2)"
+    copy): a new, empty file there would replace the real sheet, or sit beside
+    it as the newest file -- the one an unpinned import reads.
+  * writes the workbook under a temporary name in the same folder and gives it
+    its real name only if that name is still free at that moment, by an
+    operation that cannot replace a file. A workbook that appears while the
+    new one is being built is therefore never overwritten either.
+  * never closes Excel. (It used to force-close every Excel window on the
+    machine, losing unsaved work, when a save was blocked.)
+
+A refusal raises NewSheetRefused, worded for a person; on the command line it
+is printed as "REFUSED: ..." on stderr and the command exits with REFUSED_EXIT.
+Nothing is written when that happens.
+
+Mode 2 (Fix Existing): standardises an existing file. The fixed copy keeps the
+input's name and goes to --output-dir (default: a "generated" folder under the
+current directory) -- and, like --new, is never written over an existing file,
+so it can never replace the input itself:
+    mousedb-make-sheets --fix path/to/existing_file.xlsx --output-dir <a working folder>
 """
 
 from mousedb.config import lab_name as _lab_name
@@ -24,7 +53,11 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, date
 from pathlib import Path
+from typing import List, NamedTuple
 import argparse
+import errno
+import re
+import secrets
 import sys
 import os
 import openpyxl
@@ -413,7 +446,7 @@ def write_0_virus_preparation(ws, data):
             else:
                 ws.cell(row=row, column=1, value=f'[Virus {virus_idx + 1}]')
             
-            # Column B: Source (e.g., "Miami", "Bhullar")
+            # Column B: Source (where the virus came from: a core, a vendor, a collaborator)
             # Leave blank
             
             # Column C: Box number
@@ -1289,7 +1322,7 @@ def create_4_contusion_injury_details(subject_ids, start_date):
             "Subject_ID": subject_id,
             "Surgery_Date": injury_date,
             "Surgery_Type": "Contusion",
-            "Surgery_Severity": None,  # e.g., "60kd"
+            "Surgery_Severity": None,  # e.g., the impact force, as recorded
             "Contusion_Location": _protocol(subject_id, "Contusion_Location"),
             "Subject_Weight (g)": None,
             "Anesthetic": _protocol(subject_id, "Anesthetic"),
@@ -2199,62 +2232,312 @@ def write_2_odc_with_formulas(ws, data, cohort_name):
 
 
 # =============================================================================
+# NEW-SHEET SAFETY: which cohort names are accepted, and never replacing a file
+# =============================================================================
+
+# The projects this builder can lay out, by the prefix of their cohort ids:
+# prefix -> (project_type, the word the workbook's file name starts with).
+# WHY a fixed table: the prefix decides which file name is written, and in the
+# sheets folder an existing name is a cohort's source-of-record workbook. A
+# prefix is looked up here, never guessed from whatever text was typed.
+NEW_SHEET_PROJECTS = {
+    "CNT": ("cnt", "Connectome"),
+    "ENCR": ("encr", "Enhancer"),
+}
+
+# A cohort name, whole: letters, ONE underscore, exactly two digits. ASCII
+# classes on purpose -- \d would also accept other scripts' digits.
+_COHORT_NAME_RE = re.compile(r"([A-Za-z]+)_([0-9]{2})")
+
+# Exit status of ``--new`` when the request is refused (a malformed name, an
+# existing workbook...). WHY its own number: 1 is a crash and 2 is argparse's
+# usage error, and a calling program (the Tracking Sheets tab) must be able to
+# tell "refused, nothing written" from "broke".
+REFUSED_EXIT = 3
+
+
+class NewSheetRefused(ValueError):
+    """A new cohort workbook was NOT written, for the reason in the message
+    (worded for a person). Nothing was created or changed in the folder."""
+
+
+class CohortName(NamedTuple):
+    """A cohort name that passed parse_cohort_name."""
+    cohort_id: str      # "CNT_05": upper-case prefix, underscore, two digits
+    prefix: str         # "CNT"
+    number: str         # "05"
+    project_type: str   # "cnt"
+    file_word: str      # "Connectome": what the workbook's file name starts with
+
+    @property
+    def filename(self) -> str:
+        """The workbook's file name, built from the validated parts only."""
+        return "%s_%s_Animal_Tracking.xlsx" % (self.file_word, self.number)
+
+
+def parse_cohort_name(text) -> CohortName:
+    """Read a typed cohort name strictly: the WHOLE text must be a known
+    project prefix, one underscore and two digits ("CNT_07"). Anything else
+    raises NewSheetRefused saying what form is expected.
+
+    WHY strict: the name becomes the file name written into the sheets folder.
+    The old reading kept whatever followed the last underscore, so "CNTS_01",
+    "CNT_05_01" or any typo ending "_01" wrote Connectome_01_Animal_Tracking.xlsx
+    -- cohort 01's existing sheet. A bare number ("07") is refused too: it names
+    no project, and the project decides the file name. Surrounding spaces and
+    the letter case of the prefix are forgiven (" cnt_07 " -> CNT_07): neither
+    can change which file is meant, and the canonical form is what is written.
+    """
+    t = "" if text is None else str(text).strip()
+    known = ", ".join(sorted(NEW_SHEET_PROJECTS))
+    expected = ("a project prefix (%s), one underscore and the cohort's two-digit "
+                "number, with nothing before or after it -- for example CNT_07"
+                % known)
+    m = _COHORT_NAME_RE.fullmatch(t)
+    if not m:
+        raise NewSheetRefused("'%s' is not a cohort name. Expected %s." % (t, expected))
+    prefix = m.group(1).upper()
+    if prefix not in NEW_SHEET_PROJECTS:
+        raise NewSheetRefused(
+            "'%s' does not start with a project this tool builds sheets for. "
+            "Expected %s." % (t, expected))
+    project_type, file_word = NEW_SHEET_PROJECTS[prefix]
+    number = m.group(2)
+    return CohortName("%s_%s" % (prefix, number), prefix, number, project_type, file_word)
+
+
+def parse_start_date(value) -> datetime:
+    """The start date (day 0) as a datetime, or NewSheetRefused saying which
+    form is expected. Accepts a date/datetime, "YYYY-MM-DD" or "YYYYMMDD"."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day)
+    text = "" if value is None else str(value).strip()
+    try:
+        return parse_date(text)
+    except ValueError:
+        raise NewSheetRefused(
+            "'%s' is not a date. Give the start date (day 0) as YYYY-MM-DD, for "
+            "example 2026-01-31 (YYYYMMDD also works)." % text) from None
+
+
+def _check_num_mice(num_mice) -> int:
+    """The number of mice as an int from 1 to 99, or NewSheetRefused. WHY the
+    ceiling: subject ids carry a two-digit subject number (PREFIX_NN_01..99)."""
+    try:
+        n = int(str(num_mice).strip())
+    except (TypeError, ValueError):
+        n = None
+    if n is None or isinstance(num_mice, bool) or not 1 <= n <= 99:
+        raise NewSheetRefused(
+            "'%s' is not a number of mice: give a whole number from 1 to 99 "
+            "(subject numbers have two digits)." % (num_mice,))
+    return n
+
+
+def _cohort_workbooks_in(folder, cname: CohortName) -> List[str]:
+    """Names in ``folder`` that are, or could be read as, this cohort's
+    workbook: the exact file name and any name that STARTS with it (a
+    "..._Animal_Tracking1.xlsx", a "(2)" copy, a dated variant), in any letter
+    case, with the cohort number written with or without its leading zero.
+
+    WHY variants count, not only the exact name: the sheets folder reads every
+    such file as a candidate for the cohort and, until a person pins one,
+    imports the NEWEST -- which a freshly created empty workbook would be."""
+    pattern = re.compile(r"^%s_0*%d_Animal_Tracking.*\.xls[xm]?$"
+                         % (re.escape(cname.file_word), int(cname.number)), re.I)
+    return sorted(n for n in os.listdir(folder) if pattern.match(n))
+
+
+def refuse_if_cohort_has_a_workbook(folder, cname: CohortName) -> None:
+    """Raise NewSheetRefused if ``folder`` already holds a workbook for this
+    cohort (see _cohort_workbooks_in), naming the file(s) found.
+
+    Called by create_new_cohort_file before it builds anything and again just
+    before it saves, and by the Tracking Sheets tab before it starts the
+    builder, so a person hears the refusal at once. A folder that cannot be
+    listed is a refusal too: "no workbook there" cannot be shown."""
+    folder = Path(folder)
+    try:
+        names = _cohort_workbooks_in(folder, cname)
+    except FileNotFoundError:
+        return  # the folder does not exist yet, so nothing is in it
+    except OSError as e:
+        raise NewSheetRefused(
+            "cannot list %s to make sure %s has no workbook there yet (%s)."
+            % (folder, cname.cohort_id, e)) from None
+    if names:
+        raise NewSheetRefused(
+            "%s already has a workbook in %s: %s. A new sheet is never written over "
+            "an existing one or beside it -- an empty file there would replace the "
+            "real sheet, or be read in its place as the newest file. If you meant a "
+            "new cohort, use its own number. If %s really needs a fresh sheet, move "
+            "the existing file(s) out of that folder first."
+            % (cname.cohort_id, folder, ", ".join(names), cname.cohort_id))
+
+
+def _publish_no_clobber(tmp: Path, target: Path) -> None:
+    """Give the finished file ``tmp`` the name ``target`` -- only if nothing
+    has that name. Raises FileExistsError otherwise; ``tmp`` is left for the
+    caller to remove.
+
+    On Windows a rename never replaces an existing file (the check and the
+    rename are one operation, so there is no gap to race). Elsewhere a rename
+    DOES replace, so a hard link is made instead -- that also fails if the name
+    exists -- and the temporary name is then removed. Only on a filesystem with
+    no hard links does a short check-then-rename gap remain."""
+    if os.name == "nt":
+        os.rename(tmp, target)
+        return
+    try:
+        os.link(tmp, target)
+    except FileExistsError:
+        raise
+    except OSError:
+        if os.path.lexists(target):
+            raise FileExistsError(errno.EEXIST, "File exists", str(target)) from None
+        os.rename(tmp, target)
+        return
+    os.unlink(tmp)
+
+
+def _reserve_temp_name(folder: Path) -> Path:
+    """Create, exclusively, an empty file with a fresh temporary name in
+    ``folder`` and return its path; the workbook is then saved over it.
+
+    WHY not tempfile.mkstemp: mkstemp creates a file only its owner may read
+    (mode 0600 on Linux and macOS), and the published workbook keeps the
+    temporary file's mode -- on a shared folder there, every colleague would
+    be locked out of the new sheet. os.open with 0o666 gets the same mode a
+    plain save would (the usual umask applies). O_EXCL keeps the name ours
+    alone. On Windows the mode only decides "read-only", and 0o666 is not."""
+    for _ in range(100):
+        tmp = folder / (".mousedb-new-workbook-%s.partial" % secrets.token_hex(8))
+        try:
+            fd = os.open(str(tmp), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        except FileExistsError:
+            continue
+        os.close(fd)
+        return tmp
+    # Not FileExistsError: that would be reported as "the workbook appeared".
+    raise OSError("could not find a free temporary file name in %s" % folder)
+
+
+def _save_workbook_no_clobber(wb, target) -> None:
+    """Save ``wb`` as ``target`` only if no file has that name; otherwise raise
+    FileExistsError and leave ``target`` exactly as it is.
+
+    WHY not ``wb.save(target)``: openpyxl replaces whatever is there, and in
+    the sheets folder whatever is there is a cohort's source-of-record
+    workbook. Checking first and then saving leaves a gap in which a file can
+    appear (a sync client, a colleague), so the workbook is written under a
+    temporary name in the SAME folder (a rename across folders is a copy, not
+    a rename) and only then given its real name by _publish_no_clobber. The
+    temporary name does not look like a tracking sheet, so nothing reads it as
+    one while it is written, and it is removed whatever happens."""
+    target = Path(target)
+    tmp = _reserve_temp_name(target.parent)
+    try:
+        wb.save(str(tmp))
+        _publish_no_clobber(tmp, target)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _ascii(text) -> str:
+    """``text`` with anything outside ASCII escaped. WHY: these messages carry
+    folder and file names from disk and are printed to Windows consoles, which
+    crash on characters they cannot encode."""
+    return str(text).encode("ascii", "backslashreplace").decode("ascii")
+
+
+def _say_refused(err) -> None:
+    """Print a refusal for a person, on stderr where a calling program (the
+    Tracking Sheets tab) looks for the "REFUSED:" line."""
+    print(_ascii("REFUSED: %s" % err), file=sys.stderr)
+    print("Nothing was written.", file=sys.stderr)
+
+
+# =============================================================================
 # MAIN FILE GENERATOR
 # =============================================================================
 
-def create_new_cohort_file(cohort_name, start_date, num_mice, output_dir=None, 
-                           project_type='cnt', max_viruses=3):
+def create_new_cohort_file(cohort_name, start_date, num_mice, output_dir=None,
+                           project_type=None, max_viruses=3):
     """
-    Create a complete new cohort Excel file with all sheets
-    
+    Create a complete new cohort Excel file with all sheets -- never over, or
+    beside, an existing workbook for the cohort (module docstring: "A NEW SHEET
+    NEVER REPLACES A FILE").
+
     Args:
-        cohort_name: e.g., "CNT_05", "ENCR_01", or just "05"
+        cohort_name: exactly PREFIX_NN, e.g. "CNT_05" or "ENCR_01" (parse_cohort_name)
         start_date: Food deprivation start date (datetime or string YYYY-MM-DD or YYYYMMDD)
-        num_mice: Number of mice in cohort (default 16)
+        num_mice: Number of mice in cohort (1-99; subject numbers have two digits)
         output_dir: Output directory (default: 'generated' subdirectory)
-        project_type: 'cnt' (connectome/behavior) or 'encr' (enhancer/brainglobe)
+        project_type: None to take it from the cohort name's prefix, or
+            'cnt' / 'encr', which must then agree with that prefix
         max_viruses: Maximum viruses per injection (default 3)
-    
+
     Returns:
         Path to created file
+
+    Raises:
+        NewSheetRefused: the name, date, mouse count or project type is not
+            acceptable, or the folder already holds a workbook for this cohort
+            (or one appeared while this one was being built). Nothing is written.
     """
-    # Parse start_date if string
-    if isinstance(start_date, str):
-        start_date = parse_date(start_date)
-    
-    # Generate subject IDs
-    subject_ids = generate_subject_ids(cohort_name, num_mice)
-    
-    # Determine output filename based on project type
-    if "_" in cohort_name:
-        cohort_num = cohort_name.split("_")[-1]
-    else:
-        cohort_num = cohort_name
-    
-    if project_type == 'encr':
-        filename = f"Enhancer_{cohort_num}_Animal_Tracking.xlsx"
-    else:
-        filename = f"Connectome_{cohort_num}_Animal_Tracking.xlsx"
-    
+    # Everything is checked BEFORE the build, so a refusal costs nothing and
+    # writes nothing.
+    cname = parse_cohort_name(cohort_name)
+    if project_type is not None and str(project_type).lower() != cname.project_type:
+        raise NewSheetRefused(
+            "%s is a %s cohort, but project type %s was asked for. The project comes "
+            "from the cohort name's prefix: leave the project type out, or use the "
+            "prefix of the project you mean." % (
+                cname.cohort_id, cname.prefix, str(project_type).upper()))
+    project_type = cname.project_type
+    # The canonical id from here on, so the subject ids, the ODC rows and the
+    # file name all carry the same validated prefix and number.
+    cohort_name = cname.cohort_id
+    num_mice = _check_num_mice(num_mice)
+    start_date = parse_start_date(start_date)
+
+    # Subject ids from the validated parse (PREFIX_NN_01 ...), never from
+    # re-splitting typed text.
+    subject_ids = ["%s_%02d" % (cname.cohort_id, i) for i in range(1, num_mice + 1)]
+
+    # The file name from the validated parse ONLY (see parse_cohort_name).
+    filename = cname.filename
+
     # Use output subdirectory by default
     if output_dir is None:
         output_dir = OUTPUT_SUBDIR
     else:
         output_dir = Path(output_dir)
-    
+
     # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     output_path = output_dir / filename
-    
-    print(f"Creating new cohort file: {output_path}")
+
+    # First check, before the build (which takes a while); the save checks again.
+    refuse_if_cohort_has_a_workbook(output_dir, cname)
+
+    # Paths through _ascii: a folder name the console cannot encode must not
+    # crash the build -- least of all on the success line after the save.
+    print(_ascii(f"Creating new cohort file: {output_path}"))
     print(f"  Cohort: {cohort_name}")
     print(f"  Project type: {project_type.upper()}")
     print(f"  Start date: {start_date.strftime('%Y-%m-%d')}")
     print(f"  Number of mice: {num_mice}")
     print(f"  Max viruses: {max_viruses}")
     print(f"  Subject IDs: {subject_ids[0]} to {subject_ids[-1]}")
-    
+
     # Create all sheets
     sheets = {}
     
@@ -2318,7 +2601,7 @@ def create_new_cohort_file(cohort_name, start_date, num_mice, output_dir=None,
         sheets["9_DLC_Kinematics"] = create_9_dlc_kinematics(subject_ids, start_date)
     
     # Write to Excel using openpyxl for formula support
-    print(f"\nWriting to {output_path}...")
+    print(_ascii(f"\nWriting to {output_path}..."))
     
     wb = openpyxl.Workbook()
     
@@ -2385,44 +2668,21 @@ def create_new_cohort_file(cohort_name, start_date, num_mice, output_dir=None,
         # Autoscale columns to fit header text
         autoscale_columns(ws)
     
-    # Save with retry logic in case file is open in Excel
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            wb.save(output_path)
-            break
-        except PermissionError:
-            if attempt < max_retries - 1:
-                print(f"\n[!] Cannot write to {output_path.name} - file may be open in Excel.")
-                print("  Attempting to close it...")
-                
-                # Try to close the file (Windows-specific)
-                try:
-                    import subprocess
-                    import platform
-                    
-                    if platform.system() == 'Windows':
-                        # Use taskkill to close Excel if it has the file open
-                        # This is aggressive but user requested it
-                        subprocess.run(['taskkill', '/F', '/IM', 'EXCEL.EXE'], 
-                                      capture_output=True, timeout=5)
-                        print("  Closed Excel. Retrying save...")
-                        import time
-                        time.sleep(1)  # Give it a moment
-                    else:
-                        # On Mac/Linux, just inform user
-                        print("  Please close the file manually and press Enter...")
-                        input()
-                except Exception as e:
-                    print(f"  Could not auto-close: {e}")
-                    print("  Please close the file manually and press Enter...")
-                    input()
-            else:
-                print(f"\n[X] ERROR: Cannot save to {output_path}")
-                print("  Please close the file in Excel and run the script again.")
-                raise
-    
-    print(f"\n[OK] Successfully created {output_path}")
+    # Saved under a temporary name in the same folder, then given its real
+    # name only if that name is still free (_save_workbook_no_clobber). The
+    # folder is checked once more first: the build above takes a while, and a
+    # sync client or a colleague may have put this cohort's workbook -- or a
+    # variant of its name -- there meanwhile. No Excel window is ever closed:
+    # the file being written has a fresh name nobody can have open.
+    refuse_if_cohort_has_a_workbook(output_dir, cname)
+    try:
+        _save_workbook_no_clobber(wb, output_path)
+    except FileExistsError:
+        raise NewSheetRefused(
+            "%s appeared in %s while the new sheet was being built. It was left "
+            "exactly as it is." % (filename, output_dir)) from None
+
+    print(_ascii(f"\n[OK] Successfully created {output_path}"))
     print(f"  Total sheets: {len(sheets)}")
     
     # Summary of key counts
@@ -2555,12 +2815,27 @@ def interactive_new_cohort():
     print("The cohort name will be used to generate SubjectIDs.")
     print("Example: 'CNT_05' will create IDs like CNT_05_01, CNT_05_02, etc.")
     print("         'ENCR_01' will create IDs like ENCR_01_01, ENCR_01_02, etc.")
+
+    def _is_cohort_name(text):
+        try:
+            parse_cohort_name(text)
+            return True
+        except NewSheetRefused:
+            return False
+
+    # Strict form only (see parse_cohort_name): the name decides which file
+    # is written, so a name that could mean another cohort's file is refused.
     cohort_name = get_user_input(
-        "Enter cohort name (e.g., CNT_05, ENCR_01, or just 05)"
+        "Enter cohort name, exactly PREFIX_NN (e.g., CNT_05 or ENCR_01)",
+        validator=_is_cohort_name,
+        error_msg=("Expected a project prefix (%s), one underscore and two digits, "
+                   "e.g. CNT_05." % ", ".join(sorted(NEW_SHEET_PROJECTS))),
     )
-    
-    # Detect project type from cohort name
-    project_type = detect_project_type(cohort_name=cohort_name)
+    cname = parse_cohort_name(cohort_name)
+    cohort_name = cname.cohort_id
+
+    # The project type comes from the cohort name's prefix
+    project_type = cname.project_type
     print(f"\n  Detected project type: {project_type.upper()}")
     if project_type == 'encr':
         print("  (ENCR mode: No behavior sheets, focus on BrainGlobe)")
@@ -2621,6 +2896,7 @@ def interactive_new_cohort():
     print("\n" + "-" * 40)
     print("Please confirm:")
     print(f"  Cohort name: {cohort_name}")
+    print(f"  File: {cname.filename}")
     print(f"  Project type: {project_type.upper()}")
     print(f"  Start date: {start_date}")
     print(f"  Number of mice: {num_mice}")
@@ -2637,8 +2913,14 @@ def interactive_new_cohort():
     
     if confirm in ["y", "yes"]:
         print()
-        return create_new_cohort_file(cohort_name, start_date, num_mice, output_dir,
-                                       project_type=project_type, max_viruses=max_viruses)
+        try:
+            return create_new_cohort_file(cohort_name, start_date, num_mice, output_dir,
+                                           project_type=project_type, max_viruses=max_viruses)
+        except NewSheetRefused as e:
+            print()
+            print(_ascii("REFUSED: %s" % e))
+            print("Nothing was written.")
+            return None
     else:
         print("\nCancelled. No file created.")
         return None
@@ -2896,9 +3178,21 @@ def fix_existing_file(input_path, output_dir=None, project_type='cnt', max_virus
     # Create output filename (same name as input - no _fixed suffix)
     output_path = output_dir / input_path.name
     report_path = output_dir / f"{input_path.stem}_fix_report.txt"
+
+    # Never over an existing file -- above all not over the input itself,
+    # which is what an --output-dir naming the input's own folder (the live
+    # sheets folder, say) would mean, since the copy keeps the input's name.
+    # Checked here so a refusal costs nothing; the save below refuses again
+    # if a file of that name appears meanwhile.
+    if output_path.exists():
+        print(_ascii("REFUSED: %s already exists, and a fixed copy is never written "
+                     "over a file (it could be the live sheet itself). Choose another "
+                     "--output-dir, or move the earlier output away first. Nothing was "
+                     "written." % output_path))
+        return None
     
-    print(f"\nChecking and fixing: {input_path.name}")
-    print(f"Output will be saved to: {output_path}")
+    print(_ascii(f"\nChecking and fixing: {input_path.name}"))
+    print(_ascii(f"Output will be saved to: {output_path}"))
     print()
     
     # Initialize report
@@ -2955,15 +3249,21 @@ def fix_existing_file(input_path, output_dir=None, project_type='cnt', max_virus
     
     print("\nSaving fixed file...")
     try:
-        wb.save(output_path)
-        print(f"  [OK] Saved: {output_path}")
+        _save_workbook_no_clobber(wb, output_path)
+        # _ascii: inside this try, an encoding crash would be reported as
+        # "Error saving" for a file that WAS saved.
+        print(_ascii(f"  [OK] Saved: {output_path}"))
+    except FileExistsError:
+        print(_ascii("  REFUSED: %s appeared while the file was being fixed; it was left "
+                     "exactly as it is. Nothing was written." % output_path))
+        return None
     except Exception as e:
         print(f"  [X] Error saving: {e}")
         return None
     
     # Save report
     report.save_report(report_path)
-    print(f"  [OK] Report: {report_path}")
+    print(_ascii(f"  [OK] Report: {report_path}"))
     
     # Print report to console
     print()
@@ -4124,7 +4424,9 @@ def detect_project_type(cli_type=None, cohort_name=None, filename=None):
 # COMMAND LINE INTERFACE
 # =============================================================================
 
-def main():
+def main(argv=None):
+    """Command line. Returns the exit status: 0 done, 1 failed or misused,
+    REFUSED_EXIT when --new refused (nothing written)."""
     parser = argparse.ArgumentParser(
         description="Create or fix cohort Excel files for ODC-SCI data pipeline. "
                     "Run without arguments for interactive mode."
@@ -4133,15 +4435,19 @@ def main():
     # Use flat argument style for CLI mode
     parser.add_argument("--new", action="store_true", help="Create new cohort file (CLI mode)")
     parser.add_argument("--fix", type=str, default=None, metavar="FILE", help="Fix existing cohort file (CLI mode)")
-    parser.add_argument("--cohort", type=str, help="Cohort name (e.g., CNT_05 or ENCR_01)")
+    parser.add_argument("--cohort", type=str,
+                        help="Cohort name, exactly PREFIX_NN (e.g., CNT_05 or ENCR_01)")
     parser.add_argument("--start-date", type=str, help="Food deprivation start date (YYYY-MM-DD)")
     parser.add_argument("--mice", type=int, default=16, help="Number of mice (default: 16)")
-    parser.add_argument("--output-dir", type=str, default=None, help="Output directory (default: current)")
-    parser.add_argument("--type", type=str, choices=["cnt", "encr"], default=None, 
-                        help="Project type: cnt (connectome/behavior) or encr (enhancer/brainglobe)")
+    parser.add_argument("--output-dir", type=str, default=None,
+                        help="Output directory (default: a 'generated' folder under the "
+                             "current one). A file already there is never written over.")
+    parser.add_argument("--type", type=str, choices=["cnt", "encr"], default=None,
+                        help="Project type: cnt (connectome/behavior) or encr (enhancer/brainglobe). "
+                             "With --new it must agree with the cohort name's prefix.")
     parser.add_argument("--viruses", type=int, default=3, help="Max viruses per injection (default: 3)")
     
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     
     # Check if any CLI arguments were provided
     if args.new or args.fix:
@@ -4149,22 +4455,28 @@ def main():
         if args.new:
             if not args.cohort or not args.start_date:
                 print("Error: --new requires --cohort and --start-date")
-                print("\nUsage: python 0_Make_or_Fix_Sheets.py --new --cohort CNT_05 --start-date 2025-02-01")
-                print("       python 0_Make_or_Fix_Sheets.py --new --cohort ENCR_01 --start-date 2025-02-01 --type encr")
-                sys.exit(1)
-            
-            # Detect project type
-            project_type = detect_project_type(args.type, args.cohort, None)
-            print(f"Project type: {project_type.upper()}")
-            
-            create_new_cohort_file(
-                args.cohort,
-                args.start_date,
-                args.mice,
-                args.output_dir,
-                project_type=project_type,
-                max_viruses=args.viruses
-            )
+                print("\nUsage: mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01")
+                print("       mousedb-make-sheets --new --cohort ENCR_01 --start-date 2025-02-01")
+                return 1
+
+            # The project comes from the cohort name's prefix (parse_cohort_name);
+            # --type, if given, must agree with it. A refusal is one plain
+            # "REFUSED:" line and REFUSED_EXIT, never a traceback, and nothing
+            # is written.
+            try:
+                cname = parse_cohort_name(args.cohort)
+                print(f"Project type: {cname.project_type.upper()}")
+                create_new_cohort_file(
+                    cname.cohort_id,
+                    args.start_date,
+                    args.mice,
+                    args.output_dir,
+                    project_type=args.type,
+                    max_viruses=args.viruses
+                )
+            except NewSheetRefused as e:
+                _say_refused(e)
+                return REFUSED_EXIT
         elif args.fix:
             # Detect project type from filename
             project_type = detect_project_type(args.type, None, args.fix)
@@ -4174,11 +4486,12 @@ def main():
                                        project_type=project_type, 
                                        max_viruses=args.viruses)
             if not result:
-                sys.exit(1)
+                return 1
     else:
         # Interactive mode (no arguments provided)
         interactive_mode()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

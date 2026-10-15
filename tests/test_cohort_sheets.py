@@ -3,14 +3,15 @@
 The tracking sheet is a cohort's source of record. Getting the location wrong is
 not a minor inconvenience: `mousedb import` had a hardcoded default pointing at a
 directory that had since moved, so it found nothing and reported that as though
-there were nothing to import. Anyone going looking then found the snapshots under
-`Databases/_archive/` -- where the cohort 05 copy is a 92 KB stub with an empty
-subject table, while the live sheet is 359 KB and carries 2,234 rows of tray
-scoring, weights, injury and injection details. Reading the stale one leads
-straight to the wrong conclusion about what has been recorded for a cohort.
+there were nothing to import. Anyone going looking then found old snapshot copies
+in an archive folder -- a fraction of the live sheet's size, with an empty
+subject table and none of the scoring, weights, injury or injection details
+recorded since. Reading the stale one leads straight to the wrong conclusion
+about what has been recorded for a cohort.
 
 Three properties, pinned here:
-  - nothing lab-specific is in the source (this repository is public),
+  - nothing lab-specific is in the source (this repository is public) -- no
+    path, and no numbers describing one lab's own sheets,
   - a snapshot folder is never accepted as a source,
   - an unconfigured machine says so instead of guessing.
 """
@@ -26,12 +27,16 @@ from mousedb import cohort_sheets as cs
 
 @pytest.fixture
 def sheets(tmp_path, monkeypatch):
-    """A directory of cohort sheets, configured and reachable."""
+    """A directory of cohort sheets, configured and reachable -- with a private
+    config file. WHY: lookups honour pins, which live in the config file; left
+    pointing at this machine's real one, a pin a person made there (say on
+    cohort 05) would change which file these tests find."""
     d = tmp_path / "Animal_Cohorts"
     d.mkdir()
     for n in ("00", "01", "05"):
         (d / f"Connectome_{n}_Animal_Tracking.xlsx").write_bytes(b"x")
     monkeypatch.setenv(cs.ENV_VAR, str(d))
+    monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
     return d
 
 
@@ -51,6 +56,21 @@ class TestNothingLabSpecificInSource:
         for leak in ("OneDrive - ", "Sharepoint", "SharePoint",
                      "G:\\", "Y:/", "Y:\\", "user_data"):
             assert leak not in text, f"lab-specific string in source: {leak!r}"
+
+    @pytest.mark.parametrize("path", [cs.__file__, __file__])
+    def test_no_numbers_describing_one_labs_sheets(self, path):
+        """The WHY behind 'no built-in default' used to be told with one lab's
+        own figures -- file sizes in KB, row and weight counts in the
+        thousands, an edit date. Those describe a corpus, not the defect, and
+        this repository is public: the reason stays, the figures go. These
+        shapes are what such figures look like; neither file needs any."""
+        import re
+        text = Path(path).read_text(encoding="utf-8")
+        for shape, why in ((r"\b\d+(\.\d+)?\s?[KMG]B\b", "a file size"),
+                           (r"\b\d{1,3}(,\d{3})+\b", "a count in the thousands"),
+                           (r"last edited\s+\d{4}-\d\d-\d\d", "an edit date")):
+            hit = re.search(shape, text)
+            assert hit is None, f"{why} in {Path(path).name}: {hit.group(0)!r}"
 
     def test_there_is_no_built_in_fallback_path(self, unconfigured):
         """A wrong default that silently resolves is worse than no default: it
@@ -156,13 +176,16 @@ class TestFetchingAFreshCopy:
 
 @pytest.fixture
 def aspa(tmp_path, monkeypatch):
-    """An ASPA animal-data folder, named the way the real one is."""
+    """An ASPA animal-data folder holding every name shape the module meets:
+    a bare letter, a letter with a description, an "Opt"-prefixed letter with
+    and without one, and workbooks that are not per-cohort sheets. The
+    descriptions are placeholders; a real folder's say what each cohort was."""
     d = tmp_path / "Animal Data"
     d.mkdir()
-    for name in ("I.xlsx", "J.xlsx", "K - Contusion 70kd.xlsx",
-                 "G - Transection.xlsx", "OptD - Rehab 1 - pyramidotomy.xlsx",
-                 "OptE.xlsx", "1 Experimental overview.xlsx", "ABS1.xlsx",
-                 "NLT1.xlsx"):
+    for name in ("I.xlsx", "J.xlsx", "K - Description 1.xlsx",
+                 "G - Description.xlsx", "OptD - Part 1 - description.xlsx",
+                 "OptE.xlsx", "1 Overview.xlsx", "ABC1.xlsx",
+                 "XYZ1.xlsx"):
         (d / name).write_bytes(b"x")
     monkeypatch.setenv(cs.ASPA_ENV_VAR, str(d))
     return d
@@ -183,7 +206,7 @@ class TestAspaCohortLetters:
         ("D", "04"), ("I", "09"), ("J", "10"), ("M", "13"),
     ])
     def test_letter_to_number_matches_the_recorded_examples(self, letter, number):
-        """D01 -> ASPA0401 and M04 -> ASPA1304 are the worked examples on record."""
+        """The rule's worked examples: D01 -> ASPA0401, M04 -> ASPA1304."""
         assert cs.aspa_cohort_number(letter) == number
 
     def test_it_round_trips(self):
@@ -202,19 +225,20 @@ class TestFindingAnAspaSheet:
         assert cs.find_aspa_sheet("J").name == "J.xlsx"
 
     def test_a_sheet_with_a_description(self, aspa):
-        assert cs.find_aspa_sheet("K").name == "K - Contusion 70kd.xlsx"
+        assert cs.find_aspa_sheet("K").name == "K - Description 1.xlsx"
 
     def test_an_opt_prefixed_sheet(self, aspa):
-        """'Opt' is a known misnomer -- those cohorts are just D through G.
-        Matching only a bare letter silently lost D, E and F."""
-        assert cs.find_aspa_sheet("D").name == "OptD - Rehab 1 - pyramidotomy.xlsx"
+        """'Opt' is a prefix, not part of the cohort letter. Matching only a
+        bare letter silently lost every cohort whose workbook carries it."""
+        assert cs.find_aspa_sheet("D").name == "OptD - Part 1 - description.xlsx"
         assert cs.find_aspa_sheet("E").name == "OptE.xlsx"
 
     def test_an_encoded_animal_id_finds_its_cohort(self, aspa):
         assert cs.find_aspa_sheet("ASPA1011").name == "J.xlsx"
 
     def test_multi_letter_names_are_not_cohorts(self, aspa):
-        """ABS1, NLT1 and the overview are not per-cohort animal sheets."""
+        """Multi-letter names and an overview workbook are not per-cohort
+        animal sheets."""
         assert set(cs.available_aspa_cohorts()) == {"D", "E", "G", "I", "J", "K"}
 
     def test_a_cohort_with_no_sheet(self, aspa):
