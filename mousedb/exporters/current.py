@@ -102,8 +102,33 @@ See Databases/docs/ODC-SCI_submission_standard.md.
 """
 
 
+def _staging_dir(snapshot_dir: Path) -> Path:
+    """A scratch folder on the same (local) disk as the snapshot.
+
+    WHY: the exports folder is on a network share, and pandas writes a CSV
+    onto a share a few bytes at a time -- measured at a fraction of a megabyte
+    per second against tens of MB/s for copying a finished file. Writing every
+    file here first and copying it over turned a 2-3 hour nightly export into
+    minutes (2026-10-16). refresh_current() empties this folder at the start
+    of each run so nothing stale is ever copied across."""
+    d = Path(snapshot_dir) / "_export_staging"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _place(local: Path, final: Path) -> None:
+    """Copy a finished local file onto its final name atomically: a reader
+    sees the previous file or the new one, never a partial write."""
+    import shutil
+    final.parent.mkdir(parents=True, exist_ok=True)
+    tmp = final.with_name(final.name + ".tmp")
+    shutil.copyfile(local, tmp)
+    tmp.replace(final)
+
+
 def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     src = snapshot_dir / "reach_data.parquet"
+    staging = _staging_dir(snapshot_dir)
     df = pd.read_parquet(src)
     sort_cols = [c for c in ("subject_id", "session_date", "video_name", "segment_num", "reach_num")
                  if c in df.columns]
@@ -116,7 +141,8 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     cols = [c for c in REACH_DATA_ORDER_FIRST if c in df.columns]
     cols += [c for c in df.columns if c not in cols and c not in REACH_DATA_ORDER_LAST and c != "id"]
     out = out_dir / "reach_data.csv"
-    df[cols].to_csv(out, index=False)
+    df[cols].to_csv(staging / out.name, index=False)
+    _place(staging / out.name, out)
     dd.write_dictionary("reach_data", out_dir / "reach_data_DATA_DICTIONARY.csv")
     manifest["files"]["reach_data.csv"] = {
         "rows": int(len(df)), "columns": int(len(cols)),
@@ -126,7 +152,8 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     if "extended_features" in df.columns:
         key = [c for c in ("subject_id", "video_name", "segment_num", "reach_id") if c in df.columns]
         side = out_dir / "reach_data_extended.parquet"
-        df[key + ["extended_features"]].to_parquet(side, index=False)
+        df[key + ["extended_features"]].to_parquet(staging / side.name, index=False)
+        _place(staging / side.name, side)
         manifest["files"][side.name] = {
             "rows": int(len(df)), "columns": len(key) + 1,
             "note": "extended_features JSON per reach; join to reach_data.csv on " + ", ".join(key),
@@ -142,7 +169,9 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
     cols += [c for c in df.columns if c not in cols]
     df = df[cols].sort_values([c for c in ("subject_id", "session_date", "tray_number", "pellet_number") if c in cols])
     out = out_dir / "manual_scores.csv"
-    df.to_csv(out, index=False)
+    staging = _staging_dir(snapshot_dir)
+    df.to_csv(staging / out.name, index=False)
+    _place(staging / out.name, out)
     dd.write_dictionary("manual_scores", out_dir / "manual_scores_DATA_DICTIONARY.csv")
     manifest["files"]["manual_scores.csv"] = {
         "rows": int(len(df)), "columns": int(len(cols)),
@@ -202,7 +231,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
         manifest["files"].update(old["files"])
         return
     part = {"files": {}, "problems": []}
-    odc_reaches.export(snapshot_dir, out_dir, manifest=part)
+    odc_reaches.export(snapshot_dir, out_dir, manifest=part, staging_dir=_staging_dir(snapshot_dir))
     manifest["files"].update(part["files"])
     manifest["problems"].extend(part["problems"])
     if not part["problems"]:
@@ -265,6 +294,11 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Start from an empty staging folder: every file copied onto the share
+    # this run was written this run (see _staging_dir).
+    import shutil
+    shutil.rmtree(_staging_dir(snapshot_dir), ignore_errors=True)
+    _staging_dir(snapshot_dir)
     manifest = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "snapshot_dir": str(snapshot_dir),
