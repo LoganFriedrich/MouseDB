@@ -1,10 +1,12 @@
 """
 One-shot migration and backfill for test_phase / phase_group columns.
 
-Run once after deploying the phases-detection feature. Idempotent: safe to
-re-run. Always overwrites existing values so legacy inconsistent labels
-(`Rehab_1`, `Post-Injury Test 4`, etc.) are normalized to the canonical
-vocabulary from :mod:`mousedb.phases`.
+Run once after deploying the phases-detection feature; the nightly reach
+import also runs it for every cohort a new video touches. Idempotent: safe to
+re-run. Every row ends up with the canonical label from :mod:`mousedb.phases`
+(legacy spellings such as `Rehab_1` or `Post-Injury Test 4` are replaced), but
+a row whose label is already right is NOT rewritten -- see
+:func:`_apply_assignments` for why that matters on a network share.
 
 Steps:
   1. ALTER TABLE pellet_scores ADD COLUMN phase_group TEXT (if missing).
@@ -89,114 +91,91 @@ def _collect_cohort_dates(conn, cohort_id: str) -> List[Tuple[date, str]]:
     return [(_to_date(d), (t or "").upper()) for d, t in pellet_rows]
 
 
+UNSCHEDULED = "Unscheduled"
+
+
 def _apply_assignments(
     conn, cohort_id: str, assignments, *, dry_run: bool
 ) -> Tuple[int, int]:
     """
-    Update pellet_scores and reach_data for this cohort with derived labels.
+    Bring this cohort's pellet_scores and reach_data rows to the derived
+    labels, writing ONLY the rows whose label is not already right.
 
-    Strategy:
-      1. Clear test_phase/phase_group for all cohort rows in both tables so
-         legacy/stale values don't persist for dates no longer in the schedule.
-      2. For each (session_date -> phase) assignment, UPDATE matching rows.
-      3. Sweep any remaining NULL rows (dates in reach_data with no pellet
-         scoring, e.g. video captures during injury+recovery) to 'Unscheduled'.
+    End state (the same since the first version of this function): every
+    reach_data row of the cohort carries its session date's (test_phase,
+    phase_group) when that date is a scored test day, and 'Unscheduled' when
+    it is not (a video captured during injury and recovery, for example).
+    pellet_scores rows carry their date's label; every one of their dates is a
+    scored day by definition, since the schedule is derived from them.
 
-    Returns (pellet_rows_updated, reach_rows_updated) -- including the clear
-    and sweep passes (so totals reflect all rows touched).
+    WHY ONLY THE ROWS THAT CHANGE: the first version cleared every row of the
+    cohort and rewrote it in three passes. Correct, but the database lives on
+    a network share that takes writes at a fraction of a megabyte per second,
+    so that was gigabytes of page writes to say what the rows already said.
+    The nightly reach import runs this for every cohort a new video touches;
+    on 2026-10-15 five reprocessed videos of the largest cohort made it rewrite
+    every reach of that cohort, it ran for hours past its scheduler limit, and
+    it held the database through the brain import and the export refresh,
+    which failed night after night. With the guard below, a night on which the
+    labels did not change writes nothing.
+
+    Returns (pellet_rows_changed, reach_rows_changed): rows actually written.
     """
     if not assignments:
         return 0, 0
 
     cohort_subjects_sql = "SELECT subject_id FROM subjects WHERE cohort_id = :cohort"
-    params_base = {"cohort": cohort_id}
+
+    # SQLite's IS NOT compares NULL-safely, so a row whose label is still NULL
+    # counts as different from any real label and gets written.
+    differs = "(test_phase IS NOT :tp OR phase_group IS NOT :pg)"
+    per_date = {
+        "pellet_scores": f"session_date = :sd AND subject_id IN ({cohort_subjects_sql}) AND {differs}",
+        "reach_data": f"session_date = :sd_str AND subject_id IN ({cohort_subjects_sql}) AND {differs}",
+    }
+
+    # reach_data rows on a date that is not a scored day (no pellet_scores row
+    # anywhere in the cohort for that date) are 'Unscheduled'.
+    scheduled = sorted({a.session_date.isoformat() for a in assignments})
+    date_params = {f"d{i}": d for i, d in enumerate(scheduled)}
+    date_list = ", ".join(f":{k}" for k in date_params)
+    sweep_where = (
+        f"subject_id IN ({cohort_subjects_sql}) AND session_date NOT IN ({date_list}) AND {differs}"
+    )
+    sweep_params = {"cohort": cohort_id, "tp": UNSCHEDULED, "pg": UNSCHEDULED, **date_params}
 
     pellet_count = 0
     reach_count = 0
-
-    if dry_run:
-        p_rows = conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*) FROM pellet_scores
-                WHERE subject_id IN ({cohort_subjects_sql})
-                """
-            ),
-            params_base,
-        ).scalar() or 0
-        r_rows = conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*) FROM reach_data
-                WHERE subject_id IN ({cohort_subjects_sql})
-                """
-            ),
-            params_base,
-        ).scalar() or 0
-        return p_rows, r_rows
-
-    # Clear reach_data only -- its columns are nullable. pellet_scores.test_phase
-    # has a legacy NOT NULL constraint we can't easily drop in SQLite, but every
-    # pellet_scores row has a session_date that IS in `assignments` (since the
-    # assignments are derived from pellet_scores), so the subsequent per-date
-    # UPDATEs overwrite every row anyway.
-    conn.execute(
-        text(
-            f"""
-            UPDATE reach_data SET test_phase = NULL, phase_group = NULL
-            WHERE subject_id IN ({cohort_subjects_sql})
-            """
-        ),
-        params_base,
-    )
-
     for a in assignments:
         params = {
-            **params_base,
+            "cohort": cohort_id,
             "sd": a.session_date,
             "sd_str": a.session_date.isoformat(),
             "tp": a.test_phase,
             "pg": a.phase_group,
         }
-        p_result = conn.execute(
-            text(
-                f"""
-                UPDATE pellet_scores
-                SET test_phase = :tp, phase_group = :pg
-                WHERE session_date = :sd
-                  AND subject_id IN ({cohort_subjects_sql})
-                """
-            ),
-            params,
-        )
-        r_result = conn.execute(
-            text(
-                f"""
-                UPDATE reach_data
-                SET test_phase = :tp, phase_group = :pg
-                WHERE session_date = :sd_str
-                  AND subject_id IN ({cohort_subjects_sql})
-                """
-            ),
-            params,
-        )
-        pellet_count += p_result.rowcount or 0
-        reach_count += r_result.rowcount or 0
+        for table, where in per_date.items():
+            if dry_run:
+                n = conn.execute(text(f"SELECT COUNT(*) FROM {table} WHERE {where}"), params).scalar() or 0
+            else:
+                n = conn.execute(
+                    text(f"UPDATE {table} SET test_phase = :tp, phase_group = :pg WHERE {where}"),
+                    params,
+                ).rowcount or 0
+            if table == "pellet_scores":
+                pellet_count += n
+            else:
+                reach_count += n
 
-    # Sweep remaining NULL reach_data rows (dates with no pellet scoring, e.g.
-    # video captures during the injury+recovery window) to Unscheduled.
-    r_sweep = conn.execute(
-        text(
-            f"""
-            UPDATE reach_data
-            SET test_phase = 'Unscheduled', phase_group = 'Unscheduled'
-            WHERE test_phase IS NULL
-              AND subject_id IN ({cohort_subjects_sql})
-            """
-        ),
-        params_base,
-    )
-    reach_count += r_sweep.rowcount or 0
+    if dry_run:
+        reach_count += conn.execute(
+            text(f"SELECT COUNT(*) FROM reach_data WHERE {sweep_where}"), sweep_params
+        ).scalar() or 0
+    else:
+        reach_count += conn.execute(
+            text(f"UPDATE reach_data SET test_phase = :tp, phase_group = :pg WHERE {sweep_where}"),
+            sweep_params,
+        ).rowcount or 0
 
     return pellet_count, reach_count
 
