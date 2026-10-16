@@ -119,63 +119,66 @@ def _apply_assignments(
     which failed night after night. With the guard below, a night on which the
     labels did not change writes nothing.
 
+    AND ONLY ONE PASS OVER EACH TABLE: reach_data has no index on session_date
+    or subject_id (only on video and on the labels), so an UPDATE per test date
+    read the whole multi-gigabyte table once per date -- 42 GB of reads in 40
+    minutes on 2026-10-16, for one cohort. The date -> label map goes into a
+    temporary table and each row looks its own date up there, so a cohort costs
+    one read of the table however many test dates it has.
+
     Returns (pellet_rows_changed, reach_rows_changed): rows actually written.
     """
     if not assignments:
         return 0, 0
 
-    cohort_subjects_sql = "SELECT subject_id FROM subjects WHERE cohort_id = :cohort"
-
-    # SQLite's IS NOT compares NULL-safely, so a row whose label is still NULL
-    # counts as different from any real label and gets written.
-    differs = "(test_phase IS NOT :tp OR phase_group IS NOT :pg)"
-    per_date = {
-        "pellet_scores": f"session_date = :sd AND subject_id IN ({cohort_subjects_sql}) AND {differs}",
-        "reach_data": f"session_date = :sd_str AND subject_id IN ({cohort_subjects_sql}) AND {differs}",
-    }
-
-    # reach_data rows on a date that is not a scored day (no pellet_scores row
-    # anywhere in the cohort for that date) are 'Unscheduled'.
-    scheduled = sorted({a.session_date.isoformat() for a in assignments})
-    date_params = {f"d{i}": d for i, d in enumerate(scheduled)}
-    date_list = ", ".join(f":{k}" for k in date_params)
-    sweep_where = (
-        f"subject_id IN ({cohort_subjects_sql}) AND session_date NOT IN ({date_list}) AND {differs}"
+    # The map every row consults. TEMP tables are private to this connection
+    # and vanish with it; dropped explicitly so a long session can call this
+    # for many cohorts.
+    conn.execute(text("DROP TABLE IF EXISTS temp.phase_map"))
+    conn.execute(text("CREATE TEMP TABLE phase_map (d TEXT PRIMARY KEY, tp TEXT NOT NULL, pg TEXT NOT NULL)"))
+    conn.execute(
+        text("INSERT OR REPLACE INTO phase_map (d, tp, pg) VALUES (:d, :tp, :pg)"),
+        [{"d": a.session_date.isoformat(), "tp": a.test_phase, "pg": a.phase_group} for a in assignments],
     )
-    sweep_params = {"cohort": cohort_id, "tp": UNSCHEDULED, "pg": UNSCHEDULED, **date_params}
 
-    pellet_count = 0
-    reach_count = 0
-    for a in assignments:
-        params = {
-            "cohort": cohort_id,
-            "sd": a.session_date,
-            "sd_str": a.session_date.isoformat(),
-            "tp": a.test_phase,
-            "pg": a.phase_group,
-        }
-        for table, where in per_date.items():
-            if dry_run:
-                n = conn.execute(text(f"SELECT COUNT(*) FROM {table} WHERE {where}"), params).scalar() or 0
-            else:
-                n = conn.execute(
-                    text(f"UPDATE {table} SET test_phase = :tp, phase_group = :pg WHERE {where}"),
-                    params,
-                ).rowcount or 0
-            if table == "pellet_scores":
-                pellet_count += n
-            else:
-                reach_count += n
+    cohort_subjects = "SELECT subject_id FROM subjects WHERE cohort_id = :cohort"
+    params = {"cohort": cohort_id, "unscheduled": UNSCHEDULED}
 
-    if dry_run:
-        reach_count += conn.execute(
-            text(f"SELECT COUNT(*) FROM reach_data WHERE {sweep_where}"), sweep_params
-        ).scalar() or 0
-    else:
-        reach_count += conn.execute(
-            text(f"UPDATE reach_data SET test_phase = :tp, phase_group = :pg WHERE {sweep_where}"),
-            sweep_params,
-        ).rowcount or 0
+    # reach_data: a row on a scored day takes that day's label; any other day
+    # (a recording during injury and recovery, an unparseable date) is
+    # 'Unscheduled'. SQLite's IS NOT compares NULL-safely, so a row whose label
+    # is still NULL counts as different and gets written.
+    tp_of = "(SELECT m.tp FROM phase_map m WHERE m.d = reach_data.session_date)"
+    pg_of = "(SELECT m.pg FROM phase_map m WHERE m.d = reach_data.session_date)"
+    reach_where = (
+        f"subject_id IN ({cohort_subjects}) AND "
+        f"(test_phase IS NOT COALESCE({tp_of}, :unscheduled) OR phase_group IS NOT COALESCE({pg_of}, :unscheduled))"
+    )
+    reach_set = f"test_phase = COALESCE({tp_of}, :unscheduled), phase_group = COALESCE({pg_of}, :unscheduled)"
+
+    # pellet_scores: every scored day is in the map by construction; a row on
+    # a day that is not (no tray type recorded) is left alone, as it always was.
+    ptp_of = "(SELECT m.tp FROM phase_map m WHERE m.d = pellet_scores.session_date)"
+    ppg_of = "(SELECT m.pg FROM phase_map m WHERE m.d = pellet_scores.session_date)"
+    pellet_where = (
+        f"subject_id IN ({cohort_subjects}) AND session_date IN (SELECT d FROM phase_map) AND "
+        f"(test_phase IS NOT {ptp_of} OR phase_group IS NOT {ppg_of})"
+    )
+    pellet_set = f"test_phase = {ptp_of}, phase_group = {ppg_of}"
+
+    try:
+        if dry_run:
+            pellet_count = conn.execute(text(f"SELECT COUNT(*) FROM pellet_scores WHERE {pellet_where}"),
+                                        params).scalar() or 0
+            reach_count = conn.execute(text(f"SELECT COUNT(*) FROM reach_data WHERE {reach_where}"),
+                                       params).scalar() or 0
+        else:
+            pellet_count = conn.execute(text(f"UPDATE pellet_scores SET {pellet_set} WHERE {pellet_where}"),
+                                        params).rowcount or 0
+            reach_count = conn.execute(text(f"UPDATE reach_data SET {reach_set} WHERE {reach_where}"),
+                                       params).rowcount or 0
+    finally:
+        conn.execute(text("DROP TABLE IF EXISTS temp.phase_map"))
 
     return pellet_count, reach_count
 
