@@ -49,6 +49,11 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
                 injury dates (a rehabilitation label before the injury, a
                 baseline label for a cohort not yet injured). The labelling
                 failed for that cohort, so its phase columns are blanked.
+7. pellets   -- a tray presents 20 pellets. A video the pipeline cut into any
+                other number has the wrong pellet number on its reaches, so that
+                session is left out. A tray whose hand scores number other than
+                20 (one left out, one typed under the wrong number) has its
+                hand-score columns blanked; its reaches are unaffected.
 
 Low-information pellet patterns (all the same value, or nearly) are never used
 as evidence: they match everything.
@@ -79,8 +84,15 @@ BEST_AT_LEAST = 0.95       # agreement with the matching animal
 OWN_AT_MOST = 0.75         # agreement with the animal the video is labelled as
 RUNNER_UP_AT_MOST = 0.85   # agreement with the next-best candidate
 
-MANUAL_FIELDS = ["manual_displaced", "manual_retrieved", "manual_contacted",
-                 "percent_retrieved_hand_scored"]
+# Every column derived from the hand scores of one tray. Blanking "the hand-score
+# columns" must blank ALL of them: the session totals ride on every reach row and
+# are computed before this pass runs, so a column missing from this list would
+# keep a value this pass has judged doubtful (2026-10-16: three new hand-scored
+# percentages were about to do exactly that).
+MANUAL_FIELDS = (["pellets_hand_scored", "manual_displaced", "manual_retrieved",
+                  "manual_contacted"]
+                 + ["percent_%s_hand_scored" % o
+                    for o in ("retrieved", "displaced", "contacted", "missed")])
 PHASE_FIELDS = ["test_type", "test_type_grouped", "experiment_stage"]
 POST_INJURY_STAGES = {"After injury", "Rehabilitation", "After rehabilitation"}
 
@@ -325,6 +337,29 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
             drop_recording(str(video),
                            "death: %s is recorded dying on %s (surgery with its weight typed, "
                            "not survived) but this video is dated %s" % (sid, died, d))
+
+    # 7: pellet count -- every tray presents PELLETS_PER_TRAY pellets.
+    from ..stats import PELLETS_PER_TRAY
+    vp_path = snapshot / "video_pellets.parquet"
+    if vp_path.exists():
+        found = pd.read_parquet(vp_path, columns=["video_name"])["video_name"].value_counts()
+        for video, count in found.items():
+            if int(count) != PELLETS_PER_TRAY:
+                ex.drop(str(video), "pellet count: the pipeline found %d pellets in this video, "
+                                    "not %d, so which pellet each reach was at is not known"
+                        % (int(count), PELLETS_PER_TRAY))
+    else:
+        ex.notes.append("pellet-count check for videos not run: the snapshot has no "
+                        "per-pellet table yet (it appears after the next snapshot refresh)")
+    for video, sid, d, tt, tn in zip(videos["video_name"], videos["subject_id"], videos["d"],
+                                     videos["tray_type"], videos["run_number"]):
+        if pd.isna(tn):
+            continue
+        scored = hand.get((str(sid), d, str(tt), int(tn)))
+        if scored and len(scored) != PELLETS_PER_TRAY:
+            ex.blank(str(video), MANUAL_FIELDS,
+                     "hand-score count: this tray has %d pellets hand scored, not %d"
+                     % (len(scored), PELLETS_PER_TRAY))
 
     # 5: an animal of a project cohort with no tracking workbook
     if sheets_dir and Path(sheets_dir).is_dir():

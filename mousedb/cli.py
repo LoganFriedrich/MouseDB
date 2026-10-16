@@ -1230,6 +1230,7 @@ def cmd_import_reaches(args):
     if args.include_processing: argv.append("--include-processing")
     if args.force: argv.append("--force")
     if args.limit: argv += ["--limit", str(args.limit)]
+    if getattr(args, "pellets_only", False): argv.append("--pellets-only")
     raise SystemExit(_main(argv))
 
 
@@ -1402,6 +1403,8 @@ def main():
     ir.add_argument('--include-processing', action='store_true', help='Also scan the Processing folder')
     ir.add_argument('--force', action='store_true', help='Write even if a MouseReach watcher is running')
     ir.add_argument('--limit', type=int, help='At most this many files')
+    ir.add_argument('--pellets-only', action='store_true',
+                    help='Only (re)fill the per-pellet table from every features file')
     ir.set_defaults(func=cmd_import_reaches)
 
     # mousedb update -- the "Update the database" button as a command: sheets,

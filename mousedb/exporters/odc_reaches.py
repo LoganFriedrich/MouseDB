@@ -291,7 +291,8 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
 
 def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
                  records: pd.DataFrame, pellets: pd.DataFrame,
-                 facts: Callable[[str], Dict[str, str]], lab: str = ""):
+                 facts: Callable[[str], Dict[str, str]], lab: str = "",
+                 video_pellets: Optional[pd.DataFrame] = None):
     """(dataframe, dictionary rows) for one cohort; an empty frame when it has no reaches."""
     rc = reach[reach["subject_id"].astype(str).str.startswith(cohort_id + "_")].copy()
     if rc.empty:
@@ -359,23 +360,41 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
         disp=("o", lambda s: int(s.isin(DISPLACED).sum())),
         retr=("o", lambda s: int((s == "retrieved").sum())))
     cols["Attention_AI"] = video.map(per_video["att"])
-    cols["Video_Displaced"] = video.map(per_video["disp"]).astype("Int64")
-    cols["Video_Retrieved"] = video.map(per_video["retr"]).astype("Int64")
+    # Pellet counts come from the per-pellet table when the video has rows there:
+    # it holds EVERY pellet the pipeline cut the video into, so a pellet nobody
+    # reached for is counted as presented, and a displaced or retrieved pellet
+    # whose reach went undetected is still counted. Reach rows can only see
+    # pellets that had a reach; they are the fallback for a video imported
+    # before that table existed.
+    disp, retr = per_video["disp"], per_video["retr"]
+    found = pd.Series(dtype="float64")
+    if video_pellets is not None and not video_pellets.empty:
+        vp = video_pellets[video_pellets["video_name"].isin(set(video))]
+        if not vp.empty:
+            g = vp.groupby("video_name")["outcome"]
+            found = g.size()
+            disp = g.apply(lambda s: int(s.isin(DISPLACED).sum())).combine_first(disp)
+            retr = g.apply(lambda s: int((s == "retrieved").sum())).combine_first(retr)
+    cols["Video_Pellets"] = video.map(found).astype("Int64")
+    cols["Video_Displaced"] = video.map(disp).astype("Int64")
+    cols["Video_Retrieved"] = video.map(retr).astype("Int64")
     cols["Video_Contacted"] = cols["Video_Displaced"] + cols["Video_Retrieved"]
     empty = pd.Series(pd.array([pd.NA] * len(rc), dtype="Int64"), index=rc.index)
-    for c in ("Manual_Displaced", "Manual_Retrieved", "Manual_Contacted", "Contacted_Match"):
+    for c in ("Manual_Pellets", "Manual_Displaced", "Manual_Retrieved", "Manual_Contacted",
+              "Contacted_Match"):
         cols[c] = empty
     if pellets is not None and not pellets.empty:
         p = pellets[pellets["subject_id"].astype(str).str.startswith(cohort_id + "_")].copy()
         if not p.empty:
             p["d"] = pd.to_datetime(p["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
             keys = ["subject_id", "d", "tray_type", "tray_number"]
-            g = p.groupby(keys)["score"].agg(disp=lambda s: int((s == 1).sum()),
+            g = p.groupby(keys)["score"].agg(n="size", disp=lambda s: int((s == 1).sum()),
                                              retr=lambda s: int((s == 2).sum())).reset_index()
             k = pd.DataFrame({"subject_id": rc["subject_id"], "d": cols["Test_Date"],
                               "tray_type": rc["tray_type"], "tray_number": rc["run_number"]})
             m = k.merge(g, on=keys, how="left")
             m.index = rc.index
+            cols["Manual_Pellets"] = m["n"].astype("Int64")
             cols["Manual_Displaced"] = m["disp"].astype("Int64")
             cols["Manual_Retrieved"] = m["retr"].astype("Int64")
             cols["Manual_Contacted"] = cols["Manual_Displaced"] + cols["Manual_Retrieved"]
@@ -724,7 +743,8 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     # mousedb.exporters.extended_features for what dropping it used to cost).
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
                                   columns=[c for c in names if c != "id"])}
-    for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records")):
+    for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records"),
+                      ("video_pellets", "video_pellets")):
         f = snapshot_dir / ("%s.parquet" % name)
         t[key] = pd.read_parquet(f) if f.exists() else None
     # The day's body weight rides on the reach rows from here on, so every
@@ -778,7 +798,8 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     for cid in wanted:
         try:
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
-                                    study_facts.facts, lab_name())
+                                    study_facts.facts, lab_name(),
+                                    video_pellets=t.get("video_pellets"))
             if df.empty:
                 manifest["files"]["ODC_reaches_%s.csv" % cohort_label(cid)] = {"rows": 0, "note": "no reaches"}
                 continue

@@ -239,7 +239,10 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  14 = pellets_presented is the tray's 20 and every percentage is out of it
     #       (retrieved, displaced, contacted, missed, from both streams); the
     #       count of pellets with a reach is kept as pellets_reached_for
-    sig["output_format"] = 14
+    #  15 = pellets are measured: pellets_in_video (from the per-pellet table) and
+    #       pellets_hand_scored; video totals count every pellet; a count other
+    #       than 20 is an identified error (export_exclusions check 7)
+    sig["output_format"] = 15
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))

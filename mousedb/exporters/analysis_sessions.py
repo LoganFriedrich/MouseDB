@@ -43,8 +43,8 @@ PER_SESSION: List[str] = [
     "injury_type", "injury_level", "study_group", "sex", "strain",
     "survived_all_surgeries", "excluded_in_origin_study", "video_name",
     "total_swipes_ai", "attention_ai",
-    "video_displaced", "video_retrieved", "video_contacted",
-    "manual_displaced", "manual_retrieved", "manual_contacted",
+    "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
+    "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",
 ]
 
 # What one session is identified by. The video is the session's recording, so it

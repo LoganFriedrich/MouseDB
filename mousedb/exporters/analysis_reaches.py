@@ -92,9 +92,11 @@ IDENTITY: List[Tuple[str, str]] = [
 SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Total_Swipes_AI", "total_swipes_ai"),
     ("Attention_AI", "attention_ai"),
+    ("Video_Pellets", "pellets_in_video"),
     ("Video_Displaced", "video_displaced"),
     ("Video_Retrieved", "video_retrieved"),
     ("Video_Contacted", "video_contacted"),
+    ("Manual_Pellets", "pellets_hand_scored"),
     ("Manual_Displaced", "manual_displaced"),
     ("Manual_Retrieved", "manual_retrieved"),
     ("Manual_Contacted", "manual_contacted"),

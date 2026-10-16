@@ -116,5 +116,5 @@ def test_the_skip_signature_changed_with_the_output():
     from mousedb.exporters import current
     import inspect
     source = inspect.getsource(current)
-    assert 'sig["output_format"] = 14' in source, (
+    assert 'sig["output_format"] = 15' in source, (
         "bump output_format whenever these columns change")

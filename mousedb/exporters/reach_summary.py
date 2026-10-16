@@ -175,9 +175,11 @@ def extra_kinematics(columns: Iterable[str]) -> List[Tuple[str, str]]:
 
 SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Total_Swipes_AI", "reaches_in_session"),
+    ("Video_Pellets", "pellets_in_video"),
     ("Video_Retrieved", "pellets_retrieved_in_session"),
     ("Video_Displaced", "pellets_displaced_in_session"),
     ("Video_Contacted", "pellets_moved_in_session"),
+    ("Manual_Pellets", "pellets_hand_scored"),
     ("Manual_Retrieved", "pellets_retrieved_hand_scored"),
     ("Manual_Displaced", "pellets_displaced_hand_scored"),
     ("Manual_Contacted", "pellets_moved_hand_scored"),
@@ -196,6 +198,8 @@ REASONS: Dict[str, str] = {
     # measurement stream (post-hoc tray inspection), absent for some sessions; the
     # head measurements need both ears tracked confidently and sometimes they are not.
     "pellets_retrieved_hand_scored": missing.NOT_RECORDED,
+    "pellets_hand_scored": missing.NOT_RECORDED,
+    "pellets_in_video": missing.NOT_RECORDED,          # imported before the per-pellet record
     "pellets_displaced_hand_scored": missing.NOT_RECORDED,
     "pellets_moved_hand_scored": missing.NOT_RECORDED,
     "head_width_at_apex_mm": missing.NOT_RECORDED,

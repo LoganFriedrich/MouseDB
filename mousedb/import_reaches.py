@@ -29,6 +29,11 @@ WHAT IT DOES
      sheet has not named it yet (machine data never waits on hand data; the
      sheet import enriches the record later), old rows for that video are
      deleted, new rows inserted -- one transaction per video.
+     The same transaction replaces the video's rows in ``video_pellets``: one
+     per pellet the pipeline cut the video into, reached for or not, with its
+     outcome. That is where "how many pellets were presented" is MEASURED (20
+     unless something went wrong); reach_data cannot say, because a pellet
+     nobody reached for has no reach row.
   5. Re-derives test_phase / phase_group for every cohort touched
      (``mousedb.backfill.backfill_phases``).
 
@@ -37,6 +42,7 @@ Usage:
     mousedb import-reaches --dry-run       # count only
     mousedb import-reaches --all           # ignore the ledger, re-import everything
     mousedb import-reaches --include-processing
+    mousedb import-reaches --pellets-only  # (re)fill video_pellets from every file
 """
 from __future__ import annotations
 
@@ -95,6 +101,37 @@ ALL_COLUMNS = (['subject_id', 'video_name', 'session_date', 'tray_type', 'run_nu
 MIGRATION_COLUMNS = [(c, 'TEXT') for c in PROVENANCE_COLUMNS + ['outcome_source', 'reviewed_by',
                      'algo_outcome', 'extended_features', 'test_phase', 'phase_group']] + \
                     [('algo_causal_reach_id', 'INTEGER')]
+
+# Every pellet the pipeline cut a video into, one row each -- INCLUDING the
+# pellets nobody reached for, which reach_data cannot hold (it has one row per
+# reach, so a pellet with no reach leaves no trace there).
+#
+# WHY THIS TABLE EXISTS (2026-10-16): the exports counted "pellets presented"
+# and the per-video outcome totals from reach rows, so an ignored pellet was
+# invisible: the count came out below 20 in over half the sessions, and a
+# displaced or retrieved pellet whose reach went undetected was never counted.
+# A tray holds 20 pellets; how many the pipeline actually found in the video is
+# a measurement, and a number other than 20 is an error worth seeing. This
+# table is where that measurement lives. Created on first use, never altered.
+VIDEO_PELLETS_DDL = """
+CREATE TABLE IF NOT EXISTS video_pellets (
+    video_name         TEXT    NOT NULL,
+    segment_num        INTEGER NOT NULL,
+    subject_id         TEXT    NOT NULL,
+    session_date       TEXT,
+    tray_type          TEXT,
+    run_number         INTEGER,
+    outcome            TEXT,
+    outcome_confidence REAL,
+    outcome_flagged    INTEGER,
+    n_reaches          INTEGER,
+    source_file        TEXT,
+    imported_at        TEXT,
+    PRIMARY KEY (video_name, segment_num)
+)"""
+VIDEO_PELLET_COLUMNS = ['video_name', 'segment_num', 'subject_id', 'session_date', 'tray_type',
+                        'run_number', 'outcome', 'outcome_confidence', 'outcome_flagged',
+                        'n_reaches', 'source_file', 'imported_at']
 
 
 @dataclass
@@ -226,9 +263,33 @@ def _load_provenance(features_path: Path, video_name: str) -> dict:
     return out
 
 
-def flatten(features_path: Path, subject_id: str, now: str) -> Tuple[str, List[dict]]:
-    """(video_name, rows) -- one row per reach, exactly the old pusher's layout."""
-    data = json.loads(features_path.read_text(encoding="utf-8"))
+def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
+                source_file: str) -> List[dict]:
+    """One row per pellet (segment) of the video, whether or not it was reached for."""
+    meta = parse_video_metadata(video_name)
+    rows = []
+    for seg in data.get('segments', []):
+        if seg.get('segment_num') is None:
+            continue
+        reaches = seg.get('reaches')
+        rows.append({
+            'video_name': video_name, 'segment_num': int(seg['segment_num']),
+            'subject_id': subject_id, 'session_date': meta['session_date'] or '',
+            'tray_type': meta['tray_type'], 'run_number': meta['run_number'],
+            'outcome': seg.get('outcome'), 'outcome_confidence': seg.get('outcome_confidence'),
+            'outcome_flagged': 1 if seg.get('outcome_flagged') else 0,
+            'n_reaches': len(reaches) if isinstance(reaches, list) else seg.get('n_reaches'),
+            'source_file': source_file, 'imported_at': now,
+        })
+    return rows
+
+
+def flatten(features_path: Path, subject_id: str, now: str,
+            data: Optional[dict] = None) -> Tuple[str, List[dict]]:
+    """(video_name, rows) -- one row per reach, exactly the old pusher's layout.
+    ``data`` is the already-parsed file, when the caller has it."""
+    if data is None:
+        data = json.loads(features_path.read_text(encoding="utf-8"))
     video_name = data.get('video_name', features_path.stem.replace('_features', ''))
     meta = parse_video_metadata(video_name)
     prov = _load_provenance(features_path, video_name)
@@ -269,6 +330,15 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     for col, typ in MIGRATION_COLUMNS:
         if col not in have:
             conn.execute("ALTER TABLE reach_data ADD COLUMN %s %s" % (col, typ))
+    conn.execute(VIDEO_PELLETS_DDL)
+
+
+def write_pellets(conn: sqlite3.Connection, video_name: str, rows: List[dict]) -> None:
+    """Replace one video's pellet rows. Call inside the video's transaction."""
+    conn.execute("DELETE FROM video_pellets WHERE video_name = ?", (video_name,))
+    if rows:
+        conn.executemany("INSERT INTO video_pellets (%s) VALUES (%s)" % (
+            ', '.join(VIDEO_PELLET_COLUMNS), ', '.join(':' + c for c in VIDEO_PELLET_COLUMNS)), rows)
 
 
 def ensure_subject(conn: sqlite3.Connection, subject_id: str, video_name: str) -> bool:
@@ -299,17 +369,67 @@ def import_file(conn: sqlite3.Connection, path: Path, dry_run: bool = False) -> 
     if subject_id is None:
         raise ValueError("no animal id in file name")
     now = datetime.now().isoformat()
-    video_name, rows = flatten(path, subject_id, now)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    video_name, rows = flatten(path, subject_id, now, data=data)
+    pellets = pellet_rows(data, video_name, subject_id, now, path.name)
     if dry_run:
         return subject_id, len(rows), False
     cols = ', '.join(ALL_COLUMNS)
     params = ', '.join(':' + c for c in ALL_COLUMNS)
-    with conn:  # one transaction per video: all rows or none
+    with conn:  # one transaction per video: its reaches and its pellets, all or none
         created = ensure_subject(conn, subject_id, video_name)
         conn.execute("DELETE FROM reach_data WHERE video_name = ?", (video_name,))
         if rows:
             conn.executemany("INSERT INTO reach_data (%s) VALUES (%s)" % (cols, params), rows)
+        write_pellets(conn, video_name, pellets)
     return subject_id, len(rows), created
+
+
+def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool = False,
+                           log=print) -> Dict[str, Any]:
+    """Fill video_pellets for every live features file, touching nothing else.
+
+    For videos imported before the table existed: the ledger skips an unchanged
+    file, so the nightly import would never revisit them. Reads every features
+    file (outside the database lock -- it is all network reads), then writes the
+    pellet rows in one transaction under the lock. reach_data, subjects and the
+    ledger are not touched. Safe to re-run: each video's rows are replaced.
+    """
+    root = Path(root) if root else require("mousereach_pipeline_root")
+    files = find_features_files(root, include_processing)
+    now = datetime.now().isoformat()
+    by_video: Dict[str, List[dict]] = {}
+    unreadable: List[str] = []
+    for p in files:
+        subject_id = parse_subject_id(p.stem)
+        if subject_id is None:
+            unreadable.append(p.name)
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            unreadable.append(p.name)
+            continue
+        video_name = data.get('video_name', p.stem.replace('_features', ''))
+        by_video[video_name] = pellet_rows(data, video_name, subject_id, now, p.name)
+    log("backfill: %d features files read, %d videos, %d unreadable" % (
+        len(files), len(by_video), len(unreadable)))
+    from .task_mutex import hold
+    with hold(log=log, waiting_for="another database job"):
+        conn = sqlite3.connect(str(require("db_path")), timeout=600)
+        try:
+            with conn:
+                conn.execute(VIDEO_PELLETS_DDL)
+                for video_name, rows in by_video.items():
+                    write_pellets(conn, video_name, rows)
+        finally:
+            conn.close()
+    counts: Dict[int, int] = {}
+    for rows in by_video.values():
+        counts[len(rows)] = counts.get(len(rows), 0) + 1
+    log("backfill: pellets per video -> %s" % ", ".join(
+        "%d pellets: %d videos" % kv for kv in sorted(counts.items())))
+    return {"videos": len(by_video), "pellets_per_video": counts, "unreadable": unreadable}
 
 
 def watcher_running() -> bool:
@@ -437,7 +557,19 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, help="Import at most this many files (testing)")
     ap.add_argument("--force", action="store_true", help="Write even if a MouseReach watcher is running")
     ap.add_argument("--json", action="store_true", help="Machine-readable summary")
+    ap.add_argument("--pellets-only", action="store_true",
+                    help="Only (re)fill the per-pellet table (video_pellets) from every features "
+                         "file; reaches, animals and the ledger are not touched")
     args = ap.parse_args(argv)
+    if args.pellets_only:
+        try:
+            if not args.force and watcher_blocks_db():
+                raise RuntimeError("a MouseReach watcher that can WRITE the central database is running")
+            backfill_video_pellets(include_processing=args.include_processing)
+        except Exception as e:
+            print("[FAIL] %s" % e)
+            return 1
+        return 0
     try:
         res = run(all_files=args.all, dry_run=args.dry_run, include_processing=args.include_processing,
                   limit=args.limit, force=args.force, log=(lambda *_: None) if args.json else print)

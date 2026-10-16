@@ -393,9 +393,11 @@ ODC_REACH_SESSION = [
 ODC_REACH_TOTALS = [
     _row("Total_Swipes_AI", "Reaches in the video", "Number of reaches the pipeline detected in this session video.", "count", "integer", "", "", "0"),
     _row("Attention_AI", "Mean attention score", "Mean over the video's pellet segments of the outcome detector's attention score (same scale as attention_score).", "", "number", "", "", "0"),
-    _row("Video_Displaced", "Pellets displaced (video)", "Pellet segments in this video whose outcome is displaced_sa or displaced_outside. Counts pellets, not reaches.", "count", "integer", "", "", "0", "20"),
-    _row("Video_Retrieved", "Pellets retrieved (video)", "Pellet segments in this video whose outcome is retrieved.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Pellets", "Pellets found in the video", "How many pellets the pipeline cut this session video into: one per pellet the tray presented, whether or not the animal reached for it. 20 unless something went wrong (a tray holds 20); a session where it is not 20 is left out of the analysis files. Empty for a video imported before the per-pellet record existed.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Displaced", "Pellets displaced (video)", "Pellets of this video whose outcome is displaced_sa or displaced_outside, counted over every pellet of the video including those with no detected reach. Counts pellets, not reaches.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Retrieved", "Pellets retrieved (video)", "Pellets of this video whose outcome is retrieved, counted over every pellet of the video including those with no detected reach.", "count", "integer", "", "", "0", "20"),
     _row("Video_Contacted", "Pellets contacted (video)", "Video_Displaced + Video_Retrieved.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Pellets", "Pellets hand scored", "How many pellets of this tray have a hand score in the tracking sheet (same animal, date, tray type and tray number). 20 unless a score was left out or typed twice; where it is not 20 the hand-score columns of the analysis files are left empty for that session.", "count", "integer", "", "", "0", "20"),
     _row("Manual_Displaced", "Pellets displaced (hand score)", "Pellets scored 1 (displaced) by post-hoc tray inspection for the same animal, date, tray type and tray number.", "count", "integer", "", "", "0", "20"),
     _row("Manual_Retrieved", "Pellets retrieved (hand score)", "Pellets scored 2 (retrieved) for the same tray.", "count", "integer", "", "", "0", "20"),
     _row("Manual_Contacted", "Pellets contacted (hand score)", "Manual_Displaced + Manual_Retrieved.", "count", "integer", "", "", "0", "20"),

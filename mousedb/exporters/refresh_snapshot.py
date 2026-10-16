@@ -62,7 +62,10 @@ DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 # reads it, however complete the database is. Food restriction state is not a
 # small covariate in a task where the animal works for food.
 TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records",
-          "weights"]
+          "weights", "video_pellets"]
+# "video_pellets" (2026-10-16): one row per pellet the pipeline cut each video
+# into, reached for or not. Without it the exports could only count pellets that
+# had a reach, and "pellets presented" came out below 20 in most sessions.
 
 
 def watcher_blocks_db() -> bool:
