@@ -199,7 +199,7 @@ REASONS: Dict[str, str] = {
     # head measurements need both ears tracked confidently and sometimes they are not.
     "pellets_retrieved_hand_scored": missing.NOT_RECORDED,
     "pellets_hand_scored": missing.NOT_RECORDED,
-    "pellets_in_video": missing.NOT_RECORDED,          # imported before the per-pellet record
+    "pellets_in_video": missing.NOT_RECORDED,          # no per-pellet rows yet (e.g. out for review)
     "pellets_displaced_hand_scored": missing.NOT_RECORDED,
     "pellets_moved_hand_scored": missing.NOT_RECORDED,
     "head_width_at_apex_mm": missing.NOT_RECORDED,
