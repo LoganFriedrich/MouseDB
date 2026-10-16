@@ -78,8 +78,9 @@ THE FILES: the bottom panel names the current export folder. It holds
 reach_data.csv (one row per reach), manual_scores.csv (one row per pellet
 scored from the tray), ODC_sessions_<cohort>.csv (one row per animal per
 session, ODC-SCI shape), ODC_reaches_<cohort>.csv (one row per reach with
-the animal's surgery details and the session repeated on every row -- the
-file to share), each with a DATA_DICTIONARY.csv beside it, plus
+the animal's surgery details and the session repeated on every row), the
+shareable summary and the analysis tables per cohort, with ONE
+DATA_DICTIONARY.csv per kind of file (shared by every cohort), plus
 MANIFEST.json saying when they were written and whether they are complete
 for an ODC-SCI upload. "Open exports folder" opens it in Explorer.
 

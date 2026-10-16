@@ -58,8 +58,9 @@ REACH_DATA_ORDER_FIRST = [
 REACH_DATA_ORDER_LAST = ["extended_features"]
 
 README = """CURRENT EXPORTS -- everything mousedb knows, as of the time in MANIFEST.json.
-These files are regenerated automatically (hourly on the processing server)
-and by the "Where Is My Data" tab in MouseReach. Do not edit them; edit the
+These files are regenerated automatically (nightly on the processing server)
+and by the "Where Is My Data" tab in mousedb. There is one data dictionary
+per kind of file, shared by every cohort's file of that kind. Do not edit them; edit the
 source (tracking sheets, review tools) and they will be regenerated.
 
 reach_data.csv            One row per reach the pipeline detected, with the
@@ -85,10 +86,22 @@ ODC_reaches_<cohort>.csv  One row per reach, with that animal's details
                           (strain, sex, surgery columns copied from the tracking
                           sheet) and that session's details (date, tray, phase)
                           repeated on every row, plus video and hand-score
-                          totals for the tray -- the flat per-reach shape shared
-                          with collaborators. Each has its own dictionary:
-                          ODC_reaches_<cohort>_DATA_DICTIONARY.csv (columns
-                          differ by cohort because sheets differ).
+                          totals for the tray -- the complete record, including
+                          how each result was produced. One dictionary for every
+                          cohort: ODC_reaches_DATA_DICTIONARY.csv (a surgery
+                          column only some cohorts' sheets record is described
+                          once; MANIFEST.json lists which cohorts have it).
+reaches_<cohort>_summary.csv
+                          The same reaches, process columns removed, everything
+                          named in plain words: the file to share. Definitions:
+                          reaches_summary_DATA_DICTIONARY.csv.
+reaches_<cohort>_analysis.csv, sessions_<cohort>_analysis.csv
+                          The same reaches, and their per-session totals, in the
+                          shape a statistics package wants (numbers, NA for
+                          absent). An entry with an identified problem is left
+                          out; analysis_EXCLUSIONS.csv says which and why.
+                          Definitions: reaches_analysis_DATA_DICTIONARY.csv,
+                          sessions_analysis_DATA_DICTIONARY.csv.
 ASPA_NN_X in a file name  A frozen ASPA cohort. X is the cohort letter the lab
                           uses (its workbook and folder, e.g. D); NN is the same
                           cohort encoded for the pipeline (the letter's position in
@@ -220,7 +233,10 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  12 = entries with an identified problem are left out of the analysis
     #       documents (export_exclusions), with an analysis_EXCLUSIONS.csv
     #       report; survival counts only on a surgery proven by its weight
-    sig["output_format"] = 12
+    #  13 = one data dictionary per kind of document instead of one per cohort
+    #       (ODC_reaches_DATA_DICTIONARY.csv, reaches_summary_DATA_DICTIONARY.csv);
+    #       the manifest names every report file
+    sig["output_format"] = 13
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))

@@ -14,10 +14,24 @@ each with a data dictionary beside it:
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
 | `manual_scores.csv` | pellet scored by hand from the tray (0 missed / 1 displaced / 2 retrieved) with the session's phase | `manual_scores_DATA_DICTIONARY.csv` |
 | `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
-| `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_<cohort>_DATA_DICTIONARY.csv` (one per cohort: sheets differ) |
-| `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_<cohort>_summary_DATA_DICTIONARY.csv` |
+| `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
+| `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
+| `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
+| `sessions_<cohort>_analysis.csv` | animal per session, totalled from the analysis table | `sessions_analysis_DATA_DICTIONARY.csv` |
+| `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |
+
+**One dictionary per kind of file, not one per cohort.** Every cohort's file of
+a kind has the same columns, so one dictionary describes them all; send it
+alongside whichever cohorts' files you send. The one exception is the complete
+record: a cohort's tracking sheet can record surgery details another cohort's
+does not, so some of its columns exist only in some cohorts' files. The
+dictionary describes every one of them, and `MANIFEST.json` lists, under
+`ODC_reaches_DATA_DICTIONARY.csv`, which cohorts have each such column (the
+problems list says how many there are). That is a difference between the
+sheets, to be resolved there; it does not stop an upload, because every
+column in every file still has its definition.
 
 ### Which of the two per-reach files do I send someone?
 

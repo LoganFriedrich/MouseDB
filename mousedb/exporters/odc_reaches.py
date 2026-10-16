@@ -24,6 +24,7 @@ file and the lab name. Nothing is guessed: a value no source records is empty.
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -461,8 +462,14 @@ def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[s
     return moved
 
 
-def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> None:
-    """One table and its dictionary, written through a temporary name.
+def _write(df: pd.DataFrame, rows: List[dict], data: Path,
+           dictionary: Optional[Path] = None) -> List[dict]:
+    """One table, written through a temporary name; returns its dictionary rows.
+
+    The dictionary is written beside the table only when ``dictionary`` is
+    given. The per-cohort documents do not pass one: every cohort's file of a
+    kind shares ONE dictionary, which export() assembles from the rows returned
+    here (see _merge_dictionary).
 
     WHY the temporary: these files are read by people and by the next import while the
     export runs, and a half-written CSV that still has yesterday's name is worse than
@@ -487,12 +494,64 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path, dictionary: Path) -> 
     tmp = data.with_name(data.name + ".tmp")
     df.to_csv(tmp, index=False)
     tmp.replace(data)
-    dd.write_rows(rows, dictionary)
+    if dictionary is not None:
+        dd.write_rows(rows, dictionary)
+    return rows
+
+
+# One dictionary per KIND of document, never one per cohort. Every cohort's file
+# of a kind has the same columns -- or should: where a cohort's tracking sheet
+# adds columns another's lacks, the shared dictionary carries the union and the
+# manifest names each variable that only some cohorts' files have, so that
+# difference stays visible until it is resolved at the sheets.
+SHARED_DICTIONARIES = {
+    "complete": "ODC_reaches_DATA_DICTIONARY.csv",
+    "summary": "reaches_summary_DATA_DICTIONARY.csv",
+}
+# The per-cohort names those replaced (2026-10-16); archived when found.
+_PER_COHORT_DICTIONARY = re.compile(
+    r"^(ODC_reaches_.+|reaches_.+_summary)_DATA_DICTIONARY\.csv$")
+
+
+def _merge_dictionary(order: List[str], merged: Dict[str, dict], rows: List[dict],
+                      label: str, seen_in: Dict[str, List[str]],
+                      conflicts: List[str]) -> None:
+    """Fold one cohort's dictionary rows into the shared one, in place.
+
+    A variable met for the first time is placed straight after the variable
+    that precedes it in this cohort's own list, so the shared dictionary reads
+    in the same order as the files. A variable already present keeps its entry;
+    if this cohort's entry says something different, the Comments are combined
+    and any other difference is reported in ``conflicts`` -- one definition per
+    variable is the point of a shared dictionary, and two that disagree is the
+    deeper problem it exposes, not one to paper over.
+    """
+    prev = None
+    for row in rows:
+        name = row["VariableName"]
+        seen_in.setdefault(name, []).append(label)
+        if name not in merged:
+            merged[name] = dict(row)
+            at = order.index(prev) + 1 if prev in merged and prev in order else len(order)
+            order.insert(at, name)
+        else:
+            old = merged[name]
+            fields = sorted(k for k in set(old) | set(row)
+                            if k not in ("VariableName", "Comments") and old.get(k) != row.get(k))
+            if fields:
+                conflicts.append("%s: %s's entry differs in %s; the shared dictionary carries %s's"
+                                 % (name, label, ", ".join(fields), seen_in[name][0]))
+            a, b = str(old.get("Comments", "")), str(row.get("Comments", ""))
+            if b and b not in a:
+                old["Comments"] = b if a in b else (a + " " + b).strip()
+        prev = name
 
 
 def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict],
                  exclusions=None, analysis_only: bool = False) -> dict:
-    """Write both documents for one cohort, plus a data dictionary for each.
+    """Write the documents for one cohort. Their data dictionaries are NOT written
+    here: every cohort's document of a kind shares one dictionary, which export()
+    assembles from the rows this returns (``_complete_dictionary`` and friends).
 
     Three files, because one table cannot be all three things:
       ODC_reaches_<label>.csv          the complete record -- every measurement we hold,
@@ -529,17 +588,18 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # for the case where only the analysis documents are needed in a hurry: those
     # two are most of the bytes written, and writing them was most of an hour.
     summary = pd.DataFrame()
+    complete_dictionary, summary_dictionary = [], []
     if not analysis_only:
         full = missing.fill_frame(df, reasons)
         full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
                                        + missing.dictionary_comment(reasons, r["VariableName"])).strip())
                      for r in rows]
-        _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
-               out_dir / ("ODC_reaches_%s_DATA_DICTIONARY.csv" % label))
+        # No dictionary per cohort: export() writes one per kind from these rows.
+        complete_dictionary = _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label))
 
         summary, summary_rows = reach_summary.build(df)
-        _write(summary, summary_rows, out_dir / ("reaches_%s_summary.csv" % label),
-               out_dir / ("reaches_%s_summary_DATA_DICTIONARY.csv" % label))
+        summary_dictionary = _write(summary, summary_rows,
+                                    out_dir / ("reaches_%s_summary.csv" % label))
 
     # The analysis documents have the SAME columns for every cohort -- unlike the
     # complete record, whose columns follow each cohort's own tracking sheet. So
@@ -588,6 +648,8 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     entry["session_columns"] = int(len(sessions.columns)) if len(sessions) else 0
     entry["_analysis_dictionary"] = analysis_rows
     entry["_sessions_dictionary"] = session_rows
+    entry["_complete_dictionary"] = complete_dictionary
+    entry["_summary_dictionary"] = summary_dictionary
     entry["_exclusion_report"] = exclusion_report
     if label != cohort_id:
         entry["cohort"] = cohort_source(cohort_id) or label
@@ -691,6 +753,10 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             "tracking-sheet import and snapshot); sheet columns are missing from these files")
     wanted = [c.upper() for c in cohorts] if cohorts else cohorts_in(t["reach"])
     analysis_dict, sessions_dict = {}, {}
+    # The two document kinds whose columns can follow a cohort's own sheet:
+    # merged in file order, with who-has-what recorded (see _merge_dictionary).
+    shared = {kind: {"order": [], "rows": {}, "seen_in": {}, "conflicts": []}
+              for kind in SHARED_DICTIONARIES}
     final_dir = Path(out_dir)
     write_dir = Path(staging_dir) if staging_dir else final_dir
     write_dir.mkdir(parents=True, exist_ok=True)
@@ -723,6 +789,12 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                                ("_sessions_dictionary", sessions_dict)):
                 for row in entry.pop(key, []) or []:
                     store.setdefault(row["VariableName"], row)
+            for kind in SHARED_DICTIONARIES:
+                s = shared[kind]
+                _merge_dictionary(s["order"], s["rows"], entry.pop("_%s_dictionary" % kind, []) or [],
+                                  label, s["seen_in"], s["conflicts"])
+            if not analysis_only:
+                entry["dictionary"] = SHARED_DICTIONARIES["complete"]
             manifest["files"]["ODC_reaches_%s.csv" % label] = entry
             # Each document under its own name. The counts above describe them
             # too, but a reader of the manifest (and the Where Is My Data tab)
@@ -731,7 +803,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             if not analysis_only:
                 manifest["files"]["reaches_%s_summary.csv" % label] = {
                     "rows": entry["rows"], "columns": entry["summary_columns"],
-                    "dictionary": "reaches_%s_summary_DATA_DICTIONARY.csv" % label}
+                    "dictionary": SHARED_DICTIONARIES["summary"]}
             manifest["files"]["reaches_%s_analysis.csv" % label] = {
                 "rows": entry["analysis_rows"], "columns": entry["analysis_columns"],
                 "dictionary": "reaches_analysis_DATA_DICTIONARY.csv",
@@ -757,6 +829,45 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             manifest["files"]["%s_DATA_DICTIONARY.csv" % stem] = {
                 "columns": len(rows_by_name),
                 "note": "shared by every cohort's %s file" % stem.split("_")[0]}
+
+    # The same for the complete record and the shareable summary.
+    superseded = sorted(p.name for p in final_dir.glob("*_DATA_DICTIONARY.csv")
+                        if _PER_COHORT_DICTIONARY.match(p.name)
+                        and p.name not in SHARED_DICTIONARIES.values())
+    for kind, name in SHARED_DICTIONARIES.items():
+        s = shared[kind]
+        if not s["order"]:
+            continue
+        if cohorts:
+            # A partial export writes only some cohorts, but the dictionary
+            # describes every cohort's file: keep each variable the previous
+            # dictionaries (shared, or the old per-cohort ones) describe that
+            # this run did not meet, or another cohort's file goes undocumented.
+            sources = [final_dir / name] + [
+                final_dir / n for n in superseded
+                if n.startswith("ODC_reaches_") == (kind == "complete")]
+            for src in sources:
+                if src.exists():
+                    for row in pd.read_csv(src, dtype=str, keep_default_na=False).to_dict("records"):
+                        if row.get("VariableName") and row["VariableName"] not in s["rows"]:
+                            s["rows"][row["VariableName"]] = row
+                            s["order"].append(row["VariableName"])
+        dd.write_rows([s["rows"][n] for n in s["order"]], write_dir / name)
+        written = sorted({c for labels in s["seen_in"].values() for c in labels})
+        partial = {n: labels for n, labels in s["seen_in"].items() if len(labels) < len(written)}
+        manifest["files"][name] = {
+            "columns": len(s["order"]),
+            "note": "shared by every cohort's %s file" % (
+                "ODC_reaches" if kind == "complete" else "reaches summary"),
+            "variables_not_in_every_cohort": partial,
+        }
+        if partial:
+            manifest["problems"].append(
+                "%s: %d variable(s) are columns in only some cohorts' files, because those "
+                "cohorts' tracking sheets differ; the dictionary describes all of them, and "
+                "this manifest entry lists which cohorts have each" % (name, len(partial)))
+        for c in s["conflicts"]:
+            manifest["problems"].append("%s: %s" % (name, c))
 
     # What was left out and why, beside the files it was left out of. A reader of
     # the analysis files is owed this: a missing session should never look like a
@@ -801,6 +912,14 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             tmp = final_dir / (f.name + ".tmp")
             shutil.copyfile(f, tmp)
             tmp.replace(final_dir / f.name)
+
+    # Per-cohort dictionaries from before 2026-10-16 are superseded by the shared
+    # ones: moved out of the folder (archived, never deleted) once the shared
+    # dictionary that replaces them is in place.
+    if not analysis_only and all((final_dir / n).exists() for n in SHARED_DICTIONARIES.values()):
+        moved = archive_old_names(final_dir, superseded, "per_cohort_dictionaries")
+        if moved:
+            manifest["archived_per_cohort_dictionaries"] = len(moved)
     return manifest
 
 
