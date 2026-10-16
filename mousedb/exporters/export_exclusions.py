@@ -373,9 +373,13 @@ def apply(frame: pd.DataFrame, ex: Exclusions, cohort_id: str = "",
     # 6: phase labels contradicted by the cohort's own proven injury dates.
     if cohort and {"subject_id", "test_date", "experiment_stage"}.issubset(out.columns):
         if cohort not in ex.surgery_checkable:
-            ex.notes.append("phase check not run for %s: its workbook has no contusion "
-                            "tab to check the labels against, so they are left as they "
-                            "are (not checked, which is not the same as wrong)" % cohort)
+            # Either the workbook has no contusion tab (the letter cohorts), or
+            # no surgery is proven yet (none has its day's weight typed -- a
+            # cohort still in training). Both read the same from here.
+            ex.notes.append("phase check not run for %s: its records hold no proven surgery "
+                            "(no contusion tab, or no surgery with its day's weight typed yet) "
+                            "to check the labels against, so they are left as they are "
+                            "(not checked, which is not the same as wrong)" % cohort)
         else:
             rows = out
             bad = 0
