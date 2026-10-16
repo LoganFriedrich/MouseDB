@@ -16,9 +16,20 @@ whoever gets the lockfile runs; the other waits and runs immediately after.
 Serialized, the same two tasks produce lock windows of seconds.
 
 MECHANICS: an O_CREAT|O_EXCL lockfile under <mousedb_root>/logs with pid and
-timestamp inside. A crashed holder must not wedge every later hour (the
-one-way-door lesson), so a lock older than ``stale_minutes`` is broken with a
-message. Release deletes the file; the context manager releases on any exit.
+timestamp inside. Release deletes the file; the context manager releases on
+any exit.
+
+WHEN A LOCK IS BROKEN -- and when it never is. A crashed holder must not wedge
+every later job (the one-way-door lesson), so the lockfile carries the
+holder's pid: if that process is gone, or the pid now belongs to a process
+started after the lock was taken, the lock is dead and is broken at once.
+A holder that is STILL RUNNING is never overruled, however long it has held
+the lock. Until 2026-10-15 a lock older than ``stale_minutes`` was broken
+regardless; the nightly reach import legitimately held it for hours while
+rewriting phase labels over the share, the brain import broke in at 22:30,
+and both then fought over the database -- "database is locked" for 45
+minutes, nightly. The age rule survives only as the last resort for a
+lockfile whose holder cannot be identified (no psutil, unreadable contents).
 """
 from __future__ import annotations
 
@@ -26,7 +37,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 
 class TaskMutex:
@@ -41,6 +52,44 @@ class TaskMutex:
         self.stale_seconds = stale_minutes * 60
         self._held = False
 
+    # -- who holds it -------------------------------------------------------
+
+    def holder(self) -> Tuple[str, str]:
+        """(state, description) for the lockfile's holder.
+
+        state is ``"alive"`` (a process that took this lock is still running),
+        ``"dead"`` (that process is gone, or its pid was reused by a process
+        started after the lock was written) or ``"unknown"`` (the lockfile
+        cannot be read or the pid cannot be checked on this machine).
+        """
+        try:
+            pid_text, taken_text = self.path.read_text().split()[:2]
+            pid = int(pid_text)
+            taken = datetime.fromisoformat(taken_text).timestamp()
+        except Exception:
+            return "unknown", "lockfile %s is unreadable" % self.path.name
+        try:
+            import psutil
+            if not psutil.pid_exists(pid):
+                return "dead", "pid %d is no longer running" % pid
+            proc = psutil.Process(pid)
+            # Two seconds of slack: the stamp is written moments after start.
+            if proc.create_time() > taken + 2:
+                return "dead", "pid %d was reused by a newer process" % pid
+            try:
+                cmd = " ".join(proc.cmdline())
+            except Exception:
+                cmd = proc.name()
+            return "alive", "pid %d, holding since %s: %s" % (pid, taken_text[:16], cmd)
+        except Exception:
+            return "unknown", "pid %d cannot be checked on this machine" % pid
+
+    def _break(self) -> None:
+        try:
+            self.path.unlink()
+        except OSError:
+            pass
+
     def try_acquire(self) -> bool:
         try:
             fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -50,42 +99,38 @@ class TaskMutex:
             self._held = True
             return True
         except FileExistsError:
-            # A DEAD holder must not wedge the next 45 minutes: the lockfile
-            # carries the holder's pid, so break immediately when that process
-            # no longer exists (best-effort -- falls back to the age rule when
-            # psutil or the pid read are unavailable).
-            try:
-                import psutil
-                pid = int(self.path.read_text().split()[0])
-                if not psutil.pid_exists(pid):
-                    self.path.unlink()
-                    return self.try_acquire()
-            except Exception:
-                pass
-            try:
-                if time.time() - self.path.stat().st_mtime > self.stale_seconds:
-                    # A crashed holder; break the stale lock rather than wedge
-                    # every later hour.
-                    self.path.unlink()
-                    return self.try_acquire()
-            except OSError:
-                pass
-            return False
+            pass
+        state, _ = self.holder()
+        if state == "alive":
+            return False            # never overrule a running holder
+        if state == "dead":
+            self._break()
+            return self.try_acquire()
+        # Holder unknown: age is the only evidence left.
+        try:
+            if time.time() - self.path.stat().st_mtime > self.stale_seconds:
+                self._break()
+                return self.try_acquire()
+        except OSError:
+            pass
+        return False
 
     def acquire(self, wait_seconds: int = 1500, log=print,
                 waiting_for: str = "another database task") -> "TaskMutex":
         t0 = time.time()
         said = False
         while not self.try_acquire():
-            if time.time() - t0 > wait_seconds:
-                raise RuntimeError(
-                    "could not acquire the database-task lock after %ds "
-                    "(%s still holds it: %s)"
-                    % (wait_seconds, waiting_for, self.path))
             if not said:
-                log("  waiting for %s to finish (lock: %s)"
-                    % (waiting_for, self.path.name))
+                _, who = self.holder()
+                log("  waiting for %s to finish (%s)" % (waiting_for, who))
                 said = True
+            if time.time() - t0 > wait_seconds:
+                _, who = self.holder()
+                raise RuntimeError(
+                    "could not acquire the database-task lock after %ds; "
+                    "%s still holds it (%s). Nothing was changed; this job "
+                    "runs again on its next schedule."
+                    % (wait_seconds, waiting_for, who))
             time.sleep(5)
         return self
 
