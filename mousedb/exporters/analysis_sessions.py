@@ -32,6 +32,7 @@ import pandas as pd
 
 from . import analysis_reaches as ar
 from . import data_dictionary as dd
+from ..stats import PELLETS_PER_TRAY
 
 # The session IS the unit, so these must not vary within one. Taken as the first
 # value in the group, which is the same as any other when the data is sound; a
@@ -65,6 +66,15 @@ def _rate(part, whole):
     return round(100.0 * float(part) / float(whole), 4)
 
 
+def _value(group: pd.DataFrame, column: str):
+    """The session's count in ``column`` as a number, or None when absent."""
+    if column not in group.columns:
+        return None
+    v = pd.to_numeric(pd.Series([group[column].iloc[0]]).replace(ar.MISSING, None),
+                      errors="coerce").iloc[0]
+    return None if pd.isna(v) else float(v)
+
+
 def build(reaches: pd.DataFrame,
           reach_dictionary: List[dict] = None) -> Tuple[pd.DataFrame, List[dict]]:
     """(frame, dictionary rows) from the analysis-ready per-reach frame.
@@ -90,9 +100,14 @@ def build(reaches: pd.DataFrame,
                 row[column] = group[column].iloc[0]
 
         row["reaches_in_session"] = int(len(group))
-        pellets = (int(group["pellet_number"].nunique(dropna=True))
-                   if "pellet_number" in group.columns else None)
-        row["pellets_presented"] = pellets
+        # Two different numbers, both kept, each under a name that says what it
+        # is. Until 2026-10-16 the second was published as "pellets_presented"
+        # and used as the denominator of every percentage, so a session in which
+        # the animal ignored some pellets showed an inflated success rate (up to
+        # 100% where the truth was 5%). A session is one video of one tray.
+        row["pellets_presented"] = PELLETS_PER_TRAY
+        row["pellets_reached_for"] = (int(group["pellet_number"].nunique(dropna=True))
+                                      if "pellet_number" in group.columns else None)
 
         if "pellet_state_at_this_reach" in group.columns:
             decided = int((group["pellet_state_at_this_reach"]
@@ -101,15 +116,19 @@ def build(reaches: pd.DataFrame,
             row["reaches_after_the_pellet_was_gone"] = int(
                 (group["pellet_state_at_this_reach"] == ar.STATE_ALREADY_GONE).sum())
 
-        # The headline measure, from each scoring stream separately. They
-        # disagree sometimes; reporting one would be choosing for the reader.
-        if pellets:
-            if "video_retrieved" in group.columns:
-                row["percent_retrieved_video"] = _rate(
-                    group["video_retrieved"].iloc[0], pellets)
-            if "manual_retrieved" in group.columns:
-                row["percent_retrieved_hand_scored"] = _rate(
-                    group["manual_retrieved"].iloc[0], pellets)
+        # Every outcome as a percentage of the pellets presented, from each
+        # scoring stream separately. They disagree sometimes; reporting one would
+        # be choosing for the reader. Contacted = displaced + retrieved, and a
+        # presented pellet that was not contacted was missed.
+        for stream, prefix in (("video", "video"), ("hand_scored", "manual")):
+            displaced = _value(group, "%s_displaced" % prefix)
+            retrieved = _value(group, "%s_retrieved" % prefix)
+            contacted = (None if displaced is None or retrieved is None
+                         else displaced + retrieved)
+            missed = None if contacted is None else PELLETS_PER_TRAY - contacted
+            for outcome, count in (("retrieved", retrieved), ("displaced", displaced),
+                                   ("contacted", contacted), ("missed", missed)):
+                row["percent_%s_%s" % (outcome, stream)] = _rate(count, PELLETS_PER_TRAY)
 
         rows.append(row)
 
@@ -140,29 +159,44 @@ _DERIVED = {
         "has in the per-reach file."),
     "pellets_presented": (
         "Pellets presented", "integer",
-        "How many distinct pellets the animal was offered in this session, counted "
-        "as the number of different pellet numbers appearing in it."),
+        "How many pellets the tray held in this session: 20, the tray's capacity. "
+        "Every percentage in this file is out of this number."),
+    "pellets_reached_for": (
+        "Pellets reached for", "integer",
+        "How many of the tray's 20 pellets the animal reached for at least once in "
+        "this session: the number of different pellet numbers among this session's "
+        "reaches. A pellet never reached for is not counted, so this is at most "
+        "pellets_presented. It is not a denominator for any percentage here."),
     "reaches_that_decided_a_pellet": (
         "Reaches that decided a pellet", "integer",
         "How many reaches in this session were the one credited with what happened "
         "to their pellet. At most one per pellet, so this cannot exceed "
-        "pellets_presented."),
+        "pellets_reached_for."),
     "reaches_after_the_pellet_was_gone": (
         "Reaches made after the pellet was gone", "integer",
         "How many reaches were made at a pellet that had already been retrieved or "
         "knocked out of reach, so they could not have succeeded. Counting these as "
         "attempts is what makes a success rate wrong."),
-    "percent_retrieved_video": (
-        "Percent retrieved (algorithm)", "number",
-        "Pellets the algorithm scored as retrieved, as a percentage of the pellets "
-        "presented in this session."),
-    "percent_retrieved_hand_scored": (
-        "Percent retrieved (hand scored)", "number",
-        "Pellets scored as retrieved by hand from the tray, as a percentage of the "
-        "pellets presented in this session. The same quantity as "
-        "percent_retrieved_video measured independently; where the two differ, that "
-        "difference is itself the finding."),
 }
+
+# The eight percentages: four outcomes, each from both scoring streams. Contacted
+# is displaced + retrieved; missed is every presented pellet not contacted. All
+# are out of pellets_presented (20), never out of the pellets reached for.
+_OUTCOME_WORDS = {
+    "retrieved": "scored as retrieved",
+    "displaced": "scored as displaced (moved but not eaten)",
+    "contacted": "contacted (displaced plus retrieved)",
+    "missed": "missed (presented but not contacted: 20 minus contacted)",
+}
+for _outcome, _words in _OUTCOME_WORDS.items():
+    for _stream, _title, _who in (("video", "algorithm", "by the algorithm from the video"),
+                                  ("hand_scored", "hand scored", "by hand from the tray")):
+        _DERIVED["percent_%s_%s" % (_outcome, _stream)] = (
+            "Percent %s (%s)" % (_outcome, _title), "number",
+            "Pellets %s %s, as a percentage of the 20 pellets presented. NA when "
+            "that stream has no score for this session. The two streams measure the "
+            "same thing independently; where they differ, that difference is itself "
+            "the finding." % (_words, _who))
 
 
 def _dictionary_rows(columns: List[str], reach_dictionary: List[dict]) -> List[dict]:

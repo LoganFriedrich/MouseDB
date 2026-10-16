@@ -17,7 +17,7 @@ each with a data dictionary beside it:
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
-| `sessions_<cohort>_analysis.csv` | animal per session, totalled from the analysis table | `sessions_analysis_DATA_DICTIONARY.csv` |
+| `sessions_<cohort>_analysis.csv` | animal per session, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator | `sessions_analysis_DATA_DICTIONARY.csv` |
 | `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |

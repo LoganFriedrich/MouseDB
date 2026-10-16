@@ -17,13 +17,19 @@ from sqlalchemy.orm import Session
 
 from .schema import Subject, Cohort, Weight, PelletScore, Surgery
 
+# Every tray holds this many pellets: the apparatus, not a measurement. Every
+# percentage of a tray is out of this number -- never out of how many pellets
+# happened to be reached for, which is a different quantity (see
+# exporters.analysis_sessions, pellets_reached_for).
+PELLETS_PER_TRAY = 20
+
 
 @dataclass
 class TrayStats:
     """Statistics for a single tray (20 pellets)."""
     tray_type: str
     tray_number: int
-    presented: int = 20  # Always 20 pellets per tray
+    presented: int = PELLETS_PER_TRAY  # Always 20 pellets per tray
     miss: int = 0
     displaced: int = 0
     retrieved: int = 0

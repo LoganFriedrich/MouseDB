@@ -236,7 +236,10 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  13 = one data dictionary per kind of document instead of one per cohort
     #       (ODC_reaches_DATA_DICTIONARY.csv, reaches_summary_DATA_DICTIONARY.csv);
     #       the manifest names every report file
-    sig["output_format"] = 13
+    #  14 = pellets_presented is the tray's 20 and every percentage is out of it
+    #       (retrieved, displaced, contacted, missed, from both streams); the
+    #       count of pellets with a reach is kept as pellets_reached_for
+    sig["output_format"] = 14
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
