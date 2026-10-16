@@ -583,7 +583,9 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
              "undocumented_columns": [c for c in df.columns if c not in documented],
              "blank_animal_columns": [c for c in ANIMAL_COLUMNS if df[c].replace("", pd.NA).isna().all()]}
     entry["analysis_columns"] = int(len(analysis.columns))
+    entry["analysis_rows"] = int(len(analysis))          # after the exclusion pass
     entry["session_rows"] = int(len(sessions))
+    entry["session_columns"] = int(len(sessions.columns)) if len(sessions) else 0
     entry["_analysis_dictionary"] = analysis_rows
     entry["_sessions_dictionary"] = session_rows
     entry["_exclusion_report"] = exclusion_report
@@ -722,6 +724,22 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                 for row in entry.pop(key, []) or []:
                     store.setdefault(row["VariableName"], row)
             manifest["files"]["ODC_reaches_%s.csv" % label] = entry
+            # Each document under its own name. The counts above describe them
+            # too, but a reader of the manifest (and the Where Is My Data tab)
+            # looks for a file by its name, and a report that is not listed by
+            # name is a report nobody knows is there (2026-10-16).
+            if not analysis_only:
+                manifest["files"]["reaches_%s_summary.csv" % label] = {
+                    "rows": entry["rows"], "columns": entry["summary_columns"],
+                    "dictionary": "reaches_%s_summary_DATA_DICTIONARY.csv" % label}
+            manifest["files"]["reaches_%s_analysis.csv" % label] = {
+                "rows": entry["analysis_rows"], "columns": entry["analysis_columns"],
+                "dictionary": "reaches_analysis_DATA_DICTIONARY.csv",
+                "note": "entries with an identified problem are left out; see analysis_EXCLUSIONS.csv"}
+            if entry["session_rows"]:
+                manifest["files"]["sessions_%s_analysis.csv" % label] = {
+                    "rows": entry["session_rows"], "columns": entry["session_columns"],
+                    "dictionary": "sessions_analysis_DATA_DICTIONARY.csv"}
         except Exception as e:
             manifest["problems"].append("ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e))
 
