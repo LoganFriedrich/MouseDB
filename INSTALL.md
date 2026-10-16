@@ -333,6 +333,19 @@ stops the task's wrapper, not necessarily the Python process underneath, so a
 job cut off mid-write by the scheduler can go on running unsupervised while
 the scheduler reports it as terminated -- the worst of both.
 
+### Why the first read of the database is slow, and what the jobs do about it
+
+SQLite reads a table 4 KB at a time, one request per page. Over a network
+share that is a fraction of a megabyte per second until the file is in the
+operating system's cache, and tens of MB/s after; a scan of a multi-gigabyte
+table is hours cold and minutes warm. The jobs that scan whole tables -- the
+snapshot refresh, the phase re-labelling the reach import runs, `mousedb
+backfill-phases` -- therefore read the database file once sequentially before
+they start and keep it open until they finish, because the cache is dropped
+when the last handle on the file closes (`mousedb/prefetch.py`; the log line
+`read connectome.db once (...)` is that step). On a local disk it costs
+seconds. `MOUSEDB_PREFETCH=0` turns it off.
+
 **How you find out it happened.** The failing job's log says so in one sentence,
 and `mousedb-data-status` and the GUI's Where Is My Data tab both report the
 snapshot's AGE in words and turn it red past `STALE_SNAPSHOT_HOURS`

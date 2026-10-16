@@ -250,16 +250,27 @@ def main(argv=None) -> int:
     # schedule, minus how long a successful run takes.
     from ..db_contention import (DEFAULT_GAP_MINUTES, DatabaseBusy,
                                  retry_while_locked)
-    try:
-        counts = retry_while_locked(
-            lambda: refresh(force=args.force),
-            what="The analysis snapshot refresh",
-            window_minutes=args.retry_minutes,
-            gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
-            announce=lambda m: print(m, flush=True))
-    except DatabaseBusy as busy:
-        print("  [FAIL] %s" % busy, flush=True)
-        return 1
+    # Everything below scans the database file: the table reads here and the
+    # per-cohort session exports in refresh_current. Read the file once
+    # sequentially first and keep it open until the end, so those scans run
+    # from the operating system's cache instead of 4 KB at a time over the
+    # share (3 hours cold against minutes warm; see mousedb.prefetch).
+    from ..prefetch import warmed
+    with warmed(require("db_path"), log=lambda m: print(m, flush=True)):
+        try:
+            counts = retry_while_locked(
+                lambda: refresh(force=args.force),
+                what="The analysis snapshot refresh",
+                window_minutes=args.retry_minutes,
+                gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
+                announce=lambda m: print(m, flush=True))
+        except DatabaseBusy as busy:
+            print("  [FAIL] %s" % busy, flush=True)
+            return 1
+        return _finish(counts, args.force)
+
+
+def _finish(counts: dict, force: bool) -> int:
     snapshot_ok = True
     print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
 
@@ -276,7 +287,7 @@ def main(argv=None) -> int:
     # 2026-08-28). The guard is asked once more because the snapshot can take
     # a while and a watcher may have started since; --force still overrides
     # (that caller vouches nothing else can be writing).
-    db_ok = args.force or (snapshot_ok and not watcher_blocks_db())
+    db_ok = force or (snapshot_ok and not watcher_blocks_db())
     if not db_ok:
         print("  [!] a watcher started after the snapshot; the ODC session "
               "exports are left from the previous refresh")

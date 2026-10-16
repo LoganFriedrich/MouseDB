@@ -292,7 +292,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    stats = backfill_phases(dry_run=args.dry_run)
+    # One sequential read of the file first, held open across every cohort,
+    # so the per-cohort table scans run from memory (see mousedb.prefetch).
+    from .database import get_db
+    from .prefetch import warmed
+    db = get_db()
+    with warmed(db.db_path, log=print):
+        stats = backfill_phases(db, dry_run=args.dry_run)
     print_stats(stats)
     return 0
 

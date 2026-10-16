@@ -407,8 +407,14 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             if res.cohorts_touched:
                 try:
                     from .backfill import backfill_phases
-                    for cohort in sorted(res.cohorts_touched):
-                        backfill_phases(cohort_id=cohort)
+                    from .prefetch import warmed
+                    # Re-labelling reads the whole reach table once per cohort.
+                    # Read the file sequentially first and hold it open for all
+                    # the cohorts, so those scans run from memory: 3 hours cold
+                    # against seconds warm on a network share (2026-10-16).
+                    with warmed(db, log=log):
+                        for cohort in sorted(res.cohorts_touched):
+                            backfill_phases(cohort_id=cohort)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)
