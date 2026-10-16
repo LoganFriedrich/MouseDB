@@ -260,7 +260,7 @@ environment:
 |---|---|---|---|
 | snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/`, including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed) |
 | sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | every 4 h | imports the tracking workbooks (they are filled in by hand, so hourly only adds load) |
-| reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data` |
+| reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes |
 | analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
 | bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree, writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere) and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
 
@@ -293,6 +293,11 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
 - **Between these jobs**: a lockfile under `<mousedb_root>/logs`
   (`mousedb/task_mutex.py`). Whoever gets it runs; the others wait and run
   straight after. They never lock each other out, however they are scheduled.
+  The lock is never taken away from a job that is still running, however long
+  it has held it (a long rewrite over a slow share is slow, not stuck); it is
+  taken only from a holder that no longer exists. A job that waited its full
+  allowance (25 minutes) logs who is still holding the lock and exits non-zero
+  without touching anything.
 - **Against everything else**: `mousedb/db_contention.py`. A job that meets an
   outside lock waits and retries across a bounded window, then gives up, logs
   one plain-English line, and exits non-zero.
@@ -312,6 +317,21 @@ Neither mechanism ever breaks the other program's lock, and there is no option
 to: a lock means a write is in flight, and taking it away corrupts the file. A
 job that keeps giving up means a session somewhere is holding the database
 open, and the fix is to close that session.
+
+**Let the scheduler retry a job that gave up.** Both mechanisms make the job
+exit non-zero when it could not run, and that is deliberate: it lets the
+operating system's scheduler run it again later. Set "restart on failure"
+(Task Scheduler: *If the task fails, restart every 30 minutes, up to 8
+times*; cron: a wrapper that re-queues on a non-zero exit) on every job, and
+above all on the snapshot, because the snapshot is what makes the exports. With
+that in place a slow night DELAYS the exports instead of losing them until the
+next night. Without it, one long-running import means no exports that day.
+
+Keep the scheduler's own "stop the task if it runs longer than" limit
+generous (hours, not minutes) for the jobs that write the database. That limit
+stops the task's wrapper, not necessarily the Python process underneath, so a
+job cut off mid-write by the scheduler can go on running unsupervised while
+the scheduler reports it as terminated -- the worst of both.
 
 **How you find out it happened.** The failing job's log says so in one sentence,
 and `mousedb-data-status` and the GUI's Where Is My Data tab both report the
