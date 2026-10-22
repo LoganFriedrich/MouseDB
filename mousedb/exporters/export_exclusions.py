@@ -438,7 +438,10 @@ def apply(frame: pd.DataFrame, ex: Exclusions, cohort_id: str = "",
                             subject_id=group["subject_id"].iloc[0],
                             date=group["test_date"].iloc[0], rows=int(len(group)),
                             fields="", reason=ex.drop_videos[str(video)]))
-    out = out[~drop]
+    # A copy, not a filtered view: columns are blanked and renumbered on it
+    # below, and assigning into a view raised pandas' SettingWithCopyWarning
+    # in every nightly export log (the values were right; the noise was not).
+    out = out[~drop].copy()
 
     for video, blanks in ex.blank_fields.items():
         mask = out["video_name"].astype(str) == video

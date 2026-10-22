@@ -300,3 +300,23 @@ def test_thresholds_are_what_the_documentation_says():
     assert ee.BEST_AT_LEAST >= 0.95
     assert ee.OWN_AT_MOST <= 0.75
     assert ee.MIN_COMPARABLE >= 15
+
+
+def test_dropping_then_blanking_raises_no_pandas_copy_warning():
+    """Every nightly export log carried SettingWithCopyWarning: rows were
+    dropped into a filtered view and columns then assigned on it (2026-10-22)."""
+    import warnings
+    from pandas.errors import SettingWithCopyWarning
+    # surgery_checkable sends apply() through the phase check, which keeps a
+    # reference to the frame -- the condition under which pandas warns.
+    ex = ee.Exclusions(drop_videos={"v2": "test"},
+                       blank_fields={"v1": {"manual_retrieved": "tray: test"}},
+                       surgery_checkable={"CNT_01"})
+    frame = _analysis([{"video_name": v, "subject_id": "CNT_01_01", "test_date": DAY,
+                        "experiment_stage": "x", "manual_retrieved": 7.0}
+                       for v in ("v1", "v2", "v1")])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SettingWithCopyWarning)
+        out, _ = ee.apply(frame, ex, cohort_id="CNT_01")
+    assert list(out["entry_index"]) == [1, 2]
+    assert list(out["manual_retrieved"]) == ["NA", "NA"]
