@@ -6,6 +6,15 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- `reach_data` has an index on `(subject_id, session_date)`
+  (`ix_reach_data_subject_session`). The phase re-labelling after each reach
+  import selects a cohort's rows by subject and read the whole table once per
+  touched cohort without it. New databases get it from the schema; an existing
+  one gets it on the next `mousedb import-reaches` (about a minute, once, under
+  the import's database lock).
+- The bench scan compares every hand-scored pellet, including segments where the
+  pipeline found no reach (from `video_pellets`), at the outcome detector
+  version MouseReach declares current (read from `pipeline_versions.json`).
 - `mousedb import-analyses` (`mousedb.import_analyses`, console script
   `mousedb-import-analyses`): mirrors MouseBrain's analysis registry
   (exports, figures, logs, `registry.json` provenance) into the mousedb

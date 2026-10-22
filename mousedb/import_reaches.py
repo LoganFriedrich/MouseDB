@@ -323,6 +323,10 @@ def flatten(features_path: Path, subject_id: str, now: str,
     return video_name, rows
 
 
+REACH_SUBJECT_INDEX_DDL = ("CREATE INDEX IF NOT EXISTS ix_reach_data_subject_session "
+                           "ON reach_data (subject_id, session_date)")
+
+
 def ensure_columns(conn: sqlite3.Connection) -> None:
     have = {r[1] for r in conn.execute("PRAGMA table_info(reach_data)")}
     if not have:
@@ -331,6 +335,12 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute("ALTER TABLE reach_data ADD COLUMN %s %s" % (col, typ))
     conn.execute(VIDEO_PELLETS_DDL)
+    # The phase re-labelling after every import selects one cohort's rows by
+    # subject_id; with no index on it SQLite read the WHOLE table once per
+    # touched cohort (hours over the share, 2026-10-15/16). Created here, under
+    # the database lock this import already holds, so an existing database gets
+    # it on the next nightly run; a new database gets it from schema.py.
+    conn.execute(REACH_SUBJECT_INDEX_DDL)
 
 
 def write_pellets(conn: sqlite3.Connection, video_name: str, rows: List[dict]) -> None:
