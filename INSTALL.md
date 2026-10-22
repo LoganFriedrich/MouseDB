@@ -259,7 +259,7 @@ environment:
 
 | job | command | cadence | what it does |
 |---|---|---|---|
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/`, including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed) |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/`, including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it) |
 | sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | every 4 h | imports the tracking workbooks (they are filled in by hand, so hourly only adds load) |
 | reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented |
 | analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
@@ -354,6 +354,23 @@ snapshot's AGE in words and turn it red past `STALE_SNAPSHOT_HOURS`
 less often than daily). That age line is the thing that catches a job that has
 quietly not worked for days; the log alone does not, because nobody reads logs
 that have not announced a problem.
+
+### The snapshot job also retakes the pipeline census
+
+The pipeline counts on the Where Is My Data tab ("should exist", "finished on
+disk", where every unfinished video sits) come from a census of the MouseReach
+pipeline folders, cached in `logs/pipeline_census.json` under `mousedb_root`.
+After writing the exports, `refresh_snapshot` retakes it
+(`pipeline_census.refresh`, through the configured `mousereach_env`): a
+read-only folder scan of 5-25 minutes, holding no database lock. **Why:** it
+used to be retaken only by the tab's "Refresh pipeline view" button, and a
+census weeks old was shown as the current counts with nothing but a timestamp
+to say so. The tab and `mousedb-data-status` now print the census's age and
+flag it once it is older than `data_status.STALE_CENSUS_HOURS` (36). If the
+census cannot be taken, the job prints `[FAIL] pipeline census not retaken` and
+still exits 0 -- a failing exit would make the scheduler re-run the whole
+snapshot -- and the tab keeps the previous census with its age shown. Pass
+`--skip-census` when running the job by hand and the census is not wanted.
 
 ### The snapshot job also rewrites the exports -- including the per-reach files
 

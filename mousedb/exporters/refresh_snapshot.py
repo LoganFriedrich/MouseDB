@@ -212,6 +212,10 @@ def main(argv=None) -> int:
                          "process and so cannot be writing concurrently. "
                          "Also vouches the database is readable for the "
                          "per-cohort ODC session exports.")
+    ap.add_argument("--skip-census", action="store_true",
+                    help="Do not retake the pipeline census after the exports "
+                         "(it is a 5-25 minute read-only scan of the pipeline "
+                         "folders). The nightly job leaves it on.")
     ap.add_argument("--retry-minutes", type=int, default=25,
                     help="How long to keep retrying if another program has the "
                          "database locked (default 25). A retry restarts this "
@@ -270,7 +274,39 @@ def main(argv=None) -> int:
         except DatabaseBusy as busy:
             print("  [FAIL] %s" % busy, flush=True)
             return 1
-        return _finish(counts, args.force)
+        rc = _finish(counts, args.force)
+    if not args.skip_census:
+        retake_census()
+    return rc
+
+
+def retake_census() -> bool:
+    """Retake the pipeline census for the Where Is My Data tab, after the
+    snapshot it is joined with. Never raises; True when it was retaken.
+
+    WHY here: the census was taken only when someone pressed 'Refresh pipeline
+    view', and the tab showed a census seven weeks old as its pipeline counts
+    (found 2026-10-22). This job already runs nightly and the census joins with
+    the snapshot just written, so it goes last. It reads pipeline folders only
+    -- no database lock is held. A failure does NOT change this job's exit
+    code: the scheduler would re-run the whole snapshot for it. It is printed
+    as [FAIL] here, and the tab shows the census's age in red once it is over
+    data_status.STALE_CENSUS_HOURS.
+    """
+    print("Retaking the pipeline census (read-only folder scan, 5-25 minutes)...",
+          flush=True)
+    try:
+        from mousedb.pipeline_census import refresh as census_refresh
+        c = census_refresh()
+        t = c.get("totals") or {}
+        print("Pipeline census taken %s: %s sessions expected, %s finished on disk "
+              "(scan %ss)" % (c.get("generated_at"), t.get("expected"),
+                              t.get("finished_files"), c.get("scan_seconds")), flush=True)
+        return True
+    except Exception as e:
+        print("  [FAIL] pipeline census not retaken: %s. The Where Is My Data tab "
+              "keeps the previous census and shows its age." % e, flush=True)
+        return False
 
 
 def _finish(counts: dict, force: bool) -> int:

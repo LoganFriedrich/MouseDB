@@ -27,9 +27,14 @@ def configured(tmp_path, monkeypatch):
     test must never contend for it -- when a real hourly task held that
     lock, this suite silently hung for many minutes (2026-09-02)."""
     import contextlib
-    from mousedb import task_mutex
+    from mousedb import pipeline_census, task_mutex
     monkeypatch.setattr(task_mutex, "hold",
                         lambda *a, **k: contextlib.nullcontext())
+    # The job retakes the pipeline census last: a 25-minute scan of the real
+    # pipeline folders that no unit test may start.
+    monkeypatch.setattr(pipeline_census, "refresh",
+                        lambda *a, **k: {"generated_at": "2026-10-22T00:00:00",
+                                         "totals": {"expected": 1, "finished_files": 1}})
     db = tmp_path / "connectome.db"
     con = sqlite3.connect(db)
     for table in rs.TABLES:
@@ -78,6 +83,50 @@ def test_watcher_appearing_after_the_snapshot_withholds_the_vouch(configured, db
     assert rs.main([]) == 0
     assert (configured / "subjects.parquet").is_file()
     assert db_ok_seen == [False]
+
+
+def _census_calls(monkeypatch, order, fail=False):
+    from mousedb import pipeline_census
+
+    def fake(*a, **k):
+        order.append("census")
+        if fail:
+            raise RuntimeError("the pipeline census failed (exit 1)")
+        return {"generated_at": "2026-10-22T00:00:00", "totals": {}}
+    monkeypatch.setattr(pipeline_census, "refresh", fake)
+
+    def fake_current(*a, **k):
+        order.append("exports")
+        return {"files": {}, "complete": True, "problems": []}
+    monkeypatch.setattr(current_mod, "refresh_current", fake_current)
+
+
+def test_the_census_is_retaken_after_the_exports(configured, monkeypatch):
+    # WHY (2026-10-22): the census was retaken only by a button, and the tab
+    # showed one seven weeks old as its pipeline counts.
+    order = []
+    _census_calls(monkeypatch, order)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main([]) == 0
+    assert order == ["exports", "census"]
+
+
+def test_skip_census_skips_it(configured, monkeypatch):
+    order = []
+    _census_calls(monkeypatch, order)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main(["--skip-census"]) == 0
+    assert order == ["exports"]
+
+
+def test_a_failed_census_is_loud_but_does_not_fail_the_snapshot(configured, monkeypatch, capsys):
+    # A non-zero exit would make the scheduler re-run the whole snapshot.
+    order = []
+    _census_calls(monkeypatch, order, fail=True)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main([]) == 0
+    assert order == ["exports", "census"]
+    assert "[FAIL] pipeline census not retaken" in capsys.readouterr().out
 
 
 def test_running_watcher_aborts_the_whole_run(configured, db_ok_seen, monkeypatch):

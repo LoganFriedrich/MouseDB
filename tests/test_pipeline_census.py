@@ -114,3 +114,17 @@ def test_ledger_names_capture_zero_reach_videos(tmp_path):
 def test_ledger_missing_is_empty_set(tmp_path):
     from mousedb.pipeline_census import _ledger_video_names
     assert _ledger_video_names(tmp_path / "none.json") == set()
+
+
+def test_census_age_is_judged_like_the_snapshot():
+    # WHY (2026-10-22): the tab showed a census from 2026-09-02 as current,
+    # with only a timestamp to say otherwise.
+    import datetime as _dt
+    from mousedb.data_status import STALE_CENSUS_HOURS, census_age_hours
+    now = _dt.datetime.now()
+    fresh = (now - _dt.timedelta(hours=2)).isoformat(timespec="seconds")
+    old = (now - _dt.timedelta(days=50)).isoformat(timespec="seconds")
+    assert census_age_hours(fresh) < STALE_CENSUS_HOURS
+    assert census_age_hours(old) > STALE_CENSUS_HOURS
+    assert census_age_hours(None) is None
+    assert census_age_hours("not a time") is None

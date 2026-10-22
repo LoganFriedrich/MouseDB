@@ -182,7 +182,10 @@ class DataStatusTab(QWidget):
              "through the MouseReach environment and rewrite the cached census that the "
              "'Should exist' / pipeline / 'Analyzed' columns read. Reads folders only -- "
              "nothing is moved or modified. Takes 5-25 minutes depending on network "
-             "load; the table refreshes itself when done.", ""),
+             "load; the table refreshes itself when done. The nightly snapshot job "
+             "retakes it too, so press this only for counts newer than last night; "
+             "the line above the table says how old the census is, in red once it is "
+             "over a day and a half.", ""),
             ("Open exports folder", self.open_exports,
              "Open the folder of current CSVs (+ data dictionaries) in Explorer.",
              "background:#16405a; color:white; font-weight:bold;"),
@@ -296,10 +299,21 @@ class DataStatusTab(QWidget):
         an_txt = "unavailable" if analyzed is None else str(analyzed)
         if t.get("session_only"):
             an_txt += "  (+%d E/F-only)" % t["session_only"]
-        lines = [
-            "PIPELINE (census of %s, scan %ss): %d sessions should exist | "
+        # Say how OLD, as for the snapshot below: a bare timestamp let a
+        # seven-week-old census pass for current (2026-10-22).
+        stale = pc.get("stale", False)
+        lines = []
+        if stale:
+            lines.append(
+                "[!] These pipeline counts are %s old. The nightly job retakes the census "
+                "after the snapshot; it has not succeeded since %s. Press 'Refresh "
+                "pipeline view' to retake it now."
+                % (pc.get("age") or "an unknown time", pc.get("generated_at") or "?"))
+        lines += [
+            "PIPELINE (census of %s -- %s old, scan %ss): %d sessions should exist | "
             "%d finished on disk (%.1f%%) | fully analyzed (done + in DB + on disk): %s"
-            % (pc.get("generated_at") or "?", pc.get("scan_seconds"), exp, fin, pct, an_txt),
+            % (pc.get("generated_at") or "?", pc.get("age") or "unknown",
+               pc.get("scan_seconds"), exp, fin, pct, an_txt),
             "Remaining: %d not started, %d in crop/pose, %d in algorithms, "
             "%d + %d waiting on a person (triage + deep review), %d quarantined"
             % (be.get("unanalyzed", 0), be.get("crop_dlc", 0), be.get("mousereach", 0),
@@ -323,7 +337,8 @@ class DataStatusTab(QWidget):
                         % eta.get("human_backlog", 0))
         lines.append("Estimates (%s): %s" % (eta.get("basis") or "no basis", "; ".join(pace)))
         self.workload_label.setText("\n".join(lines))
-        self.workload_label.setStyleSheet("")
+        self.workload_label.setStyleSheet(
+            "background:#b71c1c; color:white; padding:3px;" if stale else "")
 
         inv = pc.get("invariant")
         if inv is None:

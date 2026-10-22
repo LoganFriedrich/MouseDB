@@ -49,6 +49,13 @@ SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set sn
 # the refresh is scheduled less often than daily.
 STALE_SNAPSHOT_HOURS = 36
 
+# The pipeline census is retaken by the same nightly job, right after the
+# snapshot (refresh_snapshot), so the same allowance applies. WHY it is judged
+# at all: until 2026-10-22 the census was taken only when someone pressed the
+# button, and the tab showed a census from 2026-09-02 -- seven weeks old -- as
+# its pipeline counts, with only a timestamp to say so.
+STALE_CENSUS_HOURS = 36
+
 
 def describe_age(hours: Optional[float]) -> str:
     """How old, in words -- "4 hours", "3 days" -- for a person, not a machine.
@@ -65,6 +72,19 @@ def describe_age(hours: Optional[float]) -> str:
         return "%d hour%s" % (n, "" if n == 1 else "s")
     n = int(round(hours / 24))
     return "%d day%s" % (n, "" if n == 1 else "s")
+
+
+def census_age_hours(generated_at: Optional[str]) -> Optional[float]:
+    """Hours since the census's ``generated_at`` (local ISO time), or None
+    when it is missing or unreadable -- which callers treat as stale."""
+    import datetime as _dt
+    if not generated_at:
+        return None
+    try:
+        taken = _dt.datetime.fromisoformat(str(generated_at))
+    except ValueError:
+        return None
+    return max(0.0, (_dt.datetime.now() - taken).total_seconds() / 3600.0)
 
 
 def read_analyses_manifest(path: Path) -> List[dict]:
@@ -407,6 +427,15 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
                 require("mousedb_root") / "logs" / "reach_imports.json")
             pc = join_with_db(census, in_db)
             pc_by_cohort = pc.get("by_cohort") or {}
+            pc["age_hours"] = census_age_hours(pc.get("generated_at"))
+            pc["age"] = describe_age(pc["age_hours"])
+            pc["stale"] = pc["age_hours"] is None or pc["age_hours"] > STALE_CENSUS_HOURS
+            if pc["stale"]:
+                out["problems"].append(
+                    "the pipeline counts are %s old: the census was taken %s and has "
+                    "not been retaken since (the nightly snapshot job retakes it; "
+                    "'Refresh pipeline view' does it now)."
+                    % (pc["age"], pc.get("generated_at") or "at an unknown time"))
     except Exception as e:
         out["problems"].append("pipeline census unreadable: %s" % e)
     out["pipeline"] = pc
@@ -486,9 +515,10 @@ def _print(st: dict) -> None:
     pc = st.get("pipeline")
     if pc:
         t = pc.get("totals") or {}
-        print("Pipeline census (as of %s): %s sessions should exist; "
+        print("Pipeline census (as of %s -- %s old%s): %s sessions should exist; "
               "%s finished on disk; analyzed (done+DB+files): %s"
-              % (pc.get("generated_at"), t.get("expected"),
+              % (pc.get("generated_at"), pc.get("age", "unknown"),
+                 ", STALE" if pc.get("stale") else "", t.get("expected"),
                  t.get("finished_files"),
                  "?" if t.get("analyzed") is None else t.get("analyzed")))
         inv = pc.get("invariant")

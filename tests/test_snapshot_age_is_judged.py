@@ -31,6 +31,44 @@ def test_an_unknown_age_says_unknown_rather_than_guessing():
 
 
 # ------------------------------------------------------- judged, not reported
+@pytest.fixture(autouse=True)
+def _no_live_census(tmp_path, monkeypatch):
+    """status() reads the pipeline census from the configured mousedb root --
+    the live one. These tests are about ages, so the census comes from
+    tmp_path: none unless a test writes one."""
+    from mousedb import pipeline_census
+    cache = tmp_path / "census" / "pipeline_census.json"
+    monkeypatch.setattr(pipeline_census, "cache_path", lambda: cache)
+    return cache
+
+
+def _census_taken(cache, hours_old):
+    from mousedb.pipeline_census import save_cache
+    taken = (dt.datetime.now() - dt.timedelta(hours=hours_old)).isoformat(timespec="seconds")
+    save_cache({"generated_at": taken, "scan_seconds": 1.0,
+                "totals": {"expected": 0, "finished_files": 0, "unfinished": 0},
+                "sessions": {}, "by_element": {}, "eta": {}, "review": {},
+                "diagnostics": {}, "roots": {}}, cache)
+
+
+def test_a_census_that_stopped_being_retaken_is_called_out(tmp_path, _no_live_census):
+    # WHY (2026-10-22): a census seven weeks old was shown as the pipeline counts.
+    pytest.importorskip("pandas")
+    _census_taken(_no_live_census, hours_old=24 * 50)
+    st = data_status.status(_snapshot(tmp_path, hours_old=4))
+    assert st["pipeline"]["stale"] is True
+    assert st["pipeline"]["age"] == "50 days"
+    assert any("pipeline counts are 50 days old" in p for p in st["problems"])
+
+
+def test_last_nights_census_is_not_complained_about(tmp_path, _no_live_census):
+    pytest.importorskip("pandas")
+    _census_taken(_no_live_census, hours_old=14)
+    st = data_status.status(_snapshot(tmp_path, hours_old=4))
+    assert st["pipeline"]["stale"] is False
+    assert not any("pipeline counts" in p for p in st["problems"])
+
+
 def _snapshot(tmp_path, hours_old):
     """A snapshot folder whose parquet files are a given age."""
     import pandas as pd
