@@ -2657,6 +2657,12 @@ class BrainGlobeImporter:
             self.errors.append(f"Failed to read CSV: {e}")
             return self._get_result()
 
+        # Runs whose "brain" is not a brain (training data, test runs) are
+        # skipped and reported ONCE, by name. WHY: the tracker records every
+        # calibration run, including runs on training cubes and test data; one
+        # warning per such row, every night, buried any real problem in the
+        # task log ("... and 13 more warnings", 2026-10).
+        not_brains: dict = {}
         with self.db.session() as session:
             for _, row in df.iterrows():
                 brain_id = row.get('brain') or row.get('brain_id')
@@ -2683,7 +2689,7 @@ class BrainGlobeImporter:
                             brain_id = candidate
 
                 if not brain_info:
-                    self.warnings.append(f"Could not parse brain ID: {brain_id}")
+                    not_brains[brain_id] = not_brains.get(brain_id, 0) + 1
                     continue
 
                 # Ensure brain sample exists
@@ -2731,6 +2737,11 @@ class BrainGlobeImporter:
                 session.commit()
                 print(f"  Committed {self.imported_counts['calibration_runs']} calibration runs")
 
+        if not_brains:
+            names = ", ".join("%s (%d)" % (n, c) for n, c in sorted(not_brains.items()))
+            self.warnings.append(
+                "%d calibration run(s) name no brain and were skipped (training or test "
+                "runs, by name and count): %s" % (sum(not_brains.values()), names))
         return self._get_result()
 
     def import_region_counts(self, csv_path: Path, brain_id: Optional[str] = None,
