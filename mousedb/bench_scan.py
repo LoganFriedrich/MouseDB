@@ -40,6 +40,22 @@ ROUTING
     With neither set, --route prints the worklist and says routing is not
     configured, and still exits 0 -- an unconfigured integration is not a
     failure of the scan.
+
+WHICH PELLETS ARE COMPARED (since 2026-10-22)
+    Every bench-scored pellet of a finished video analysed by the CURRENT
+    outcome detector -- the version MouseReach declares in
+    <mousereach_pipeline_root>/pipeline_versions.json, read at each run (it
+    was a number written into this file, which would have silently matched
+    nothing the day the detector changed).
+
+    A pellet whose segment has reaches takes its outcome, and who decided it
+    (algorithm or a person), from the reach rows; a segment a person decided is
+    never sent. A segment with NO detected reach has no reach row, so it was
+    never compared at all -- yet "the bench says the pellet moved and the
+    pipeline found no reach" is one of the strongest disagreements there is.
+    Its outcome now comes from video_pellets (one row per segment). Who decided
+    it is not recorded there, so MouseReach's route command makes that check
+    itself: it reads the review and never flags a segment a person answered.
 """
 from __future__ import annotations
 
@@ -76,7 +92,22 @@ def default_out() -> Path:
     """
     return require("mousedb_root") / "logs" / DEFAULT_OUT_NAME
 
-CURRENT_VERSION = "6.1.0"
+def current_outcome_version() -> str:
+    """The outcome detector MouseReach declares current, read from
+    <mousereach_pipeline_root>/pipeline_versions.json at each run. WHY not a
+    constant: rows from any other version are about to be replaced by a
+    re-run, so comparing them sends a person stale output; and a constant
+    goes stale itself, silently comparing nothing once the detector changes."""
+    path = require("mousereach_pipeline_root") / "pipeline_versions.json"
+    try:
+        version = json.loads(path.read_text(encoding="utf-8"))["versions"]["outcome_detector"]
+    except Exception as e:
+        raise ConfigError(
+            "cannot read the current outcome detector version from %s (%s: %s). "
+            "Check mousereach_pipeline_root (mousedb config --show)."
+            % (path, type(e).__name__, e))
+    return str(version)
+
 
 HUMAN_SCORE = {0: "missed", 1: "displaced", 2: "retrieved"}
 ALGO_CATEGORY = {
@@ -221,15 +252,56 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
     return rd, ps
 
 
-def pair_current(rd, ps, version=CURRENT_VERSION):
+def load_video_pellets(db_path=None, cache_dir=None):
+    """One row per segment (video_pellets), including segments with no reach;
+    None when the table is not there (an older snapshot or database)."""
+    cache = Path(cache_dir) if cache_dir else (
+        DEFAULT_CACHE if DEFAULT_CACHE and (DEFAULT_CACHE / "reach_data.parquet").exists() else None)
+    if cache is not None:
+        f = cache / "video_pellets.parquet"
+        vp = pd.read_parquet(f) if f.exists() else None
+    else:
+        con = sqlite3.connect("file:%s?mode=ro" % (db_path or DEFAULT_DB or require("db_path")),
+                              uri=True, timeout=600)
+        try:
+            vp = pd.read_sql("SELECT video_name, segment_num, subject_id, session_date, "
+                             "tray_type, run_number, outcome, n_reaches FROM video_pellets", con)
+        except Exception:
+            vp = None
+        finally:
+            con.close()
+    if vp is not None:
+        vp = vp.copy()
+        vp["session_date"] = vp["session_date"].astype(str).str[:10]
+    return vp
+
+
+def pair_current(rd, ps, version=None, vp=None):
     """Pair each manual score with the current detector's segment outcome,
     keeping video_name and outcome_source so the result can be split by
-    review coverage."""
+    review coverage.
+
+    Segments with reaches come from the reach rows. With ``vp`` (video_pellets),
+    segments of the same current videos that have NO reach row are added, with
+    outcome_source "unknown" (see the module docstring)."""
+    if version is None:
+        version = current_outcome_version()
     seg = (rd[rd.outcome_detector_version == version]
            .groupby(JOIN_ALGO, as_index=False)
            .agg(segment_outcome=("segment_outcome", "first"),
                 outcome_source=("outcome_source", "first"),
                 video_name=("video_name", "first")))
+    if vp is not None and len(seg):
+        current = set(seg["video_name"])
+        have = set(zip(seg["video_name"], seg["segment_num"]))
+        extra = vp[vp["video_name"].isin(current)
+                   & ~pd.Series(list(zip(vp["video_name"], vp["segment_num"])),
+                                index=vp.index).isin(have)]
+        if len(extra):
+            extra = extra.rename(columns={"outcome": "segment_outcome"})[
+                JOIN_ALGO + ["segment_outcome", "video_name"]].copy()
+            extra["outcome_source"] = "unknown"
+            seg = pd.concat([seg, extra[seg.columns]], ignore_index=True)
     paired = ps.merge(seg, left_on=JOIN_HUMAN, right_on=JOIN_ALGO)
     paired["human"] = paired.score.map(HUMAN_SCORE)
     paired["algo"] = paired.segment_outcome.map(ALGO_CATEGORY)
@@ -242,11 +314,19 @@ def build_worklist() -> list:
     from mousedb.analyzable import finished_videos
 
     rd, ps = load_paired_pellets()
+    vp = load_video_pellets()
     finished = finished_videos()
     rd = rd[rd.video_name.isin(finished)]
+    if vp is None:
+        print("  [!] no video_pellets table: segments with no detected reach are "
+              "NOT compared this run")
+    else:
+        vp = vp[vp.video_name.isin(finished)]
 
-    paired = pair_current(rd, ps)
-    never_reviewed = paired[paired.outcome_source == "algo"]
+    paired = pair_current(rd, ps, vp=vp)
+    # "unknown": a segment with no reach row; MouseReach's route command drops
+    # it if a person answered it (module docstring).
+    never_reviewed = paired[paired.outcome_source.isin(["algo", "unknown"])]
     committed = never_reviewed[
         ~never_reviewed.segment_outcome.isin(NON_COMMITTAL + NON_EVALUABLE)
         & never_reviewed.algo.notna() & never_reviewed.human.notna()

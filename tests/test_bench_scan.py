@@ -60,3 +60,65 @@ def test_unconfigured_machine_stops_before_scanning(tmp_path, monkeypatch, capsy
     assert bench_scan.main([]) == 1
     out = capsys.readouterr().out
     assert out.startswith("[FAIL]") and "mousedb config --set mousedb_root" in out
+
+
+# ------------------------------------------------ which pellets are compared
+# WHY (2026-10-22): a segment with no detected reach has no reach row, so the
+# scan never compared it -- yet "the bench says the pellet moved and the
+# pipeline found no reach" is a strong disagreement. And the current detector
+# version was a constant, which would silently match nothing once it changed.
+
+import pandas as pd
+
+
+def _versions(tmp_path, monkeypatch, version="6.1.0"):
+    (tmp_path / "pipeline_versions.json").write_text(
+        json.dumps({"versions": {"outcome_detector": version}}), encoding="utf-8")
+    monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path))
+
+
+def _tables():
+    key = dict(subject_id="CNT_05_01", session_date="2026-06-01", tray_type="P")
+    rd = pd.DataFrame([dict(key, run_number=1, segment_num=1, segment_outcome="retrieved",
+                            outcome_detector_version="6.1.0", video_name="V",
+                            reach_id=1, outcome_source="algo")])
+    ps = pd.DataFrame([dict(key, tray_number=1, pellet_number=n, score=s)
+                       for n, s in ((1, 2), (2, 2), (3, 0))])
+    vp = pd.DataFrame([dict(key, video_name="V", run_number=1, segment_num=n,
+                            outcome=o, n_reaches=r)
+                       for n, o, r in ((1, "retrieved", 1), (2, "untouched", 0),
+                                       (3, "untouched", 0))])
+    return rd, ps, vp
+
+
+def test_the_current_version_is_read_from_mousereach(tmp_path, monkeypatch):
+    _versions(tmp_path, monkeypatch, "7.0.0")
+    assert bench_scan.current_outcome_version() == "7.0.0"
+
+
+def test_an_unreadable_version_file_names_the_setting(tmp_path, monkeypatch):
+    monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path))
+    with pytest.raises(config.ConfigError) as ei:
+        bench_scan.current_outcome_version()
+    assert "pipeline_versions.json" in str(ei.value)
+
+
+def test_a_segment_with_no_reach_is_compared(tmp_path, monkeypatch):
+    _versions(tmp_path, monkeypatch)
+    rd, ps, vp = _tables()
+    without = bench_scan.pair_current(rd, ps)
+    assert sorted(without.pellet_number) == [1], "the old pairing saw only segment 1"
+    paired = bench_scan.pair_current(rd, ps, vp=vp)
+    assert sorted(paired.pellet_number) == [1, 2, 3]
+    two = paired[paired.pellet_number == 2].iloc[0]
+    assert (two.human, two.algo, two.outcome_source) == ("retrieved", "missed", "unknown")
+
+
+def test_the_worklist_includes_a_no_reach_disagreement(tmp_path, monkeypatch):
+    _versions(tmp_path, monkeypatch)
+    rd, ps, vp = _tables()
+    monkeypatch.setattr(bench_scan, "load_paired_pellets", lambda: (rd, ps))
+    monkeypatch.setattr(bench_scan, "load_video_pellets", lambda: vp)
+    import mousedb.analyzable as analyzable
+    monkeypatch.setattr(analyzable, "finished_videos", lambda: {"V"})
+    assert bench_scan.build_worklist() == [{"video_id": "V", "segment_nums": [2]}]

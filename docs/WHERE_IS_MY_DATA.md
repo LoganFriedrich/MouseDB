@@ -339,6 +339,34 @@ What it means for you:
 The scheduled jobs also take turns with each other through a lockfile, so they
 are never the cause.
 
+## Why videos appear in the review queue overnight (the bench check)
+
+Every night a scheduled job, `mousedb-bench-scan --route`, compares the hand
+scores from the tracking sheets (each pellet: missed, displaced or retrieved)
+with what the video pipeline decided for the same pellet. Where they disagree
+and no person has looked at that pellet yet, it asks MouseReach to put the
+video in its triage queue with exactly those pellets marked. The reviewer then
+watches those pellets in the review tool and decides.
+
+What it compares:
+
+- Only finished videos, and only those analysed by the outcome detector
+  MouseReach currently declares (read from MouseReach's
+  `pipeline_versions.json` each night). A video waiting to be re-run is left
+  until it has been, so nobody is asked to judge output that is about to change.
+- Every pellet with a hand score -- including pellets where the pipeline found
+  no reach at all (since 2026-10-22). "The sheet says the pellet moved, and the
+  pipeline saw no reach" is one of the most useful things to show a person;
+  before that date those pellets were never compared.
+- Never a pellet a person has already answered. The scan skips pellets the
+  database records as decided by a person, and MouseReach's route command
+  checks the review itself before marking anything, so a pellet already
+  answered is never sent back.
+
+The list it made is written to `<mousedb_root>/logs/never_reviewed_worklist.json`,
+and the job's output (how many videos and pellets, and each video's result) is
+in `<mousedb_root>/logs/tasks/bench_scan.log`.
+
 ## When something looks wrong
 
 - **A cohort's videos are in the pipeline but "Videos in DB" is low**: check
