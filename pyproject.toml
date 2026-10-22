@@ -103,7 +103,11 @@ testpaths = [
 ]
 # Make collection failures hard rather than silent so a typo in a test file
 # stops the suite instead of silently dropping coverage.
-addopts = "--strict-markers -ra"
+# -p no:cacheprovider: pytest's cache plugin makes a pytest-cache-files-*
+# temporary folder and renames it to .pytest_cache. When the repo sits on a
+# network share the rename can fail, leaving the folder behind with permissions
+# only an administrator can clear (dozens accumulated). The suite needs no cache.
+addopts = "--strict-markers -ra -p no:cacheprovider"
 # Ignore vendored/build directories that occasionally appear in the tree.
 norecursedirs = [
     ".git",
