@@ -140,6 +140,56 @@ def read_session_coverage(folder: Path) -> List[dict]:
     return rows
 
 
+# Recordings still only on an old storage root. MouseReach's
+# mousereach-legacy-inventory writes <label>.summary.json (and <label>.csv, every
+# old video with its status) into this folder under the pipeline root. WHY it is
+# shown here: the old root cannot be retired while any pipeline recording exists
+# only there, and nothing else says so -- no watcher looks at it.
+OLD_STORAGE_FOLDER = "legacy_inventory"
+OLD_STORAGE_SUFFIX = ".summary.json"
+
+
+def read_old_storage(folder: Path) -> List[dict]:
+    """One row per ``*.summary.json`` in ``folder``: the old root, when the
+    inventory ran, how many recordings exist only there (and their size), how
+    many need a person, and the report beside it. [] when the folder is absent;
+    an unreadable summary is a row with an ``error``."""
+    rows: List[dict] = []
+    if not folder.is_dir():
+        return rows
+    for f in sorted(folder.glob("*" + OLD_STORAGE_SUFFIX)):
+        label = f.name[: -len(OLD_STORAGE_SUFFIX)]
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            rows.append({
+                "label": label,
+                "old_root": d.get("old_root"),
+                "written_at": d.get("written_at"),
+                "only_here": d.get("only_here"),
+                "only_here_gb": round((d.get("only_here_bytes") or 0) / 1e9, 1),
+                "for_a_person": sum((d.get("for_a_person_by_folder") or {}).values()),
+                "report": str(folder / (label + ".csv")),
+            })
+        except Exception as e:
+            rows.append({"label": label, "error": str(e)})
+    return rows
+
+
+def old_storage_lines(rows: List[dict]) -> List[str]:
+    """One line per old storage root, identical in the terminal and the GUI."""
+    out = []
+    for r in rows:
+        if r.get("error"):
+            out.append("Old storage %s: summary unreadable (%s)" % (r["label"], r["error"]))
+            continue
+        out.append(
+            "Old storage %s: %s recording(s), %s GB, exist ONLY there; %s more need a "
+            "person's look (inventory %s; report %s)"
+            % (r.get("old_root") or r["label"], r.get("only_here"), r.get("only_here_gb"),
+               r.get("for_a_person"), r.get("written_at") or "?", r.get("report")))
+    return out
+
+
 def session_list_lines(rows: List[dict]) -> List[str]:
     """One line per session list, identical in the terminal and the GUI."""
     out = []
@@ -498,6 +548,12 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         out["session_lists"] = read_session_coverage(_pipeline_root() / SESSION_LISTS_FOLDER)
     except Exception as e:
         out["problems"].append("session lists unreadable: %s" % e)
+
+    # Recordings still only on old storage (MouseReach legacy inventory)
+    try:
+        out["old_storage"] = read_old_storage(_pipeline_root() / OLD_STORAGE_FOLDER)
+    except Exception as e:
+        out["problems"].append("old-storage inventory unreadable: %s" % e)
     return out
 
 
@@ -536,6 +592,8 @@ def _print(st: dict) -> None:
     for line in analysis_lines(st.get("analyses") or []):
         print(line)
     for line in session_list_lines(st.get("session_lists") or []):
+        print(line)
+    for line in old_storage_lines(st.get("old_storage") or []):
         print(line)
     for p in st.get("problems", []) + list(ex.get("problems", [])):
         print("  [!] %s" % p)

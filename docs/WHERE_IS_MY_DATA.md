@@ -254,6 +254,29 @@ changes, or schedule it nightly (the time it was written is on the line). A
 report that cannot be read is shown as such, never left out. `mousedb-data-status`
 prints the same lines in a terminal.
 
+## Recordings still only on an old storage
+
+If a lab moved its pipeline to a new shared folder, recordings can be left in
+the old one, where no watcher looks. MouseReach's inventory
+(`mousereach-legacy-inventory --from <old root>`) lists every video under an
+old root and says whether the pipeline already has it; it writes
+`<label>.csv` (every video with its status) and `<label>.summary.json` (counts)
+into the `legacy_inventory` folder of the MouseReach pipeline root.
+
+The tab reads every summary there and shows one line per old root under the
+export files, for example:
+
+    Old storage <old root>: 120 recording(s), 5.0 GB, exist ONLY there; 31 more need a person's look (inventory ...; report ...)
+
+"Exist ONLY there" are pipeline recordings no machine can process until they
+are brought in (`--bring-in` on the same command copies them into the
+pipeline, verified, never overwriting; the old root is only ever read). "Need a
+person's look" are files whose names are not pipeline names, or that differ in
+size from the pipeline's copy -- the report's status column says which. The old
+root can be retired once the first number reads 0. Like the session lines, the
+line is only as new as the inventory (its date is on the line); re-run the
+command after moving anything. `mousedb-data-status` prints the same lines.
+
 ## The "Update the database now" button
 
 On the Where Is My Data tab, the green button **Update the database now**
