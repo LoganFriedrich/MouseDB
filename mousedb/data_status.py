@@ -17,6 +17,9 @@ cohort, in one table:
     analyses         one line per tissue analysis mirrored from MouseBrain's
                      registry (exports/ANALYSES_MANIFEST.json, written by
                      mousedb import-analyses): current / stale / invalidated
+    session_lists    one line per list of sessions a study needs: how many
+                     are analysed, in review, waiting to be posed or cut,
+                     not imported (MouseReach's coverage report, below)
 
 It reads the analysis SNAPSHOT (parquet), two queue folders and two manifest
 files -- never connectome.db -- so it is safe to call from a GUI at any time.
@@ -86,6 +89,48 @@ def analysis_lines(rows: List[dict]) -> List[str]:
 
 def _pipeline_root() -> Path:
     return require("mousereach_pipeline_root")
+
+
+# Lists of sessions a study needs, and how far each has got. MouseReach's
+# coverage report (mousereach-session-coverage --sessions-file <list>) writes
+# <list>.coverage.json beside each list; the lab keeps its lists in this
+# folder under the pipeline root. WHY: a study asks for particular sessions,
+# spread over many cohorts and recordings, and the per-cohort table cannot say
+# how far those have got -- "where is my data" for a study was unanswerable.
+SESSION_LISTS_FOLDER = "priority_lists"
+COVERAGE_SUFFIX = ".coverage.json"
+
+
+def read_session_coverage(folder: Path) -> List[dict]:
+    """One row per ``*.coverage.json`` in ``folder``: list name, when written,
+    session count and counts by stage. [] when the folder is absent. A file
+    that cannot be read is a row with an ``error``, never silently dropped."""
+    rows: List[dict] = []
+    if not folder.is_dir():
+        return rows
+    for f in sorted(folder.glob("*" + COVERAGE_SUFFIX)):
+        name = f.name[: -len(COVERAGE_SUFFIX)]
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+            rows.append({"list": name, "written_at": d.get("written_at"),
+                         "sessions": d.get("sessions"),
+                         "by_stage": d.get("by_stage") or {}})
+        except Exception as e:
+            rows.append({"list": name, "error": str(e)})
+    return rows
+
+
+def session_list_lines(rows: List[dict]) -> List[str]:
+    """One line per session list, identical in the terminal and the GUI."""
+    out = []
+    for r in rows:
+        if r.get("error"):
+            out.append("Sessions list %s: report unreadable (%s)" % (r["list"], r["error"]))
+            continue
+        stages = ", ".join("%s %s" % (n, s) for s, n in (r.get("by_stage") or {}).items())
+        out.append("Sessions list %s: %s sessions -- %s (report written %s)"
+                   % (r["list"], r.get("sessions"), stages or "none", r.get("written_at") or "?"))
+    return out
 
 
 # MouseReach's review-queue folders under <pipeline root>/Processing/Review/.
@@ -286,7 +331,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     import pandas as pd
 
     out: Dict = {"snapshot_dir": str(snapshot_dir), "cohorts": [], "problems": [],
-                 "exports": None, "analyses": []}
+                 "exports": None, "analyses": [], "session_lists": []}
     try:
         rd = pd.read_parquet(snapshot_dir / "reach_data.parquet",
                              columns=["subject_id", "video_name", "outcome_source", "segment_num"])
@@ -418,6 +463,12 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             require("mousedb_root") / "exports" / ANALYSES_MANIFEST_NAME)
     except Exception as e:
         out["problems"].append("analyses manifest unreadable: %s" % e)
+
+    # How far each study's list of sessions has got (MouseReach coverage report)
+    try:
+        out["session_lists"] = read_session_coverage(_pipeline_root() / SESSION_LISTS_FOLDER)
+    except Exception as e:
+        out["problems"].append("session lists unreadable: %s" % e)
     return out
 
 
@@ -453,6 +504,8 @@ def _print(st: dict) -> None:
     ex = st.get("exports") or {}
     print("Exports: %s  written %s  ODC-complete=%s" % (ex.get("folder"), ex.get("generated_at"), ex.get("complete")))
     for line in analysis_lines(st.get("analyses") or []):
+        print(line)
+    for line in session_list_lines(st.get("session_lists") or []):
         print(line)
     for p in st.get("problems", []) + list(ex.get("problems", [])):
         print("  [!] %s" % p)

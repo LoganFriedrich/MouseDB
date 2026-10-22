@@ -413,8 +413,10 @@ class DataStatusTab(QWidget):
         for name, rows in (ex.get("files") or {}).items():
             lines.append("  %-38s %s rows" % (name, rows))
         # Tissue analyses mirrored from MouseBrain's registry -- same lines as the terminal
-        from ..data_status import analysis_lines
+        from ..data_status import analysis_lines, session_list_lines
         lines.extend(analysis_lines(st.get("analyses") or []))
+        # How far each study's list of sessions has got -- same lines as the terminal
+        lines.extend(session_list_lines(st.get("session_lists") or []))
         pc = st.get("pipeline") or {}
         for cv in pc.get("caveats") or []:
             lines.append("  [!] %s" % cv)

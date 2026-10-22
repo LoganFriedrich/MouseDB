@@ -233,6 +233,27 @@ numbers as one line per analysis under the export files.
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 
+## How far a study's list of sessions has got
+
+A study usually needs particular sessions -- one animal's tray run on one
+day -- spread over many cohorts and recordings, so the per-cohort table
+cannot say how far they have got. MouseReach can: its coverage report
+(`mousereach-session-coverage --sessions-file <list>`) places every session of
+a list in exactly one stage (analysed, in review, waiting to be posed, being
+posed, recording waiting to be cut, not imported, ...) and writes
+`<list>.coverage.json` beside the list.
+
+The tab reads every such report in the `priority_lists` folder of the
+MouseReach pipeline root (`mousereach_pipeline_root` in mousedb's config) and
+shows one line per list under the export files, for example:
+
+    Sessions list study_a: 120 sessions -- 80 recording waiting to be cut, 30 analysed, 10 in review (report written ...)
+
+The line is only as new as the report: run the coverage command after a list
+changes, or schedule it nightly (the time it was written is on the line). A
+report that cannot be read is shown as such, never left out. `mousedb-data-status`
+prints the same lines in a terminal.
+
 ## The "Update the database now" button
 
 On the Where Is My Data tab, the green button **Update the database now**
