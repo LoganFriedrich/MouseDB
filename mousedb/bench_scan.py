@@ -309,8 +309,15 @@ def pair_current(rd, ps, version=None, vp=None):
 
 
 def build_worklist() -> list:
-    """[{"video_id": str, "segment_nums": [int, ...]}, ...] for every finished,
-    never-reviewed pellet where bench and algo disagree."""
+    """[{"video_id": str, "segment_nums": [int, ...], "segment_details":
+    {segment: words}}, ...] for every finished, never-reviewed pellet where
+    bench and algo disagree.
+
+    ``segment_details`` says, for each pellet, what the hand score and the
+    algorithm say. MouseReach stores it as that pellet's flag reason and its
+    review tool shows it beside the pellet. WHY: all a reviewer sees is the
+    tool, and finished videos coming back with no reason on screen looked like
+    the reviewer's own answers being lost (2026-10-23)."""
     from mousedb.analyzable import finished_videos
 
     rd, ps = load_paired_pellets()
@@ -335,9 +342,15 @@ def build_worklist() -> list:
 
     out = []
     for video_id, group in disagreements.groupby("video_name"):
+        details = {}
+        for seg_num, g in group.groupby("segment_num"):
+            r = g.iloc[0]
+            details[str(int(seg_num))] = ("the hand score says %s; the algorithm says %s"
+                                          % (r.human, r.segment_outcome))
         out.append({
             "video_id": video_id,
             "segment_nums": sorted(int(s) for s in group["segment_num"].unique()),
+            "segment_details": details,
         })
     return out
 

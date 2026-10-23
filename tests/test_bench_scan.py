@@ -121,4 +121,6 @@ def test_the_worklist_includes_a_no_reach_disagreement(tmp_path, monkeypatch):
     monkeypatch.setattr(bench_scan, "load_video_pellets", lambda: vp)
     import mousedb.analyzable as analyzable
     monkeypatch.setattr(analyzable, "finished_videos", lambda: {"V"})
-    assert bench_scan.build_worklist() == [{"video_id": "V", "segment_nums": [2]}]
+    assert bench_scan.build_worklist() == [{
+        "video_id": "V", "segment_nums": [2],
+        "segment_details": {"2": "the hand score says retrieved; the algorithm says untouched"}}]

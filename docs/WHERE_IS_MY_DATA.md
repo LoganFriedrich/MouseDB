@@ -373,6 +373,13 @@ and no person has looked at that pellet yet, it asks MouseReach to put the
 video in its triage queue with exactly those pellets marked. The reviewer then
 watches those pellets in the review tool and decides.
 
+What the reviewer sees (since 2026-10-23): the review tool's banner says the
+video was sent back for a bench disagreement, and beside each marked pellet what
+the two disagree about -- "the hand score says retrieved; the algorithm says
+untouched". The video may be one the reviewer finished long ago: the question is
+about a different pellet from the ones they answered. Before this, nothing on
+screen said why, and finished videos coming back looked like answers being lost.
+
 What it compares:
 
 - Only finished videos, and only those analysed by the outcome detector
