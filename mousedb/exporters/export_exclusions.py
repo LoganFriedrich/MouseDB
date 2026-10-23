@@ -54,6 +54,15 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
                 session is left out. A tray whose hand scores number other than
                 20 (one left out, one typed under the wrong number) has its
                 hand-score columns blanked; its reaches are unaffected.
+8. archive   -- a recording whose seats the archive's OWN single-animal cuts
+                name for animals the recording's name does not list (an archive
+                that kept its own cuts names every animal twice, typed
+                separately). Read from the record MouseReach's name audit writes
+                (``<pipeline>/pipeline_records/archive_name_conflicts.json``,
+                ``mousereach-aspa-name-audit``): every video cut from such a
+                recording is left out, because whose video each seat holds is in
+                doubt. Rerunning the audit after a person resolves the name
+                brings the videos back. No record: the check says it did not run.
 
 Low-information pellet patterns (all the same value, or nearly) are never used
 as evidence: they match everything.
@@ -361,6 +370,29 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
                      "hand-score count: this tray has %d pellets hand scored, not %d"
                      % (len(scored), PELLETS_PER_TRAY))
 
+    # 8: archive names -- a recording whose seats the archive's own cuts name
+    # for animals its name does not list. Every video cut from it is left out.
+    conflicts = archive_conflicts(Path(pipeline_root) if pipeline_root else None)
+    if conflicts is None:
+        ex.notes.append("archive-name check not run: no name-audit record in the pipeline "
+                        "folder (pipeline_records/archive_name_conflicts.json, written by "
+                        "mousereach-aspa-name-audit)")
+    else:
+        for c in conflicts:
+            named = ",".join(sorted({str(x.get("animal")) for x in
+                                     c.get("cuts_named_differently", [])}))
+            for rec in c.get("pipeline_recordings", []):
+                m = re.match(r"^(\d{8})_(.+)_([A-Za-z]+\d+)$", str(rec))
+                if not m:
+                    continue
+                date, animals, tray = m.groups()
+                for a in animals.split(","):
+                    ex.drop(_single_name(date, a.strip(), tray),
+                            "archive: the archive's own cut(s) of recording %s are named %s, "
+                            "which its name does not list -- whose video each seat holds is "
+                            "in doubt (left out with every animal in recording %s)"
+                            % (c.get("recording"), named, rec))
+
     # 5: an animal of a project cohort with no tracking workbook
     if sheets_dir and Path(sheets_dir).is_dir():
         have = set()
@@ -378,6 +410,22 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
         ex.notes.append("no-sheet check not run: the tracking-sheet folder is not available")
 
     return ex
+
+
+def archive_conflicts(pipeline_root: Optional[Path]) -> Optional[List[dict]]:
+    """The contested recordings in MouseReach's name-audit record (check 8), or
+    None when there is no record to read. Read-only; an unreadable record is
+    treated as absent, never as "no conflicts"."""
+    if pipeline_root is None:
+        return None
+    path = Path(pipeline_root) / "pipeline_records" / "archive_name_conflicts.json"
+    if not path.is_file():
+        return None
+    try:
+        import json
+        return list(json.loads(path.read_text(encoding="utf-8")).get("conflicts", []))
+    except (OSError, ValueError):
+        return None
 
 
 # ----------------------------------------------------------------- applying

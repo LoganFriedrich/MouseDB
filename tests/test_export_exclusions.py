@@ -177,6 +177,39 @@ def test_one_video_name_from_two_recordings_is_left_out(tmp_path):
     assert ex.drop_videos["20260310_CNT0101_P1"].startswith("collision")
 
 
+# ------------------------------------------------------------------- archive
+
+def test_a_recording_the_archive_cuts_name_differently_is_left_out_whole(tmp_path):
+    # MouseReach's name audit found the archive's own cut of a seat named for
+    # an animal the recording's name does not list: every video of that
+    # recording is left out, whatever its pellets say.
+    import json
+    a = "ASPA_12_09"
+    snap = _snapshot(tmp_path, videos=[("20221209_ASPA1209_P1", a, DAY, "P", 1, _vector(1))],
+                     hand=[(a, DAY, "P", 1, _vector(1))])
+    pipeline = tmp_path / "pipe"
+    (pipeline / "pipeline_records").mkdir(parents=True)
+    rec = "20221209_ASPA1209,ASPA1214,ASPA0003,ASPA0004,ASPA0005,ASPA0006,ASPA0007,ASPA0008_P1"
+    (pipeline / "pipeline_records" / "archive_name_conflicts.json").write_text(json.dumps(
+        {"conflicts": [{"recording": "20221209_L09,L14,003,004,005,006,007,008_P1.mkv",
+                        "pipeline_recordings": [rec],
+                        "cuts_named_differently": [{"animal": "L13"}]}]}), encoding="utf-8")
+    ex = ee.compute(snap, pipeline_root=pipeline)
+    assert ex.drop_videos["20221209_ASPA1209_P1"].startswith("archive")
+    assert "named L13" in ex.drop_videos["20221209_ASPA1214_P1"]
+
+
+def test_without_a_name_audit_record_the_archive_check_says_it_did_not_run(tmp_path):
+    a = "CNT_01_01"
+    snap = _snapshot(tmp_path, videos=[("20260310_CNT0101_P1", a, DAY, "P", 1, _vector(1))],
+                     hand=[(a, DAY, "P", 1, _vector(1))])
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    ex = ee.compute(snap, pipeline_root=pipeline)
+    assert ex.drop_videos == {}
+    assert any("archive-name check not run" in n for n in ex.notes)
+
+
 # --------------------------------------------------------------------- death
 
 def _contusion(sid, date, grams, survived):
