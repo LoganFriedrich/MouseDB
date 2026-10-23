@@ -263,10 +263,24 @@ def _load_provenance(features_path: Path, video_name: str) -> dict:
     return out
 
 
+# Easy and Flat: pellets presented but not tracked (pellet_rows; the exports
+# leave their pellet and outcome counts blank, exporters/odc_reaches).
+OUTCOME_FREE_TRAYS = ("E", "F")
+
+
 def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
                 source_file: str) -> List[dict]:
-    """One row per pellet (segment) of the video, whether or not it was reached for."""
+    """One row per pellet (segment) of the video, whether or not it was reached for.
+
+    None for an Easy or Flat tray video. WHY (lab decision, 2026-10-23): on
+    those trays pellets are presented but not tracked -- the video is one
+    whole-session span, not cut per pellet, and no outcome is computed -- so a
+    pellet row would claim "1 pellet presented, 0 retrieved" for a session
+    whose pellets nobody counted. Their reaches and attention still import.
+    """
     meta = parse_video_metadata(video_name)
+    if str(meta.get('tray_type') or '').upper() in OUTCOME_FREE_TRAYS:
+        return []
     rows = []
     for seg in data.get('segments', []):
         if seg.get('segment_num') is None:

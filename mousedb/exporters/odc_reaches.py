@@ -379,6 +379,12 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     cols["Video_Displaced"] = video.map(disp).astype("Int64")
     cols["Video_Retrieved"] = video.map(retr).astype("Int64")
     cols["Video_Contacted"] = cols["Video_Displaced"] + cols["Video_Retrieved"]
+    # Easy and Flat: pellets are presented but not tracked and no outcome is
+    # computed (lab decision, 2026-10-23), so their pellet and outcome counts
+    # are unknown, not zero. Blank them; the reach count and attention stay.
+    outcome_free = rc["tray_type"].fillna("").astype(str).str.upper().isin(["E", "F"])
+    for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted"):
+        cols[c] = cols[c].mask(outcome_free)
     empty = pd.Series(pd.array([pd.NA] * len(rc), dtype="Int64"), index=rc.index)
     for c in ("Manual_Pellets", "Manual_Displaced", "Manual_Retrieved", "Manual_Contacted",
               "Contacted_Match"):
