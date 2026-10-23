@@ -21,7 +21,7 @@ This module is that missing half. It:
   when it is not, the sessions and a reason are named.
 
 TRANSIENTS ARE REASONS, NOT STATES: a video that finished five minutes ago
-lands on the next hourly import -- the invariant message says so, and the
+lands at the next scheduled reach import -- the invariant message says so, and the
 violation list is recomputed live on every call, never cached, so a healed
 pipeline never shows a stale alarm.
 

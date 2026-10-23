@@ -6691,7 +6691,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 
-    # PRE-FLIGHT: if an hourly import holds the database's write lock, SAY SO
+    # PRE-FLIGHT: if a scheduled job holds the database's write lock, SAY SO
     # and wait, instead of hanging for the query timeout and dying with no
     # explanation. The contention window is designed (batch jobs may hold the
     # lock for minutes); an unexplained hang is indistinguishable from a
@@ -6719,7 +6719,7 @@ def main():
         from qtpy.QtCore import Qt as _Qt
         import time as _time
         dlg = QProgressDialog(
-            "The hourly data import is running and has the database open.\n\n"
+            "A scheduled data job is running and has the database open.\n\n"
             "This window will open automatically when it finishes\n"
             "(usually a few minutes). You can also press Cancel and\n"
             "try again later.", "Cancel", 0, 0)

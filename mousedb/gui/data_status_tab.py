@@ -63,8 +63,9 @@ WHERE IS MY DATA -- one row per cohort:
 
 THE ALARM LINE above the table: sessions that FINISHED analysis but never
 landed in the database must number ZERO. A video that finished minutes ago
-lands on the next hourly import -- the line only matters if a video stays
-there across imports.
+lands at the next run of the scheduled reach import -- the line only
+matters if a video stays there across imports. (How often the import runs
+is set when the jobs are scheduled; INSTALL.md, "Scheduled jobs".)
 
 ESTIMATES: pace is measured from output-file timestamps over the trailing
 14 days and projected over the backlog. It is an estimate from recent pace,
@@ -84,9 +85,11 @@ DATA_DICTIONARY.csv per kind of file (shared by every cohort), plus
 MANIFEST.json saying when they were written and whether they are complete
 for an ODC-SCI upload. "Open exports folder" opens it in Explorer.
 
-The folder is rewritten by the hourly job. "Refresh exports now" rewrites
-reach_data, manual_scores and the ODC_reaches files immediately from the
-latest snapshot.
+The folder is rewritten each time the scheduled snapshot job runs (the
+panel says when that last was). "Refresh exports now" rewrites reach_data,
+manual_scores and the ODC_reaches files immediately from the latest
+snapshot; the ODC_sessions files wait for the scheduled job, because they
+read the database itself.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
 TISSUE ANALYSES: below the export files, one line per MouseBrain analysis
@@ -191,7 +194,8 @@ class DataStatusTab(QWidget):
              "background:#16405a; color:white; font-weight:bold;"),
             ("Refresh exports now", self.refresh_exports,
              "Rewrite reach_data.csv and manual_scores.csv from the latest snapshot "
-             "right now (ODC session files refresh on the hourly run).", ""),
+             "right now (the ODC session files wait for the scheduled snapshot "
+             "job, which reads the database itself).", ""),
         ):
             b = QPushButton(text)
             b.setToolTip(tip)
@@ -352,7 +356,7 @@ class DataStatusTab(QWidget):
             more = inv["count"] - min(3, inv["count"])
             self.invariant_label.setText(
                 "%d finished videos have NOT landed in the database (this number must "
-                "be 0). New results land on the next hourly import -- investigate only "
+                "be 0). New results land at the next scheduled reach import -- investigate only "
                 "if a video stays here across imports. E.g.: %s%s"
                 % (inv["count"], examples, (" (+%d more)" % more) if more > 0 else ""))
             self.invariant_label.setStyleSheet(
