@@ -421,7 +421,11 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(worklist, indent=2))
     n_segments = sum(len(item["segment_nums"]) for item in worklist)
-    print("videos: %d  segments: %d  wrote: %s" % (len(worklist), n_segments, out))
+    # Flushed: this runs under a time limit with its output going to a file,
+    # where print() is buffered -- the 2026-10-24 run was stopped mid-routing
+    # and this line, though printed, never reached the log.
+    print("videos: %d  segments: %d  wrote: %s" % (len(worklist), n_segments, out),
+          flush=True)
 
     if args.route:
         if not worklist:
