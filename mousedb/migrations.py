@@ -8,34 +8,62 @@ SQLite computes their values on the fly from source columns.
 Run via::
 
     python -m mousedb.migrations add-contact-group
+    python -m mousedb.migrations contact-columns       # bring them to the current definition
 
 or programmatically::
 
     from mousedb.migrations import add_contact_group_columns
     added = add_contact_group_columns()
+
+The contact columns' definitions live in ``mousedb.schema`` (one place, so a new
+database and an old one end up identical). ``bring_contact_columns_current``
+replaces an older definition in an existing database; the nightly reach import
+calls it too, so the database corrects itself on its next run.
 """
 
 from __future__ import annotations
 
+import sqlite3
 from typing import List, Sequence
 
 from sqlalchemy import text
 
 from .database import Database, get_db
+from .schema import PELLET_CONTACT_EXPR, REACH_CONTACT_EXPR, REACH_SEGMENT_CONTACT_EXPR
 
 
-# --- contact_group expressions --------------------------------------------
+# --- contact_group expressions (defined in schema.py, which says why) ---------
 
-REACH_CONTACT_EXPR = (
-    "CASE WHEN interaction_frame IS NOT NULL THEN 'contacted' ELSE 'missed' END"
+CONTACT_COLUMNS = (
+    ("reach_data", "contact_group", REACH_CONTACT_EXPR),
+    ("reach_data", "segment_contact_group", REACH_SEGMENT_CONTACT_EXPR),
+    ("pellet_scores", "contact_group", PELLET_CONTACT_EXPR),
 )
 
-REACH_SEGMENT_CONTACT_EXPR = (
-    "CASE WHEN segment_outcome IN ('retrieved', 'displaced_sa', 'displaced_outside') "
-    "THEN 'contacted' ELSE 'missed' END"
-)
 
-PELLET_CONTACT_EXPR = "CASE WHEN score = 0 THEN 'missed' ELSE 'contacted' END"
+def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
+    """Give each contact column its current definition; the columns changed.
+
+    A column whose table already carries the current expression is left alone,
+    so this is safe to run on every import. A VIRTUAL generated column stores
+    nothing, so SQLite drops and re-adds it by rewriting the schema alone --
+    instant even on the 5 GB reach table (timed 2026-10-26: 0.01 s each on a
+    559 MB table of a million rows). Call it inside a transaction, holding the
+    cross-task lock (task_mutex), like any other write."""
+    changed: List[str] = []
+    for table, column, expr in CONTACT_COLUMNS:
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+                           (table,)).fetchone()
+        if not row or expr in (row[0] or ""):
+            continue
+        # table_xinfo, not table_info: it is the one that lists generated columns.
+        have = {r[1] for r in conn.execute("PRAGMA table_xinfo(%s)" % table)}
+        if column in have:
+            conn.execute("ALTER TABLE %s DROP COLUMN %s" % (table, column))
+        conn.execute("ALTER TABLE %s ADD COLUMN %s TEXT GENERATED ALWAYS AS (%s) VIRTUAL"
+                     % (table, column, expr))
+        changed.append("%s.%s" % (table, column))
+    return changed
 
 
 # --- helpers ---------------------------------------------------------------
@@ -100,7 +128,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         "add-contact-group",
         help="Add contact_group / segment_contact_group virtual columns.",
     )
+    sub.add_parser(
+        "contact-columns",
+        help="Give the contact columns their current definition (easy/flat empty; "
+             "a pellet nobody touched is 'untouched').",
+    )
     args = parser.parse_args(argv)
+
+    if args.migration == "contact-columns":
+        from .task_mutex import hold
+        db = get_db()
+        with hold(waiting_for="another database task"):
+            conn = sqlite3.connect(str(db.db_path), timeout=600)
+            try:
+                with conn:
+                    changed = bring_contact_columns_current(conn)
+            finally:
+                conn.close()
+        print("Redefined: " + ", ".join(changed) if changed
+              else "Contact columns already current; nothing to do.")
+        return 0
 
     if args.migration == "add-contact-group":
         added = add_contact_group_columns()

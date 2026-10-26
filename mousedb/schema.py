@@ -15,6 +15,39 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship, validates, Session
 from sqlalchemy.engine import Engine
 
+# --- the three contact columns, defined ONCE (migrations.py brings an existing
+# database to these same strings) ------------------------------------------
+# Logan, 2026-10-26: "the algo shouldn't be analyzing pellet outcomes on easy and
+# flat trays ... The result there should be 'not applicable' for the algo
+# pellet/reach outcome for flat and easy trays and should be whatever the manual
+# says for the manual pellet outcome." And a PELLET nobody touched is
+# "untouched" -- "missed" is a word for a reach. Until that day the two
+# algorithm columns said 'missed' on every easy/flat reach (nothing was
+# measured there) and on every pellet the algorithm had not decided, and the
+# pellet columns used 'missed' for an untouched pellet.
+#
+# Per reach, from the algorithm: did THIS reach meet the pellet (a frame of
+# contact was identified -- only ever on the reach credited with the pellet)?
+# A reach word: 'contacted' / 'missed'. NULL on easy/flat trays.
+REACH_CONTACT_EXPR = (
+    "CASE WHEN UPPER(tray_type) IN ('E', 'F') THEN NULL "
+    "WHEN interaction_frame IS NOT NULL THEN 'contacted' ELSE 'missed' END"
+)
+# Per pellet, from the algorithm (on every reach at that pellet): was it moved?
+# A pellet word: 'contacted' / 'untouched'. NULL where the algorithm has no
+# answer: easy/flat trays, a pellet not decided, or one a person saw moved by
+# something other than a reach.
+REACH_SEGMENT_CONTACT_EXPR = (
+    "CASE WHEN UPPER(tray_type) IN ('E', 'F') THEN NULL "
+    "WHEN segment_outcome IN ('retrieved', 'displaced_sa', 'displaced_outside') THEN 'contacted' "
+    "WHEN segment_outcome IN ('untouched', 'missed') THEN 'untouched' ELSE NULL END"
+)
+# Per pellet, from the hand score, on EVERY tray (easy and flat included: the
+# hand score says what it says): 0 -> 'untouched', 1 or 2 -> 'contacted'.
+PELLET_CONTACT_EXPR = (
+    "CASE WHEN score = 0 THEN 'untouched' WHEN score IN (1, 2) THEN 'contacted' ELSE NULL END"
+)
+
 Base = declarative_base()
 
 # =============================================================================
@@ -438,14 +471,11 @@ class PelletScore(Base):
     tray_type = Column(String(1), nullable=False)  # E=Easy, F=Flat, P=Pillar
     tray_number = Column(Integer, nullable=False)  # 1-4
     pellet_number = Column(Integer, nullable=False)  # 1-20
-    score = Column(Integer, nullable=False)  # 0=miss, 1=displaced, 2=retrieved
-    # 'contacted' if score in (1, 2); 'missed' if score == 0. SQLite VIRTUAL generated column.
+    score = Column(Integer, nullable=False)  # 0=untouched, 1=displaced, 2=retrieved
+    # Hand score as a pellet word (PELLET_CONTACT_EXPR above). VIRTUAL generated column.
     contact_group = Column(
         String(10),
-        Computed(
-            "CASE WHEN score = 0 THEN 'missed' ELSE 'contacted' END",
-            persisted=False,
-        ),
+        Computed(PELLET_CONTACT_EXPR, persisted=False),
     )
     entered_by = Column(String(50))
     entered_at = Column(DateTime, default=datetime.now)
@@ -803,15 +833,11 @@ class ReachData(Base):
     interaction_frame = Column(Integer)  # Frame when pellet was touched
     distance_to_interaction = Column(Integer)  # Frames between apex and contact
 
-    # Per-reach binary contact: did THIS specific reach physically touch the pellet?
-    # 'contacted' iff interaction_frame is populated; 'missed' otherwise.
-    # SQLite VIRTUAL generated column.
+    # Did THIS reach meet the pellet, per the algorithm (REACH_CONTACT_EXPR above):
+    # 'contacted' / 'missed' / NULL on easy and flat trays. VIRTUAL generated column.
     contact_group = Column(
         String(10),
-        Computed(
-            "CASE WHEN interaction_frame IS NOT NULL THEN 'contacted' ELSE 'missed' END",
-            persisted=False,
-        ),
+        Computed(REACH_CONTACT_EXPR, persisted=False),
     )
 
     # Reach context
@@ -874,16 +900,11 @@ class ReachData(Base):
     attention_score = Column(Float)
     pellet_position_idealness = Column(Float)
 
-    # Per-segment binary contact: did the mouse touch this pellet at all (across all reaches
-    # in the segment)? 'contacted' iff segment_outcome in (retrieved, displaced_sa,
-    # displaced_outside); 'missed' for untouched / uncertain. SQLite VIRTUAL generated column.
+    # Was this reach's pellet moved, per the algorithm (REACH_SEGMENT_CONTACT_EXPR
+    # above): 'contacted' / 'untouched' / NULL. VIRTUAL generated column.
     segment_contact_group = Column(
         String(10),
-        Computed(
-            "CASE WHEN segment_outcome IN ('retrieved', 'displaced_sa', 'displaced_outside') "
-            "THEN 'contacted' ELSE 'missed' END",
-            persisted=False,
-        ),
+        Computed(REACH_SEGMENT_CONTACT_EXPR, persisted=False),
     )
 
     # Metadata

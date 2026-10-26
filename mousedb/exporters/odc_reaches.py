@@ -64,13 +64,9 @@ NOT_APPLICABLE_WHEN_EMPTY = {
 # Columns of the complete record that answer a question about a pellet. On an easy
 # or flat tray none of them has an answer (trays.py says why), so there they read
 # 'Not applicable' -- whatever the column's general word for an empty cell, and
-# whatever the database put there: the stored contact groups say 'missed' on those
-# rows and causal_reach says 0, both claims about pellets nobody tracked.
-EASY_FLAT_NOT_APPLICABLE = (
-    "outcome", "causal_reach", "interaction_frame", "distance_to_interaction",
-    "segment_outcome", "segment_outcome_confidence", "segment_outcome_flagged",
-    "pellet_position_idealness", "contact_group", "segment_contact_group",
-    "outcome_source", "algo_outcome", "algo_causal_reach_id",
+# whatever the database put there (causal_reach is 0 on those rows, a claim about
+# a pellet nobody tracked; the contact groups said 'missed' before 2026-10-26).
+EASY_FLAT_NOT_APPLICABLE = trays.ALGO_PELLET_COLUMNS + (
     "Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted",
 )
 
@@ -635,8 +631,8 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
         full_rows = [dict(r, Comments=" ".join(x for x in (
                          r.get("Comments", ""),
                          missing.dictionary_comment(reasons, r["VariableName"]),
-                         (reach_summary.EASY_FLAT_NOTE
-                          if r["VariableName"] in EASY_FLAT_NOT_APPLICABLE else ""))
+                         (trays.NOTE if r["VariableName"] in EASY_FLAT_NOT_APPLICABLE
+                          and trays.NOTE not in r.get("Comments", "") else ""))
                          if x).strip())
                      for r in rows]
         # No dictionary per cohort: export() writes one per kind from these rows.

@@ -31,6 +31,21 @@ import pandas as pd
 # scored task.
 OUTCOME_FREE_TRAYS = ("E", "F")
 
+# The database's per-reach columns that carry the ALGORITHM's pellet or reach
+# outcome. On an easy or flat tray each reads "Not applicable" (Logan,
+# 2026-10-26: the algorithm does not analyse pellet outcomes there). The hand
+# scores are not among them: on every tray they say what the hand score says.
+ALGO_PELLET_COLUMNS = (
+    "outcome", "causal_reach", "interaction_frame", "distance_to_interaction",
+    "segment_outcome", "segment_outcome_confidence", "segment_outcome_flagged",
+    "pellet_position_idealness", "contact_group", "segment_contact_group",
+    "outcome_source", "algo_outcome", "algo_causal_reach_id",
+)
+NOTE = ("On an easy or flat training tray this reads 'Not applicable': the algorithm "
+        "does not analyse pellet outcomes there (its pellets are not tracked and the "
+        "video is not cut into one stretch per pellet). Hand scores, where present, "
+        "are kept as scored.")
+
 
 def outcome_free(frame: pd.DataFrame, column: str = "tray_type") -> pd.Series:
     """True on each row that comes from an easy or flat tray.

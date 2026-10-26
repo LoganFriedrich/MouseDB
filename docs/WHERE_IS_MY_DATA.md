@@ -12,7 +12,7 @@ each with a data dictionary beside it:
 | file | one row per | definitions |
 |---|---|---|
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
-| `manual_scores.csv` | pellet scored by hand from the tray (0 missed / 1 displaced / 2 retrieved) with the session's phase | `manual_scores_DATA_DICTIONARY.csv` |
+| `manual_scores.csv` | pellet scored by hand from the tray (0 untouched / 1 displaced / 2 retrieved) with the session's phase -- on every tray, easy and flat included | `manual_scores_DATA_DICTIONARY.csv` |
 | `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
@@ -85,7 +85,17 @@ counts -- reads `Not applicable` (in the analysis files, a number column reads
 `NA` instead, which is those files' word for an absent number). The reach
 itself, its measurements and the session's attention score are all there. Use
 `tray_type` (P = pillar, E = easy, F = flat) to pick the pillar rows when you
-want pellet outcomes.
+want pellet outcomes. The same holds in `reach_data.csv` and in the database
+itself: on easy and flat trays every column holding the ALGORITHM's pellet or
+reach outcome is empty in the database and reads `Not applicable` in the files.
+The HAND scores are different: they are kept exactly as scored on every tray.
+
+**Pellet words and reach words.** A pellet is retrieved, displaced or untouched;
+a reach retrieved it, displaced it, or missed it. So the database's per-pellet
+contact columns (`segment_contact_group`, and `contact_group` in the hand scores)
+say `untouched` for a pellet nothing moved, and only the per-reach
+`contact_group` says `missed` (since 2026-10-26; before that the pellet columns
+said `missed` too).
 
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.

@@ -204,7 +204,7 @@ def validate_pellet_score(value: int) -> Tuple[bool, str]:
     Validate pellet score.
 
     Args:
-        value: Score (0=miss, 1=displaced, 2=retrieved)
+        value: Score (0=untouched, 1=displaced, 2=retrieved)
 
     Returns:
         (is_valid, error_message)

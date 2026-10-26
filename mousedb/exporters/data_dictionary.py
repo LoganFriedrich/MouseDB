@@ -258,10 +258,16 @@ REACH_DATA = [
     _row("algo_causal_reach_id", "Algorithm's original causal reach", "Reach id the algorithm blamed before a human overrode it. Empty on current data.", "count", "integer"),
     _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (see manual_scores dictionary for values).", "", "text"),
     _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...).", "", "text"),
-    _row("contact_group", "Contact group (reach outcome)", "missed if the reach's outcome is missed, contacted if the pellet was displaced or retrieved; empty on non-causal reaches.", "", "text", "missed; contacted", "missed=pellet untouched; contacted=displaced or retrieved"),
-    _row("segment_contact_group", "Contact group (segment outcome)", "missed / contacted derived from segment_outcome, on every reach of the segment.", "", "text", "missed; contacted", "missed=pellet untouched; contacted=displaced or retrieved"),
+    _row("contact_group", "Did this reach meet the pellet (algorithm)", "What THIS reach did, in the words for a reach: contacted when the pipeline identified the frame at which its paw met the pellet (only ever on the reach credited with the pellet), otherwise missed.", "", "text", "missed; contacted", "missed=this reach did not meet the pellet; contacted=it did"),
+    _row("segment_contact_group", "Was the pellet moved (algorithm)", "What happened to the pellet this reach was aimed at, in the words for a pellet, on every reach at that pellet: contacted when it was retrieved or displaced, untouched when nothing moved it, empty when the algorithm has no answer (a pellet a person saw moved by something other than a reach).", "", "text", "untouched; contacted", "untouched=no reach moved the pellet; contacted=retrieved or displaced"),
     _row("extended_features", "Extended features (JSON)", "The full per-reach extended feature block (161 values: per-paw-point kinematics) as a JSON string. See KINEMATICS_FIELDS.md section 6.", "", "text (JSON)"),
 ]
+# The algorithm's pellet and reach outcome columns read "Not applicable" on an
+# easy or flat tray (exporters/trays.py says why); every one says so.
+from .trays import ALGO_PELLET_COLUMNS as _ALGO_PELLET_COLUMNS, NOTE as _EASY_FLAT_NOTE
+for _r in REACH_DATA:
+    if _r["VariableName"] in _ALGO_PELLET_COLUMNS:
+        _r["Comments"] = (_r["Comments"] + " " + _EASY_FLAT_NOTE).strip()
 
 # ---------------------------------------------------------------------------
 # manual_scores: one row per pellet scored by hand from the tray
@@ -275,8 +281,8 @@ MANUAL_SCORES = [
     _row("tray_type", "Tray type", "P = pillar, E = easy, F = flat.", "", "text", "P; E; F", "P=pillar; E=easy; F=flat"),
     _row("tray_number", "Tray number", "Which tray of the session (1-4).", "", "integer", "", "", "1", "4"),
     _row("pellet_number", "Pellet number", "Pellet position on the tray (1-20).", "", "integer", "", "", "1", "20"),
-    _row("score", "Manual score", "Post-hoc tray inspection score: 0 = missed (still on its pillar), 1 = displaced (moved but not eaten), 2 = retrieved (eaten).", "", "integer", "0; 1; 2", "0=missed; 1=displaced; 2=retrieved", "0", "2"),
-    _row("contact_group", "Contact group", "missed if score is 0, else contacted.", "", "text", "missed; contacted", "missed=score 0; contacted=score 1 or 2"),
+    _row("score", "Manual score", "Post-hoc tray inspection score: 0 = untouched (still on its pillar), 1 = displaced (moved but not eaten), 2 = retrieved (eaten). Kept as scored on every tray, easy and flat included.", "", "integer", "0; 1; 2", "0=untouched; 1=displaced; 2=retrieved", "0", "2"),
+    _row("contact_group", "Was the pellet moved (hand score)", "untouched if the hand score is 0, contacted if it is 1 or 2 -- on every tray, easy and flat included.", "", "text", "untouched; contacted", "untouched=score 0; contacted=score 1 or 2"),
     _row("entered_by", "Entered by", "Who or what wrote the row (excel_import for the sheet importer).", "", "text"),
     _row("entered_at", "Entered at", "When the row was written to the database.", "", "datetime"),
     _row("id", "Row id", "Database row identifier.", "", "integer"),

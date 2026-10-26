@@ -41,6 +41,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from . import data_dictionary as dd
+from . import missing, trays
 from .. import DEFAULT_EXPORT_PATH
 
 from ..config import require, snapshot_dir as _snapshot_dir
@@ -75,7 +76,7 @@ reach_data_extended.parquet
                           because it made the file 3 GB. Read with pandas /
                           pyarrow and join on those four columns.
 manual_scores.csv         One row per pellet scored by hand from the tray
-                          (0 missed / 1 displaced / 2 retrieved), with the
+                          (0 untouched / 1 displaced / 2 retrieved), with the
                           session's derived phase. Definitions:
                           manual_scores_DATA_DICTIONARY.csv.
 ODC_sessions_<cohort>.csv One row per animal per session in the ODC-SCI
@@ -153,6 +154,10 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     # the CSV stays the ~200 MB a person can actually load.
     cols = [c for c in REACH_DATA_ORDER_FIRST if c in df.columns]
     cols += [c for c in df.columns if c not in cols and c not in REACH_DATA_ORDER_LAST and c != "id"]
+    # Easy and flat trays: the algorithm's pellet and reach outcome columns read
+    # "Not applicable" (trays.ALGO_PELLET_COLUMNS says which, and why).
+    trays.blank_where(df, trays.outcome_free(df), trays.ALGO_PELLET_COLUMNS,
+                      missing.NOT_APPLICABLE)
     out = out_dir / "reach_data.csv"
     df[cols].to_csv(staging / out.name, index=False)
     _place(staging / out.name, out)

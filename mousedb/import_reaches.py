@@ -360,6 +360,10 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     # the database lock this import already holds, so an existing database gets
     # it on the next nightly run; a new database gets it from schema.py.
     conn.execute(REACH_SUBJECT_INDEX_DDL)
+    # The contact columns' current definitions (schema.py says why), applied
+    # the same way: instant, and a no-op once current.
+    from .migrations import bring_contact_columns_current
+    bring_contact_columns_current(conn)
 
 
 def write_pellets(conn: sqlite3.Connection, video_name: str, rows: List[dict]) -> None:
