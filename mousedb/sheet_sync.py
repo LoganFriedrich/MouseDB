@@ -90,6 +90,12 @@ from .cohort_sheets import (
 # Override hook (tests point it at a temp file); None = the configured logs folder.
 LEDGER = None
 
+# Whether an import that wrote rewrites the hand-scores file afterwards
+# (hand_scores_file). The test suite turns it off (tests/conftest.py): the
+# file's location comes from this machine's configuration, which a unit test
+# must never write into.
+WRITE_HAND_SCORES = True
+
 # The project whose workbooks the tracking-sheet folder holds. cohort_sheets
 # recognises ONE file-name pattern there (Connectome_NN_Animal_Tracking.xlsx),
 # which is this project's workbook name, so every cohort found in that folder
@@ -632,6 +638,15 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     # the ledger (the ledger tracks score imports of those workbooks).
     if cohorts is None:
         results["aspa_animal_records"] = _aspa_animal_records(dry_run)
+    if not dry_run and WRITE_HAND_SCORES:
+        # The reaching pipeline compares each video with its hand scores before
+        # it files it, reading them from this file (hand_scores_file), so the
+        # file is rewritten after every import that may have changed them.
+        try:
+            from .hand_scores_file import write as write_hand_scores
+            results["hand_scores"] = write_hand_scores(log=lambda *_: None)
+        except Exception as e:
+            results["hand_scores_error"] = "%s: %s" % (type(e).__name__, e)
     return results
 
 
@@ -825,6 +840,10 @@ def import_succeeded(r: dict) -> bool:
         return False
     if not all(c.get("success") for c in r.get("cohorts", [])):
         return False
+    if r.get("hand_scores_error"):
+        # The reaching pipeline would go on reading old scores: videos whose
+        # scores just landed would wait for nothing.
+        return False
     return not any(a.get("error") for a in r.get("aspa_animal_records") or [])
 
 
@@ -862,6 +881,12 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
             a.get("sheet_name") or "-", a.get("error") or a.get("records"))))
     for f in r.get("refused_files") or []:
         log(_ascii("[!] not read as a sheet: %s -- %s" % (f.get("file"), f.get("reason"))))
+    if r.get("hand_scores_error"):
+        log(_ascii("FAIL hand scores for the reaching pipeline NOT rewritten: %s"
+                   % r["hand_scores_error"]))
+    elif r.get("hand_scores"):
+        log(_ascii("OK   hand scores for the reaching pipeline: %d pellets of %d sessions"
+                   % (r["hand_scores"]["rows"], r["hand_scores"]["videos"])))
 
     ok = import_succeeded(r)
     if r.get("problem"):

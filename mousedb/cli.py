@@ -939,6 +939,14 @@ def cmd_backfill_phases(args):
     print_stats(stats)
 
 
+def cmd_hand_scores(args):
+    """Write the hand pellet scores file the reaching pipeline reads."""
+    from .hand_scores_file import main
+    # Its own exit status: the CLI ignores what a command returns, and a
+    # failed write must not exit 0.
+    raise SystemExit(main([]))
+
+
 def cmd_import_brains(args):
     """Import BrainGlobe brain data into connectome.db."""
     # Where MouseBrain's 2_Data_Summary is: given, or derived from the configured
@@ -1529,6 +1537,12 @@ def main():
     backfill_parser.add_argument('--dry-run', action='store_true',
         help='Report what would change without modifying the database')
     backfill_parser.set_defaults(func=cmd_backfill_phases)
+
+    # mousedb hand-scores
+    hs_parser = subparsers.add_parser('hand-scores',
+        help='Write every hand pellet score to exports/hand_scores/ for the reaching '
+             'pipeline (also done after every sheet import)')
+    hs_parser.set_defaults(func=cmd_hand_scores)
 
     # mousedb import-brains
     brain_parser = subparsers.add_parser('import-brains',

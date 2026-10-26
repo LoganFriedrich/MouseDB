@@ -386,6 +386,31 @@ To read every warning of one cohort:
 - in a terminal: `mousedb-sheets import --cohort CNT_NN --dry-run --json`.
   Nothing is written.
 
+### After every import: the hand scores for the reaching pipeline
+
+Before the reaching pipeline files a video, it compares the video's pellets
+with the session's hand scores. It does not read the database for this (it
+never depends on mousedb); it reads one file mousedb writes:
+
+- `<mousedb_root>/exports/hand_scores/hand_pellet_scores.csv`: every hand
+  pellet score, one row per pellet, keyed by the session the way the
+  pipeline names its video (`20250709_CNT0207_P1`: date, animal without
+  underscores, tray type and number);
+- `hand_pellet_scores.json` beside it: when the file was written, how many
+  scores, and, for each cohort, when its last successful sheet import
+  finished. The pipeline uses that to tell "the sheet has not been imported
+  since this video was ready" (the video waits) from "it was imported and
+  the scores for this session are still not there" (shown to a person as
+  something to fix).
+
+Every import that writes (the scheduled job, the Tracking Sheets tab,
+**Update the database now**, `mousedb-sheets import`) rewrites the file when
+it finishes, and says so in its result: `OK   hand scores for the reaching
+pipeline: N pellets of M sessions`. If the file could not be written, the
+line starts `FAIL`, and the import counts as failed (the scheduled job's run
+shows as failed), because the pipeline would go on reading the old scores.
+To write it by hand: `mousedb hand-scores`. Dry runs never write it.
+
 ### Which file is read: the name, and pins
 
 **The name.** A file is a cohort's sheet only if its name STARTS with

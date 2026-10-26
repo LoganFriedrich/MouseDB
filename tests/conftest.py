@@ -13,6 +13,14 @@ _orig_init = TaskMutex.__init__
 
 
 @pytest.fixture(autouse=True)
+def _no_production_hand_scores(monkeypatch):
+    """An import in a test never rewrites the hand-scores file: its location is
+    this machine's configuration (sheet_sync.WRITE_HAND_SCORES)."""
+    from mousedb import sheet_sync
+    monkeypatch.setattr(sheet_sync, "WRITE_HAND_SCORES", False)
+
+
+@pytest.fixture(autouse=True)
 def _no_production_lock(monkeypatch):
     def guarded(self, name="central-db", stale_minutes=45, base_dir=None):
         if base_dir is None:
