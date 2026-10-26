@@ -37,12 +37,8 @@ from PyQt5.QtWidgets import (
 QUICK_GUIDE = """\
 NEEDS YOUR ATTENTION (red, at the top; hidden when there is nothing): things
 only a person can fix, gathered from every tool --
-* a processed video whose session has no hand scores, although the cohort's
-  sheet has been imported since it was ready (MouseReach holds the video
-  unfiled until they come): check the sheet has that animal, date and tray,
-  and that the video is named right;
-* a video already in the database whose session has no hand scores (filed
-  before that check existed, or misnamed): the same two checks;
+* a video MouseReach cannot file because its check against the hand scores
+  cannot run (a setting or file to fix);
 * a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
   in the sheet;
 * a sheet import that failed.
@@ -153,7 +149,7 @@ class DataStatusTab(QWidget):
 
         # What needs a person (attention.py): red, at the top, hidden when
         # nothing does. WHY here: this is the tab people open to find their
-        # data, and a session with no hand scores holds that data back.
+        # data, and what is listed there holds that data back.
         self.attention_label = QLabel("")
         self.attention_label.setWordWrap(True)
         self.attention_label.setTextInteractionFlags(Qt.TextSelectableByMouse)

@@ -77,7 +77,7 @@ its own working directory instead.
 Two things in mousedb are BUILT to write into the folder. The first is the
 FIX THESE file: after every import that writes, each cohort with something a
 person must fix in its sheet (attention.py: a date read as a typo, a failed
-import, a session with videos but no hand scores) gets
+import, a video the reaching pipeline cannot check against the hand scores) gets
 "!! <cohort> - FIX THESE.xlsx" beside its workbook, and a cohort with nothing
 left has it removed. WHY there: that folder is where the sheet is opened and
 fixed. It never touches the sheet, and its name can never be read as one

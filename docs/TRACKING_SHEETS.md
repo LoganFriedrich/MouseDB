@@ -415,17 +415,11 @@ To write it by hand: `mousedb hand-scores`. Dry runs never write it.
 
 Some things only a person can fix, mostly in the sheet:
 
-- a session the reaching pipeline has a video for but no hand scores,
-  although the cohort's sheet has been imported since the video was ready
-  (the pipeline keeps that video unfiled until the scores come). Check the
-  sheet has that animal, date and tray -- and that the video is named for
-  the right animal, date and tray;
-- a video already in the database (a Pillar tray) whose session has no hand
-  scores in the sheet -- filed before the pipeline checked hand scores at
-  filing (2026-10-26), or named for an animal, date or tray the sheet does
-  not have. Same check: the sheet, and the video's name. (Read from the
-  analysis snapshot, so a video corrected today leaves the list after the
-  next nightly snapshot);
+- a video the reaching pipeline cannot file because its check against the
+  hand scores cannot run (a setting or file to fix). A session with NO hand
+  scores is not listed: once the sheet has been imported after the video was
+  ready and still has none, it was never scored by hand -- there is nothing
+  to compare, so nothing can disagree -- and the video is filed;
 - a date the import had to read as a typo (`REPAIRED ...`, see "A year typed
   wrong on the tray-scoring tab"): correct it in the sheet;
 - a sheet import that failed.
