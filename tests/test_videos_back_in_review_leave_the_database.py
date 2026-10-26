@@ -4,7 +4,8 @@ WHY (2026-10-26): filing means done. A filed video goes back to a review queue
 only when something in it is not done after all, but its rows stayed in the
 database -- with its old answers -- and went out in every export as finished:
 286 videos and 44,178 reach rows that day. Only positive evidence takes a video
-out (its results sit in a review queue and not in Analyzed); its rows are copied
+out (its results sit in a review queue and not in Analyzed, or a newer run of it
+waits there while the old one is still filed); its rows are copied
 aside first; and its ledger entry goes, so filing it again brings it back even
 when its file did not change.
 """
@@ -87,19 +88,43 @@ def test_sent_back_taken_out_then_filed_again_comes_back(tmp_path, monkeypatch):
     assert _count(db, VIDEO) == (2, 20)
 
 
-def test_only_a_video_in_a_review_queue_and_not_filed_is_taken_out(tmp_path, monkeypatch):
+def test_a_newer_run_in_review_takes_out_the_filed_one_an_older_leftover_does_not(tmp_path, monkeypatch):
+    import os
     root, db = _setup(tmp_path, monkeypatch)
     filed = root / "Analyzed" / "Project" / "PROJA01"
     _features(filed, VIDEO)
     _features(filed, OTHER)
     ir.run(log=lambda *_: None)
-    # VIDEO is in a queue AND still filed: filed wins, kept.
-    _features(root / "Processing" / "Review" / "deep_review" / "Pending" / VIDEO, VIDEO)
-    # OTHER vanished from Analyzed with no copy in any queue: no evidence, kept.
-    (filed / (OTHER + "_features.json")).unlink()
+    t = (filed / (VIDEO + "_features.json")).stat().st_mtime
+    # OTHER: a leftover copy in a queue, OLDER than the filed one -> kept.
+    old = _features(root / "Processing" / "Review" / "triage" / "Pending" / OTHER, OTHER)
+    os.utime(old, (t - 3600, t - 3600))
     res = ir.run(log=lambda *_: None)
-    assert res.withdrawn == 0
-    assert _count(db, VIDEO) == (2, 20) and _count(db, OTHER) == (2, 20)
+    assert res.withdrawn == 0 and _count(db, OTHER) == (2, 20)
+    # VIDEO: a NEWER run waits in deep review while the old one is still filed -> out.
+    # Which run is newer comes from the runs' own records, not file times: here the
+    # filed results file was rewritten later (as a backfill once did) and is the
+    # newer FILE, but its run is the older one.
+    new = _features(root / "Processing" / "Review" / "deep_review" / "Pending" / VIDEO, VIDEO)
+    os.utime(new, (t - 7200, t - 7200))
+    (filed / (VIDEO + "_processing_manifest.json")).write_text(
+        json.dumps({"created_at": "2026-03-17T15:12:45"}), encoding="utf-8")
+    (new.parent / (VIDEO + "_processing_manifest.json")).write_text(
+        json.dumps({"created_at": "2026-08-19T17:23:00"}), encoding="utf-8")
+    res = ir.run(log=lambda *_: None)
+    assert res.withdrawn == 1 and _count(db, VIDEO) == (0, 0)
+    assert any("a newer run is in the deep_review queue" in m for m in res.messages)
+
+
+def test_a_video_merely_missing_from_analyzed_is_kept(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    filed = root / "Analyzed" / "Project" / "PROJA01"
+    _features(filed, VIDEO)
+    _features(filed, OTHER)
+    ir.run(log=lambda *_: None)
+    (filed / (OTHER + "_features.json")).unlink()      # no copy in any queue: no evidence
+    res = ir.run(log=lambda *_: None)
+    assert res.withdrawn == 0 and _count(db, OTHER) == (2, 20)
 
 
 def test_a_dry_run_counts_and_changes_nothing(tmp_path, monkeypatch):

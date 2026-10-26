@@ -38,7 +38,8 @@ WHAT IT DOES
      (``mousedb.backfill.backfill_phases``).
   6. Takes out the rows of every video that has gone BACK TO REVIEW: its
      results file sits in a review queue (``Processing/Review``) and no longer
-     in Analyzed. See ``withdraw_videos_back_in_review`` for why and how.
+     in Analyzed, or a NEWER run of it waits there while the old one is still
+     filed. See ``videos_back_in_review`` and ``withdraw_videos_back_in_review``.
 
 Usage:
     mousedb import-reaches                 # what is new or changed
@@ -472,21 +473,56 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
 WITHDRAWALS_DIR = "reach_withdrawals"
 
 
-def videos_back_in_review(root: Path, filed: Iterable[str]) -> Dict[str, Path]:
+def videos_back_in_review(root: Path, filed: Dict[str, Path]) -> Dict[str, Path]:
     """{video name: its results file in a review queue} for every video whose
-    ``*_features.json`` sits under ``<pipeline>/Processing/Review`` and is NOT
-    among ``filed`` (the names found in Analyzed).
+    ``*_features.json`` sits under ``<pipeline>/Processing/Review`` and that is
+    either not filed, or filed with an OLDER run than the one in review.
+    ``filed`` maps each name found in Analyzed to its results file there.
 
-    Only that positive evidence counts. A video merely missing from Analyzed --
-    on its way back after review, being renamed, or a listing that failed -- is
+    A newer run in review: the pipeline re-runs a filed video without touching
+    the filed copy (it is kept until the new run is filed, then archived), so a
+    video can sit in both places. While the newer run waits for a person the
+    video is not done -- on 2026-10-26 the old filed copies of all 23 such
+    videos had pellets nobody decided or cuts a reviewer had since sent to deep
+    review -- so it leaves the database like any other video sent back. A copy
+    in a queue that is OLDER than the filed one is a leftover and changes
+    nothing. Which run is newer comes from each run's own record, the
+    processing manifest's created_at (``_run_time``), not from file times: a
+    later backfill rewrote filed results files and made a March run look newer
+    than an August one.
+
+    Only positive evidence counts. A video merely missing from Analyzed -- on
+    its way back after review, being renamed, or a listing that failed -- is
     never taken out: a failed listing cannot put files into a review queue."""
-    filed = set(filed)
     out: Dict[str, Path] = {}
     for p in iter_files(root / "Processing" / "Review", "*" + FEATURES_SUFFIX):
         name = p.name[:-len(FEATURES_SUFFIX)]
-        if name not in filed:
+        here = filed.get(name)
+        if here is None:
+            out.setdefault(name, p)
+            continue
+        queued_at, filed_at = _run_time(p), _run_time(here)
+        if queued_at is None or filed_at is None:
+            continue                    # moved mid-run: the next import decides
+        if queued_at >= filed_at:
             out.setdefault(name, p)
     return out
+
+
+def _run_time(features: Path) -> Optional[float]:
+    """When the run that wrote ``features`` was made: its processing manifest's
+    created_at, else (no manifest, or one that cannot be read) the results
+    file's modification time. None when neither can be read."""
+    manifest = features.with_name(features.name[:-len(FEATURES_SUFFIX)] + "_processing_manifest.json")
+    try:
+        made = json.loads(manifest.read_text(encoding="utf-8")).get("created_at")
+        return datetime.fromisoformat(str(made)).timestamp()
+    except Exception:
+        pass
+    try:
+        return features.stat().st_mtime
+    except OSError:
+        return None
 
 
 def _copy_rows(conn: sqlite3.Connection, table: str, video_name: str, dest: Path) -> int:
@@ -503,7 +539,7 @@ def _copy_rows(conn: sqlite3.Connection, table: str, video_name: str, dest: Path
     return len(rows)
 
 
-def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: Iterable[str],
+def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: Dict[str, Path],
                                    ledger: Dict[str, Any], backup_root: Path,
                                    dry_run: bool = False, log=print) -> Tuple[int, int, List[str]]:
     """Take out the rows of every video that went back to review.
@@ -541,8 +577,9 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
                 del ledger[key]
         videos += 1
         withdrawn += n
-        line = ("%s: back in the %s queue, so not done -- %d reach rows taken out until it "
-                "is filed again%s" % (name, queue, n, " [dry run]" if dry_run else ""))
+        line = ("%s: %s the %s queue, so not done -- %d reach rows taken out until it "
+                "is filed again%s" % (name, "a newer run is in" if name in filed else "back in",
+                                      queue, n, " [dry run]" if dry_run else ""))
         messages.append(line)
         log("  [withdrawn] " + line)
     return videos, withdrawn, messages
@@ -642,7 +679,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             if files:
                 backup = (require("mousedb_root") / "_archived" / WITHDRAWALS_DIR
                           / datetime.now().strftime("%Y-%m-%d_%H%M%S"))
-                filed = {f.name[:-len(FEATURES_SUFFIX)] for f in files}
+                filed = {f.name[:-len(FEATURES_SUFFIX)]: f for f in files}
                 v, r, msgs = withdraw_videos_back_in_review(
                     conn, root, filed, ledger, backup, dry_run=dry_run, log=log)
                 res.withdrawn, res.withdrawn_reaches = v, r

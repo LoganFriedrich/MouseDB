@@ -231,13 +231,18 @@ review decided, on the first import after it is filed again. What happens,
 exactly:
 
 - A video is taken out only when its results file is in a review queue
-  (`Processing/Review/...`) and not in Analyzed. A video that is merely
-  missing -- halfway back from review, or renamed -- is left alone.
+  (`Processing/Review/...`) and either not in Analyzed, or in Analyzed from an
+  OLDER run. (The pipeline re-runs a filed video without touching the filed
+  copy, which is kept until the new run is filed; while the new run waits for a
+  person, the video is not done.) A video that is merely missing -- halfway
+  back from review, or renamed -- is left alone, and so is a leftover copy in a
+  queue that is older than the filed one.
 - Its rows are copied first, to
   `_archived/reach_withdrawals/<date_time>/<video>_reach_data.csv` and
   `<video>_video_pellets.csv`, then deleted.
 - The import's log says so, one line per video:
-  `[withdrawn] <video>: back in the triage queue, so not done -- N reach rows taken out until it is filed again`,
+  `[withdrawn] <video>: back in the triage queue, so not done -- N reach rows taken out until it is filed again`
+  (or `a newer run is in the triage queue`),
   and its summary line counts them ("N taken out").
 
 ## How tissue analysis outputs get here
