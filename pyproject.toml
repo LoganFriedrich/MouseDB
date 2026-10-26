@@ -107,7 +107,11 @@ testpaths = [
 # temporary folder and renames it to .pytest_cache. When the repo sits on a
 # network share the rename can fail, leaving the folder behind with permissions
 # only an administrator can clear (dozens accumulated). The suite needs no cache.
-addopts = "--strict-markers -ra -p no:cacheprovider"
+# --ignore-glob: the folders already left behind must be skipped BEFORE pytest
+# looks inside them -- norecursedirs (below) is checked only after pytest has
+# asked whether the path is a folder, and that question itself fails with
+# "Access is denied" on a leftover this account cannot read (2026-10-26).
+addopts = "--strict-markers -ra -p no:cacheprovider --ignore-glob=*pytest-cache-files-*"
 # Ignore vendored/build directories that occasionally appear in the tree.
 norecursedirs = [
     ".git",
