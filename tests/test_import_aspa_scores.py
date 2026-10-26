@@ -108,3 +108,76 @@ def test_missing_tab_is_a_warning_not_a_crash(tmp_path):
     w = []
     assert parse_workbook(p, "ASPA_09", w) == []
     assert w and "no '%s' tab" % SCORE_SHEET in w[0]
+
+
+def test_a_date_cell_holding_only_a_day_is_read_in_the_month_around_it(tmp_path):
+    """WHY: typed "30" into a date cell is Excel's 1900-01-30. A whole session
+    was filed under 1900 that way: it met none of its videos and gave its
+    cohort a start date of 1900."""
+    scored = [2] * 20
+    p = _book(tmp_path, [
+        _row(datetime(2022, 6, 29), "Pillar", 1, [(1, scored)]),
+        _row(datetime(1900, 1, 30), "Pillar", 1, [(1, scored)]),
+        _row(datetime(1900, 1, 30), "Pillar", 2, [(1, scored)]),
+        _row(datetime(2022, 7, 1), "Pillar", 1, [(1, scored)]),
+    ])
+    w, repairs = [], {}
+    rows = parse_workbook(p, "ASPA_07", w, repairs)
+    assert [str(r[1]) for r in rows] == ["2022-06-29", "2022-06-30", "2022-06-30", "2022-07-01"]
+    assert repairs == {datetime(1900, 1, 30).date(): {datetime(2022, 6, 30).date()}}
+    assert any(x.startswith("REPAIRED J.xlsx: a date cell held only the day (30)") for x in w)
+
+
+def test_a_day_that_fits_no_month_around_it_is_left_out_and_reported(tmp_path):
+    scored = [2] * 20
+    p = _book(tmp_path, [
+        _row(datetime(2022, 6, 29), "Pillar", 1, [(1, scored)]),
+        _row(datetime(1900, 1, 12), "Pillar", 1, [(1, scored)]),     # 06-12 / 07-12: outside
+        _row(datetime(2022, 7, 1), "Pillar", 1, [(1, scored)]),
+    ])
+    w = []
+    rows = parse_workbook(p, "ASPA_07", w)
+    assert [str(r[1]) for r in rows] == ["2022-06-29", "2022-07-01"]
+    assert any("could not be read from the rows around it" in x for x in w)
+
+
+def test_the_import_moves_scores_filed_under_1900_and_corrects_a_1900_start(tmp_path, monkeypatch):
+    from datetime import date
+    import mousedb.cohort_sheets as cs
+    import mousedb.database as dbmod
+    import mousedb.animal_records as ar
+    from mousedb.cohort_tools import import_aspa_scores as ias
+    from mousedb.schema import Cohort, PelletScore, Project, Subject
+    scored = [1] * 20
+    book = _book(tmp_path, [
+        _row(datetime(2022, 6, 29), "Pillar", 1, [(1, scored)]),
+        _row(datetime(1900, 1, 30), "Pillar", 1, [(1, scored)]),
+        _row(datetime(2022, 7, 1), "Pillar", 1, [(1, scored)]),
+    ])
+    db = dbmod.init_database(tmp_path / "scratch.db")
+    with db.session() as s:
+        if not s.query(Project).filter_by(project_code="ASPA").first():
+            s.add(Project(project_code="ASPA", project_name="ASPA"))
+        s.add(Cohort(cohort_id="ASPA_07", project_code="ASPA", start_date=date(1900, 1, 30)))
+        s.add(Subject(subject_id="ASPA_07_01", cohort_id="ASPA_07"))
+        for p in range(1, 21):   # what the old import filed
+            s.add(PelletScore(subject_id="ASPA_07_01", session_date=date(1900, 1, 30),
+                              test_phase="Pillar", tray_type="P", tray_number=1,
+                              pellet_number=p, score=1, entered_by="excel_import"))
+        s.commit()
+    monkeypatch.setattr(cs, "find_aspa_sheet", lambda letter: book)
+    monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: db)
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {"records": 0, "warnings": [], "error": None})
+    monkeypatch.setattr(ias, "_append_ledger", lambda e: None, raising=False)
+    import mousedb.sheet_sync as ss
+    monkeypatch.setattr(ss, "_append_ledger", lambda e: None)
+
+    e = ias.import_cohort("G", apply=True)
+
+    assert e["success"], e
+    assert e["start_date_corrected"] == {"from": "1900-01-30", "to": "2022-06-29"}
+    with db.session() as s:
+        days = {str(d) for (d,) in s.query(PelletScore.session_date).distinct()}
+        assert "1900-01-30" not in days and "2022-06-30" in days
+        assert s.query(PelletScore).filter_by(session_date=date(2022, 6, 30)).count() == 20
+        assert str(s.query(Cohort).filter_by(cohort_id="ASPA_07").one().start_date) == "2022-06-29"

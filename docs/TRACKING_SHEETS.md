@@ -716,6 +716,13 @@ twenty pellets is tray 1, the fourth is tray 4 -- because the `Tray #` cell
 above the later blocks is sometimes blank or holds the animal's name. If that
 cell holds a number that does not match the block's place, that tray is not
 imported and the import lists it as a warning.
+
+A date cell that holds only a day number (typed `30`, Excel shows
+`1900-01-30`) is read as that day in the month of the rows around it, when
+it falls between the dated rows before and after it; the import lists it as
+a `REPAIRED` warning, moves any scores an earlier import filed under 1900 to
+that date, and replaces a cohort start date of 1900 with the earliest scored
+session. A day that fits neither month is left out and listed as a warning.
 They appear in the same table as the other cohorts (project ASPA, ids like
 `ASPA_10` for cohort J) with the same status words. Import their scores with
 **Import selected** on their rows, or from a terminal:

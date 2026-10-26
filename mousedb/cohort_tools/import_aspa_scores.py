@@ -18,6 +18,10 @@ per animal-day, then four tray blocks side by side --
     Test Date | Test Type | Tray Type | Test Phase | Group | Animal # |
     [Tray # | 1 ... 20 | Displaced | Eaten | hit] x 4
 
+A date cell that holds only a day number (Excel shows 1900-01-30 for "30")
+is read as that day in the month of the rows around it (day_only_dates), and
+scores an earlier import filed under the 1900 date are moved to it.
+
 Pellet cells hold 0 (missed), 1 (displaced), 2 (eaten = retrieved) -- the
 same vocabulary as the CNT sheets. A tray whose 20 cells are all blank was
 not scored and is skipped. A block's tray number is its position (the first
@@ -43,7 +47,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -52,8 +56,50 @@ TRAY_TYPE = {"pillar": "P", "easy": "E", "flat": "F"}
 PELLETS = 20
 
 
-def parse_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[Tuple]:
-    """(subject_id, date, tray_type, tray_number, {pellet: score}) rows."""
+def day_only_dates(raw: List) -> List:
+    """Each row's date, with a date cell that held only a day number read in
+    context; None for a row whose date cannot be read.
+
+    WHY: typed into a date cell, "30" is stored as day 30 of Excel's calendar
+    and shows as 1900-01-30. A whole session filed under 1900 met none of its
+    videos and gave its cohort a start date of 1900. Such a cell is read as
+    that day in the month of the dated row before it (or of the month after,
+    when that day has passed), and kept only when it falls between the dated
+    rows before and after it; otherwise its rows are left out and reported."""
+    def real(d):
+        return d if d is not None and d.year > 1900 else None
+    prev, last = [None] * len(raw), None
+    for i, d in enumerate(raw):
+        prev[i] = last
+        last = real(d) or last
+    nxt, last = [None] * len(raw), None
+    for i in range(len(raw) - 1, -1, -1):
+        nxt[i] = last
+        last = real(raw[i]) or last
+    out = []
+    for i, d in enumerate(raw):
+        if d is None or real(d):
+            out.append(d)
+            continue
+        meant, p = None, prev[i]
+        if p is not None and d.month == 1:
+            for y, m in ((p.year, p.month), (p.year + (p.month == 12), p.month % 12 + 1)):
+                try:
+                    c = date(y, m, d.day)
+                except ValueError:
+                    continue
+                if c >= p and (nxt[i] is None or c <= nxt[i]):
+                    meant = c
+                    break
+        out.append(meant)
+    return out
+
+
+def parse_workbook(path: Path, cohort_id: str, warnings: List[str],
+                   repairs: Optional[Dict] = None) -> List[Tuple]:
+    """(subject_id, date, tray_type, tray_number, {pellet: score}) rows.
+    ``repairs`` (if given) collects {date as typed: {date read}} for every
+    date cell read by day_only_dates."""
     import openpyxl
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
@@ -75,12 +121,28 @@ def parse_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[Tupl
             warnings.append("%s: missing header column (%s)" % (path.name, e))
             return []
 
+        rows = [r for r in it if r is not None and c_date < len(r) and r[c_date] is not None]
+        typed = [r[c_date].date() if isinstance(r[c_date], datetime) else None for r in rows]
+        dates = day_only_dates(typed)
+        reported = set()
         out = []
-        for r in it:
-            if r is None or c_date >= len(r) or r[c_date] is None:
+        for r, t, d in zip(rows, typed, dates):
+            if t is not None and d != t:
+                if d is None:
+                    if ("bad", t) not in reported:
+                        reported.add(("bad", t))
+                        warnings.append("%s: date %s is not a session date and could not be "
+                                        "read from the rows around it; its rows are left out"
+                                        % (path.name, t))
+                    continue
+                if repairs is not None:
+                    repairs.setdefault(t, set()).add(d)
+                if (t, d) not in reported:
+                    reported.add((t, d))
+                    warnings.append("REPAIRED %s: a date cell held only the day (%d), read as %s "
+                                    "(the month of the rows around it)" % (path.name, t.day, d))
+            if not isinstance(d, date):
                 continue
-            d = r[c_date]
-            d = d.date() if isinstance(d, datetime) else d
             try:
                 animal = int(float(r[c_animal]))
             except (TypeError, ValueError):
@@ -152,7 +214,17 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
     entry["sheet_mtime"] = datetime.fromtimestamp(sheet.stat().st_mtime).isoformat(timespec="seconds")
     warnings: List[str] = []
     try:
-        rows = parse_workbook(sheet, cohort_id, warnings)
+        repairs: Dict = {}
+        rows = parse_workbook(sheet, cohort_id, warnings, repairs)
+        # A typed date read as another (day_only_dates) moves the scores an
+        # earlier import filed under the typed one; only when the typed date
+        # stands for one date -- otherwise which rows meant which is unknown.
+        moves = {t: next(iter(m)) for t, m in repairs.items() if len(m) == 1}
+        for t, m in repairs.items():
+            if len(m) > 1:
+                warnings.append("date %s stands for %s in different places; scores already "
+                                "filed under it are left where they are" % (
+                                    t, ", ".join(str(x) for x in sorted(m))))
         n_pellets = sum(len(s) for *_, s in rows)
         db = init_database()
         imp = ExcelImporter(db)
@@ -176,6 +248,19 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
                                        notes="Registered from %s by the ASPA score import; "
                                              "start date = earliest scored session" % sheet.name))
                     session.flush()
+            existing = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+            if (existing is not None and rows and existing.start_date is not None
+                    and existing.start_date.year <= 1900):
+                # A start date from Excel's day-0 calendar (a date cell that
+                # held only a day, read before day_only_dates existed) is
+                # replaced by the earliest scored session, the rule this
+                # importer creates a cohort's start date by.
+                start = min(r[1] for r in rows)
+                entry["start_date_corrected"] = {"from": str(existing.start_date), "to": str(start)}
+                if apply:
+                    existing.start_date = start
+            if moves:
+                imp._move_misdated_pellet_rows(session, cohort_id, moves, dry_run=not apply)
             imp._insert_pellet_rows(session, cohort_id, rows, dry_run=not apply)
             if apply:
                 session.commit()
