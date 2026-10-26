@@ -36,6 +36,9 @@ WHAT IT DOES
      nobody reached for has no reach row.
   5. Re-derives test_phase / phase_group for every cohort touched
      (``mousedb.backfill.backfill_phases``).
+  6. Takes out the rows of every video that has gone BACK TO REVIEW: its
+     results file sits in a review queue (``Processing/Review``) and no longer
+     in Analyzed. See ``withdraw_videos_back_in_review`` for why and how.
 
 Usage:
     mousedb import-reaches                 # what is new or changed
@@ -142,6 +145,8 @@ class ImportResult:
     errors: int = 0
     reaches: int = 0
     subjects_created: int = 0
+    withdrawn: int = 0            # videos taken out because they went back to review
+    withdrawn_reaches: int = 0
     cohorts_touched: set = field(default_factory=set)
     messages: List[str] = field(default_factory=list)
 
@@ -456,6 +461,89 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
     return {"videos": len(by_video), "pellets_per_video": counts, "unreadable": unreadable}
 
 
+# ---------------------------------------------------------------------------
+# videos that went back to review
+# ---------------------------------------------------------------------------
+
+WITHDRAWALS_DIR = "reach_withdrawals"
+
+
+def videos_back_in_review(root: Path, filed: Iterable[str]) -> Dict[str, Path]:
+    """{video name: its results file in a review queue} for every video whose
+    ``*_features.json`` sits under ``<pipeline>/Processing/Review`` and is NOT
+    among ``filed`` (the names found in Analyzed).
+
+    Only that positive evidence counts. A video merely missing from Analyzed --
+    on its way back after review, being renamed, or a listing that failed -- is
+    never taken out: a failed listing cannot put files into a review queue."""
+    filed = set(filed)
+    out: Dict[str, Path] = {}
+    for p in iter_files(root / "Processing" / "Review", "*" + FEATURES_SUFFIX):
+        name = p.name[:-len(FEATURES_SUFFIX)]
+        if name not in filed:
+            out.setdefault(name, p)
+    return out
+
+
+def _copy_rows(conn: sqlite3.Connection, table: str, video_name: str, dest: Path) -> int:
+    """Write one video's rows of ``table`` to ``dest`` (CSV); the row count."""
+    import csv
+    cur = conn.execute("SELECT * FROM %s WHERE video_name = ?" % table, (video_name,))
+    rows = cur.fetchall()
+    if rows:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with open(dest, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow([d[0] for d in cur.description])
+            w.writerows(rows)
+    return len(rows)
+
+
+def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: Iterable[str],
+                                   ledger: Dict[str, Any], backup_root: Path,
+                                   dry_run: bool = False, log=print) -> Tuple[int, int, List[str]]:
+    """Take out the rows of every video that went back to review.
+
+    WHY: filing means done. The database holds a video's reaches because the
+    video was filed, and it is sent back to a review queue only when something
+    in it is not done after all (a pellet nobody answered, a disagreement with
+    the hand scores, an "are you sure?"). Until 2026-10-26 its rows stayed --
+    with the answers it had before it went back -- and went out in every export
+    as if finished: 286 videos and 44,178 reach rows that day. Now they leave
+    the database until the video is filed again.
+
+    HOW: each such video's rows in reach_data and video_pellets are first
+    copied to ``<backup_root>/<video>_reach_data.csv`` and
+    ``_video_pellets.csv``, then deleted, one transaction per video. Its ledger
+    entries are dropped too, so when it is filed again its file is imported
+    even if nothing in it changed. Returns (videos, reach rows, messages)."""
+    videos = withdrawn = 0
+    messages: List[str] = []
+    for name, where in sorted(videos_back_in_review(root, filed).items()):
+        n = conn.execute("SELECT COUNT(*) FROM reach_data WHERE video_name = ?",
+                         (name,)).fetchone()[0]
+        p = conn.execute("SELECT COUNT(*) FROM video_pellets WHERE video_name = ?",
+                         (name,)).fetchone()[0]
+        if not n and not p:
+            continue
+        queue = where.relative_to(root / "Processing" / "Review").parts[0]
+        if not dry_run:
+            with conn:
+                _copy_rows(conn, "reach_data", name, backup_root / (name + "_reach_data.csv"))
+                _copy_rows(conn, "video_pellets", name, backup_root / (name + "_video_pellets.csv"))
+                conn.execute("DELETE FROM reach_data WHERE video_name = ?", (name,))
+                conn.execute("DELETE FROM video_pellets WHERE video_name = ?", (name,))
+            for key in [k for k in ledger if k.rsplit("/", 1)[-1] == name + FEATURES_SUFFIX]:
+                del ledger[key]
+        videos += 1
+        withdrawn += n
+        line = ("%s: back in the %s queue, so not done -- %d reach rows taken out until it "
+                "is filed again%s" % (name, queue, n, " [dry run]" if dry_run else ""))
+        messages.append(line)
+        log("  [withdrawn] " + line)
+    return videos, withdrawn, messages
+
+
 def watcher_running() -> bool:
     """Kept for compatibility; the run() guard uses watcher_blocks_db (a watcher
     that cannot write the central database must not stall imports)."""
@@ -544,6 +632,19 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     res.errors += 1
                     res.messages.append("%s: %s" % (p.name, e))
                     log("  [FAIL] %s: %s" % (p.name, e))
+            # Videos that went back to review leave the database until filed
+            # again. Never on a listing that found nothing filed at all: that is
+            # a broken listing, not an empty pipeline.
+            if files:
+                backup = (require("mousedb_root") / "_archived" / WITHDRAWALS_DIR
+                          / datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+                filed = {f.name[:-len(FEATURES_SUFFIX)] for f in files}
+                v, r, msgs = withdraw_videos_back_in_review(
+                    conn, root, filed, ledger, backup, dry_run=dry_run, log=log)
+                res.withdrawn, res.withdrawn_reaches = v, r
+                res.messages.extend(msgs)
+            else:
+                res.messages.append("no filed results found; nothing taken out")
         finally:
             conn.close()
         if not dry_run:
@@ -567,8 +668,10 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # exit nonzero -- it was exit 0, and the scheduler showed
                     # green through nine straight hourly failures (2026-09-01).
                     res.errors += 1
-    log("import-reaches: %d videos imported (%d reaches), %d subjects created, %d errors%s" % (
-        res.imported, res.reaches, res.subjects_created, res.errors, " [dry run]" if dry_run else ""))
+    log("import-reaches: %d videos imported (%d reaches), %d subjects created, %d taken out "
+        "(back in review: %d reaches), %d errors%s" % (
+            res.imported, res.reaches, res.subjects_created, res.withdrawn,
+            res.withdrawn_reaches, res.errors, " [dry run]" if dry_run else ""))
     return res
 
 

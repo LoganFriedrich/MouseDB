@@ -212,6 +212,24 @@ changed, creates any animal it has not seen, and re-derives the protocol
 phase of every cohort it touched. `mousedb import-reaches --dry-run` says
 what it would do.
 
+**Only filed videos are in the database.** Filing means a video is done. When
+a filed video is sent back to a review queue -- a pellet nobody answered, a
+disagreement with the hand scores, a person asked "are you sure?" -- it is not
+done any more, so the next import takes its reaches out of the database, and
+out of every export after it. It comes back by itself, with whatever the
+review decided, on the first import after it is filed again. What happens,
+exactly:
+
+- A video is taken out only when its results file is in a review queue
+  (`Processing/Review/...`) and not in Analyzed. A video that is merely
+  missing -- halfway back from review, or renamed -- is left alone.
+- Its rows are copied first, to
+  `_archived/reach_withdrawals/<date_time>/<video>_reach_data.csv` and
+  `<video>_video_pellets.csv`, then deleted.
+- The import's log says so, one line per video:
+  `[withdrawn] <video>: back in the triage queue, so not done -- N reach rows taken out until it is filed again`,
+  and its summary line counts them ("N taken out").
+
 ## How tissue analysis outputs get here
 
 MouseBrain keeps its own record of every analysis output it produces -- the
