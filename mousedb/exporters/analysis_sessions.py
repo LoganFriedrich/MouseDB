@@ -194,19 +194,21 @@ _DERIVED = {
 }
 
 # The eight percentages: four outcomes, each from both scoring streams. Contacted
-# is displaced + retrieved; missed is every presented pellet not contacted. All
-# are out of pellets_presented (20), never out of the pellets reached for.
+# is displaced + retrieved; "missed" is every presented pellet not contacted --
+# untouched, in the words for a pellet. The columns keep the name percent_missed_*
+# (scripts read them by name); their dictionary text says untouched. All are out
+# of pellets_presented (20), never out of the pellets reached for.
 _OUTCOME_WORDS = {
     "retrieved": "scored as retrieved",
     "displaced": "scored as displaced (moved but not eaten)",
     "contacted": "contacted (displaced plus retrieved)",
-    "missed": "missed (presented but not contacted: 20 minus contacted)",
+    "missed": "untouched (presented but not contacted: 20 minus contacted; the column keeps the name missed)",
 }
 for _outcome, _words in _OUTCOME_WORDS.items():
     for _stream, _title, _who in (("video", "algorithm", "by the algorithm from the video"),
                                   ("hand_scored", "hand scored", "by hand from the tray")):
         _DERIVED["percent_%s_%s" % (_outcome, _stream)] = (
-            "Percent %s (%s)" % (_outcome, _title), "number",
+            "Percent %s (%s)" % ("untouched" if _outcome == "missed" else _outcome, _title), "number",
             "Pellets %s %s, as a percentage of the 20 pellets presented. NA when "
             "that stream has no score for this session. The two streams measure the "
             "same thing independently; where they differ, that difference is itself "

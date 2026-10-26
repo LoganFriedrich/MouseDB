@@ -203,8 +203,8 @@ REACH_DATA = [
     _row("segment_num", "Segment number", "Which pellet presentation the reach belongs to; segment N contains pellet N. Segment boundaries are the frames where the scoring area advances.", "count", "integer", "", "", "1"),
     _row("reach_id", "Reach id", "Number of this reach, unique within the video.", "count", "integer"),
     _row("reach_num", "Reach number in segment", "Position of this reach within its segment, counting from 1.", "count", "integer", "", "", "1"),
-    _row("outcome", "Pellet outcome (causal reach only)", "What happened to the pellet, recorded on the reach that decided it: retrieved, displaced_sa (knocked into the scoring area), displaced_outside, missed, or a non-committal label. Empty on every reach that was not the causal reach.", "", "text", "retrieved; displaced_sa; displaced_outside; missed; triaged; uncertain; abnormal_exception", "retrieved=eaten; displaced_sa=knocked into scoring area; displaced_outside=knocked out of the apparatus; missed=untouched on its pillar; triaged/uncertain=algorithm did not commit; abnormal_exception=pellet moved by something other than a reach"),
-    _row("causal_reach", "Is the causal reach", "True if this is the reach that decided the pellet's fate (moved or retrieved it, or was the last reach of a missed pellet).", "", "boolean", "TRUE; FALSE", "TRUE=this reach decided the outcome"),
+    _row("outcome", "Pellet outcome (causal reach only)", "What happened to the pellet, recorded on the reach that decided it: retrieved, displaced_sa (knocked into the scoring area), displaced_outside, untouched, or a non-committal label. Empty on every reach that was not the causal reach.", "", "text", "retrieved; displaced_sa; displaced_outside; untouched; missed; triaged; uncertain; abnormal_exception", "retrieved=eaten; displaced_sa=knocked into scoring area; displaced_outside=knocked out of the apparatus; untouched=still on its pillar, no reach moved it; missed=the same, as older files wrote it; triaged/uncertain=algorithm did not commit; abnormal_exception=pellet moved by something other than a reach"),
+    _row("causal_reach", "Is the causal reach", "True if this is the reach that decided the pellet's fate (moved or retrieved it, or was the last reach at an untouched pellet).", "", "boolean", "TRUE; FALSE", "TRUE=this reach decided the outcome"),
     _row("interaction_frame", "Interaction frame", "Video frame at which the paw met the pellet. Recorded on the causal reach only.", "frame index", "integer"),
     _row("distance_to_interaction", "Frames from apex to interaction", NEVER_COMPUTED, "frames", "integer", "", "", "", "", "Always empty (see KINEMATICS_FIELDS.md 5.2)."),
     _row("is_first_reach", "First reach of segment", "True if this is the first reach in its segment.", "", "boolean", "TRUE; FALSE"),
@@ -238,7 +238,7 @@ REACH_DATA = [
     _row("tracking_quality_score", "Tracking quality score", NEVER_COMPUTED, "", "number", "", "", "", "", "Always empty."),
     _row("flagged_for_review", "Flagged for review (reach)", "Per-reach review flag. Never set by any code (always FALSE); the segment-level flag is segment_outcome_flagged.", "", "boolean", "TRUE; FALSE", "", "", "", "Always FALSE."),
     _row("flag_reason", "Flag reason", "Never set by any code; always empty.", "", "text"),
-    _row("segment_outcome", "Segment outcome", "The pellet outcome of the whole segment this reach belongs to (same vocabulary as outcome), on every reach of the segment.", "", "text", "retrieved; displaced_sa; displaced_outside; missed; triaged; uncertain; abnormal_exception", "see outcome"),
+    _row("segment_outcome", "Segment outcome", "The pellet outcome of the whole segment this reach belongs to (same vocabulary as outcome), on every reach of the segment.", "", "text", "retrieved; displaced_sa; displaced_outside; untouched; missed; triaged; uncertain; abnormal_exception", "see outcome"),
     _row("segment_outcome_confidence", "Segment outcome confidence", "The outcome detector's confidence in segment_outcome.", "dimensionless", "number", "", "", "0", "1"),
     _row("segment_outcome_flagged", "Segment flagged for review", "True if the outcome detector could not commit and flagged the segment for a human.", "", "boolean", "TRUE; FALSE"),
     _row("attention_score", "Attention score", "Outcome detector's estimate of how engaged the animal was with the pellet in this segment. Observed values run above 1 (tens), so treat it as a relative score, not a 0-1 fraction.", "", "number", "", "", "0"),
@@ -311,21 +311,22 @@ def _odc_session_rows() -> List[dict]:
         rows += [
             _row(p + "_Type", "Tray %d type" % i, "Tray type presented as tray %d (P/E/F); empty if fewer trays." % i, "", "text", "P; E; F"),
             _row(p + "_Presented", "Tray %d pellets presented" % i, "Pellets presented on tray %d (20 per tray)." % i, "count", "integer", "", "", "0", "20"),
-            _row(p + "_Missed", "Tray %d missed" % i, "Pellets scored missed (0) on tray %d." % i, "count", "integer", "", "", "0", "20"),
+            _row(p + "_Missed", "Tray %d untouched" % i, "Pellets untouched (scored 0) on tray %d. The column keeps the name 'Missed' the tracking workbooks use; 'missed' describes a reach, and a pellet scored 0 was not touched." % i, "count", "integer", "", "", "0", "20"),
             _row(p + "_Displaced", "Tray %d displaced" % i, "Pellets scored displaced (1) on tray %d." % i, "count", "integer", "", "", "0", "20"),
             _row(p + "_Retrieved", "Tray %d retrieved" % i, "Pellets scored retrieved (2) on tray %d." % i, "count", "integer", "", "", "0", "20"),
             _row(p + "_Contacted", "Tray %d contacted" % i, "Displaced + retrieved on tray %d." % i, "count", "integer", "", "", "0", "20"),
-            _row(p + "_Miss_Pct", "Tray %d percent missed" % i, "Missed / presented x 100 on tray %d." % i, "percent", "number", "", "", "0", "100"),
+            _row(p + "_Miss_Pct", "Tray %d percent untouched" % i, "Untouched (scored 0) / presented x 100 on tray %d. Named 'Miss' as in the tracking workbooks." % i, "percent", "number", "", "", "0", "100"),
             _row(p + "_Displaced_Pct", "Tray %d percent displaced" % i, "Displaced / presented x 100.", "percent", "number", "", "", "0", "100"),
             _row(p + "_Retrieved_Pct", "Tray %d percent retrieved" % i, "Retrieved / presented x 100.", "percent", "number", "", "", "0", "100"),
             _row(p + "_Contacted_Pct", "Tray %d percent contacted" % i, "Contacted / presented x 100.", "percent", "number", "", "", "0", "100"),
         ]
-    for k, t in (("Presented", "presented"), ("Missed", "scored missed"), ("Displaced", "scored displaced"),
+    for k, t in (("Presented", "presented"), ("Missed", "untouched (scored 0; the column keeps the workbooks' name)"), ("Displaced", "scored displaced"),
                  ("Retrieved", "scored retrieved"), ("Contacted", "contacted (displaced + retrieved)")):
         rows.append(_row("Daily_" + k, "Daily %s" % k.lower(), "Pellets %s across all trays in the session." % t, "count", "integer", "", "", "0"))
     for k in ("Miss", "Displaced", "Retrieved", "Contacted"):
-        rows.append(_row("Daily_%s_Pct" % k, "Daily percent %s" % k.lower(), "Session total for that category / pellets presented x 100.", "percent", "number", "", "", "0", "100"))
-        rows.append(_row("Avg_%s_Pct" % k, "Average per-tray percent %s" % k.lower(), "Mean of the per-tray percentages for that category.", "percent", "number", "", "", "0", "100"))
+        word = "untouched (named 'Miss' as in the workbooks)" if k == "Miss" else k.lower()
+        rows.append(_row("Daily_%s_Pct" % k, "Daily percent %s" % word, "Session total for that category / pellets presented x 100.", "percent", "number", "", "", "0", "100"))
+        rows.append(_row("Avg_%s_Pct" % k, "Average per-tray percent %s" % word, "Mean of the per-tray percentages for that category.", "percent", "number", "", "", "0", "100"))
     return rows
 
 
