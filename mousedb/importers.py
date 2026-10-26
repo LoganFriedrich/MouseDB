@@ -1217,7 +1217,71 @@ class ExcelImporter:
             rows = [(s, repairs.get(d, d), tt, tn, sc) for s, d, tt, tn, sc in rows]
             self._move_misdated_pellet_rows(session, cohort_id, repairs, dry_run)
 
+        # A weekend-dated run inside a weekday's block -- a formula date counting
+        # from the wrong row after a row was cut -- is read as that weekday, and
+        # its scores already filed under the weekend date are moved (date_typos).
+        from .date_typos import block_date_repairs
+        islands = block_date_repairs([(s, d, tt, tn) for s, d, tt, tn, _ in rows])
+        if islands:
+            self._report_block_date_repairs(cohort_id, rows, islands)
+            self._move_misdated_tray_rows(
+                session, cohort_id,
+                {(rows[i][0], rows[i][1], rows[i][2], rows[i][3]): meant
+                 for i, meant in islands.items()}, dry_run)
+            rows = [(s, islands.get(i, d), tt, tn, sc)
+                    for i, (s, d, tt, tn, sc) in enumerate(rows)]
+
         self._insert_pellet_rows(session, cohort_id, rows, dry_run)
+
+    def _report_block_date_repairs(self, cohort_id: str, rows, islands: Dict):
+        """One REPAIRED warning per weekend date read as its block's day, naming
+        each animal and tray, so the sheet gets corrected."""
+        by_date: Dict = {}
+        for i, meant in sorted(islands.items()):
+            subject, typed, tray_type, tray_number, _ = rows[i]
+            by_date.setdefault((typed, meant), []).append(f"{subject} {tray_type}{tray_number}")
+        for (typed, meant), which in sorted(by_date.items()):
+            key = (cohort_id, '3b_Manual_Tray', 'block', typed, meant)
+            if key in self._reported_date_repairs:
+                continue
+            self._reported_date_repairs.add(key)
+            self.warnings.append(
+                f"REPAIRED {cohort_id} 3b_Manual_Tray: rows {', '.join(which)} are dated "
+                f"{typed} (a {typed.strftime('%A')}, when nothing is recorded) but sit among "
+                f"rows dated {meant}, and are read as {meant}. The date cells are formulas "
+                f"counting a fixed number of rows up the sheet; a cut or blank row made them "
+                f"land on another day. Type the date into those cells.")
+
+    def _move_misdated_tray_rows(self, session, cohort_id: str, repairs: Dict, dry_run: bool):
+        """Re-date imported pellet scores of particular trays: repairs maps
+        (animal, date as filed, tray type, tray number) to the date meant. Only
+        rows the sheet import wrote are moved; a score already present on the
+        meant date is left where it is and reported, never overwritten."""
+        moved = 0
+        for (subject, typed, tray_type, tray_number), meant in repairs.items():
+            stale = session.query(PelletScore).filter(
+                PelletScore.subject_id == subject, PelletScore.session_date == typed,
+                PelletScore.tray_type == tray_type, PelletScore.tray_number == tray_number,
+                PelletScore.entered_by == 'excel_import',
+            ).all()
+            for ps in stale:
+                clash = session.query(PelletScore).filter_by(
+                    subject_id=ps.subject_id, session_date=meant, tray_type=ps.tray_type,
+                    tray_number=ps.tray_number, pellet_number=ps.pellet_number).first()
+                if clash is not None:
+                    self.warnings.append(
+                        f"{ps.subject_id} {ps.tray_type}{ps.tray_number} pellet "
+                        f"{ps.pellet_number}: a score is filed under both {typed} and "
+                        f"{meant}; the {typed} one was left as it is")
+                    continue
+                if not dry_run:
+                    ps.session_date = meant
+                moved += 1
+        if moved:
+            self.imported_counts['pellet_scores_redated'] = (
+                self.imported_counts.get('pellet_scores_redated', 0) + moved)
+            if not dry_run:
+                session.flush()
 
     def _tab_date_repairs(self, cohort_id: str, tab: str, dates) -> Dict:
         """The year typos in one tab's dates (date_typos.year_typo_repairs),

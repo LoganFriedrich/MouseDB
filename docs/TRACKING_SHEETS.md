@@ -237,6 +237,43 @@ When it finds one, the import:
 
 Only the tray-scoring tab is checked this way.
 
+### A weekend date among one day's rows is read as that day
+
+Some workbooks do not type the dates on `3b_Manual_Tray`. Each date cell is a
+formula such as `=A419+1`, which means "the date a fixed number of rows up the
+sheet, plus one day". That only works while every day's block has exactly the
+same number of rows. **Cut a row (an animal leaves the cohort) or leave one
+blank, and every formula below it counts from the wrong row** -- its rows can
+end up dated on another day. The scores then sit on a day with no videos, and
+that day's videos find no hand scores.
+
+The import catches the case it can line up:
+
+- a run of rows dated on a **Saturday or Sunday** (recording never happens at
+  weekends),
+- sitting between rows that all carry **one and the same weekday** date,
+- with none of its animal/tray pairs already on that weekday,
+
+is read as that weekday. As with a year typo, scores an earlier import filed
+under the weekend date are moved to it, and a warning starting `REPAIRED`
+names the rows, for example: `REPAIRED CNT_NN 3b_Manual_Tray: rows CNT_NN_02 P1,
+CNT_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
+2025-10-28, and are read as 2025-10-28.` It shows in the red panel and on the
+cohort's FIX THESE file until the sheet is fixed. **What you do:** type the
+date into those cells (a typed date never moves).
+
+What it leaves alone, on purpose:
+
+- a **weekday** date out of place among the rows -- that may be a real make-up
+  session typed among the regular rows;
+- a **whole day's block** on a weekend between two different days -- with no
+  neighbours to read it from, the real day cannot be lined up, and the block
+  is imported as typed.
+
+**When you remove an animal from a cohort's sheet,** the safest way is to leave
+its rows where they are and clear them, or to type the dates in the rows
+below; cutting the rows is what moves formula dates.
+
 ### Another cohort's animal is never filed here
 
 An animal belongs to the cohort its id says: in `CNT_NN_SS` the middle number
