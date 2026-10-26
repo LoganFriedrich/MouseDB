@@ -109,9 +109,12 @@ def current_outcome_version() -> str:
     return str(version)
 
 
-HUMAN_SCORE = {0: "missed", 1: "displaced", 2: "retrieved"}
+# What happened to the PELLET -- retrieved, displaced, or untouched. "Missed" is
+# a word for a REACH (it did not interact with the pellet), never for a pellet:
+# a hand score of 0 says the pellet was not touched (Logan, 2026-10-26).
+HUMAN_SCORE = {0: "untouched", 1: "displaced", 2: "retrieved"}
 ALGO_CATEGORY = {
-    "untouched": "missed",
+    "untouched": "untouched",
     "displaced_sa": "displaced",
     "displaced_outside": "displaced",
     "retrieved": "retrieved",

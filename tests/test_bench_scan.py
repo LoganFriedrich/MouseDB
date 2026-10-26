@@ -111,7 +111,7 @@ def test_a_segment_with_no_reach_is_compared(tmp_path, monkeypatch):
     paired = bench_scan.pair_current(rd, ps, vp=vp)
     assert sorted(paired.pellet_number) == [1, 2, 3]
     two = paired[paired.pellet_number == 2].iloc[0]
-    assert (two.human, two.algo, two.outcome_source) == ("retrieved", "missed", "unknown")
+    assert (two.human, two.algo, two.outcome_source) == ("retrieved", "untouched", "unknown")
 
 
 def test_the_worklist_includes_a_no_reach_disagreement(tmp_path, monkeypatch):
