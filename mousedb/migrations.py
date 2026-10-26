@@ -39,6 +39,13 @@ CONTACT_COLUMNS = (
     ("reach_data", "segment_contact_group", REACH_SEGMENT_CONTACT_EXPR),
     ("pellet_scores", "contact_group", PELLET_CONTACT_EXPR),
 )
+# The columns each definition reads. A table without them (a partial test or
+# scratch table) is left alone rather than given a column it cannot compute.
+_SOURCES = {
+    REACH_CONTACT_EXPR: ("tray_type", "interaction_frame"),
+    REACH_SEGMENT_CONTACT_EXPR: ("tray_type", "segment_outcome"),
+    PELLET_CONTACT_EXPR: ("score",),
+}
 
 
 def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
@@ -58,6 +65,8 @@ def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
             continue
         # table_xinfo, not table_info: it is the one that lists generated columns.
         have = {r[1] for r in conn.execute("PRAGMA table_xinfo(%s)" % table)}
+        if not set(_SOURCES[expr]) <= have:
+            continue
         if column in have:
             conn.execute("ALTER TABLE %s DROP COLUMN %s" % (table, column))
         conn.execute("ALTER TABLE %s ADD COLUMN %s TEXT GENERATED ALWAYS AS (%s) VIRTUAL"
