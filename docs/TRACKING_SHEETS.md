@@ -411,6 +411,35 @@ line starts `FAIL`, and the import counts as failed (the scheduled job's run
 shows as failed), because the pipeline would go on reading the old scores.
 To write it by hand: `mousedb hand-scores`. Dry runs never write it.
 
+### Things to fix: the red panel and the FIX THESE file
+
+Some things only a person can fix, mostly in the sheet:
+
+- a session the reaching pipeline has a video for but no hand scores,
+  although the cohort's sheet has been imported since the video was ready
+  (the pipeline keeps that video unfiled until the scores come). Check the
+  sheet has that animal, date and tray -- and that the video is named for
+  the right animal, date and tray;
+- a date the import had to read as a typo (`REPAIRED ...`, see "A year typed
+  wrong on the tray-scoring tab"): correct it in the sheet;
+- a sheet import that failed.
+
+They are shown in two places:
+
+- **Where Is My Data**: a red **Needs your attention (N)** box at the top,
+  one line each (hidden when there is nothing). It is gathered again each
+  time the tab refreshes.
+- **Beside the sheet**: after every import that writes, each cohort with
+  anything listed gets `!! <cohort> - FIX THESE.xlsx` in the sheets folder,
+  next to its workbook, with one line per thing to fix. It is rewritten after
+  every import and **removed by itself once nothing is left**. Do not edit
+  it; it is not read. The import's output names it (`[!] CNT_05: things to fix
+  in the sheet -- see '!! CNT_05 - FIX THESE.xlsx' ...`), and says so if the
+  file could not be written (for example because it was open in Excel at
+  the time).
+
+The letter (ASPA) workbooks are frozen, so nothing is listed for them.
+
 ### Which file is read: the name, and pins
 
 **The name.** A file is a cohort's sheet only if its name STARTS with

@@ -18,6 +18,8 @@ def _no_production_hand_scores(monkeypatch):
     this machine's configuration (sheet_sync.WRITE_HAND_SCORES)."""
     from mousedb import sheet_sync
     monkeypatch.setattr(sheet_sync, "WRITE_HAND_SCORES", False)
+    # nor writes a FIX THESE file into a sheets folder
+    monkeypatch.setattr(sheet_sync, "WRITE_FIX_THESE", False)
 
 
 @pytest.fixture(autouse=True)

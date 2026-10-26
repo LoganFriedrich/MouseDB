@@ -35,6 +35,19 @@ from PyQt5.QtWidgets import (
 )
 
 QUICK_GUIDE = """\
+NEEDS YOUR ATTENTION (red, at the top; hidden when there is nothing): things
+only a person can fix, gathered from every tool --
+* a processed video whose session has no hand scores, although the cohort's
+  sheet has been imported since it was ready (MouseReach holds the video
+  unfiled until they come): check the sheet has that animal, date and tray,
+  and that the video is named right;
+* a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
+  in the sheet;
+* a sheet import that failed.
+Each cohort's list is also written beside its sheet, in
+"!! <cohort> - FIX THESE.xlsx" (rewritten after every import, removed when
+nothing is left).
+
 WHERE IS MY DATA -- one row per cohort:
 
 * Animals: how many animals the database knows for the cohort (a number in
@@ -136,6 +149,16 @@ class DataStatusTab(QWidget):
         head.addWidget(helpb)
         root.addLayout(head)
 
+        # What needs a person (attention.py): red, at the top, hidden when
+        # nothing does. WHY here: this is the tab people open to find their
+        # data, and a session with no hand scores holds that data back.
+        self.attention_label = QLabel("")
+        self.attention_label.setWordWrap(True)
+        self.attention_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.attention_label.setStyleSheet("background:#8b1a1a; color:white; padding:6px;")
+        self.attention_label.hide()
+        root.addWidget(self.attention_label)
+
         self.snapshot_label = QLabel("")
         self.snapshot_label.setStyleSheet("color: #888;")
         self.snapshot_label.setWordWrap(True)
@@ -221,7 +244,13 @@ class DataStatusTab(QWidget):
         self.snapshot_label.setText("Reading...")
         self._show_last_update()
         from ..data_status import status
-        self._run(status, self._on_status)
+
+        def status_and_attention():
+            st = status()
+            from ..attention import items
+            st["attention"] = items()
+            return st
+        self._run(status_and_attention, self._on_status)
 
     # --- the "Update the database now" button --------------------------------
     def _show_last_update(self):
@@ -367,8 +396,25 @@ class DataStatusTab(QWidget):
             self.invariant_label.setStyleSheet(
                 "background:#2e7d32; color:white; padding:3px;")
 
+    # Lines shown in the red panel before "... and N more".
+    ATTENTION_SHOWN = 10
+
+    def _show_attention(self, found):
+        if not found:
+            self.attention_label.hide()
+            return
+        lines = ["<b>Needs your attention (%d)</b>" % len(found)]
+        lines += ["&bull; %s" % i.get("says", "") for i in found[:self.ATTENTION_SHOWN]]
+        if len(found) > self.ATTENTION_SHOWN:
+            lines.append("... and %d more -- each cohort's are listed in the "
+                         "'!! &lt;cohort&gt; - FIX THESE.xlsx' file beside its sheet"
+                         % (len(found) - self.ATTENTION_SHOWN))
+        self.attention_label.setText("<br>".join(lines))
+        self.attention_label.show()
+
     def _on_status(self, st: dict):
         self._status = st
+        self._show_attention(st.get("attention") or [])
         # Say how OLD, not just when. Everything on this tab is as of the
         # snapshot, and the snapshot is rewritten by a scheduled job that can
         # fail -- usually because another program had the database locked. When

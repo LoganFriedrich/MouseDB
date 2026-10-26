@@ -96,6 +96,11 @@ LEDGER = None
 # must never write into.
 WRITE_HAND_SCORES = True
 
+# Whether an import that wrote rewrites each cohort's FIX THESE file beside its
+# sheet (attention.write_all_fix_these). Off in the test suite for the same
+# reason: the sheets folder is this machine's configuration.
+WRITE_FIX_THESE = True
+
 # The project whose workbooks the tracking-sheet folder holds. cohort_sheets
 # recognises ONE file-name pattern there (Connectome_NN_Animal_Tracking.xlsx),
 # which is this project's workbook name, so every cohort found in that folder
@@ -647,6 +652,14 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
             results["hand_scores"] = write_hand_scores(log=lambda *_: None)
         except Exception as e:
             results["hand_scores_error"] = "%s: %s" % (type(e).__name__, e)
+    if not dry_run and WRITE_FIX_THESE and folder_ids:
+        # What a person must fix in each cohort's sheet, in a file beside it
+        # (attention.py). After the ledger entries above, which it reads.
+        try:
+            from .attention import write_all_fix_these
+            results["fix_these"] = write_all_fix_these(d, sorted(folder_ids))
+        except Exception as e:
+            results["fix_these"] = {"all cohorts": "FAILED: %s: %s" % (type(e).__name__, e)}
     return results
 
 
@@ -881,6 +894,12 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
             a.get("sheet_name") or "-", a.get("error") or a.get("records"))))
     for f in r.get("refused_files") or []:
         log(_ascii("[!] not read as a sheet: %s -- %s" % (f.get("file"), f.get("reason"))))
+    for cid, what in sorted((r.get("fix_these") or {}).items()):
+        if what.startswith("FAILED"):
+            log(_ascii("[!] %s's FIX THESE file not updated: %s" % (cid, what)))
+        elif what != "none":
+            log(_ascii("[!] %s: things to fix in the sheet -- see '!! %s - FIX THESE.xlsx' "
+                       "beside it (%s)" % (cid, cid, what)))
     if r.get("hand_scores_error"):
         log(_ascii("FAIL hand scores for the reaching pipeline NOT rewritten: %s"
                    % r["hand_scores_error"]))

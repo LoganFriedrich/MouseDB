@@ -74,7 +74,14 @@ file, not a lock file. Everything here reads; fetch_cohort_sheet exists
 precisely so that a tool which might open a workbook for writing gets a copy in
 its own working directory instead.
 
-Exactly one thing in mousedb is BUILT to write into the folder: the Tracking
+Two things in mousedb are BUILT to write into the folder. The first is the
+FIX THESE file: after every import that writes, each cohort with something a
+person must fix in its sheet (attention.py: a date read as a typo, a failed
+import, a session with videos but no hand scores) gets
+"!! <cohort> - FIX THESE.xlsx" beside its workbook, and a cohort with nothing
+left has it removed. WHY there: that folder is where the sheet is opened and
+fixed. It never touches the sheet, and its name can never be read as one
+(_SHEET_RE is anchored at "Connectome_"). The second is the Tracking
 Sheets tab's "New cohort sheet..." button (gui.sheets_tab.new_sheet). When a
 person clicks it and types a new cohort's name and start date, it runs
 ``cohort_tools.make_sheets --new --output-dir <the configured folder>``, which
