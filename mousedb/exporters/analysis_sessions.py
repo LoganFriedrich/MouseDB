@@ -32,6 +32,7 @@ import pandas as pd
 
 from . import analysis_reaches as ar
 from . import data_dictionary as dd
+from . import trays
 from ..stats import PELLETS_PER_TRAY
 
 # The session IS the unit, so these must not vary within one. Taken as the first
@@ -50,6 +51,13 @@ PER_SESSION: List[str] = [
 # What one session is identified by. The video is the session's recording, so it
 # identifies it exactly; subject is carried too so a group is readable on its own.
 KEYS = ["subject_id", "video_name"]
+# The per-session counts of pellets. NA on an easy or flat tray, which has no
+# pellets to count (trays.py says why).
+PELLET_COUNTS = ("pellets_reached_for", "reaches_that_decided_a_pellet",
+                 "reaches_after_the_pellet_was_gone")
+_EASY_FLAT = (" NA on an easy or flat training tray: its pellets are not tracked and "
+              "the video is not cut into one stretch per pellet, so there is nothing "
+              "to count.")
 
 TEXT_COLUMNS = ar.TEXT_COLUMNS
 
@@ -115,6 +123,11 @@ def build(reaches: pd.DataFrame,
             row["reaches_that_decided_a_pellet"] = decided
             row["reaches_after_the_pellet_was_gone"] = int(
                 (group["pellet_state_at_this_reach"] == ar.STATE_ALREADY_GONE).sum())
+        # An easy or flat tray has no pellets to count (trays.py says why): these
+        # are absent, not zero -- "0 pellets reached for" would be a claim.
+        if trays.outcome_free(group).iloc[0]:
+            for column in PELLET_COUNTS:
+                row[column] = None
 
         # Every outcome as a percentage of the pellets presented, from each
         # scoring stream separately. They disagree sometimes; reporting one would
@@ -166,17 +179,18 @@ _DERIVED = {
         "How many of the tray's 20 pellets the animal reached for at least once in "
         "this session: the number of different pellet numbers among this session's "
         "reaches. A pellet never reached for is not counted, so this is at most "
-        "pellets_presented. It is not a denominator for any percentage here."),
+        "pellets_presented. It is not a denominator for any percentage here."
+        + _EASY_FLAT),
     "reaches_that_decided_a_pellet": (
         "Reaches that decided a pellet", "integer",
         "How many reaches in this session were the one credited with what happened "
         "to their pellet. At most one per pellet, so this cannot exceed "
-        "pellets_reached_for."),
+        "pellets_reached_for." + _EASY_FLAT),
     "reaches_after_the_pellet_was_gone": (
         "Reaches made after the pellet was gone", "integer",
         "How many reaches were made at a pellet that had already been retrieved or "
         "knocked out of reach, so they could not have succeeded. Counting these as "
-        "attempts is what makes a success rate wrong."),
+        "attempts is what makes a success rate wrong." + _EASY_FLAT),
 }
 
 # The eight percentages: four outcomes, each from both scoring streams. Contacted

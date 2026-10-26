@@ -68,13 +68,24 @@ Two columns in the shareable table carry the point:
 
 | column | what it says |
 |---|---|
-| `reach_result` | what THIS reach did to the pellet: `Retrieved`, `Displaced into the scoring area`, `Displaced out of reach`, `Did not move the pellet`, or `Undetermined` |
+| `reach_result` | what THIS reach did to the pellet: `Missed`, `Displaced into the scoring area`, `Displaced out of reach`, `Retrieved`, `Undetermined`, or `Not applicable` (easy and flat trays, below) |
 | `pellet_result` | what became of the pellet this reach was aimed at, repeated on every reach aimed at it, so you never have to join anything |
 
-`Did not move the pellet` is an **answer**, not a missing value: the pellet's
-fate was decided by a different reach, or by none. It is deliberately not
-"missed" -- contact is not measured for a reach that did not decide the
-outcome, so claiming the paw missed would assert something nobody looked at.
+`Missed` is an **answer**, not a missing value: the animal reached and the
+pellet stayed where it was, because a different reach decided its fate or
+because none did. It is not a claim about contact -- whether the paw touched a
+pellet it did not move is not measured.
+
+**Easy and flat training trays have no pellet answers.** On those trays the
+pellets are not tracked, no outcome is computed, and the video is not cut into
+one stretch per pellet. So on every reach from one of them, every column that
+asks about a pellet -- `reach_result`, `pellet_result`, which reach decided it,
+the pellet number, how many reaches were aimed at it, the per-video pellet
+counts -- reads `Not applicable` (in the analysis files, a number column reads
+`NA` instead, which is those files' word for an absent number). The reach
+itself, its measurements and the session's attention score are all there. Use
+`tray_type` (P = pillar, E = easy, F = flat) to pick the pillar rows when you
+want pellet outcomes.
 
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.
@@ -87,7 +98,7 @@ treating them alike would throw away what you actually know:
 
 | you will see | it means |
 |---|---|
-| `Not applicable` | the question cannot apply to this row -- days-post-injury for a session that happened before the injury |
+| `Not applicable` | the question cannot apply to this row -- days-post-injury for a session that happened before the injury; every pellet column on an easy or flat training tray |
 | `Not measured` | no code computes this value (the column exists so the column set stays stable) |
 | `Not recorded` | a source should carry it and does not -- nobody wrote it in the sheet |
 | `Undetermined` | it was looked at and could not be decided |

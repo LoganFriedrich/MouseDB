@@ -37,7 +37,7 @@ import pandas as pd
 
 from . import data_dictionary as dd
 from . import extended_features as extended
-from . import missing
+from . import missing, trays
 
 # --- the committed vocabulary -------------------------------------------------------
 RETRIEVED = "Retrieved"
@@ -68,11 +68,29 @@ PELLET_WORDS = {
 MOVED = {RETRIEVED, DISPLACED_IN, DISPLACED_OUT}
 
 # Ordered as the three things a reach can do -- missed; displaced (either
-# destination); retrieved -- then the pipeline's "not decided yet".
+# destination); retrieved -- then the pipeline's "not decided yet", then the
+# training trays' "no pellet question here".
 REACH_RESULT_PV = "; ".join([MISSED, DISPLACED_IN, DISPLACED_OUT, RETRIEVED,
-                             missing.UNDETERMINED])
+                             missing.UNDETERMINED, missing.NOT_APPLICABLE])
 PELLET_RESULT_PV = "; ".join([RETRIEVED, DISPLACED_IN, DISPLACED_OUT, NEVER_TOUCHED,
-                              missing.UNDETERMINED])
+                              missing.UNDETERMINED, missing.NOT_APPLICABLE])
+NOT_APPLICABLE_DESCRIBED = ("Not applicable=an easy or flat training tray: its pellets "
+                            "are not tracked and no outcome is computed, so there is "
+                            "no pellet answer to give")
+
+# The columns of this document that ask about a pellet. On an easy or flat tray
+# none of them has an answer (trays.py says why), so every one reads
+# "Not applicable" there.
+PELLET_QUESTIONS = [
+    "pellet_number", "reach_number_in_pellet", "reaches_at_this_pellet",
+    "is_first_reach_at_pellet", "is_last_reach_at_pellet",
+    "reach_result", "pellet_result", "reach_decided_the_pellet",
+    "pellets_in_video", "pellets_retrieved_in_session",
+    "pellets_displaced_in_session", "pellets_moved_in_session",
+]
+EASY_FLAT_NOTE = ("On an easy or flat training tray this reads 'Not applicable': its "
+                  "pellets are not tracked, no outcome is computed, and the video is "
+                  "not cut into one stretch per pellet.")
 
 # --- which columns travel, and under what name --------------------------------------
 # (source column, name in this document). A source column that is absent is skipped,
@@ -275,6 +293,8 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
              + [n for s, n in KINEMATICS + extra + SESSION_TOTALS
                 if s in full.columns])
     out = pd.DataFrame({k: data[k] for k in order}, columns=order)
+    trays.blank_where(out, trays.outcome_free(full), PELLET_QUESTIONS,
+                      missing.NOT_APPLICABLE)
 
     # No empty cells anywhere. Anything not named in REASONS is a gap in a source, which
     # is what the default says. Nothing here is ever 'Not measured': this document
@@ -302,6 +322,8 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
     for src, name in present:
         base = source_rows.get(src)
         note = missing.dictionary_comment(reasons, name)
+        if name in PELLET_QUESTIONS:
+            note = (note + " " + EASY_FLAT_NOTE).strip()
         if base:
             row = dict(base)
             row["VariableName"] = name
@@ -324,7 +346,7 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
                 "Displaced into the scoring area=knocked into the scoring area; "
                 "Displaced out of reach=knocked away, unrecoverable; "
                 "Retrieved=the animal got the pellet; "
-                "Undetermined=not yet decided"),
+                "Undetermined=not yet decided; " + NOT_APPLICABLE_DESCRIBED),
         dd._row("pellet_result", "What happened to this pellet",
                 "The fate of the pellet this reach was aimed at, repeated on every reach "
                 "aimed at that pellet, so a session reads without joining tables.",
@@ -333,11 +355,12 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
                 "Displaced into the scoring area=knocked into the scoring area; "
                 "Displaced out of reach=knocked away, unrecoverable; "
                 "Never touched=the pellet was not moved by any reach; "
-                "Undetermined=not yet decided"),
+                "Undetermined=not yet decided; " + NOT_APPLICABLE_DESCRIBED),
         dd._row("reach_decided_the_pellet", "Did this reach decide the pellet",
                 "Yes on the one reach credited with the pellet's fate, No on every other "
                 "reach aimed at the same pellet.",
-                "", "text", "Yes; No", "Yes=this reach decided the pellet's fate"),
+                "", "text", "Yes; No; " + missing.NOT_APPLICABLE,
+                "Yes=this reach decided the pellet's fate; " + NOT_APPLICABLE_DESCRIBED),
     ]
     at = len([1 for s, n in present if s in dict(ANIMAL + SESSION + REACH_IDENTITY)])
     return rows[:at] + answers + rows[at:]

@@ -54,7 +54,7 @@ import pandas as pd
 
 from . import data_dictionary as dd
 from . import extended_features as extended
-from . import reach_summary
+from . import missing, reach_summary, trays
 
 MISSING = "NA"
 ROW_NUMBER = "entry_index"
@@ -219,6 +219,19 @@ NAMED_KINEMATICS: List[Tuple[str, str]] = [
     ("duration_frames", "swipe_duration_frames"),
 ]
 
+# The columns that ask about a pellet. On an easy or flat tray none of them has
+# an answer (trays.py says why): the words there read "Not applicable" and the
+# numbers are NA, this file's word for an absent number.
+PELLET_WORD_QUESTIONS = ("reach_outcome", "pellet_outcome", "pellet_state_at_this_reach")
+PELLET_NUMBER_QUESTIONS = (
+    "pellet_number", "reaches_at_this_pellet", "is_first_reach_at_pellet",
+    "is_last_reach_at_pellet", "pellet_position_idealness", "interaction_frame",
+    "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
+)
+EASY_FLAT_NOTE = ("On an easy or flat training tray this is %s: its pellets are not "
+                  "tracked, no outcome is computed, and the video is not cut into one "
+                  "stretch per pellet.")
+
 # Columns whose value is a word. Everything else must load as a number.
 TEXT_COLUMNS = {
     "subject_id", "test_date", "session_id", "tray_id", "tray_type", "test_type",
@@ -245,14 +258,15 @@ STATE_DECIDED_BY_THIS = "this reach decided the pellet"
 STATE_ALREADY_GONE = "pellet already retrieved or displaced"
 
 PELLET_STATE_VALUES = "; ".join(
-    (STATE_AVAILABLE, STATE_DECIDED_BY_THIS, STATE_ALREADY_GONE))
+    (STATE_AVAILABLE, STATE_DECIDED_BY_THIS, STATE_ALREADY_GONE, missing.NOT_APPLICABLE))
 PELLET_STATE_DESCRIBED = (
     "pellet still available=the pellet had not yet been moved when this reach was "
     "made, so the reach could have succeeded; "
     "this reach decided the pellet=this is the one reach credited with what "
     "happened to the pellet, and there is at most one per pellet; "
     "pellet already retrieved or displaced=an earlier reach at the same pellet "
-    "had already settled it, so this reach could not have succeeded")
+    "had already settled it, so this reach could not have succeeded; "
+    + reach_summary.NOT_APPLICABLE_DESCRIBED)
 
 
 def pellet_state(frame) -> "pd.Series":
@@ -427,6 +441,9 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
              + [n for _s, n in NAMED_KINEMATICS + flat + WHOLE_REACH + extra
                 + SESSION_TOTALS if n in data])
     out = pd.DataFrame({k: data[k] for k in order}, columns=order)
+    free = trays.outcome_free(out)
+    trays.blank_where(out, free, PELLET_WORD_QUESTIONS, missing.NOT_APPLICABLE)
+    trays.blank_where(out, free, PELLET_NUMBER_QUESTIONS, None)
     out = _carry_session_totals(out)
 
     for name in out.columns:
@@ -609,8 +626,12 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
                   "video frame and one pixel is about a quarter of a millimetre. "
                   "A whole number is written without a decimal point."
                   % SIGNIFICANT_DIGITS)
+        easy_flat = (EASY_FLAT_NOTE % "'Not applicable'" if name in PELLET_WORD_QUESTIONS
+                     else EASY_FLAT_NOTE % "NA" if name in PELLET_NUMBER_QUESTIONS
+                     else "")
         base["Comments"] = " ".join(
-            x for x in (str(base.get("Comments", "")), pair, note, digits) if x).strip()
+            x for x in (str(base.get("Comments", "")), pair, note, easy_flat, digits)
+            if x).strip()
         rows.append(base)
     return rows
 

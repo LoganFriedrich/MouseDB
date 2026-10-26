@@ -39,6 +39,7 @@ from . import missing
 from . import analysis_reaches
 from . import analysis_sessions
 from . import reach_summary
+from . import trays
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
               "5_SC_Injection_Details": "Injection", "ODC": "ODC"}
@@ -59,6 +60,19 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     "Exclusion_reason": missing.NOT_APPLICABLE,
     "interaction_frame": missing.NOT_APPLICABLE,
 }
+
+# Columns of the complete record that answer a question about a pellet. On an easy
+# or flat tray none of them has an answer (trays.py says why), so there they read
+# 'Not applicable' -- whatever the column's general word for an empty cell, and
+# whatever the database put there: the stored contact groups say 'missed' on those
+# rows and causal_reach says 0, both claims about pellets nobody tracked.
+EASY_FLAT_NOT_APPLICABLE = (
+    "outcome", "causal_reach", "interaction_frame", "distance_to_interaction",
+    "segment_outcome", "segment_outcome_confidence", "segment_outcome_flagged",
+    "pellet_position_idealness", "contact_group", "segment_contact_group",
+    "outcome_source", "algo_outcome", "algo_causal_reach_id",
+    "Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted",
+)
 
 # Columns the dictionary does NOT mark as never-computed -- because a legacy detector
 # did populate them -- but which no current detector fills, so they are empty on every
@@ -382,7 +396,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     # Easy and Flat: pellets are presented but not tracked and no outcome is
     # computed (lab decision, 2026-10-23), so their pellet and outcome counts
     # are unknown, not zero. Blank them; the reach count and attention stay.
-    outcome_free = rc["tray_type"].fillna("").astype(str).str.upper().isin(["E", "F"])
+    outcome_free = trays.outcome_free(rc)
     for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted"):
         cols[c] = cols[c].mask(outcome_free)
     empty = pd.Series(pd.array([pd.NA] * len(rc), dtype="Int64"), index=rc.index)
@@ -616,8 +630,14 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     complete_dictionary, summary_dictionary = [], []
     if not analysis_only:
         full = missing.fill_frame(df, reasons)
-        full_rows = [dict(r, Comments=(r.get("Comments", "") + " "
-                                       + missing.dictionary_comment(reasons, r["VariableName"])).strip())
+        trays.blank_where(full, trays.outcome_free(df), EASY_FLAT_NOT_APPLICABLE,
+                          missing.NOT_APPLICABLE)
+        full_rows = [dict(r, Comments=" ".join(x for x in (
+                         r.get("Comments", ""),
+                         missing.dictionary_comment(reasons, r["VariableName"]),
+                         (reach_summary.EASY_FLAT_NOTE
+                          if r["VariableName"] in EASY_FLAT_NOT_APPLICABLE else ""))
+                         if x).strip())
                      for r in rows]
         # No dictionary per cohort: export() writes one per kind from these rows.
         complete_dictionary = _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label))
