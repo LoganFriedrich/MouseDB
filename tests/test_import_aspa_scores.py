@@ -54,6 +54,31 @@ def test_four_tray_blocks_and_the_score_vocabulary(tmp_path):
     assert rows[0][4] == {i + 1: s for i, s in enumerate(scored)}
 
 
+def test_tray_number_is_the_block_position_whatever_its_cell_holds(tmp_path):
+    """WHY: some workbooks put the animal's label ('H1') or nothing in the
+    'Tray #' cell above blocks 2-4; reading that cell as the number dropped
+    every such tray, so a cohort reached the database as tray 1 only."""
+    scored = [0, 1, 2, 0] * 5
+    p = _book(tmp_path, [
+        _row(datetime(2022, 5, 25), "Pillar", 1, [(1, scored), ("H1", scored), (None, scored), ("H1", scored)]),
+    ])
+    w = []
+    rows = parse_workbook(p, "ASPA_08", w)
+    assert w == []
+    assert [r[3] for r in rows] == [1, 2, 3, 4]
+
+
+def test_a_tray_number_that_disagrees_with_its_block_is_reported_not_guessed(tmp_path):
+    scored = [2] * 20
+    p = _book(tmp_path, [
+        _row(datetime(2022, 5, 25), "Pillar", 1, [(1, scored), (3, scored)]),
+    ])
+    w = []
+    rows = parse_workbook(p, "ASPA_08", w)
+    assert [r[3] for r in rows] == [1]
+    assert any("tray block 2 is headed tray 3" in x for x in w)
+
+
 def test_tray_types_map_and_unknown_is_reported(tmp_path):
     p = _book(tmp_path, [
         _row(datetime(2022, 8, 10), "Easy", 1, [(1, [0] * 20)]),

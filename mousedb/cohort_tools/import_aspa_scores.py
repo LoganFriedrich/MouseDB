@@ -20,7 +20,10 @@ per animal-day, then four tray blocks side by side --
 
 Pellet cells hold 0 (missed), 1 (displaced), 2 (eaten = retrieved) -- the
 same vocabulary as the CNT sheets. A tray whose 20 cells are all blank was
-not scored and is skipped. Tray Type is Pillar / Easy / Flat -> P / E / F.
+not scored and is skipped. A block's tray number is its position (the first
+block is tray 1, the fourth tray 4): the 'Tray #' cell above blocks 2-4 is
+sometimes blank or holds the animal's label instead of a number. A number
+there that disagrees with the position is reported and that tray skipped. Tray Type is Pillar / Easy / Flat -> P / E / F.
 Test Type / Test Phase are the operator's labels and are NOT used: the
 phase is derived from the cohort's date structure exactly as for CNT.
 
@@ -88,11 +91,16 @@ def parse_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[Tupl
                     path.name, r[c_tray], d, animal))
                 continue
             subject_id = "%s_%02d" % (cohort_id, animal)
-            for b in blocks:
-                try:
-                    tray_num = int(float(r[b])) if r[b] not in (None, "") else None
-                except (TypeError, ValueError):
-                    tray_num = None
+            for tray_num, b in enumerate(blocks, 1):
+                # A block's tray number is its POSITION (first block = tray 1).
+                # The 'Tray #' cell above blocks 2-4 is not reliable: a
+                # workbook may hold the animal's label there ('H1') or leave
+                # it blank, and reading the cell as the number silently
+                # dropped every such tray. Where
+                # a workbook does write a number it has always been the
+                # block's position; one that disagrees is reported and that
+                # tray skipped, never guessed.
+                written = r[b] if b < len(r) else None
                 cells = list(r[b + 1:b + 1 + PELLETS])
                 scores: Dict[int, int] = {}
                 for p, v in enumerate(cells, 1):
@@ -109,7 +117,11 @@ def parse_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[Tupl
                             path.name, v, subject_id, d, tray_num, p))
                         continue
                     scores[p] = s
-                if not scores or tray_num is None:
+                if not scores:
+                    continue
+                if isinstance(written, (int, float)) and int(written) != tray_num:
+                    warnings.append("%s: tray block %d is headed tray %s (%s %s) -- "
+                                    "not imported" % (path.name, tray_num, written, subject_id, d))
                     continue
                 if not 1 <= tray_num <= 4:
                     warnings.append("%s: tray number %s outside 1-4 (%s %s)" % (

@@ -653,7 +653,13 @@ so give it a working folder, not the sheets folder.
 
 ASPA's animals live in one frozen workbook per cohort letter (`I.xlsx`,
 `J.xlsx`, ...) in a folder of their own (`aspa_data_dir` in the config), and
-their manual tray scores sit in a wide tab called `1 - ENTER DATA HERE`.
+their manual tray scores sit in a wide tab called `1 - ENTER DATA HERE`:
+one row per animal per day, with up to four trays side by side. The import
+takes each tray's number from its place in the row -- the first block of
+twenty pellets is tray 1, the fourth is tray 4 -- because the `Tray #` cell
+above the later blocks is sometimes blank or holds the animal's name. If that
+cell holds a number that does not match the block's place, that tray is not
+imported and the import lists it as a warning.
 They appear in the same table as the other cohorts (project ASPA, ids like
 `ASPA_10` for cohort J) with the same status words. Import their scores with
 **Import selected** on their rows, or from a terminal:
