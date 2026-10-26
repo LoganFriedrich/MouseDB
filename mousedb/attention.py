@@ -18,6 +18,11 @@ WHAT IS GATHERED
 2. The tracking-sheet imports (the import ledger): for each cohort in the
    sheets folder, its last import if it failed, and every date that import
    had to repair (its REPAIRED warnings) -- correct those in the sheet.
+3. Videos already in the database (Pillar trays) of the project whose sheets
+   are kept current, whose session has no hand scores: filed before the
+   pipeline checked hand scores at filing (2026-10-26), or named for an
+   animal, date or tray the sheet does not have. Read from the analysis
+   snapshot (so as of its last refresh) against the hand-scores file.
 Frozen workbooks (the letter cohorts) are not listed: nobody corrects them.
 
 THE FIX THESE FILE
@@ -91,11 +96,45 @@ def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
     return out
 
 
+def filed_without_scores(snapshot_dir: Optional[Path] = None,
+                         hand_csv: Optional[Path] = None) -> List[dict]:
+    """Source 3 above: one item per filed Pillar video of the sheets folder's
+    project whose session has no hand scores."""
+    import csv
+    import pandas as pd
+    from .sheet_sync import SHEET_FOLDER_PROJECT
+    if snapshot_dir is None:
+        from .config import require
+        snapshot_dir = require("snapshot_dir")
+    if hand_csv is None:
+        from .hand_scores_file import FILE_NAME, out_dir
+        hand_csv = out_dir() / FILE_NAME
+    with open(hand_csv, newline="", encoding="utf-8") as f:
+        scored = {r["video_key"] for r in csv.DictReader(f)}
+    v = pd.read_parquet(Path(snapshot_dir) / "video_pellets.parquet",
+                        columns=["video_name", "subject_id", "session_date", "tray_type",
+                                 "run_number"])
+    v = v.drop_duplicates("video_name")
+    v = v[v.subject_id.str.startswith(SHEET_FOLDER_PROJECT + "_") & (v.tray_type == "P")]
+    out = []
+    for r in v.sort_values("video_name").itertuples():
+        if r.video_name in scored:
+            continue
+        out.append({"cohort_id": "_".join(r.subject_id.split("_")[:2]), "source": "database",
+                    "says": ("%s is in the database but its session has no hand scores in the "
+                             "sheet (animal %s, %s, tray P%d). Check the sheet has that animal, "
+                             "date and tray -- and that the video is named for the right ones."
+                             % (r.video_name, r.subject_id, str(r.session_date)[:10],
+                                int(r.run_number)))})
+    return out
+
+
 def items() -> List[dict]:
     """Everything that needs a person, from every source. A source that
     cannot be read is itself an item, never silence."""
     out: List[dict] = []
-    for name, fn in (("reaching pipeline", mousereach_items), ("sheet import", sheet_items)):
+    for name, fn in (("reaching pipeline", mousereach_items), ("sheet import", sheet_items),
+                     ("database", filed_without_scores)):
         try:
             out += fn()
         except Exception as e:

@@ -41,6 +41,8 @@ only a person can fix, gathered from every tool --
   sheet has been imported since it was ready (MouseReach holds the video
   unfiled until they come): check the sheet has that animal, date and tray,
   and that the video is named right;
+* a video already in the database whose session has no hand scores (filed
+  before that check existed, or misnamed): the same two checks;
 * a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
   in the sheet;
 * a sheet import that failed.

@@ -70,3 +70,21 @@ def test_the_tab_shows_them_in_red_and_hides_when_none():
     DataStatusTab._show_attention(tab, [])
     assert tab.attention_label.isHidden()
     del app
+
+
+def test_a_filed_video_whose_session_has_no_hand_scores_is_listed(tmp_path):
+    import pandas as pd
+    pd.DataFrame({
+        "video_name": ["20250909_CNT0216_P1", "20250909_CNT0215_P1", "20220811_ASPA1011_P1",
+                       "20250909_CNT0216_E1"],
+        "subject_id": ["CNT_02_16", "CNT_02_15", "ASPA_10_11", "CNT_02_16"],
+        "session_date": ["2025-09-09"] * 3 + ["2025-09-09"],
+        "tray_type": ["P", "P", "P", "E"], "run_number": [1, 1, 1, 1],
+    }).to_parquet(tmp_path / "video_pellets.parquet")
+    hand = tmp_path / "hand.csv"
+    hand.write_text("video_key,pellet,score\n20250909_CNT0215_P1,1,2\n", encoding="utf-8")
+    found = attention.filed_without_scores(snapshot_dir=tmp_path, hand_csv=hand)
+    # the scored one, the frozen-sheet project and the Easy tray are not listed
+    assert [i["cohort_id"] for i in found] == ["CNT_02"]
+    assert found[0]["says"].startswith("20250909_CNT0216_P1 is in the database but its "
+                                       "session has no hand scores")

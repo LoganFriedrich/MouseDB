@@ -420,6 +420,12 @@ Some things only a person can fix, mostly in the sheet:
   (the pipeline keeps that video unfiled until the scores come). Check the
   sheet has that animal, date and tray -- and that the video is named for
   the right animal, date and tray;
+- a video already in the database (a Pillar tray) whose session has no hand
+  scores in the sheet -- filed before the pipeline checked hand scores at
+  filing (2026-10-26), or named for an animal, date or tray the sheet does
+  not have. Same check: the sheet, and the video's name. (Read from the
+  analysis snapshot, so a video corrected today leaves the list after the
+  next nightly snapshot);
 - a date the import had to read as a typo (`REPAIRED ...`, see "A year typed
   wrong on the tray-scoring tab"): correct it in the sheet;
 - a sheet import that failed.
