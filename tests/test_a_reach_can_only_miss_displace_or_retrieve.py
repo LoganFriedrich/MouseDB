@@ -10,8 +10,10 @@ who treats it as one drops the majority of the file. Most reaches miss.
 The vocabulary is fixed and it is short. A reach either leaves the pellet where
 it was (missed), knocks it somewhere (displaced -- the destination is recorded
 because it decides whether the pellet could still be scored), or takes it
-(retrieved). The only other value allowed in the column is the pipeline saying it
-has not decided yet, which is not an outcome and is never presented as one.
+(retrieved). The only other values allowed in the column are the pipeline saying
+it has not decided yet, which is not an outcome and is never presented as one,
+and "Not applicable" on an easy or flat training tray, where pellets are not
+tracked and there is no pellet answer at all (2026-10-26).
 """
 import pandas as pd
 
@@ -21,7 +23,7 @@ from mousedb.exporters import reach_summary as rs
 
 # The whole vocabulary. Anything else in the column is a defect.
 OUTCOMES = {rs.MISSED, rs.DISPLACED_IN, rs.DISPLACED_OUT, rs.RETRIEVED}
-ALLOWED = OUTCOMES | {missing.UNDETERMINED}
+ALLOWED = OUTCOMES | {missing.UNDETERMINED, missing.NOT_APPLICABLE}
 
 
 def _result(causal, pellet_words):
