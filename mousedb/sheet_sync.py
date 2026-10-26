@@ -649,7 +649,8 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         # file is rewritten after every import that may have changed them.
         try:
             from .hand_scores_file import write as write_hand_scores
-            results["hand_scores"] = write_hand_scores(log=lambda *_: None)
+            results["hand_scores"] = write_hand_scores(
+                log=lambda *_: None, full_run=cohorts is None, sheets_seen=sorted(folder_ids))
         except Exception as e:
             results["hand_scores_error"] = "%s: %s" % (type(e).__name__, e)
     if not dry_run and WRITE_FIX_THESE and folder_ids:

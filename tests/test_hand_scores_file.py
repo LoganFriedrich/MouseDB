@@ -81,3 +81,19 @@ def test_a_failed_rewrite_fails_the_import(tmp_path, monkeypatch):
     lines = []
     sheet_sync.print_import_result(r, log=lines.append)
     assert any(l.startswith("FAIL hand scores") for l in lines)
+
+
+def test_only_an_import_of_every_sheet_moves_full_import_at(tmp_path, monkeypatch):
+    """WHY: a cohort with no import at all is settled only by an import of
+    EVERY sheet (and the list of cohorts that have one) -- a hand import of
+    one cohort rewrites the file too and says nothing about the others."""
+    from mousedb.database import init_database
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+    monkeypatch.setattr(sheet_sync, "LEDGER", tmp_path / "ledger.jsonl")
+    init_database(tmp_path / "scratch.db")
+    w = lambda **k: hsf.write(db_file=tmp_path / "scratch.db", dest=tmp_path / "out",
+                              log=lambda *a: None, **k)
+    m1 = w(full_run=True, sheets_seen=["CNT_02", "CNT_01"])
+    assert m1["full_import_at"] == m1["written_at"] and m1["sheets_seen"] == ["CNT_01", "CNT_02"]
+    m2 = w()                                    # e.g. one cohort imported by hand
+    assert m2["full_import_at"] == m1["full_import_at"] and m2["sheets_seen"] == ["CNT_01", "CNT_02"]

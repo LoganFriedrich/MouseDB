@@ -4,8 +4,10 @@ WHY
 ---
 A video is checked against its session's hand scores before the reaching
 pipeline files it: filing means done, so a pellet the pipeline and the bench
-disagree about goes to a person first, and a video whose hand scores cannot
-be found waits. The pipeline is a separate tool that never imports mousedb,
+disagree about goes to a person first, and a video whose hand scores are not
+there yet waits for the sheet's next import (a session never scored by hand is
+then filed without the comparison). The pipeline is a separate tool that never
+imports mousedb,
 so mousedb hands it the scores as a plain file at a path the pipeline is
 configured to read.
 
@@ -18,11 +20,25 @@ hand_pellet_scores.csv   one row per hand-scored pellet:
     pellet         pellet number, 1-20
     score          0 = not touched, 1 = displaced, 2 = retrieved (eaten)
     subject_id, cohort_id, project, session_date, tray
-hand_pellet_scores.json  when it was written, how many rows, and for each
-    cohort the end of its last successful sheet import -- so the pipeline
-    can tell "the sheet has not been imported since this video was ready"
-    (wait) from "it was imported and the scores are still not there" (a
-    defect a person must see).
+hand_pellet_scores.json  beside it:
+    written_at              when this file was written
+    rows, videos            how many pellets, how many sessions
+    last_successful_import  {cohort id: when its last successful sheet import
+                            ended} -- so the pipeline can tell "the sheet has
+                            not been imported since this video was ready"
+                            (wait) from "it was, and has no scores for it"
+                            (never scored by hand: filed without comparing)
+    sheets_seen             the cohorts the sheets folder has a sheet for, as
+                            of the last import that read the folder
+    full_import_at          when the last import of EVERY sheet in the folder
+                            ended. With sheets_seen it answers the one case
+                            last_successful_import cannot: a cohort with no
+                            import at all. If it has a sheet, its first import
+                            is still to come (wait); if it has none, an import
+                            of every sheet after the video was ready settles
+                            that no score exists. WHY not written_at: a hand
+                            import of one cohort rewrites the file too, and
+                            says nothing about the others.
 
 The file is rewritten after every sheet import (any route: the nightly job,
 the GUI, mousedb-sheets) and by `mousedb hand-scores`. It is written to a
@@ -67,9 +83,13 @@ def _last_successful_imports() -> Dict[str, str]:
     return out
 
 
-def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print) -> dict:
+def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print,
+          full_run: bool = False, sheets_seen: Optional[list] = None) -> dict:
     """Write the scores file and its manifest. Reads the database under the
-    cross-task mutex (a short read). Returns the manifest."""
+    cross-task mutex (a short read). ``full_run``: this follows an import of
+    every sheet in the folder (sets full_import_at; otherwise the previous
+    value is kept). ``sheets_seen``: the folder's cohorts (otherwise the
+    previous list is kept). Returns the manifest."""
     from .config import require
     from .task_mutex import hold
     db_file = Path(db_file) if db_file else require("db_path")
@@ -97,11 +117,19 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
         w.writerow(COLUMNS)
         w.writerows(out)
     os.replace(tmp, dest / FILE_NAME)
+    previous = {}
+    try:
+        previous = json.loads((dest / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pass
+    now = datetime.now().isoformat(timespec="seconds")
     manifest = {
-        "written_at": datetime.now().isoformat(timespec="seconds"),
+        "written_at": now,
         "rows": len(out),
         "videos": len({r[0] for r in out}),
         "last_successful_import": _last_successful_imports(),
+        "sheets_seen": sorted(sheets_seen) if sheets_seen is not None else previous.get("sheets_seen"),
+        "full_import_at": now if full_run else previous.get("full_import_at"),
     }
     tmp = dest / (MANIFEST_NAME + ".tmp")
     tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")

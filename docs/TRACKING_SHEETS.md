@@ -396,12 +396,14 @@ never depends on mousedb); it reads one file mousedb writes:
   pellet score, one row per pellet, keyed by the session the way the
   pipeline names its video (`20250709_CNT0207_P1`: date, animal without
   underscores, tray type and number);
-- `hand_pellet_scores.json` beside it: when the file was written, how many
-  scores, and, for each cohort, when its last successful sheet import
-  finished. The pipeline uses that to tell "the sheet has not been imported
-  since this video was ready" (the video waits) from "it was imported and
-  the scores for this session are still not there" (shown to a person as
-  something to fix).
+- `hand_pellet_scores.json` beside it: when the file was written; for each
+  cohort, when its last successful sheet import finished; which cohorts the
+  sheets folder has a sheet for; and when the last import of EVERY sheet
+  finished. The pipeline uses these to tell "the sheet has not been imported
+  since this video was ready" (the video waits) from "it has been, and has no
+  scores for this session" (the session was never scored by hand: there is
+  nothing to compare, so the video is filed without the comparison). A cohort
+  with no sheet at all is settled by the next import of every sheet.
 
 Every import that writes (the scheduled job, the Tracking Sheets tab,
 **Update the database now**, `mousedb-sheets import`) rewrites the file when
