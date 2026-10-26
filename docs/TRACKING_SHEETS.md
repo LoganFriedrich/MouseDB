@@ -206,6 +206,37 @@ on the video side: if a video's file name carried no date, the video import
 would use the day it ran. If a cohort's start date looks wrong, read its
 note.)
 
+### A year typed wrong on the tray-scoring tab is read as meant
+
+On `3b_Manual_Tray`, a session typed with last year's year (`2025-09-29`
+for `2026-09-29`) would be filed a year away from the rest of the cohort.
+That does more damage than losing the day: phases are worked out from the
+gaps between a cohort's sessions, so a day a year early makes every real
+session look as if it came after a year-long break, and every one of them
+gets the wrong phase. The hand-score check also cannot find that day's
+scores for its videos.
+
+So the import checks the tab's dates first. It takes the year most rows
+carry. A date in any other year counts as a typo only if changing just its
+year puts it between that year's first and last session. A cohort that runs
+over New Year keeps its December and January sessions as typed, because
+neither lands inside the other year's span.
+
+When it finds one, the import:
+
+- reads the row under the corrected date;
+- moves scores an earlier import already filed under the typed date onto
+  the corrected date (only scores the sheet import wrote; if a score is
+  already on the corrected date, the old one is left where it is and a
+  warning names it);
+- works the cohort's phases out again from the corrected dates;
+- lists a warning starting `REPAIRED`, naming the tab, the date as typed and
+  the date it was read as. The warning appears on every import until the
+  date is corrected in the sheet. **What you do:** correct the date in the
+  sheet.
+
+Only the tray-scoring tab is checked this way.
+
 ### Another cohort's animal is never filed here
 
 An animal belongs to the cohort its id says: in `CNT_NN_SS` the middle number

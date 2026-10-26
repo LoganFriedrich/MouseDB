@@ -60,6 +60,9 @@ class ExcelImporter:
         # means the day the import runs; a test sets a fixed day. It is only
         # ever compared with -- never stored as any record's date.
         self.today: Optional[date] = None
+        # (cohort, tab, date as typed) of each year typo already reported, so
+        # a tab read by two passes reports it once (see _tab_date_repairs).
+        self._reported_date_repairs = set()
 
     def import_cohort_file(self, excel_path: Path, dry_run: bool = False) -> Dict:
         """
@@ -661,6 +664,10 @@ class ExcelImporter:
 
         seen = set()
         filled = 0
+        # The same year-typo reading as the scores on this tab, so a day's
+        # weight % lands on the day its scores are filed under.
+        repairs = self._tab_date_repairs(
+            cohort_id, '3b_Manual_Tray', [self._parse_date(v) for v in df['Date']])
         for _, row in df.iterrows():
             raw_id = row.get('Animal')
             if self._blank(raw_id):
@@ -669,6 +676,7 @@ class ExcelImporter:
             # in the percentage of another cohort's animal.
             subject_id = self._resolve_subject_id(raw_id, cohort_id, '3b_Manual_Tray')
             date_val = self._parse_date(row.get('Date'))
+            date_val = repairs.get(date_val, date_val)
             # No id: _resolve_subject_id recorded why. No date: a session not
             # held yet (generated workbooks pre-write the future rows with the
             # animal and no date), so there is no weighing to fill in.
@@ -1200,7 +1208,64 @@ class ExcelImporter:
                 scores[pellet_num] = score
             rows.append((subject_id, date_val, tray_type, tray_number, scores))
 
+        # A session typed a year off (2025 for 2026) is read as the year it
+        # was meant to be, and scores an earlier import already filed under
+        # the typed year are moved to it -- otherwise the phases of the whole
+        # cohort are derived around a year-long false gap (date_typos).
+        repairs = self._tab_date_repairs(cohort_id, '3b_Manual_Tray', [r[1] for r in rows])
+        if repairs:
+            rows = [(s, repairs.get(d, d), tt, tn, sc) for s, d, tt, tn, sc in rows]
+            self._move_misdated_pellet_rows(session, cohort_id, repairs, dry_run)
+
         self._insert_pellet_rows(session, cohort_id, rows, dry_run)
+
+    def _tab_date_repairs(self, cohort_id: str, tab: str, dates) -> Dict:
+        """The year typos in one tab's dates (date_typos.year_typo_repairs),
+        each reported once per import as a warning naming the tab, the date as
+        typed and the date it is read as -- so the sheet gets corrected."""
+        from .date_typos import year_typo_repairs
+        repairs = year_typo_repairs(dates)
+        for typed, meant in sorted(repairs.items()):
+            if (cohort_id, tab, typed) in self._reported_date_repairs:
+                continue
+            self._reported_date_repairs.add((cohort_id, tab, typed))
+            self.warnings.append(
+                f"REPAIRED {cohort_id} {tab}: date {typed} read as {meant} -- a year "
+                f"typo (every other date on the tab is in {meant.year}, and this one "
+                f"falls among them with its year corrected). Correct it in the sheet.")
+        return repairs
+
+    def _move_misdated_pellet_rows(self, session, cohort_id: str, repairs: Dict, dry_run: bool):
+        """Re-date this cohort's imported pellet scores filed under a typo'd
+        date. Only rows the sheet import wrote (entered_by='excel_import') are
+        moved; a score already present on the corrected date is left where it
+        is and reported, never overwritten or deleted."""
+        cohort_subjects = session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
+        moved = 0
+        for typed, meant in repairs.items():
+            stale = session.query(PelletScore).filter(
+                PelletScore.session_date == typed,
+                PelletScore.entered_by == 'excel_import',
+                PelletScore.subject_id.in_(cohort_subjects),
+            ).all()
+            for ps in stale:
+                clash = session.query(PelletScore).filter_by(
+                    subject_id=ps.subject_id, session_date=meant, tray_type=ps.tray_type,
+                    tray_number=ps.tray_number, pellet_number=ps.pellet_number).first()
+                if clash is not None:
+                    self.warnings.append(
+                        f"{ps.subject_id} {ps.tray_type}{ps.tray_number} pellet "
+                        f"{ps.pellet_number}: a score is filed under both {typed} and "
+                        f"{meant}; the {typed} one was left as it is")
+                    continue
+                if not dry_run:
+                    ps.session_date = meant
+                moved += 1
+        if moved:
+            self.imported_counts['pellet_scores_redated'] = (
+                self.imported_counts.get('pellet_scores_redated', 0) + moved)
+            if not dry_run:
+                session.flush()
 
     def _insert_pellet_rows(self, session, cohort_id: str, rows, dry_run: bool):
         """Insert parsed pellet rows -- (subject_id, date, tray_type, tray_number,
