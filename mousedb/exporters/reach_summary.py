@@ -50,11 +50,18 @@ NEVER_TOUCHED = "Never touched"
 # happen invites a reader to treat it as an absence and drop the row. A miss is a
 # reach: the animal reached, and the pellet stayed where it was.
 MISSED = "Missed"
+# A person reviewing the video saw something other than a reach move the pellet
+# (the review tool's "abnormal", or an ignore window with no reach credited:
+# "abnormal_exception"). That is a decided answer about the pellet, not a gap,
+# and until 2026-10-26 it was exported as Undetermined, which read as "nobody
+# decided". No reach did it, so every reach at that pellet reads Missed.
+NOT_BY_A_REACH = "Moved by something other than a reach"
 
 # The pipeline's internal words for a pellet's fate -> what they mean in English.
-# 'triaged', 'uncertain' and 'abnormal_exception' are not things a mouse did: they are
-# the pipeline saying it could not decide, which for a finished cohort means a human
-# review that has not happened yet. They are never presented as an outcome.
+# 'triaged' and 'uncertain' are not things a mouse did: they are the pipeline
+# saying it could not decide. A filed video should never carry them (a pellet
+# nobody decided keeps its video in review); where one does, it reads
+# Undetermined and is never presented as an outcome.
 PELLET_WORDS = {
     "retrieved": RETRIEVED,
     "displaced_sa": DISPLACED_IN,
@@ -63,7 +70,8 @@ PELLET_WORDS = {
     "missed": NEVER_TOUCHED,
     "triaged": missing.UNDETERMINED,
     "uncertain": missing.UNDETERMINED,
-    "abnormal_exception": missing.UNDETERMINED,
+    "abnormal_exception": NOT_BY_A_REACH,
+    "abnormal": NOT_BY_A_REACH,
 }
 MOVED = {RETRIEVED, DISPLACED_IN, DISPLACED_OUT}
 
@@ -73,7 +81,7 @@ MOVED = {RETRIEVED, DISPLACED_IN, DISPLACED_OUT}
 REACH_RESULT_PV = "; ".join([MISSED, DISPLACED_IN, DISPLACED_OUT, RETRIEVED,
                              missing.UNDETERMINED, missing.NOT_APPLICABLE])
 PELLET_RESULT_PV = "; ".join([RETRIEVED, DISPLACED_IN, DISPLACED_OUT, NEVER_TOUCHED,
-                              missing.UNDETERMINED, missing.NOT_APPLICABLE])
+                              NOT_BY_A_REACH, missing.UNDETERMINED, missing.NOT_APPLICABLE])
 NOT_APPLICABLE_DESCRIBED = ("Not applicable=an easy or flat training tray: its pellets "
                             "are not tracked and no outcome is computed, so there is "
                             "no pellet answer to give")
@@ -355,6 +363,8 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
                 "Displaced into the scoring area=knocked into the scoring area; "
                 "Displaced out of reach=knocked away, unrecoverable; "
                 "Never touched=the pellet was not moved by any reach; "
+                + NOT_BY_A_REACH + "=a person reviewing the video saw something other "
+                "than a reach move the pellet, so no reach is credited with it; "
                 "Undetermined=not yet decided; " + NOT_APPLICABLE_DESCRIBED),
         dd._row("reach_decided_the_pellet", "Did this reach decide the pellet",
                 "Yes on the one reach credited with the pellet's fate, No on every other "

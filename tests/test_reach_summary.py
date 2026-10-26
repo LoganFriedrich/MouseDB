@@ -6,7 +6,7 @@ which are easy to break by "tidying" later:
   1. A reach that did not decide the pellet says so in words. It does NOT say the paw
      missed, because contact is never measured on such a reach.
   2. The pellet's fate rides on every reach aimed at that pellet.
-  3. The pipeline's undecided words ('triaged', 'uncertain', 'abnormal_exception') are
+  3. The pipeline's undecided words ('triaged', 'uncertain') are
      never presented to a reader as something an animal did.
 """
 import pandas as pd
@@ -42,7 +42,7 @@ def test_the_pellets_fate_is_carried_on_every_reach():
         "somewhere -- that is the field the collaborator reads")
 
 
-@pytest.mark.parametrize("word", ["triaged", "uncertain", "abnormal_exception"])
+@pytest.mark.parametrize("word", ["triaged", "uncertain"])
 def test_the_pipelines_undecided_words_never_reach_a_reader(word):
     out, _ = rs.build(_frame([
         {"video_name": "V", "segment_num": 1, "reach_num": 1,
@@ -52,6 +52,20 @@ def test_the_pipelines_undecided_words_never_reach_a_reader(word):
     assert out["reach_result"].iloc[0] == missing.UNDETERMINED
     assert word not in out.to_csv(index=False), (
         "'%s' means we could not decide, not something the animal did" % word)
+
+
+@pytest.mark.parametrize("word", ["abnormal_exception", "abnormal"])
+def test_a_pellet_moved_by_something_else_is_a_decided_answer(word):
+    """A person saw something other than a reach move the pellet (2026-10-26:
+    exported as Undetermined until then, which read as nobody having decided)."""
+    out, rows = rs.build(_frame([
+        {"video_name": "V", "segment_num": 1, "reach_num": n,
+         "causal_reach": 0, "segment_outcome": word} for n in (1, 2)
+    ]))
+    assert list(out["pellet_result"]) == [rs.NOT_BY_A_REACH] * 2
+    assert list(out["reach_result"]) == [rs.MISSED] * 2      # no reach moved it
+    entry = [r for r in rows if r["VariableName"] == "pellet_result"][0]
+    assert rs.NOT_BY_A_REACH + "=" in entry["PVDescribed"]
 
 
 def test_an_untouched_pellet_is_never_reported_as_an_effect():

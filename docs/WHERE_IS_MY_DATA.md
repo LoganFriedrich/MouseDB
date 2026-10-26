@@ -69,7 +69,7 @@ Two columns in the shareable table carry the point:
 | column | what it says |
 |---|---|
 | `reach_result` | what THIS reach did to the pellet: `Missed`, `Displaced into the scoring area`, `Displaced out of reach`, `Retrieved`, `Undetermined`, or `Not applicable` (easy and flat trays, below) |
-| `pellet_result` | what became of the pellet this reach was aimed at, repeated on every reach aimed at it, so you never have to join anything |
+| `pellet_result` | what became of the pellet this reach was aimed at, repeated on every reach aimed at it, so you never have to join anything: `Retrieved`, `Displaced into the scoring area`, `Displaced out of reach`, `Never touched`, `Moved by something other than a reach` (a person reviewing the video saw it; no reach is credited, so every reach at that pellet reads `Missed`), `Undetermined` or `Not applicable` |
 
 `Missed` is an **answer**, not a missing value: the animal reached and the
 pellet stayed where it was, because a different reach decided its fate or
@@ -101,7 +101,7 @@ treating them alike would throw away what you actually know:
 | `Not applicable` | the question cannot apply to this row -- days-post-injury for a session that happened before the injury; every pellet column on an easy or flat training tray |
 | `Not measured` | no code computes this value (the column exists so the column set stays stable) |
 | `Not recorded` | a source should carry it and does not -- nobody wrote it in the sheet |
-| `Undetermined` | it was looked at and could not be decided |
+| `Undetermined` | in `reach_result` / `pellet_result`: a pellet that reached the files without anyone deciding it. That should not happen -- a pellet nobody decided keeps its video in review -- and until 2026-10-26 it did, because the review window let a reviewer move on without picking an outcome and counted that as an answer. Those videos are sent back to review, and leave the exports until they are answered (see "Only filed videos are in the database" below) |
 
 If a column you expected is full of `Not recorded`, that is a gap in the
 records, not a bug: something has to be entered in the tracking sheet, or
