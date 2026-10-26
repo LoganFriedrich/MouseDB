@@ -103,3 +103,17 @@ def test_reach_data_csv_says_not_applicable_for_the_algorithm_on_easy_and_flat(t
     assert pillar["contact_group"] == "contacted" and pillar["segment_outcome"] == "retrieved"
     m = pd.read_csv(out / "manual_scores.csv", dtype=str)
     assert m.iloc[0]["contact_group"] == "untouched"            # the hand score, kept on a flat tray
+
+
+def test_a_table_missing_a_source_column_stops_loudly_and_changes_nothing(tmp_path):
+    """Never left on the old definition without a word."""
+    import pytest
+    conn = sqlite3.connect(str(tmp_path / "partial.db"))
+    conn.execute(f"CREATE TABLE reach_data (id INTEGER PRIMARY KEY, interaction_frame INTEGER, "
+                 f"contact_group TEXT GENERATED ALWAYS AS ({OLD_REACH}) VIRTUAL)")
+    conn.commit()
+    with pytest.raises(sqlite3.OperationalError):
+        with conn:
+            bring_contact_columns_current(conn)
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'reach_data'").fetchone()[0]
+    assert OLD_REACH in sql                     # rolled back, not half-changed

@@ -39,13 +39,6 @@ CONTACT_COLUMNS = (
     ("reach_data", "segment_contact_group", REACH_SEGMENT_CONTACT_EXPR),
     ("pellet_scores", "contact_group", PELLET_CONTACT_EXPR),
 )
-# The columns each definition reads. A table without them (a partial test or
-# scratch table) is left alone rather than given a column it cannot compute.
-_SOURCES = {
-    REACH_CONTACT_EXPR: ("tray_type", "interaction_frame"),
-    REACH_SEGMENT_CONTACT_EXPR: ("tray_type", "segment_outcome"),
-    PELLET_CONTACT_EXPR: ("score",),
-}
 
 
 def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
@@ -55,8 +48,9 @@ def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
     so this is safe to run on every import. A VIRTUAL generated column stores
     nothing, so SQLite drops and re-adds it by rewriting the schema alone --
     instant even on the 5 GB reach table (timed 2026-10-26: 0.01 s each on a
-    559 MB table of a million rows). Call it inside a transaction, holding the
-    cross-task lock (task_mutex), like any other write."""
+    559 MB table of a million rows). Each column's swap is all-or-nothing; a
+    table that cannot take the new definition raises. Hold the cross-task lock
+    (task_mutex) while calling it, like any other write."""
     changed: List[str] = []
     for table, column, expr in CONTACT_COLUMNS:
         row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -65,12 +59,21 @@ def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
             continue
         # table_xinfo, not table_info: it is the one that lists generated columns.
         have = {r[1] for r in conn.execute("PRAGMA table_xinfo(%s)" % table)}
-        if not set(_SOURCES[expr]) <= have:
-            continue
-        if column in have:
-            conn.execute("ALTER TABLE %s DROP COLUMN %s" % (table, column))
-        conn.execute("ALTER TABLE %s ADD COLUMN %s TEXT GENERATED ALWAYS AS (%s) VIRTUAL"
-                     % (table, column, expr))
+        # Drop and re-add as ONE step. Python's sqlite3 opens no transaction
+        # before ALTER TABLE, so without the savepoint a refused ADD (a table
+        # missing a column the definition reads) left the column dropped and
+        # gone. Now the error stops the run loudly and the table is as it was.
+        conn.execute("SAVEPOINT contact_column")
+        try:
+            if column in have:
+                conn.execute("ALTER TABLE %s DROP COLUMN %s" % (table, column))
+            conn.execute("ALTER TABLE %s ADD COLUMN %s TEXT GENERATED ALWAYS AS (%s) VIRTUAL"
+                         % (table, column, expr))
+        except Exception:
+            conn.execute("ROLLBACK TO contact_column")
+            conn.execute("RELEASE contact_column")
+            raise
+        conn.execute("RELEASE contact_column")
         changed.append("%s.%s" % (table, column))
     return changed
 

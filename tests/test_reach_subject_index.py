@@ -16,7 +16,8 @@ def test_ensure_columns_adds_the_index_and_the_relabel_query_uses_it(tmp_path):
     con.executescript(
         "CREATE TABLE subjects(subject_id TEXT PRIMARY KEY, cohort_id TEXT);"
         "CREATE TABLE reach_data(id INTEGER PRIMARY KEY, subject_id TEXT, video_name TEXT,"
-        " session_date TEXT, reach_id INT);")
+        " session_date TEXT, reach_id INT, tray_type TEXT, interaction_frame INT,"
+        " segment_outcome TEXT);")
     import_reaches.ensure_columns(con)
     import_reaches.ensure_columns(con)          # idempotent
     names = {r[1] for r in con.execute("PRAGMA index_list(reach_data)")}
