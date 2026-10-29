@@ -57,6 +57,19 @@ exports/current/
 - **Sizes.** A project's combined complete record can run to gigabytes: open
   it in R or Python, not Excel. The per-cohort files are what
   Excel can manage.
+- **In a script or notebook, never write a file's path out -- ask mousedb for it.**
+  A path written into a script breaks the next time the folder is rearranged
+  (one did on 2026-10-29). In the MouseDB environment:
+
+  ```python
+  from mousedb.exporters.layout import locate
+  path = locate("reaches_analysis", "CNT_05")   # one cohort's file
+  path = locate("reaches_analysis", "CNT")      # the whole project, combined
+  ```
+
+  The kinds are `ODC_reaches`, `reaches_summary`, `reaches_analysis`,
+  `sessions_analysis` and `ODC_sessions`. If the file has not been written yet,
+  it stops with a message saying which file and where it looked.
 - Until 2026-10-29 every cohort's file sat at the top of the folder. Those are
   moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first
   time the new layout is written.

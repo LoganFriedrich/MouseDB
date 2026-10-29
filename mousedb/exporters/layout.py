@@ -97,6 +97,43 @@ def combined_file(root: Path, kind: str, project: str) -> Path:
     return Path(root) / project / file_name(kind, "%s_%s" % (project, ALL_COHORTS))
 
 
+def current_root() -> Path:
+    """The live exports folder: <mousedb_root>/exports/current."""
+    from ..config import require
+    return Path(require("mousedb_root")) / "exports" / "current"
+
+
+def locate(kind: str, cohort_id: str, root: Optional[Path] = None) -> Path:
+    """Where the export file of one kind for one cohort is. Raises FileNotFoundError.
+
+    For anything OUTSIDE the exporter that reads the exports (an analysis script,
+    a notebook): ask here instead of writing the path out. WHY (2026-10-29): when
+    the files moved into project/cohort folders, a script that had the old path
+    written into it broke; one that asks here follows any later move unchanged.
+
+    ``kind`` is a key of KINDS. Give a cohort for its own file,
+    locate("reaches_analysis", "CNT_05"), or a project for the combined file,
+    locate("reaches_analysis", "CNT") -- every CNT cohort in one file.
+    A cohort's folder may carry more than its id (ASPA_04 -> ASPA_04_D).
+    """
+    root = Path(root) if root else current_root()
+    if re.fullmatch(r"[A-Za-z]+", str(cohort_id)):
+        path = combined_file(root, kind, str(cohort_id).upper())
+        if path.is_file():
+            return path
+        raise FileNotFoundError("no combined %s file for project %s at %s" % (kind, cohort_id, path))
+    cohort_id = str(cohort_id).upper()
+    pdir = root / project_of(cohort_id)
+    labels = sorted(d.name for d in pdir.iterdir() if d.is_dir()
+                    and (d.name == cohort_id or re.fullmatch(re.escape(cohort_id) + r"_[A-Z]", d.name))
+                    ) if pdir.is_dir() else []
+    for label in labels:
+        path = cohort_file(root, kind, cohort_id, label)
+        if path.is_file():
+            return path
+    raise FileNotFoundError("no %s file for cohort %s under %s" % (kind, cohort_id, pdir))
+
+
 def key(root: Path, path: Path) -> str:
     """A file's name in MANIFEST.json: its path inside the exports folder, with /."""
     return Path(path).relative_to(Path(root)).as_posix()

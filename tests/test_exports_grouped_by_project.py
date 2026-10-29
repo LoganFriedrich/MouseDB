@@ -137,3 +137,24 @@ def test_files_from_the_flat_layout_are_archived_not_deleted(snapshot, tmp_path)
         if (tmp_path / "exports" / "_archived").exists() else \
         sorted(p.name for p in (tmp_path / "_archived").rglob("*.csv"))
     assert archived == ["ODC_reaches_PROJA_01.csv", "reaches_PROJA_01_analysis.csv"]
+
+
+def test_a_reader_asks_where_a_file_is_instead_of_writing_the_path(snapshot, tmp_path):
+    # Readers outside the exporter use locate(), so the next move of the files
+    # does not break them the way the 2026-10-29 move broke a hand-written path.
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    assert layout.locate("reaches_analysis", "PROJA_02", out) == \
+        out / "PROJA" / "PROJA_02" / "reaches_PROJA_02_analysis.csv"
+    assert layout.locate("reaches_analysis", "proja", out) == \
+        layout.combined_file(out, "reaches_analysis", "PROJA")
+    with pytest.raises(FileNotFoundError):
+        layout.locate("reaches_analysis", "PROJA_09", out)
+
+
+def test_locate_finds_a_cohort_whose_folder_carries_a_letter(tmp_path):
+    f = tmp_path / "PROJA" / "PROJA_04_D" / "reaches_PROJA_04_D_analysis.csv"
+    f.parent.mkdir(parents=True)
+    f.write_text("x")
+    (tmp_path / "PROJA" / "PROJA_40").mkdir()              # a longer number is not a match
+    assert layout.locate("reaches_analysis", "PROJA_04", tmp_path) == f
