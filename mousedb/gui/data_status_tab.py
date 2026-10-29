@@ -86,15 +86,18 @@ never a promise.
 depending on network load; reads only). The other numbers refresh from the
 snapshot instantly.
 
-THE FILES: the bottom panel names the current export folder. It holds
+THE FILES: the bottom panel names the current export folder. At its top:
 reach_data.csv (one row per reach), manual_scores.csv (one row per pellet
-scored from the tray), ODC_sessions_<cohort>.csv (one row per animal per
-session, ODC-SCI shape), ODC_reaches_<cohort>.csv (one row per reach with
-the animal's surgery details and the session repeated on every row), the
-shareable summary and the analysis tables per cohort, with ONE
-DATA_DICTIONARY.csv per kind of file (shared by every cohort), plus
-MANIFEST.json saying when they were written and whether they are complete
-for an ODC-SCI upload. "Open exports folder" opens it in Explorer.
+scored from the tray), ONE DATA_DICTIONARY.csv per kind of file (shared by
+every cohort), and MANIFEST.json saying when they were written and whether
+they are complete for an ODC-SCI upload. Then one folder per project (CNT,
+ASPA, ...) and inside it one folder per cohort (CNT/CNT_05) holding that
+cohort's files: ODC_sessions (one row per animal per session, ODC-SCI
+shape), ODC_reaches (one row per reach with the animal's surgery details and
+the session repeated on every row), the shareable summary and the analysis
+tables. Beside the cohort folders, the *_all_cohorts* files hold every
+cohort of the project in one file per kind. "Open exports folder" opens it
+in Explorer.
 
 The folder is rewritten each time the scheduled snapshot job runs (the
 panel says when that last was). "Refresh exports now" rewrites reach_data,

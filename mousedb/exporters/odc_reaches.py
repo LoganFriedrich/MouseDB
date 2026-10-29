@@ -40,6 +40,7 @@ from . import analysis_reaches
 from . import analysis_sessions
 from . import reach_summary
 from . import trays
+from . import layout
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
               "5_SC_Injection_Details": "Injection", "ODC": "ODC"}
@@ -491,7 +492,8 @@ def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[s
         else:
             dest = out_dir / "_superseded"
         dest = dest / ("%s_%s" % (datetime.now().strftime("%Y-%m-%d_%H%M%S"), label))
-        dest.mkdir(parents=True, exist_ok=True)
+        # A name may be a path inside the folder (CNT/CNT_05/x.csv): kept as such.
+        (dest / name).parent.mkdir(parents=True, exist_ok=True)
         f.replace(dest / name)
         moved.append(str(dest / name))
     return moved
@@ -603,9 +605,12 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     stops a statistics package loading the column as numbers, which is why the third
     exists rather than one of the first two being bent to cover it.
     """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    root = Path(out_dir)
     label = cohort_label(cohort_id)
+    # Each cohort's documents live in its own folder inside its project's
+    # (exporters.layout says why); out_dir is the top of the exports folder.
+    out_dir = layout.cohort_dir(root, cohort_id, label)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # The complete record carries no empty cells either: an ODC-SCI upload refuses them.
     # WHICH word is not guessed from emptiness. A column is 'Not measured' only when its
@@ -675,7 +680,7 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
         # Every reach of this cohort was left out, so there are no sessions to
         # write -- and a sessions file from an earlier run beside an empty reach
         # file would claim sessions that are not there. Archived, never deleted.
-        archive_old_names(out_dir, [sessions_file.name], label)
+        archive_old_names(root, [layout.key(root, sessions_file)], label)
 
     documented = {r["VariableName"] for r in rows}
     entry = {"rows": int(len(df)), "columns": int(len(df.columns)),
@@ -694,7 +699,7 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     entry["_exclusion_report"] = exclusion_report
     if label != cohort_id:
         entry["cohort"] = cohort_source(cohort_id) or label
-        moved = archive_old_names(out_dir, ["ODC_reaches_%s.csv" % cohort_id,
+        moved = archive_old_names(root, ["ODC_reaches_%s.csv" % cohort_id,
                                             "ODC_reaches_%s_DATA_DICTIONARY.csv" % cohort_id], label)
         if moved:
             entry["archived_old_name"] = moved
@@ -822,8 +827,12 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
                                     study_facts.facts, lab_name(),
                                     video_pellets=t.get("video_pellets"))
+            label = cohort_label(cid)
+            # The name of each document in the manifest is its path inside the
+            # exports folder (CNT/CNT_05/ODC_reaches_CNT_05.csv).
+            name = lambda kind: layout.key(final_dir, layout.cohort_file(final_dir, kind, cid, label))
             if df.empty:
-                manifest["files"]["ODC_reaches_%s.csv" % cohort_label(cid)] = {"rows": 0, "note": "no reaches"}
+                manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
                 continue
             entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
                                         analysis_only=analysis_only)
@@ -838,21 +847,21 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                                   label, s["seen_in"], s["conflicts"])
             if not analysis_only:
                 entry["dictionary"] = SHARED_DICTIONARIES["complete"]
-            manifest["files"]["ODC_reaches_%s.csv" % label] = entry
+            manifest["files"][name("ODC_reaches")] = entry
             # Each document under its own name. The counts above describe them
             # too, but a reader of the manifest (and the Where Is My Data tab)
             # looks for a file by its name, and a report that is not listed by
             # name is a report nobody knows is there (2026-10-16).
             if not analysis_only:
-                manifest["files"]["reaches_%s_summary.csv" % label] = {
+                manifest["files"][name("reaches_summary")] = {
                     "rows": entry["rows"], "columns": entry["summary_columns"],
                     "dictionary": SHARED_DICTIONARIES["summary"]}
-            manifest["files"]["reaches_%s_analysis.csv" % label] = {
+            manifest["files"][name("reaches_analysis")] = {
                 "rows": entry["analysis_rows"], "columns": entry["analysis_columns"],
                 "dictionary": "reaches_analysis_DATA_DICTIONARY.csv",
                 "note": "entries with an identified problem are left out; see analysis_EXCLUSIONS.csv"}
             if entry["session_rows"]:
-                manifest["files"]["sessions_%s_analysis.csv" % label] = {
+                manifest["files"][name("sessions_analysis")] = {
                     "rows": entry["session_rows"], "columns": entry["session_columns"],
                     "dictionary": "sessions_analysis_DATA_DICTIONARY.csv"}
         except Exception as e:
@@ -951,10 +960,23 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     if write_dir != final_dir:
         import shutil
         final_dir.mkdir(parents=True, exist_ok=True)
-        for f in sorted(write_dir.glob("*.csv")):
-            tmp = final_dir / (f.name + ".tmp")
+        for f in sorted(write_dir.rglob("*.csv")):
+            target = final_dir / f.relative_to(write_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            tmp = target.with_name(target.name + ".tmp")
             shutil.copyfile(f, tmp)
-            tmp.replace(final_dir / f.name)
+            tmp.replace(target)
+
+    # Each project's combined files, put together from the cohort files now on
+    # disk -- so a one-cohort export still yields a combined file holding every
+    # cohort (see exporters.layout). Then the per-cohort files the layout before
+    # 2026-10-29 left at the top of the folder are archived.
+    layout.combine_all(final_dir, layout.REACH_KINDS, {layout.project_of(c) for c in wanted},
+                       manifest, staging=(Path(staging_dir) / "_combined") if staging_dir else None)
+    if not analysis_only:
+        moved = layout.archive_flat_layout(final_dir)
+        if moved:
+            manifest["archived_flat_layout_files"] = len(moved)
 
     # Per-cohort dictionaries from before 2026-10-16 are superseded by the shared
     # ones: moved out of the folder (archived, never deleted) once the shared

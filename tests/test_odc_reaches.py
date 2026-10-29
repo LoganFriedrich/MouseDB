@@ -108,7 +108,7 @@ def test_letter_cohort_file_names_carry_the_letter_and_old_names_are_archived(tm
     (out / "ODC_reaches_ASPA_04.csv").write_text("old")
     df, rows = _build(_records())
     entry, label = ox.write_cohort(out, "ASPA_04", df, rows)
-    assert label == "ASPA_04_D" and (out / "ODC_reaches_ASPA_04_D.csv").exists()
+    assert label == "ASPA_04_D" and (out / "ASPA" / "ASPA_04_D" / "ODC_reaches_ASPA_04_D.csv").exists()
     assert not (out / "ODC_reaches_ASPA_04.csv").exists()
     archived = list((tmp_path / "_archived" / "exports_current").rglob("ODC_reaches_ASPA_04.csv"))
     assert len(archived) == 1 and archived[0].read_text() == "old"     # moved, never deleted

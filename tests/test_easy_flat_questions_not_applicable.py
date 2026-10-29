@@ -43,7 +43,7 @@ def _written(tmp_path):
     out = tmp_path / "current"
     out.mkdir()
     entry, label = ox.write_cohort(out, "PROJA_01", df, rows)
-    read = lambda name: pd.read_csv(out / name, dtype=str, keep_default_na=False)
+    read = lambda name: pd.read_csv(out / "PROJA" / label / name, dtype=str, keep_default_na=False)
     return entry, {
         "complete": read("ODC_reaches_%s.csv" % label),
         "summary": read("reaches_%s_summary.csv" % label),

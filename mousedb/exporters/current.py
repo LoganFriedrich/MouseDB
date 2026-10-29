@@ -14,10 +14,11 @@ hourly refresh keeps current, one folder:
         reach_data_DATA_DICTIONARY.csv
         manual_scores.csv                 one row per hand-scored pellet
         manual_scores_DATA_DICTIONARY.csv
-        ODC_sessions_<cohort>.csv         one row per animal per session, per cohort
-        ODC_sessions_DATA_DICTIONARY.csv
+        ODC_sessions_DATA_DICTIONARY.csv  (and one dictionary per other kind)
         MANIFEST.json                     when, from what, how many rows, problems
         README.txt                        what each file is, in plain words
+        <PROJECT>/<COHORT>/               each cohort's files (exporters.layout)
+        <PROJECT>/*_all_cohorts*          each project's cohorts combined
 
 It reads the analysis SNAPSHOT (parquet), never connectome.db, for the two
 big tables -- so it can run anywhere, any time, without touching the live
@@ -41,7 +42,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from . import data_dictionary as dd
-from . import missing, trays
+from . import layout, missing, trays
 from .. import DEFAULT_EXPORT_PATH
 
 from ..config import require, snapshot_dir as _snapshot_dir
@@ -63,6 +64,23 @@ These files are regenerated automatically (nightly on the processing server)
 and by the "Where Is My Data" tab in mousedb. There is one data dictionary
 per kind of file, shared by every cohort's file of that kind. Do not edit them; edit the
 source (tracking sheets, review tools) and they will be regenerated.
+
+HOW THE FOLDER IS ARRANGED
+  This folder (the top)   files covering every project at once (reach_data.csv,
+                          manual_scores.csv), every data dictionary, and
+                          analysis_EXCLUSIONS.csv.
+  CNT\, ASPA\, ...        one folder per project.
+  CNT\CNT_05\             one folder per cohort, holding that cohort's files.
+                          The cohort is in every file name too, so a file copied
+                          out of its folder still says which cohort it is.
+  CNT\*_CNT_all_cohorts*  beside the cohort folders: one file per kind with
+                          every cohort of the project, one after the other, in
+                          cohort order. Built from the cohort files after they
+                          are all written, so it is exactly those files put
+                          together. A column only some cohorts have is filled
+                          for the others with "Not recorded" (NA in the
+                          analysis files); MANIFEST.json says which. The entry
+                          index is counted again over the combined rows.
 
 reach_data.csv            One row per reach the pipeline detected, with the
                           reach's kinematics, the pellet outcome of its segment,
@@ -247,7 +265,9 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  15 = pellets are measured: pellets_in_video (from the per-pellet table) and
     #       pellets_hand_scored; video totals count every pellet; a count other
     #       than 20 is an identified error (export_exclusions check 7)
-    sig["output_format"] = 15
+    #  16 = files grouped into <project>/<cohort>/ folders, plus a combined file
+    #       per kind per project (exporters.layout)
+    sig["output_format"] = 16
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
@@ -259,6 +279,9 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
         return
     part = {"files": {}, "problems": []}
     odc_reaches.export(snapshot_dir, out_dir, manifest=part, staging_dir=_staging_dir(snapshot_dir))
+    for k in ("archived_flat_layout_files", "archived_per_cohort_dictionaries"):
+        if k in part:
+            manifest[k] = part[k]
     manifest["files"].update(part["files"])
     manifest["problems"].extend(part["problems"])
     if not part["problems"]:
@@ -283,23 +306,30 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
         try:
             export_odc_format(db, cid, xlsx)
             if not xlsx.exists():
-                manifest["files"]["ODC_sessions_%s.csv" % label] = {"rows": 0, "note": "no data"}
+                manifest["files"][layout.key(out_dir, layout.cohort_file(
+                    out_dir, "ODC_sessions", cid, label))] = {"rows": 0, "note": "no data"}
                 continue
             df = pd.read_excel(xlsx)
-            out = out_dir / ("ODC_sessions_%s.csv" % label)
+            out = layout.cohort_file(out_dir, "ODC_sessions", cid, label)
+            out.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(out, index=False)
-            manifest["files"][out.name] = {
+            name = layout.key(out_dir, out)
+            manifest["files"][name] = {
                 "rows": int(len(df)), "columns": int(len(df.columns)),
                 "undocumented_columns": dd.undocumented_columns("ODC_sessions", df.columns),
             }
             if label != cid:
-                manifest["files"][out.name]["cohort"] = cohort_source(cid) or label
+                manifest["files"][name]["cohort"] = cohort_source(cid) or label
                 archive_old_names(out_dir, ["ODC_sessions_%s.csv" % cid], label)
         except Exception as e:
             manifest["problems"].append("ODC_sessions_%s: %s: %s" % (cid, type(e).__name__, e))
         finally:
             if xlsx.exists():
                 xlsx.unlink()
+    # Each project's combined session file, from the cohort files just written
+    # (exporters.layout); then any left at the top by the old flat layout.
+    layout.combine_all(out_dir, layout.SESSION_KINDS, {layout.project_of(c) for c in cohorts}, manifest)
+    layout.archive_flat_layout(out_dir)
 
 
 def _mtime(p: Path) -> Optional[str]:

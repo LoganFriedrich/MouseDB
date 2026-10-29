@@ -22,13 +22,53 @@ each with a data dictionary beside it:
 | `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
 | `README.txt` | -- | the same explanation as this table |
 
+### How the folder is arranged
+
+```
+exports/current/
+    reach_data.csv, manual_scores.csv     every project at once
+    *_DATA_DICTIONARY.csv                 one per kind of file, for every project and cohort
+    analysis_EXCLUSIONS.csv, MANIFEST.json, README.txt
+    CNT/                                  one folder per project (CNT, ASPA, ...)
+        ODC_reaches_CNT_all_cohorts.csv   every CNT cohort in one file, one per kind
+        reaches_CNT_all_cohorts_summary.csv, reaches_CNT_all_cohorts_analysis.csv,
+        sessions_CNT_all_cohorts_analysis.csv, ODC_sessions_CNT_all_cohorts.csv
+        CNT_05/                           one folder per cohort
+            ODC_reaches_CNT_05.csv, reaches_CNT_05_summary.csv, reaches_CNT_05_analysis.csv,
+            sessions_CNT_05_analysis.csv, ODC_sessions_CNT_05.csv
+```
+
+- **One cohort:** open its folder, e.g. `CNT/CNT_05/`. The cohort is in every
+  file name as well, so a file copied out of its folder still says which cohort
+  it is.
+- **A whole project at once:** the `*_all_cohorts*` files beside the cohort
+  folders. Each is that project's cohort files of one kind put one after the
+  other, in cohort order, after all of them have been written: the same rows and
+  the same cells, nothing recomputed. Two things differ, both on purpose:
+  - a column only some cohorts' files have (a surgery detail one cohort's sheet
+    records) is filled for the other cohorts with `Not recorded` (`NA` in the
+    analysis files). `MANIFEST.json` lists, under the combined file, which
+    columns were filled for which cohorts;
+  - `entry_index` in the analysis files is counted again over the combined rows
+    (it is a row counter for the file it is in, never an id).
+- **Project folders are by exact project code.** A project whose code starts
+  with another's (`PROJAB` beside `PROJA`) has its own folder and its own
+  combined files; it is never folded into the shorter one.
+- **Sizes.** A project's combined complete record can run to gigabytes: open
+  it in R or Python, not Excel. The per-cohort files are what
+  Excel can manage.
+- Until 2026-10-29 every cohort's file sat at the top of the folder. Those are
+  moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first
+  time the new layout is written.
+
 **A tray presents 20 pellets; anything else is an error, and it is handled like one.** A video the pipeline cut into some other number of pellets has the wrong pellet number on its reaches, so that session is left out of the analysis files. A tray whose hand scores number other than 20 keeps its reaches but has its hand-score columns left empty. Both are listed in `analysis_EXCLUSIONS.csv` with the count that was found, and both come back on their own once the video is reprocessed or the sheet is corrected.
 
 **A recording whose name the archive's own cuts contradict is left out whole.** Some archives kept their own single-animal cut of every seat beside each recording, so every animal is named twice, typed separately. MouseReach's name audit (`mousereach-aspa-name-audit`) traces each of those cuts to the recording it came from and writes the recordings whose seats the cuts name for an animal the recording's name does not list (`pipeline_records/archive_name_conflicts.json` in the MouseReach pipeline folder). Every video cut from such a recording is left out of the analysis files -- whose video each seat holds is in doubt -- and listed in `analysis_EXCLUSIONS.csv` with the cut names that disagree. Nothing is renamed: once a person has said which name is right and the recording has been brought in under it, rerunning the audit brings the videos back. With no audit record, `MANIFEST.json` says the check did not run.
 
 **One dictionary per kind of file, not one per cohort.** Every cohort's file of
-a kind has the same columns, so one dictionary describes them all; send it
-alongside whichever cohorts' files you send. The one exception is the complete
+a kind has the same columns, so one dictionary describes them all -- the
+project's combined file included. The dictionaries sit at the top of the
+folder; send the one for the kind alongside whichever cohorts' files you send. The one exception is the complete
 record: a cohort's tracking sheet can record surgery details another cohort's
 does not, so some of its columns exist only in some cohorts' files. The
 dictionary describes every one of them, and `MANIFEST.json` lists, under

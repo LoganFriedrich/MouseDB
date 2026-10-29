@@ -71,8 +71,8 @@ def test_one_dictionary_per_kind_documents_every_column_of_every_cohort(snapshot
     complete = set(pd.read_csv(out / "ODC_reaches_DATA_DICTIONARY.csv")["VariableName"])
     summary = set(pd.read_csv(out / "reaches_summary_DATA_DICTIONARY.csv")["VariableName"])
     for cohort in ("PROJA_01", "PROJA_02"):
-        assert set(_header(out / ("ODC_reaches_%s.csv" % cohort))) <= complete, cohort
-        assert set(_header(out / ("reaches_%s_summary.csv" % cohort))) <= summary, cohort
+        assert set(_header(out / "PROJA" / cohort / ("ODC_reaches_%s.csv" % cohort))) <= complete, cohort
+        assert set(_header(out / "PROJA" / cohort / ("reaches_%s_summary.csv" % cohort))) <= summary, cohort
 
     # The sheet columns only one cohort has are named, with the cohort that has them.
     entry = m["files"]["ODC_reaches_DATA_DICTIONARY.csv"]
@@ -81,8 +81,8 @@ def test_one_dictionary_per_kind_documents_every_column_of_every_cohort(snapshot
     assert only_some["Injection_Injected_Virus"] == ["PROJA_02"]
     assert any("only some cohorts" in p for p in m["problems"])
     assert m["files"]["reaches_summary_DATA_DICTIONARY.csv"]["variables_not_in_every_cohort"] == {}
-    assert m["files"]["ODC_reaches_PROJA_01.csv"]["dictionary"] == "ODC_reaches_DATA_DICTIONARY.csv"
-    assert m["files"]["reaches_PROJA_02_summary.csv"]["dictionary"] == "reaches_summary_DATA_DICTIONARY.csv"
+    assert m["files"]["PROJA/PROJA_01/ODC_reaches_PROJA_01.csv"]["dictionary"] == "ODC_reaches_DATA_DICTIONARY.csv"
+    assert m["files"]["PROJA/PROJA_02/reaches_PROJA_02_summary.csv"]["dictionary"] == "reaches_summary_DATA_DICTIONARY.csv"
 
 
 def test_a_one_cohort_export_keeps_the_other_cohorts_variables(snapshot, tmp_path):
@@ -91,7 +91,7 @@ def test_a_one_cohort_export_keeps_the_other_cohorts_variables(snapshot, tmp_pat
     ox.export(snapshot, out)
     ox.export(snapshot, out, cohorts=["PROJA_02"])
     complete = set(pd.read_csv(out / "ODC_reaches_DATA_DICTIONARY.csv")["VariableName"])
-    assert set(_header(out / "ODC_reaches_PROJA_01.csv")) <= complete
+    assert set(_header(out / "PROJA" / "PROJA_01" / "ODC_reaches_PROJA_01.csv")) <= complete
 
 
 def test_entries_that_disagree_are_reported_not_hidden():
