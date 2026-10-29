@@ -99,8 +99,9 @@ def combined_file(root: Path, kind: str, project: str) -> Path:
 
 def current_root() -> Path:
     """The live exports folder: <mousedb_root>/exports/current."""
-    from ..config import require
-    return Path(require("mousedb_root")) / "exports" / "current"
+    from ..config import export_path, require
+    require("mousedb_root")              # unset: stops with the command that sets it
+    return export_path() / "current"
 
 
 def locate(kind: str, cohort_id: str, root: Optional[Path] = None) -> Path:
