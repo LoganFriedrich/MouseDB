@@ -7,7 +7,7 @@ expecting a current CSV of everything the database holds, formatted to
 ODC-SCI, with a data dictionary beside it. Until 2026-08-28 the answer was:
 a 200 MB dump the sync overwrote, an ODC Excel export run by hand for one
 cohort in January, and no dictionary anywhere. This module writes, and the
-hourly refresh keeps current, one folder:
+nightly refresh keeps current, one folder:
 
     Databases/exports/current/
         reach_data.csv                    one row per detected reach
@@ -81,6 +81,10 @@ HOW THE FOLDER IS ARRANGED
                           for the others with "Not recorded" (NA in the
                           analysis files); MANIFEST.json says which. The entry
                           index is counted again over the combined rows.
+  In a script             do not write a file's path out; ask mousedb where it
+                          is (locate in mousedb.exporters.layout -- see the
+                          Where Is My Data guide). A written-out path breaks if
+                          the folder is ever rearranged again; asking does not.
 
 reach_data.csv            One row per reach the pipeline detected, with the
                           reach's kinematics, the pellet outcome of its segment,
@@ -221,7 +225,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
 
     Skipped when nothing they are built from has changed since the last write
     (same snapshot table sizes and row counts, same study-facts file): they are
-    large, and the hourly refresh would otherwise rewrite hundreds of MB on the
+    large, and every refresh would otherwise rewrite hundreds of MB on the
     share for no change. The manifest then carries the previous entries."""
     import pyarrow.parquet as pq
     from . import odc_reaches

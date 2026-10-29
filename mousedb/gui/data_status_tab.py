@@ -101,9 +101,10 @@ in Explorer.
 
 The folder is rewritten each time the scheduled snapshot job runs (the
 panel says when that last was). "Refresh exports now" rewrites reach_data,
-manual_scores and the ODC_reaches files immediately from the latest
-snapshot; the ODC_sessions files wait for the scheduled job, because they
-read the database itself.
+manual_scores, every cohort's reach files and each project's combined reach
+files immediately from the latest snapshot; the ODC_sessions files (and
+their combined file) wait for the scheduled job, because they read the
+database itself.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
 TISSUE ANALYSES: below the export files, one line per MouseBrain analysis
@@ -217,9 +218,10 @@ class DataStatusTab(QWidget):
              "Open the folder of current CSVs (+ data dictionaries) in Explorer.",
              "background:#16405a; color:white; font-weight:bold;"),
             ("Refresh exports now", self.refresh_exports,
-             "Rewrite reach_data.csv and manual_scores.csv from the latest snapshot "
-             "right now (the ODC session files wait for the scheduled snapshot "
-             "job, which reads the database itself).", ""),
+             "Rewrite reach_data.csv, manual_scores.csv, every cohort's reach files and "
+             "each project's combined reach files from the latest snapshot right now "
+             "(the ODC session files wait for the scheduled snapshot job, which reads "
+             "the database itself).", ""),
         ):
             b = QPushButton(text)
             b.setToolTip(tip)

@@ -226,13 +226,6 @@ def combine_all(root: Path, kinds: Iterable[str], projects: Iterable[str],
                                             % (project, kind, type(e).__name__, e))
 
 
-def projects_in(root: Path) -> List[str]:
-    """Project folders already present (to rebuild combined files after a partial export)."""
-    root = Path(root)
-    return sorted(p.name for p in root.iterdir()
-                  if p.is_dir() and re.fullmatch(r"[A-Z]+", p.name)) if root.is_dir() else []
-
-
 def archive_flat_layout(root: Path) -> List[str]:
     """Move per-cohort files left at the top of the folder by the layout before
     2026-10-29 into the archive (never deleted), once their replacements exist in

@@ -262,9 +262,12 @@ complete for an ODC upload, the row count of each file, and any problems.
 
 Buttons: **Refresh** re-reads everything. **Open exports folder** opens the
 folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`,
-`manual_scores.csv` and the `ODC_reaches_<cohort>.csv` files immediately from the latest snapshot (the per-cohort
-ODC session files refresh on the scheduled run, which is the only time the
-database may be read safely).
+`manual_scores.csv`, every cohort's four reach and session-analysis files and
+each project's combined files of those kinds, immediately from the latest
+snapshot. It takes as long as the scheduled run's reach part: hours for the
+whole lab. The per-cohort ODC session files, and their combined file, refresh
+only on the scheduled run, which is the only time the database may be read
+safely.
 
 ## How reach data gets into the database
 
