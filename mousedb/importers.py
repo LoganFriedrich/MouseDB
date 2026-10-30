@@ -101,6 +101,19 @@ class ExcelImporter:
         try:
             xl = pd.ExcelFile(excel_path)
             available_sheets = xl.sheet_names
+        except PermissionError as e:
+            # Almost always the workbook is open in Excel on this computer, which
+            # locks it; say which program, so a person knows what to close.
+            from .file_holders import holders
+            held = holders(excel_path)
+            if held:
+                self.errors.append(
+                    "Could not read the workbook: it is open in %s on this computer. "
+                    "Close it there (save first if you changed it); the next import "
+                    "reads it." % ", ".join(held))
+            else:
+                self.errors.append(f"Failed to open Excel file: {e}")
+            return self._get_result()
         except Exception as e:
             self.errors.append(f"Failed to open Excel file: {e}")
             return self._get_result()

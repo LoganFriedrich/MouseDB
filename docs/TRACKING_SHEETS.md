@@ -659,6 +659,8 @@ animal-details copy, video data and tissue data are not touched.
 | `FAIL ... no tracking sheet for <id>: the sheets folder holds CNT workbooks only ...` | Name the cohort as `CNT_NN` or `NN`. |
 | `FAIL ... '<text>' is not a cohort id ...` | The same: `CNT_NN` or `NN`, not an animal id. |
 | `FAIL ... no tracking sheet for CNT_NN in the sheets folder (cohorts with a sheet: ...)` | Check the number; `mousedb-sheets status` lists every cohort's sheet. |
+| `FAIL ... Could not read the workbook: it is open in Microsoft Excel (process N) on this computer ...` | Someone has the workbook open in Excel on the computer that runs the import (open in a web browser does not count; open in the Excel program on that computer does). Save and close it there. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. Any other program named: close that one. |
+| `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same cause, when Windows could not say which program: close the workbook wherever it is open on that computer. |
 | `FAIL ... could not acquire the database-task lock after 1500s ...` | Another database task held the lock for 25 minutes. Import again later; if it keeps happening, find the task that is stuck. |
 | `Sheets: NOTHING IMPORTED -- ...` | Read the reason on that line; usually the sheets folder is not set or not found (see "Setting the folder"). |
 | `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with `Connectome_NN_Animal_Tracking`; otherwise nothing. |
