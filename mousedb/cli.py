@@ -1316,6 +1316,59 @@ def cmd_sheet_projects(args):
         raise SystemExit(1)
 
 
+def cmd_sheet_template(args):
+    """mousedb sheet-template make PROJECT REFERENCE --cohort ID: make a
+    project's template from one of its cohort workbooks (see
+    mousedb.sheet_templates). Prints the report. Exits 1 if refused."""
+    from .sheet_sync import _ascii
+    from . import sheet_templates as st
+    keep = {}
+    for item in args.keep or []:
+        tab, _, header = item.partition(":")
+        if not tab or not header:
+            print(_ascii("[FAIL] --keep takes TAB:HEADER, for example \"4_Surgery:Anesthetic\" "
+                         "(got %r) -- nothing was made" % item))
+            raise SystemExit(1)
+        keep.setdefault(tab, []).append(header)
+    try:
+        out, rep = st.make_project_template(args.project, args.reference, args.cohort, keep)
+    except (ValueError, OSError) as e:
+        print(_ascii("[FAIL] %s -- nothing was made" % e))
+        raise SystemExit(1)
+    print(_ascii(rep.text()))
+    print(_ascii("[OK] template written: %s" % out))
+    print(_ascii("     report beside it; open the template in Excel to check it. New %s sheets "
+                 "are made from it from now on." % args.project.upper()))
+
+
+def cmd_new_sheet(args):
+    """mousedb new-sheet COHORT --animals LIST: a new cohort's tracking
+    workbook, made from its project's template, in the sheets folder. A refusal
+    prints a "REFUSED:" line on stderr and exits with make_sheets.REFUSED_EXIT
+    (the Tracking Sheets tab tells refused from failed by that)."""
+    import sys as _sys
+    from .sheet_sync import _ascii
+    from . import sheet_templates as st
+    from .cohort_tools.make_sheets import NewSheetRefused, REFUSED_EXIT
+    folder = args.output_dir
+    if not folder:
+        from .cohort_sheets import cohort_sheets_dir
+        folder = cohort_sheets_dir()
+    if not folder:
+        print("REFUSED: no sheets folder is set (mousedb-sheets set-dir <folder>), and no "
+              "--output-dir was given.", file=_sys.stderr)
+        raise SystemExit(REFUSED_EXIT)
+    try:
+        target, problems = st.build_sheet(args.cohort, args.animals, folder)
+    except NewSheetRefused as e:
+        print(_ascii("REFUSED: %s" % e), file=_sys.stderr)
+        print("Nothing was written.", file=_sys.stderr)
+        raise SystemExit(REFUSED_EXIT)
+    print(_ascii("[OK] created %s" % target))
+    for line in problems:
+        print(_ascii("  [!] %s" % line))
+
+
 
 def cmd_export_example(args):
     """mousedb export-example (see mousedb.exporters.example_export).
@@ -1412,6 +1465,31 @@ def main():
                            help="With --set: the blank workbook new cohorts' sheets are made from, "
                                 "relative to the settings file's folder ('' removes it)")
     sp_parser.set_defaults(func=cmd_sheet_projects)
+
+    # mousedb sheet-template make -- a project's template (what its new
+    # cohort sheets look like), made from one of its cohort workbooks
+    st_parser = subparsers.add_parser(
+        'sheet-template',
+        help="Make a project's template for new cohort sheets from one of its cohort workbooks")
+    st_sub = st_parser.add_subparsers(dest='action')
+    st_make = st_sub.add_parser('make', help="Make (or remake) the template; the old one is kept")
+    st_make.add_argument('project', help="Project code, e.g. PROJA")
+    st_make.add_argument('reference', help="A cohort workbook of that project (only read)")
+    st_make.add_argument('--cohort', required=True,
+                         help="The cohort that workbook belongs to, e.g. PROJA_05")
+    st_make.add_argument('--keep', action='append', metavar='TAB:HEADER',
+                         help="Keep a column that is the same for every animal (repeatable)")
+    st_make.set_defaults(func=cmd_sheet_template)
+
+    # mousedb new-sheet -- a new cohort's workbook from its project's template
+    ns_parser = subparsers.add_parser(
+        'new-sheet', help="Make a new cohort's tracking workbook from its project's template")
+    ns_parser.add_argument('cohort', help="The new cohort, e.g. PROJA_07")
+    ns_parser.add_argument('--animals', required=True,
+                           help="Subject numbers: 01-16, or 3,4,16,17,19")
+    ns_parser.add_argument('--output-dir', default=None,
+                           help="Folder to write into (default: the sheets folder)")
+    ns_parser.set_defaults(func=cmd_new_sheet)
 
     # mousedb export-example -- one cohort, fast, for looking at while changing it
     ex_p = subparsers.add_parser(

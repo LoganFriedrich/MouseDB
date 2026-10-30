@@ -58,6 +58,7 @@ def sheets(tmp_path, monkeypatch):
     d = tmp_path / "sheets"
     d.mkdir()
     (d / "Connectome_01_Animal_Tracking.xlsx").write_bytes(REAL)
+    _give_cnt_a_template()
     monkeypatch.setenv(cs.ENV_VAR, str(d))
     return d
 
@@ -361,6 +362,17 @@ def make_tab(qapp, monkeypatch):
     qapp.processEvents()
 
 
+def _give_cnt_a_template():
+    """The tab checks that the project HAS a template before it starts the
+    builder; these tests never run the builder, so any file will do."""
+    from mousedb import sheet_projects
+    tpl = sheet_projects.config_path().parent / "sheet_templates" / "CNT.xlsx"
+    tpl.parent.mkdir(parents=True, exist_ok=True)
+    tpl.write_bytes(b"template")
+    sheet_projects.set_project("CNT", "Connectome_{NN}_Animal_Tracking.xlsx",
+                               template="sheet_templates/CNT.xlsx")
+
+
 def _click(tab, text):
     from PyQt5.QtWidgets import QPushButton
     buttons = [b for b in tab.findChildren(QPushButton) if b.text() == text]
@@ -383,34 +395,49 @@ def _folder_status(d, cohorts=(), **extra):
 
 
 @pytest.mark.parametrize("typed, says", [
-    ("CNTS_01", "does not start with a project"),
+    ("CNTS_01", "is not a project with sheets here"),
     ("CNT_05_01", "is not a cohort name"),
     ("01", "is not a cohort name"),
     ("CNT_01", "already has a workbook"),
-    ("ENCR_02", "not a cohort of a project with sheets here"),   # only configured projects
+    ("ENCR_02", "is not a project with sheets here"),   # only configured projects
 ])
 def test_the_tab_refuses_in_a_message_box_and_starts_nothing(sheets, make_tab, ui,
                                                               monkeypatch, typed, says):
     tab = make_tab(_folder_status(sheets))
     _no_subprocess(monkeypatch)
     before = _snapshot(sheets)
-    ui.texts = [typed, "2026-01-05"]
+    ui.texts = [typed, "01-04"]
     _click(tab, "New cohort sheet...")
     kinds = [b[0] for b in ui.boxes]
     assert kinds == ["warning"], ui.boxes
     assert says in ui.boxes[0][2] and "Nothing was written." in ui.boxes[0][2]
-    assert len(ui.asked) == 1            # never got as far as asking for a date
+    assert len(ui.asked) == 1            # never got as far as asking for the animals
     assert _snapshot(sheets) == before
 
 
-def test_the_tab_refuses_a_bad_date_before_starting_anything(sheets, make_tab, ui,
-                                                             monkeypatch):
+def test_the_tab_refuses_bad_subject_numbers_before_starting_anything(sheets, make_tab, ui,
+                                                                     monkeypatch):
     tab = make_tab(_folder_status(sheets))
     _no_subprocess(monkeypatch)
-    ui.texts = ["CNT_07", "31/01/2026"]
+    ui.texts = ["CNT_07", "a-b"]
     _click(tab, "New cohort sheet...")
     assert [b[0] for b in ui.boxes] == ["warning"]
-    assert "is not a date" in ui.boxes[0][2]
+    assert "is not a subject number" in ui.boxes[0][2]
+
+
+def test_a_project_with_no_template_is_refused_before_anything_starts(sheets, make_tab, ui,
+                                                                      monkeypatch):
+    """Without a template the builder could only guess the layout; it names the
+    command that makes one instead."""
+    from mousedb import sheet_projects
+    sheet_projects.set_project("CNT", "Connectome_{NN}_Animal_Tracking.xlsx", template="")
+    tab = make_tab(_folder_status(sheets))
+    _no_subprocess(monkeypatch)
+    ui.texts = ["CNT_07", "01-04"]
+    _click(tab, "New cohort sheet...")
+    assert [b[0] for b in ui.boxes] == ["warning"]
+    assert "has no template yet" in ui.boxes[0][2]
+    assert "mousedb sheet-template make CNT" in ui.boxes[0][2]
 
 
 def test_the_builders_own_refusal_reaches_the_person(sheets, make_tab, ui, monkeypatch):
@@ -426,10 +453,11 @@ def test_the_builders_own_refusal_reaches_the_person(sheets, make_tab, ui, monke
                                                   "in the folder: X.\nNothing was written.\n")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    ui.texts = ["CNT_07", "2026-01-05"]
+    ui.texts = ["CNT_07", "01-04"]
     _click(tab, "New cohort sheet...")
     cmd = seen["cmd"]
-    assert cmd[cmd.index("--cohort") + 1] == "CNT_07"
+    assert cmd[cmd.index("new-sheet") + 1] == "CNT_07"
+    assert cmd[cmd.index("--animals") + 1] == "01-04"
     assert cmd[cmd.index("--output-dir") + 1] == str(sheets)
     assert [b[0] for b in ui.boxes] == ["question", "warning"]
     assert "CNT_07 already has a workbook" in ui.boxes[1][2]
@@ -444,7 +472,7 @@ def test_the_tab_says_so_when_the_sheet_is_created(sheets, make_tab, ui, monkeyp
         return subprocess.CompletedProcess(cmd, 0, stdout="[OK] created\n", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    ui.texts = ["CNT_07", "2026-01-05"]
+    ui.texts = ["CNT_07", "01-04"]
     _click(tab, "New cohort sheet...")
     assert [b[0] for b in ui.boxes] == ["question", "information"]
     assert "Created Connectome_07_Animal_Tracking.xlsx" in ui.boxes[1][2]
@@ -459,7 +487,7 @@ def test_a_sheets_folder_gone_since_the_refresh_is_never_recreated(tmp_path, mak
     gone = tmp_path / "moved_away"
     tab = make_tab(_folder_status(gone))
     _no_subprocess(monkeypatch)
-    ui.texts = ["CNT_07", "2026-01-05"]
+    ui.texts = ["CNT_07", "01-04"]
     _click(tab, "New cohort sheet...")
     assert [b[0] for b in ui.boxes] == ["warning"]
     assert "not there any more" in ui.boxes[0][2] and "Nothing was written." in ui.boxes[0][2]
@@ -471,6 +499,7 @@ def test_a_sheets_folder_gone_while_the_confirmation_was_open(tmp_path, make_tab
     from PyQt5.QtWidgets import QMessageBox
     d = tmp_path / "sheets_here"
     d.mkdir()
+    _give_cnt_a_template()
     tab = make_tab(_folder_status(d))
     _no_subprocess(monkeypatch)
 
@@ -480,7 +509,7 @@ def test_a_sheets_folder_gone_while_the_confirmation_was_open(tmp_path, make_tab
         return QMessageBox.Yes
 
     monkeypatch.setattr(QMessageBox, "question", staticmethod(answer_after_the_folder_went))
-    ui.texts = ["CNT_07", "2026-01-05"]
+    ui.texts = ["CNT_07", "01-04"]
     _click(tab, "New cohort sheet...")
     assert [b[0] for b in ui.boxes] == ["question", "warning"]
     assert "not there any more" in ui.boxes[1][2]
@@ -503,7 +532,7 @@ def test_saying_no_at_the_confirmation_starts_nothing(sheets, make_tab, ui, monk
     tab = make_tab(_folder_status(sheets))
     _no_subprocess(monkeypatch)
     ui.answer = QMessageBox.No
-    ui.texts = ["CNT_07", "2026-01-05"]
+    ui.texts = ["CNT_07", "01-04"]
     _click(tab, "New cohort sheet...")
     assert [b[0] for b in ui.boxes] == ["question"]
     assert "Connectome_07_Animal_Tracking.xlsx" in ui.boxes[0][2]   # the exact file named

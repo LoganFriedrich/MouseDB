@@ -674,11 +674,13 @@ animal-details copy, video data and tissue data are not touched.
 | `[FAIL] cannot pin '<file>' as the sheet for cohort NN: ... -- nothing was pinned` (in the tab, a *Not pinned* box) | Copy the exact name (from the list in the message, or `mousedb-sheets status`) and pin again. In the tab the table is read again: select the row and choose from the files that are there. |
 | `[FAIL] <folder> ...; the sheets folder setting was not changed` (in the tab, a *Not the sheets folder* box) | Give the folder that holds the live tracking workbooks. If it does hold them, check the sheet names are set (`mousedb sheet-projects --show`): with none set, no file there counts as a sheet. |
 | *Recorded -- but another folder is in use* | The `MOUSEDB_COHORT_SHEETS` environment variable names another folder, and it comes first. Clear or change it. |
-| `'<text>' is not a cohort name. Expected ...` or `... does not start with a project this tool builds sheets for ...` (New cohort sheet) | Type the new cohort's name as `CNT_NN`, for example `CNT_07`. |
+| `'<text>' is not a cohort name ...` or `<P> is not a project with sheets here ...` (New cohort sheet) | Type the new cohort's name as `PROJECT_NN`, for example `PROJA_07`. A project missing from the list needs its sheet name set first ("Which projects' sheets are read"). |
+| `project <P> has no template yet ...` or `project <P>'s template ... is not there` | Make it: `mousedb sheet-template make <P> "<a cohort's workbook>" --cohort <P>_NN` ("Making or changing a project's template"). |
 | `<cohort> already has a workbook in <folder>: <files> ...` | Nothing was written. For a new cohort, use its own number; if this cohort really needs a fresh sheet, move its existing file(s) out of the folder first. |
-| `'<text>' is not a date. Give the start date (day 0) as YYYY-MM-DD ...` | Type day 0 as `YYYY-MM-DD`. |
+| `'<text>' is not a subject number or range ...` / `a subject number is given twice` | Type the subject numbers as a range or a list: `01-16`, or `3,4,16,17,19`. |
 | `The sheets folder <folder> is not there any more ...` | Press **Refresh**; if the folder moved, press **Set sheets folder...** first. |
-| `REFUSED: ...` then `Nothing was written.` (`mousedb-make-sheets`, exit code 3) | The same refusals as the button; the line says which. |
+| `REFUSED: ...` then `Nothing was written.` (`mousedb new-sheet` or `mousedb-make-sheets`, exit code 3) | The same refusals as the button; the line says which. |
+| `[!] <tab>!<cell>: ... left as written` (after a new sheet is created) | That formula could not be pointed at the new animal's row; it is as it was in the template. Check it in the new sheet, and fix the template if it should be different. |
 | `Replace kept N ... rows for <animal> ...` | If the sheet's value is the right one, correct the kept row by hand in the entry tab it came from. |
 | `Replace removed N ... rows ..., and the sheet gave back M ...` | Nothing, if you removed rows from the sheet; otherwise read the other warnings for why rows were skipped. |
 | `Replace of <cohort> undone -- nothing in the database was changed ...` | Fix the error listed under it and Replace again. |
@@ -764,52 +766,121 @@ other location mousedb uses -- run `mousedb config --show` to see them.
 
 ## Starting a new cohort
 
-Press **New cohort sheet...**, type the new cohort's name, then its
-food-deprivation start date (day 0) as `YYYY-MM-DD`. A box then shows the
-exact file name, the folder and day 0, and asks *Yes* or *No*; *No* changes
-nothing. On *Yes* a correctly formatted, empty workbook is created in the
-sheets folder with every tab the import expects. The tab stays usable while
-it is built (about a minute). Fill it in as the cohort runs; import whenever
-you like.
+A new cohort's workbook is made from its project's **template**: an ordinary
+workbook, made once from a cohort sheet the lab is happy with, that says
+what every new sheet of that project looks like -- its tabs, columns,
+formulas, colours and the schedule of rows laid out ahead (the days, the
+phase of each day, the trays). Whatever the template looks like, a new sheet
+looks like. A project with no template cannot get a new sheet; the button
+says so and names the command that makes one (below).
+
+Press **New cohort sheet...**, type the new cohort's name, then its subject
+numbers -- a range, a list, or both: `01-16`, or `3,4,16,17,19` (animals keep
+the numbers they were given, so a cohort need not start at 01). A box then
+shows the exact file name, the folder, how many animals and the template,
+and asks *Yes* or *No*; *No* changes nothing. On *Yes* the workbook is
+created in the sheets folder. The tab stays usable while it is built (a
+minute or less). Fill it in as the cohort runs; import whenever you like.
+
+**What the new sheet holds.** Every tab of the template. In every tab with an
+animal column, the template's rows for one model animal are repeated for
+each new animal, in the order you typed them, day by day as in the template.
+Each animal's formulas point at its OWN rows: its weight percent at its own
+starting weight, its tray totals at its own tray rows; a mean "over every
+animal on a day" covers exactly the new animals. No dates are filled in
+(they are typed as each day happens), and no measurements. If a formula
+could not be pointed at the right row, the log box lists it (`[!] ...`) and
+the formula is left as it was in the template, never guessed.
 
 This button is the only thing in the mousedb window that writes into the
 sheets folder, and it only ever creates a NEW file. It never replaces a file
 and never closes anything:
 
-- **The name must be exactly `CNT_NN`** -- the project's letters, one
-  underscore, two digits, for example `CNT_07`. Small letters and stray
-  spaces are forgiven (` cnt_07 ` is taken as `CNT_07`). Anything else is
-  refused at once, and nothing is written: `CNT_7`, `07`, `CNT07`, an
-  animal id such as `CNT_05_01`, another project's cohort. The cohort number
-  is never guessed from part of what you typed.
+- **The name must be exactly `PROJECT_NN`** -- a project with sheets here
+  (see "Which projects' sheets are read"), one underscore, two digits, for
+  example `PROJA_07`. Small letters and stray spaces are forgiven
+  (` proja_07 ` is taken as `PROJA_07`). Anything else is refused at once,
+  and nothing is written: `PROJA_7`, `07`, `PROJA07`, an animal id such as
+  `PROJA_05_01`, a project with no sheet name set. The cohort number is never
+  guessed from part of what you typed. The file is named by the project's
+  sheet name.
 - **A cohort that already has a workbook is refused**, and nothing is
-  written: `CNT_07 already has a workbook in <folder>: <file names>`. This
-  counts every file the folder would read as that cohort's sheet, not only
-  the exact name -- a `..._Animal_Tracking1.xlsx`, a `(2)` copy -- because an
-  empty file beside the real sheet would be the newest one and be imported in
-  its place. If the cohort truly needs a fresh sheet, move its old file(s) out
-  of the folder first. The check runs again at the moment of saving, so a
-  file of that name that turns up meanwhile is left untouched too.
+  written: `PROJA_07 already has a workbook in <folder>: <file names>`. This
+  counts every file the folder would read as that cohort's sheet, and every
+  file that only looks like it -- a `..._Animal_Tracking1.xlsx`, a `Copy of`,
+  the number without its zero -- because an empty file beside the real sheet
+  would be the newest one and be imported in its place. If the cohort truly
+  needs a fresh sheet, move its old file(s) out of the folder first. The
+  check runs again at the moment of saving, so a file of that name that
+  turns up meanwhile is left untouched too.
+- **A project with no template is refused** (`project PROJA has no template
+  yet ...`), with the command that makes one.
+- **Subject numbers that cannot be meant are refused**: not a number or
+  range, a range written high to low, a number outside 1-99, or the same
+  number twice.
 - **It refuses when the sheets folder has gone** (moved, renamed, its drive
   offline) since the last **Refresh**, rather than recreate the old folder
   with one empty sheet in it. Press **Refresh**, and **Set sheets folder...**
   if it moved.
-- **It never closes Excel.** (It used to close every Excel window on the
-  computer when a save was blocked, losing unsaved work in them.)
+- **It never closes Excel.**
 
 At the end one of three boxes appears: *Created <file>*; *not created*, with
 the reason (for example, a workbook of that name turned up in the meantime --
 it is left exactly as it was); or *failed*, which says that no existing
 workbook was touched. Every refusal ends *Nothing was written.*
 
-From a terminal, `mousedb-make-sheets --new --cohort CNT_NN --start-date
-YYYY-MM-DD --output-dir "<sheets folder>"` follows the same rules (`--mice N`,
-from 1 to 99, sets the number of animals). A refusal prints `REFUSED:
-<reason>` and `Nothing was written.` and ends with exit code 3; any other
-non-zero code means it failed. `mousedb-make-sheets --fix <workbook>
---output-dir <folder>` writes a tidied copy under the input's own name and
-never writes over a file that is already there -- not even its own input --
-so give it a working folder, not the sheets folder.
+From a terminal: `mousedb new-sheet PROJA_07 --animals 01-16` (add
+`--output-dir "<folder>"` to write somewhere other than the sheets folder)
+follows the same rules. A refusal prints `REFUSED: <reason>` and `Nothing was
+written.` and ends with exit code 3; any other non-zero code means it failed.
+`mousedb-make-sheets --new --cohort PROJA_07 --animals 01-16 --output-dir
+"<folder>"` does exactly the same (`--mice N` means subjects 01 to N;
+`--start-date` is accepted and ignored). `mousedb-make-sheets --fix
+<workbook> --output-dir <folder>` writes a tidied copy under the input's own
+name and never writes over a file that is already there -- not even its own
+input -- so give it a working folder, not the sheets folder.
+
+### Making or changing a project's template (once per project)
+
+Pick the cohort sheet the lab is happy with -- the one whose tabs, columns and
+schedule new cohorts should copy -- and run, in the MouseDB environment:
+
+```bash
+mousedb sheet-template make PROJA "<path to that cohort's workbook>" --cohort PROJA_05
+```
+
+`--cohort` is the cohort that workbook belongs to. The workbook is only read.
+This writes `PROJA.xlsx` and `PROJA_template_report.txt` into the
+`sheet_templates` folder beside the lab settings file
+(`<mousedb_root>/config/sheet_templates/`), records it in the lab settings as
+the project's template (every machine uses it from then on), and prints the
+report. If the project already had a template, the old one is kept beside it
+as `PROJA_replaced_<date and time>.xlsx`; nothing is overwritten.
+
+**What the template keeps and clears.** It keeps every tab, column, header,
+formula, colour and column width, and each tab's rows for every animal. It
+keeps the SCHEDULE -- typed values that are the same for every animal on a
+day and change from day to day (the phase, the tray, the day number) -- and,
+in tabs with no animal column (a planning or calculations tab), the typed
+values. It clears every date, everywhere, and every other value typed in an
+animal's row (scores, weights, sex, notes). A value that was the same for
+every animal of a one-row-per-animal tab (an anaesthetic, a target level) is
+cleared too, because "the same for everyone so far" is not the same as "the
+same for every cohort"; the report lists each one. To keep one, make the
+template again with `--keep "<tab>:<column header>"` (repeat for each), or
+type it into the template in Excel. It moves a frozen pane far down a tab
+(where someone last scrolled) to the first animal row, and drops colour
+rules a person put on particular cells outside the tables.
+
+**The model animal** is the animal with the most rows in the workbook -- the
+one that went through every part of the schedule. Its rows are what each new
+animal gets; a day where it has no row (a group of other animals only) is
+left out of new sheets, and the report says how many.
+
+**Read the report, then open the template in Excel.** It is the format of
+every new sheet: change it there if anything is wrong (delete a laid-out day,
+type a value every animal should start with, fix a header). The builder
+reads its structure every time; nothing else needs changing.
 
 ## If something goes wrong
 

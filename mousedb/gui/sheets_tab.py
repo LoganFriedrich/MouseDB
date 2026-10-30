@@ -115,17 +115,21 @@ WHAT TO DO:
   (once per machine, and again if the folder ever moves). A folder holding no
   tracking sheet, or an archive/backup copy, is refused and the setting is kept.
   "Open folder" opens it.
-* "New cohort sheet" creates a correctly formatted, EMPTY workbook in that folder
-  for a NEW cohort. Type the name exactly as CNT_NN (e.g. CNT_07). It refuses --
-  and writes nothing -- if the name is in any other form, or if that cohort
-  already has a workbook in the folder (under its exact name or a variant such as
-  "...Tracking1.xlsx"). It never replaces a file and never closes Excel. It also
-  refuses if the sheets folder has gone (moved, renamed, drive offline) since the
-  last Refresh: it never recreates a missing folder.
+* "New cohort sheet" creates an EMPTY workbook in that folder for a NEW cohort,
+  made from the project's TEMPLATE: same tabs, columns, formulas and laid-out
+  schedule as the cohort sheet the template was made from, with this cohort's
+  animals. Type the cohort exactly as PROJECT_NN (e.g. PROJA_07), then the
+  subject numbers (01-16, or 3,4,16,17,19 -- animals keep the numbers they were
+  given). It refuses -- and writes nothing -- if the name is in any other form,
+  if the project has no template yet (it names the command that makes one), or
+  if that cohort already has a workbook in the folder (under its exact name or a
+  variant such as "...Tracking1.xlsx"). It never replaces a file and never closes
+  Excel. It also refuses if the sheets folder has gone (moved, renamed, drive
+  offline) since the last Refresh: it never recreates a missing folder.
 
 IMPORTING NEVER EDITS A WORKBOOK. Only "New cohort sheet" writes, and only a new file.
 Terminal equivalents: mousedb-sheets status | import | pin | unpin | set-dir,
-and mousedb-make-sheets --new --cohort CNT_NN --start-date YYYY-MM-DD --output-dir <folder>
+and mousedb new-sheet PROJECT_NN --animals 01-16 --output-dir <folder>
 """
 
 
@@ -718,6 +722,7 @@ class TrackingSheetsTab(QWidget):
             self.refresh()
             return
         from ..cohort_tools import make_sheets as ms
+        from .. import sheet_templates as st
         projects = self._folder_projects()
         example = (projects or ["PROJ"])[0]
         text, ok = QInputDialog.getText(
@@ -727,44 +732,42 @@ class TrackingSheetsTab(QWidget):
         if not ok:
             return
         try:
-            cname = ms.parse_cohort_name(text)
-            if cname.prefix not in projects:
-                # WHY: this folder is read only for the projects named in the lab
-                # settings; a workbook for another project made here would never
-                # be read.
-                raise ms.NewSheetRefused(
-                    "%s is not a cohort of a project with sheets here (%s), so a workbook "
-                    "made for it here would never be read. Add the project's sheet name "
-                    "first: mousedb sheet-projects --set %s \"<file name with {NN}>\""
-                    % (cname.cohort_id, ", ".join(projects) or "none set", cname.prefix))
-            ms.refuse_if_cohort_has_a_workbook(d, cname)
+            # WHY all of this before anything runs: a project with no template,
+            # or a cohort that already has a workbook, is said at once in a box
+            # rather than after a minute of building. The builder checks again.
+            project, cohort_id = st.cohort_of(text)
+            st.refuse_if_cohort_has_a_workbook(d, cohort_id)
+            st.template_path(project)
         except ms.NewSheetRefused as e:
             self._refuse_new_sheet(str(e))
             return
-        start, ok = QInputDialog.getText(
+        nums, ok = QInputDialog.getText(
             self, "New cohort sheet",
-            "%s: food-deprivation start date (day 0), as YYYY-MM-DD:" % cname.cohort_id)
+            "%s: the subject numbers, as a range or a list\n"
+            "(for example 01-16, or 3,4,16,17,19):" % cohort_id)
         if not ok:
             return
         try:
-            day0 = ms.parse_start_date(start).strftime("%Y-%m-%d")
+            animals = st.parse_animals(nums, cohort_id)
         except ms.NewSheetRefused as e:
             self._refuse_new_sheet(str(e))
             return
-        target = Path(d) / cname.filename
+        filename = project.file_name(cohort_id.rsplit("_", 1)[1])
+        target = Path(d) / filename
         answer = QMessageBox.question(
             self, "New cohort sheet",
             "Create a new, EMPTY tracking workbook for %s?\n\n"
-            "File:    %s\nFolder:  %s\nDay 0:   %s\n\n"
+            "File:     %s\nFolder:   %s\nAnimals:  %d (%s ... %s)\nTemplate: %s\n\n"
             "An existing workbook is never replaced: if one for %s turns up in the "
             "folder first, nothing is written." % (
-                cname.cohort_id, cname.filename, d, day0, cname.cohort_id),
+                cohort_id, filename, d, len(animals), animals[0], animals[-1],
+                project.template.name, cohort_id),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if answer != QMessageBox.Yes:
             return
 
-        cmd = [sys.executable, "-m", "mousedb.cohort_tools.make_sheets", "--new",
-               "--cohort", cname.cohort_id, "--start-date", day0, "--output-dir", str(d)]
+        cmd = [sys.executable, "-m", "mousedb.cli", "new-sheet", cohort_id,
+               "--animals", nums, "--output-dir", str(d)]
         refused_exit = ms.REFUSED_EXIT
 
         def job() -> dict:
@@ -790,7 +793,7 @@ class TrackingSheetsTab(QWidget):
                     "stderr": r.stderr or "", "target": str(target),
                     "refused_exit": refused_exit}
 
-        self._log("Creating %s in %s ... (up to a minute)" % (cname.filename, d))
+        self._log("Creating %s in %s ... (up to a minute)" % (filename, d))
         if not self._run(job, self._on_new_sheet):
             QMessageBox.information(
                 self, "New cohort sheet",

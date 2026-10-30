@@ -4437,8 +4437,13 @@ def main(argv=None):
     parser.add_argument("--fix", type=str, default=None, metavar="FILE", help="Fix existing cohort file (CLI mode)")
     parser.add_argument("--cohort", type=str,
                         help="Cohort name, exactly PREFIX_NN (e.g., CNT_05 or ENCR_01)")
-    parser.add_argument("--start-date", type=str, help="Food deprivation start date (YYYY-MM-DD)")
-    parser.add_argument("--mice", type=int, default=16, help="Number of mice (default: 16)")
+    parser.add_argument("--start-date", type=str,
+                        help="Not used by --new any more (a template holds no dates); kept so "
+                             "old command lines still run")
+    parser.add_argument("--mice", type=int, default=16,
+                        help="With --new: subjects 01 to N (default: 16), unless --animals is given")
+    parser.add_argument("--animals", type=str, default=None,
+                        help="With --new: the subject numbers, e.g. 01-16 or 3,4,16,17,19")
     parser.add_argument("--output-dir", type=str, default=None,
                         help="Output directory (default: a 'generated' folder under the "
                              "current one). A file already there is never written over.")
@@ -4453,30 +4458,34 @@ def main(argv=None):
     if args.new or args.fix:
         # CLI mode
         if args.new:
-            if not args.cohort or not args.start_date:
-                print("Error: --new requires --cohort and --start-date")
-                print("\nUsage: mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01")
-                print("       mousedb-make-sheets --new --cohort ENCR_01 --start-date 2025-02-01")
+            if not args.cohort:
+                print("Error: --new requires --cohort")
+                print("\nUsage: mousedb-make-sheets --new --cohort PROJA_07 --animals 01-16 "
+                      "--output-dir <folder>")
                 return 1
 
-            # The project comes from the cohort name's prefix (parse_cohort_name);
-            # --type, if given, must agree with it. A refusal is one plain
-            # "REFUSED:" line and REFUSED_EXIT, never a traceback, and nothing
-            # is written.
+            # A new sheet is made from the project's TEMPLATE
+            # (mousedb.sheet_templates), the same as the Tracking Sheets tab's
+            # button and 'mousedb new-sheet'. WHY not the layout built into this
+            # file any more: it matched none of the workbooks the lab works in
+            # (2026-10-30), and a second project had no layout at all. A
+            # refusal is one plain "REFUSED:" line and REFUSED_EXIT, never a
+            # traceback, and nothing is written.
+            from .. import sheet_templates
+            from ..cohort_sheets import cohort_sheets_dir
+            folder = args.output_dir or cohort_sheets_dir()
+            animals = args.animals or "01-%02d" % args.mice
             try:
-                cname = parse_cohort_name(args.cohort)
-                print(f"Project type: {cname.project_type.upper()}")
-                create_new_cohort_file(
-                    cname.cohort_id,
-                    args.start_date,
-                    args.mice,
-                    args.output_dir,
-                    project_type=args.type,
-                    max_viruses=args.viruses
-                )
+                if not folder:
+                    raise NewSheetRefused("no --output-dir given and no sheets folder is set "
+                                          "(mousedb-sheets set-dir <folder>)")
+                target, problems = sheet_templates.build_sheet(args.cohort, animals, folder)
             except NewSheetRefused as e:
                 _say_refused(e)
                 return REFUSED_EXIT
+            print(_ascii("Created %s" % target))
+            for line in problems:
+                print(_ascii("  [!] %s" % line))
         elif args.fix:
             # Detect project type from filename
             project_type = detect_project_type(args.type, None, args.fix)
