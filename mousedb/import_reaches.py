@@ -25,6 +25,8 @@ WHAT IT DOES
      live names that are not live results (``mousedb.pipeline_tree``).
   3. Skips files whose content hash is already in the ledger
      (``<mousedb_root>/logs/reach_imports.json``); ``--all`` re-imports everything.
+     A file that only MOVED folder keeps its ledger entry (``_moved_entries``),
+     so reorganising the Analyzed folders re-imports nothing.
   4. For each file: the animal is CREATED from the video name if the tracking
      sheet has not named it yet (machine data never waits on hand data; the
      sheet import enriches the record later), old rows for that video are
@@ -147,6 +149,7 @@ class ImportResult:
     reaches: int = 0
     subjects_created: int = 0
     withdrawn: int = 0            # videos taken out because they went back to review
+    moved: int = 0                # results files found under a new folder, not re-imported
     withdrawn_reaches: int = 0
     cohorts_touched: set = field(default_factory=set)
     messages: List[str] = field(default_factory=list)
@@ -197,6 +200,34 @@ def parse_video_metadata(video_name: str) -> Dict[str, Any]:
             out['run_number'] = int(m.group(2))
         except ValueError:
             pass
+    return out
+
+
+def _moved_entries(ledger: dict, root: Path, files: List[Path]) -> Dict[str, str]:
+    """{new key: old key} for results files that MOVED since the last import.
+
+    The ledger is keyed by each file's path under the pipeline folder. When the
+    finished-work folders are reorganised (2026-10-30: project folders grouped
+    under their grant), every file gets a new path, and without this each one
+    would be hashed and imported again -- every reach of every moved cohort
+    rewritten over the share, the multi-hour import that held the database
+    lock on 2026-10-11. A file counts as moved when its new path is not in the
+    ledger, exactly one ledger entry has the same file name, and that entry's
+    old path no longer exists. Its content is still checked as for any file:
+    the moved entry carries its stamp and hash, so an unchanged file is skipped
+    and a changed one is imported."""
+    listed = {str(p.relative_to(root)).replace("\\", "/") for p in files}
+    by_name: Dict[str, List[str]] = {}
+    for key in ledger:
+        if key not in listed:
+            by_name.setdefault(key.rsplit("/", 1)[-1], []).append(key)
+    out = {}
+    for key in listed:
+        if key in ledger:
+            continue
+        olds = by_name.get(key.rsplit("/", 1)[-1], [])
+        if len(olds) == 1 and not (root / olds[0]).exists():
+            out[key] = olds[0]
     return out
 
 
@@ -616,11 +647,16 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     files = find_features_files(root, include_processing)
     res.scanned = len(files)
     ledger = load_ledger()
+    moved_from = _moved_entries(ledger, root, files) if not all_files else {}
+    res.moved = len(moved_from)
     todo = []
     for p in files:
         key = str(p.relative_to(root)).replace("\\", "/")
         st = p.stat()
         stamp = "%d:%d" % (st.st_size, int(st.st_mtime))
+        if key in moved_from:
+            # Same file, new folder: its entry moves with it (see _moved_entries).
+            ledger[key] = ledger.pop(moved_from[key])
         prev = ledger.get(key)
         # Fast path: same size and modification time as last import -> unchanged,
         # without reading the file (these live on a network share; hashing
@@ -637,8 +673,9 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         todo.append((p, key, {"hash": h, "stamp": stamp}))
     if limit:
         todo = todo[:limit]
-    log("import-reaches: %d features files under %s; %d to import, %d unchanged" %
-        (len(files), root, len(todo), res.skipped))
+    log("import-reaches: %d features files under %s; %d to import, %d unchanged%s" %
+        (len(files), root, len(todo), res.skipped,
+         "" if not res.moved else " (%d of them moved folders since the last import)" % res.moved))
     # The db phase runs under the cross-task mutex (see task_mutex.py): this
     # import overlapping the snapshot's long reads put the db in PENDING
     # starvation for 22 minutes on 2026-09-02 -- neither task was slow at the

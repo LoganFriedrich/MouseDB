@@ -278,6 +278,17 @@ changed, creates any animal it has not seen, and re-derives the protocol
 phase of every cohort it touched. `mousedb import-reaches --dry-run` says
 what it would do.
 
+**Moving folders does not re-import anything.** The import remembers each
+file it has imported by its place in the pipeline folder. When the finished
+folders are reorganised (for example each project's folder put inside its
+grant's folder), a file found in a new place with the same name, size and
+time as a remembered file whose old place is now empty is recognised as the
+same file: it is not imported again, and the import's first line says how
+many moved (`... N unchanged (M of them moved folders since the last
+import)`). A moved file whose content changed is imported as usual. If two
+remembered files share the moved file's name, the import does not guess and
+imports it again, which is safe, only slower.
+
 **Only filed videos are in the database.** Filing means a video is done. When
 a filed video is sent back to a review queue -- a pellet nobody answered, a
 disagreement with the hand scores, a person asked "are you sure?" -- it is not
