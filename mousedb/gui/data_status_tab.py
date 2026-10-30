@@ -91,7 +91,8 @@ reach_data.csv (one row per reach), manual_scores.csv (one row per pellet
 scored from the tray), ONE DATA_DICTIONARY.csv per kind of file (shared by
 every cohort), and MANIFEST.json saying when they were written and whether
 they are complete for an ODC-SCI upload. Then one folder per project (CNT,
-ASPA, ...) and inside it one folder per cohort (CNT/CNT_05) holding that
+ASPA, ...) -- inside its grant's folder when the lab lists the project under
+a grant ("mousedb grants") -- and inside it one folder per cohort (CNT_05) holding that
 cohort's files: ODC_sessions (one row per animal per session, ODC-SCI
 shape), ODC_reaches (one row per reach with the animal's surgery details and
 the session repeated on every row), the shareable summary and the analysis
