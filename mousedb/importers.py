@@ -304,21 +304,24 @@ class ExcelImporter:
             placeholders[cohort_id] = (start, True)
 
     def _extract_cohort_from_filename(self, filename: str) -> Optional[str]:
-        """Extract cohort ID from filename like 'Connectome_05_Animal_Tracking.xlsx'."""
-        # Try various patterns
-        patterns = [
-            r'Connectome_(\d+)_',  # Connectome_05_Animal_Tracking.xlsx
-            r'Connectome(\d+)_',   # Connectome05_Animal_Tracking.xlsx
-            r'CNT_(\d+)',          # CNT_05_tracking.xlsx
-            r'CNT(\d+)',           # CNT05_tracking.xlsx
-        ]
+        """The cohort a workbook's file name says it is, or None.
 
-        for pattern in patterns:
-            match = re.search(pattern, filename, re.IGNORECASE)
-            if match:
-                cohort_num = int(match.group(1))
-                return f"CNT_{cohort_num:02d}"
-
+        First by the project sheet names in the lab settings
+        (sheet_projects: "ProjectA_05_Animal_Tracking.xlsx" -> PROJA_05); then a
+        name that STARTS with a configured project's own cohort id
+        ("PROJA_05_tracking.xlsx", "PROJA05 tracking.xlsx"). Only configured
+        projects: WHY not any letters-and-digits, as the patterns here once
+        were -- a name of one project read as another's would file its animals
+        under the wrong cohort, and the old fixed patterns named one project
+        and nobody else's."""
+        from . import sheet_projects
+        cohort_id, _tail, _clash = sheet_projects.match(filename)
+        if cohort_id:
+            return cohort_id
+        for project in sorted(sheet_projects.definitions(), key=len, reverse=True):
+            m = re.match(r"^%s_?(\d{1,2})(?![0-9])" % re.escape(project), filename, re.IGNORECASE)
+            if m:
+                return "%s_%02d" % (project, int(m.group(1)))
         return None
 
     def _detect_start_date(self, xl: pd.ExcelFile, sheets: List[str]) -> Optional[datetime]:

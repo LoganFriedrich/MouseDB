@@ -393,17 +393,19 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
                             "in doubt (left out with every animal in recording %s)"
                             % (c.get("recording"), named, rec))
 
-    # 5: an animal of a project cohort with no tracking workbook
+    # 5: an animal of a project cohort with no tracking workbook. "A project"
+    # is one with a sheet name in the lab settings (sheet_projects): only those
+    # keep a workbook per cohort here. Matched by the project's exact code, not
+    # by how a cohort id starts -- PROJAB_02 is not a PROJA cohort.
     if sheets_dir and Path(sheets_dir).is_dir():
-        have = set()
-        for p in Path(sheets_dir).iterdir():
-            m = re.match(r"^Connectome_(\d{2})_Animal_Tracking", p.name)
-            if m:
-                have.add("CNT_%s" % m.group(1))
+        from .. import sheet_projects
+        from ..cohort_sheets import available_cohorts
+        have = set(available_cohorts(sheets_dir))
+        projects = set(sheet_projects.definitions())
         for video, sid in zip(videos["video_name"], videos["subject_id"]):
             parts = str(sid).rsplit("_", 1)
             cohort = parts[0] if len(parts) == 2 else ""
-            if cohort.startswith("CNT_") and cohort not in have:
+            if cohort.rsplit("_", 1)[0] in projects and cohort not in have:
                 ex.drop(str(video), "no sheet: cohort %s has no tracking workbook, so "
                                     "nothing about %s can be checked" % (cohort, sid))
     else:

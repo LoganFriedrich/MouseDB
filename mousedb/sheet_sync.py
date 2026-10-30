@@ -50,12 +50,12 @@ CLI (the GUI in MouseReach calls these with --json):
         prints one line per cohort (OK/FAIL, what landed, how many warnings,
         the first few of them) and a closing summary line; exits 1 if any
         cohort failed or nothing could be imported at all
-    mousedb-sheets pin CNT_05 "Connectome_05_Animal_Tracking.xlsx"
+    mousedb-sheets pin PROJA_05 "<that cohort's workbook file name>"
         a file cohort_sheets will not accept as that cohort's sheet (another
         cohort's, a "Copy of ...", a name not in the folder), or another
         project's cohort id, is refused in one line, exit 1, nothing recorded
     mousedb-sheets unpin CNT_05
-    mousedb-sheets set-dir "<folder>"      # where the CNT sheets live
+    mousedb-sheets set-dir "<folder>"      # where the tracking sheets live
         refused (exit 1, setting unchanged) for a folder that does not
         exist, holds no tracking sheet, or is a snapshot/archive folder;
         a folder typed relative to where you stand is recorded in full
@@ -101,16 +101,13 @@ WRITE_HAND_SCORES = True
 # reason: the sheets folder is this machine's configuration.
 WRITE_FIX_THESE = True
 
-# The project whose workbooks the tracking-sheet folder holds. cohort_sheets
-# recognises ONE file-name pattern there (Connectome_NN_Animal_Tracking.xlsx),
-# which is this project's workbook name, so every cohort found in that folder
-# is <SHEET_FOLDER_PROJECT>_NN. It is named once, here, so that a cohort a
+# Which projects' workbooks the tracking-sheet folder holds, and what each is
+# called, is the lab's configuration (mousedb.sheet_projects). Every cohort
+# found there has the id <PROJECT>_NN, read from its workbook's name. A cohort a
 # person ASKS for is matched against those ids and never re-labelled into one:
-# until 2026-10 every request was rewritten as CNT_NN from its last number, so
-# asking for another project's cohort 01 -- or for an animal id such as
-# CNT_05_01 -- silently imported CNT_01's sheet instead. When the folder learns
-# a second project's file pattern, this is the one place that must learn it too.
-SHEET_FOLDER_PROJECT = "CNT"
+# until 2026-10 every request was rewritten as one project's cohort from its
+# last number, so asking for another project's cohort 01 -- or for an animal id
+# such as PROJA_05_01 -- silently imported that project's cohort-01 sheet.
 
 # A requested cohort: letters, an optional underscore, one or two digits
 # (CNT_05, cnt05). Anything longer -- an animal id, a typo -- is refused by
@@ -187,11 +184,6 @@ def _iso(ts: float) -> str:
     return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
 
 
-def _folder_cohort_id(cohort_num: str) -> str:
-    """'05' -> the id of the folder's cohort 05 (see SHEET_FOLDER_PROJECT)."""
-    return "%s_%s" % (SHEET_FOLDER_PROJECT, cohort_num)
-
-
 def _refused_files(sheets_dir) -> List[dict]:
     """Files in the sheets folder that look like a tracking sheet but are not
     read as one, each with the reason, from cohort_sheets. WHY shown by every
@@ -226,8 +218,10 @@ def _broken_pin_notice(cohort_id: str, stored: str) -> str:
             "(or 'mousedb-sheets unpin %s')" % (cohort_id, stored, cohort_id, cohort_id))
 
 
-def cohort_status(cohort_num: str) -> dict:
-    cohort_id = _folder_cohort_id(cohort_num)
+def cohort_status(cohort: str) -> dict:
+    # A cohort id ('PROJA_05'); a bare number is read the way every sheet lookup
+    # reads one (cohort_sheets._cohort_key: only while one project is set).
+    cohort_id = _cs._cohort_key(cohort) or str(cohort)
     cands = cohort_sheet_candidates(cohort_id)
     chosen = find_cohort_sheet(cohort_id)
     # A pin is IN FORCE only while it names one of the cohort's files; once
@@ -300,8 +294,8 @@ def aspa_cohort_status(letter: str) -> dict:
 def status() -> dict:
     """Everything the Tracking Sheets tab shows, as one JSON-able dict.
 
-    One folder per PROJECT: CNT's tracking sheets and ASPA's frozen
-    workbooks are separate configured folders; both are listed."""
+    Two folders: the tracking sheets (every project named in the lab
+    settings, sheet_projects) and ASPA's frozen workbooks; both are listed."""
     from .cohort_sheets import aspa_data_dir, available_aspa_cohorts
     d = cohort_sheets_dir()
     a = aspa_data_dir()
@@ -316,18 +310,20 @@ def status() -> dict:
         "problem": None,
     }
     if d is None:
-        out["problem"] = ("No tracking-sheet folder is configured (or the configured "
-                          "folder holds no Connectome_NN_Animal_Tracking.xlsx). "
-                          "Use 'Set sheets folder' / mousedb-sheets set-dir.")
+        from . import sheet_projects
+        out["problem"] = ("No tracking-sheet folder is configured, or the configured "
+                          "folder holds no tracking sheet (sheet names: %s). "
+                          "Use 'Set sheets folder' / mousedb-sheets set-dir."
+                          % sheet_projects.describe())
     else:
-        for n in available_cohorts(d):
+        for cohort_id in available_cohorts(d):
+            project = cohort_id.rsplit("_", 1)[0]
             try:
-                c = cohort_status(n)
-                c["project"] = SHEET_FOLDER_PROJECT
+                c = cohort_status(cohort_id)
+                c["project"] = project
                 out["cohorts"].append(c)
             except Exception as e:
-                out["cohorts"].append({"cohort_id": _folder_cohort_id(n),
-                                       "project": SHEET_FOLDER_PROJECT,
+                out["cohorts"].append({"cohort_id": cohort_id, "project": project,
                                        "state": "error", "why": "status failed: %s" % e})
     if a is not None:
         for L in available_aspa_cohorts(a):
@@ -481,28 +477,36 @@ def requested_cohort_id(text: str) -> Tuple[Optional[str], Optional[str]]:
 
     Returns ``(cohort_id, None)``, or ``(cohort_id or None, reason)`` with the
     reason worded for a person; the caller adds what was (not) done about it.
-    'CNT_05', 'cnt05', '05' and '5' all name the folder's cohort 05. Another
-    project's id (CNTS_01, ENCR_02) is never rewritten into this folder's
-    project (see SHEET_FOLDER_PROJECT). Anything else -- an animal id, a typo --
-    is not a cohort id. WHY one function for every command that takes a cohort
+    'PROJA_05' and 'proja05' name PROJA's cohort 05. A bare number ('05', '5')
+    names a cohort only while ONE project is configured; with more, it could be
+    any of them and is refused with the choices. A project with no sheet name
+    in the lab settings (sheet_projects) has no sheet here, and its cohorts are
+    never given another project's. Anything else -- an animal id, a typo -- is
+    not a cohort id. WHY one function for every command that takes a cohort
     (import, pin, unpin, ``mousedb cohort-sheets --cohort``): each used to keep
-    only the trailing number, so 'pin CNTS_01' pinned CNT_01's sheet and
-    'import --cohort CNT_05_01' imported CNT_01's."""
+    only the trailing number, so 'pin PROJAB_01' pinned PROJA_01's sheet and
+    'import --cohort PROJA_05_01' imported PROJA_01's."""
+    from . import sheet_projects
     t = str(text).strip()
+    projects = sorted(sheet_projects.definitions())
     if re.fullmatch(r"\d{1,2}", t):
-        # A bare number carries no project. The folder holds one project's
-        # sheets, so it can only mean that project's cohort of that number.
-        return _folder_cohort_id("%02d" % int(t)), None
+        if len(projects) == 1:
+            return "%s_%02d" % (projects[0], int(t)), None
+        return None, ("'%s' names no project, and the sheets folder holds more than one "
+                      "project's sheets (%s): give the cohort id, e.g. %s_%02d"
+                      % (t, ", ".join(projects) or "none set", (projects or ["PROJ"])[0], int(t)))
     m = _REQUESTED_COHORT_RE.match(t)
+    example = (projects or ["PROJ"])[0]
     if not m:
-        return None, "'%s' is not a cohort id (expected e.g. %s_05)" % (t, SHEET_FOLDER_PROJECT)
+        return None, "'%s' is not a cohort id (expected e.g. %s_05)" % (t, example)
     project = m.group(1).upper()
     cohort_id = "%s_%02d" % (project, int(m.group(2)))
-    if project != SHEET_FOLDER_PROJECT:
+    if project not in projects:
         return cohort_id, (
-            "no tracking sheet for %s: the sheets folder holds %s workbooks only "
-            "(Connectome_NN_Animal_Tracking.xlsx), and a cohort is never given "
-            "another project's sheet" % (cohort_id, SHEET_FOLDER_PROJECT))
+            "no tracking sheet for %s: no sheet name is set for project %s in the lab "
+            "settings (projects with one: %s), and a cohort is never given another "
+            "project's sheet. To add it: %s"
+            % (cohort_id, project, ", ".join(projects) or "none", sheet_projects.SET_COMMAND))
     return cohort_id, None
 
 
@@ -605,9 +609,11 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     results["refused_files"] = _refused_files(d)
 
     # The folder's cohorts, each id taken from its workbook's name.
-    folder_ids = {_folder_cohort_id(n) for n in available_cohorts(d)}
+    folder_ids = set(available_cohorts(d))
     if cohorts is None and not folder_ids:
-        results["problem"] = "no Connectome_NN_Animal_Tracking.xlsx workbook in %s" % d
+        from . import sheet_projects
+        results["problem"] = "no tracking sheet in %s (sheet names: %s)" % (
+            d, sheet_projects.describe())
         return results
 
     # None = every cohort. A SET, possibly empty, = only these. WHY the
@@ -629,8 +635,7 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
             else:
                 wanted.add(cohort_id)
 
-    for n in available_cohorts(d):
-        cohort_id = _folder_cohort_id(n)
+    for cohort_id in available_cohorts(d):
         if wanted is not None and cohort_id not in wanted:
             continue
         sheet = find_cohort_sheet(cohort_id, sheets_dir=d)
@@ -727,11 +732,10 @@ def _import_instead(path: Path) -> str:
     """What to run in place of importing ``path``: the recorded import of that
     cohort's LIVE sheet, named when the sheets folder has one."""
     n = _cs._sheet_cohort(path.name)
-    live = find_cohort_sheet(_folder_cohort_id(n)) if n else None
+    live = find_cohort_sheet(n) if n else None
     if live is not None and not snapshot_folder_of(live):
         return ("import %s's live sheet, %s, from the sheets folder: "
-                "mousedb-sheets import --cohort %s" % (_folder_cohort_id(n), live.name,
-                                                       _folder_cohort_id(n)))
+                "mousedb-sheets import --cohort %s" % (n, live.name, n))
     return ("'mousedb-sheets status' lists each cohort's live sheet; import one with "
             "'mousedb-sheets import --cohort <cohort>', or all of them with 'mousedb "
             "import --all'. If this file really is the newest record of its cohort, "
@@ -785,8 +789,9 @@ def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual")
         entry = _new_entry(path.name, path, triggered_by, dry_run)
         entry.update(success=False, warnings=[],
                      error="the file name %s does not say which cohort it is (expected "
-                           "e.g. Connectome_05_Animal_Tracking.xlsx); nothing was "
-                           "imported" % path.name)
+                           "a project's sheet name -- %s); nothing was imported"
+                           % (path.name, __import__("mousedb.sheet_projects",
+                                                    fromlist=["describe"]).describe()))
         _finish(entry, results, dry_run, record=False)
         return results
     _finish(_import_one(cohort_id, path, dry_run, triggered_by, imp=imp), results, dry_run)
@@ -1005,8 +1010,9 @@ def _not_the_sheets_folder(folder) -> Optional[str]:
         return ("%s is inside the snapshot or archive folder '%s', not the live sheets; "
                 "its copies are out of date" % (d, snap))
     if not available_cohorts(d):
-        return ("%s holds no tracking sheet (a file named Connectome_NN_Animal_"
-                "Tracking.xlsx)" % d)
+        from . import sheet_projects
+        return ("%s holds no tracking sheet (sheet names: %s)"
+                % (d, sheet_projects.describe()))
     return None
 
 

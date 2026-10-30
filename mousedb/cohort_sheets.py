@@ -2,8 +2,8 @@
 
 Two folders, both on a synced share, both READ-ONLY, and neither path in source:
 
-  CNT cohort tracking sheets -- Connectome_NN_Animal_Tracking.xlsx, one per
-      cohort, kept current.
+  Cohort tracking sheets -- one workbook per cohort, named by its project's
+      pattern (sheet_projects: e.g. ProjectA_NN_Animal_Tracking.xlsx), kept current.
   ASPA animal sheets -- one workbook per cohort letter ("J.xlsx", or the
       letter followed by a description, "K - <description>.xlsx").
 
@@ -11,8 +11,8 @@ Reading either to keep the database current is expected. The rules are that it i
 read-only, and that the PATH is configuration rather than code.
 
 
-Each cohort has one Excel tracking sheet -- ``Connectome_{NN}_Animal_Tracking.xlsx``
--- and it is the source of record for that cohort's animals: subject list, weights,
+Each cohort has one Excel tracking sheet, named by its project's pattern
+(mousedb.sheet_projects) -- and it is the source of record for that cohort's animals: subject list, weights,
 manual tray and ramp scoring, injury and injection details. ``mousedb import`` reads
 them to populate the database.
 
@@ -23,9 +23,11 @@ The location is NOT in this file, and must not be. Two reasons:
   2. This repository is public. A synced-folder path carries a username, a
      drive letter, and an organisation's internal folder names.
 
-So the path lives in local configuration that is never committed, and this module
-only knows the FILENAME pattern, which is a property of the project's data rather
-than of any one machine.
+So the path lives in local configuration that is never committed. The FILE NAMES
+are configuration too (mousedb.sheet_projects, in the lab's settings file on the
+shared storage): each project says what its sheets are called, and this module
+asks there. Until 2026-10-29 one project's name was written into this file, so a
+second project's sheets were never recognised.
 
 Resolution order, first hit wins:
 
@@ -45,7 +47,8 @@ silently resolves is worse than no default, because it produces a confident
 wrong answer.
 
 WHICH FILES COUNT AS A SHEET. A file is a cohort's sheet only if its name
-STARTS with ``Connectome_NN_Animal_Tracking`` and ends ``.xlsx``; anything may
+STARTS with a configured project's sheet name up to ``.xlsx`` (the cohort id is
+then that project's code and the number in the name); anything may
 sit between ("...Tracking1.xlsx", "...Tracking (2).xlsx"), and when a cohort has
 more than one such file a person pins the right one (pin_cohort_sheet). Not
 sheets, however named: Excel lock files (``~$...``), anything that merely
@@ -81,19 +84,16 @@ import, a video the reaching pipeline cannot check against the hand scores) gets
 "!! <cohort> - FIX THESE.xlsx" beside its workbook, and a cohort with nothing
 left has it removed. WHY there: that folder is where the sheet is opened and
 fixed. It never touches the sheet, and its name can never be read as one
-(_SHEET_RE is anchored at "Connectome_"). The second is the Tracking
+(a sheet name must START with a project's pattern, and "!! " starts none). The
+second is the Tracking
 Sheets tab's "New cohort sheet..." button (gui.sheets_tab.new_sheet). When a
 person clicks it and types a new cohort's name and start date, it runs
 ``cohort_tools.make_sheets --new --output-dir <the configured folder>``, which
 creates that cohort's empty workbook there -- the folder is where the new sheet
-will be kept, so that is where it is made. Nothing else may write there. Know
-what that one write does not yet guard against: make_sheets does not check
-whether a workbook of that name already exists (a cohort that already has a
-sheet would get an empty one in its place); it takes the cohort number from
-whatever follows the LAST underscore of the typed name, so another project's
-id or a typo can name an existing cohort's workbook; and if the save is
-blocked by an open workbook it force-closes every Excel window on that
-machine, losing any unsaved work in them, and retries.
+will be kept, so that is where it is made. Nothing else may write there. That
+write never replaces or sits beside an existing workbook of the cohort, and
+never closes Excel (cohort_tools.make_sheets, "A NEW SHEET NEVER REPLACES A
+FILE").
 
 Other tools write wherever they are pointed or run from, so pointed at the
 live folder, or run from inside it, they would write there too -- which is
@@ -133,26 +133,19 @@ from typing import List, Optional, Tuple
 CONFIG_PATH = Path.home() / ".mousedb" / "config.json"
 ENV_VAR = "MOUSEDB_COHORT_SHEETS"
 
-# A property of the project's data, not of any lab's filesystem.
+# WHICH NAMES ARE SHEETS comes from sheet_projects (the lab's settings). Each
+# project's pattern is anchored at the START of the name. WHY: matching used to
+# be an unanchored search, so ANY file whose name merely CONTAINED the pattern
+# became a candidate -- "Copy of <sheet>", an Excel lock file "~$<sheet>", the
+# "._<sheet>" shadow file a Mac leaves on a network share, a note another tool
+# drops beside the sheets -- and with no pin the NEWEST candidate is the one
+# imported, so the newest stray file silently became the cohort's sheet.
 #
-# Anchored at the START of the name (the ``^`` here, and ``.match`` wherever it
-# is used). WHY: this used to be an unanchored search, so ANY file whose name
-# merely CONTAINED the pattern became a candidate -- "Copy of
-# Connectome_05_Animal_Tracking.xlsx", an Excel lock file "~$Connectome_05...",
-# the "._Connectome_05..." shadow file a Mac leaves on a network share, a note
-# another tool drops beside the sheets -- and with no pin the NEWEST candidate is
-# the one imported, so the newest stray file silently became the cohort's sheet.
-#
-# The tail after "Animal_Tracking" stays open on purpose: real, in-use sheets
-# carry suffixes ("..._Animal_Tracking1.xlsx", "..._Animal_Tracking(<a note of
-# where or when it was edited>).xlsx", a "(2)" copy), and those must stay visible
-# as candidates so a person can pin the right one rather than lose one unseen.
-_SHEET_RE = re.compile(r"^Connectome_(\d{1,2})_Animal_Tracking(.*)\.xlsx$", re.I)
-
-# The same words ANYWHERE in a name. Used only to find files that LOOK like a
-# sheet but are refused, so a refusal can be shown to a person (see
-# refused_sheet_files) instead of the file just vanishing from every listing.
-_LOOKS_LIKE_SHEET_RE = re.compile(r"Connectome_\d{1,2}_Animal_Tracking.*\.xlsx$", re.I)
+# The tail after the pattern stays open on purpose: real, in-use sheets carry
+# suffixes ("..._Animal_Tracking1.xlsx", "..._Animal_Tracking(<a note of where
+# or when it was edited>).xlsx", a "(2)" copy), and those must stay visible as
+# candidates so a person can pin the right one rather than lose one unseen.
+from . import sheet_projects as _projects
 
 # Files this package's OWN tools write next to a sheet, named after it:
 # cohort_tools.odc_builder "<sheet>_ODC.xlsx", cohort_tools.summary_matrix
@@ -173,30 +166,31 @@ _DERIVED_TAILS = ("_odc", "_summary_matrix", "_updated", "_fixed")
 def _sheet_verdict(name: str) -> Tuple[Optional[str], Optional[str]]:
     """Decide what a file name is, in one place for every caller.
 
-    Returns ``(cohort_number, None)`` for a tracking sheet ("05"),
+    Returns ``(cohort_id, None)`` for a tracking sheet ("PROJA_05"),
     ``(None, reason)`` for a file that looks like one but is refused (the
     reason is worded for a person), and ``(None, None)`` for anything else.
     """
-    m = _SHEET_RE.match(name)
-    if m:
-        tail = m.group(2).lower()
-        if any(mark in tail for mark in _DERIVED_TAILS):
+    cohort_id, tail, clash = _projects.match(name)
+    if clash:
+        return None, clash
+    if cohort_id:
+        if any(mark in tail.lower() for mark in _DERIVED_TAILS):
             return None, ("written by a mousedb tool FROM the sheet (an export or a "
                           "fixed/updated copy), not the sheet itself")
-        return "%02d" % int(m.group(1)), None
-    if not _LOOKS_LIKE_SHEET_RE.search(name):
+        return cohort_id, None
+    if not _projects.resembles(name):
         return None, None
     if name.startswith("~"):
         # Excel creates "~$<name>" while a workbook is open and deletes it on
         # close. It is a few bytes of owner name, never a workbook.
         return None, "Excel lock file -- someone has the workbook open; not a workbook"
-    return None, ("the name does not START with Connectome_NN_Animal_Tracking "
+    return None, ("the name does not START with its project's sheet name "
                   "(a copy, a note, or another program's file); if it really is "
                   "the cohort's sheet, rename it so it does")
 
 
 def _sheet_cohort(name: str) -> Optional[str]:
-    """The two-digit cohort number if ``name`` is a tracking sheet, else None."""
+    """The cohort id ("PROJA_05") if ``name`` is a tracking sheet, else None."""
     return _sheet_verdict(name)[0]
 
 
@@ -302,10 +296,22 @@ def is_stale_source(path) -> bool:
     return any(marker in parts for marker in _NOT_A_SOURCE)
 
 
-def _cohort_number(cohort: str) -> Optional[str]:
-    """'CNT_05' / 'CNT05' / '5' / '05' -> '05'."""
-    m = re.search(r"(\d{1,2})\s*$", str(cohort).strip())
-    return "%02d" % int(m.group(1)) if m else None
+def _cohort_key(cohort: str) -> Optional[str]:
+    """The cohort id a request names: 'PROJA_05' / 'proja05' -> 'PROJA_05'.
+
+    A bare number ('5', '05') names a cohort only while exactly one project is
+    configured: with two, '05' could be either project's cohort 05, and a guess
+    would import the wrong animals. WHY not "the trailing number" as before:
+    that read 'PROJAB_02' as cohort 02 of ANY project, so a second project's
+    cohort would have been given the first project's cohort-02 sheet."""
+    t = str(cohort).strip()
+    m = re.fullmatch(r"([A-Za-z]+)_?(\d{1,2})", t)
+    if m:
+        return "%s_%02d" % (m.group(1).upper(), int(m.group(2)))
+    if re.fullmatch(r"\d{1,2}", t):
+        projects = list(_projects.definitions())
+        return "%s_%02d" % (projects[0], int(t)) if len(projects) == 1 else None
+    return None
 
 
 def cohort_sheet_candidates(cohort: str, sheets_dir=None) -> List[Path]:
@@ -317,7 +323,7 @@ def cohort_sheet_candidates(cohort: str, sheets_dir=None) -> List[Path]:
     d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
     if d is None:
         return []
-    n = _cohort_number(cohort)
+    n = _cohort_key(cohort)
     if n is None:
         return []
     hits = []
@@ -338,9 +344,9 @@ def _ascii(text) -> str:
     return str(text).encode("ascii", "backslashreplace").decode("ascii")
 
 
-def _stored_pin(n: str) -> Optional[str]:
-    """The file name recorded for cohort ``n`` ("05") in local config."""
-    return (_read_config().get("pinned_sheets") or {}).get("CNT_%s" % n)
+def _stored_pin(cohort_id: str) -> Optional[str]:
+    """The file name recorded for cohort ``cohort_id`` ("PROJA_05") in local config."""
+    return (_read_config().get("pinned_sheets") or {}).get(cohort_id)
 
 
 def pinned_sheet(cohort: str) -> Optional[str]:
@@ -349,7 +355,7 @@ def pinned_sheet(cohort: str) -> Optional[str]:
     This is the RECORD, whether or not that file is still there -- a status
     display compares it with the cohort's files to tell a pin in force from a
     broken one (see broken_pins)."""
-    n = _cohort_number(cohort)
+    n = _cohort_key(cohort)
     return _stored_pin(n) if n else None
 
 
@@ -372,14 +378,16 @@ def pin_cohort_sheet(cohort: str, filename: Optional[str], sheets_dir=None) -> P
     A name that differs from a real file only in letter case is stored as the
     file's real name, so it matches exactly afterwards.
     Returns the config path."""
-    n = _cohort_number(cohort)
+    n = _cohort_key(cohort)
     if n is None:
         raise ValueError("not a cohort: %r" % cohort)
     name = Path(filename).name if filename else None
     if name and _sheet_cohort(name) != n:
+        proj = _projects.project_of(n)
         why = _sheet_verdict(name)[1] or (
-            "it is not named as cohort %s's sheet (Connectome_%s_Animal_Tracking...xlsx)"
-            % (n, n))
+            "it is not named as cohort %s's sheet (%s)"
+            % (n, proj.file_name(n.rsplit("_", 1)[1]).replace(".xlsx", "...xlsx")
+               if proj else "no sheet name is set for project %s" % n.rsplit("_", 1)[0]))
         raise ValueError(_ascii("cannot pin %r as the sheet for cohort %s: %s" % (name, n, why)))
     if name:
         d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
@@ -395,7 +403,7 @@ def pin_cohort_sheet(cohort: str, filename: Optional[str], sheets_dir=None) -> P
                 name = same[0]
     cfg = _read_config()
     pins = cfg.setdefault("pinned_sheets", {})
-    key = "CNT_%s" % n
+    key = n
     if name:
         pins[key] = name
     else:
@@ -447,7 +455,8 @@ def fetch_cohort_sheet(cohort: str, dest_dir, sheets_dir=None) -> Optional[Path]
 
 
 def available_cohorts(sheets_dir=None) -> List[str]:
-    """Cohort numbers that have a live tracking sheet, e.g. ['00','01', ...]."""
+    """Cohort ids that have a live tracking sheet, e.g. ['PROJA_00', 'PROJA_01',
+    'PROJAB_02'] -- ids, not numbers, since two projects may each have a 02."""
     d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
     if d is None:
         return []
@@ -516,13 +525,13 @@ def broken_pins(sheets_dir=None) -> List[dict]:
     out = []
     pins = _read_config().get("pinned_sheets") or {}
     for key in sorted(pins):
-        pin, n = pins.get(key), _cohort_number(key)
+        pin, n = pins.get(key), _cohort_key(key)
         if not pin or n is None:
             continue
         cands = cohort_sheet_candidates(n, sheets_dir=d)
         if any(c.name == pin for c in cands):
             continue          # in force: nothing to say
-        cid = "CNT_%s" % n
+        cid = n
         refusal = _sheet_verdict(pin)[1]
         if pin not in present:
             cause = "is no longer in the sheets folder (renamed, moved or deleted)"
@@ -680,10 +689,17 @@ def describe() -> str:
     """What is configured, or how to configure it. For --help and for saying so
     out loud when an import finds nothing."""
     lines = []
+    # Said first: with no project's sheet name set, NO file is a sheet, and the
+    # folder itself then reads as "not configured" -- the real cause must be
+    # named, not the symptom.
+    try:
+        lines.append("Sheet names by project: %s" % _projects.describe())
+    except ValueError as e:
+        lines.append("Sheet names by project: UNREADABLE -- %s" % e)
     d = cohort_sheets_dir()
     if d is not None:
         cohorts = available_cohorts(d)
-        lines.append("CNT cohort sheets: %s" % d)
+        lines.append("Cohort tracking sheets: %s" % d)
         lines.append("  cohorts with a sheet: %s"
                      % (", ".join(cohorts) if cohorts else "(none)"))
         # Said out loud so that a sheet saved under a refused name shows up
@@ -707,20 +723,21 @@ def describe() -> str:
     # user's home folder name) come from the machine and may hold any
     # character just as file names may. Escaped, a path is still
     # recognisable; unescaped, one accented letter is a crash.
-    if lines:
+    if d is not None or a is not None:
         if d is None:
             lines.append("")
-            lines.append("No CNT cohort sheets configured "
+            lines.append("No cohort tracking sheets folder configured "
                          "(mousedb cohort-sheets --set <path>).")
         if a is None:
             lines.append("")
             lines.append("No ASPA animal sheets configured "
                          "(mousedb cohort-sheets --set-aspa <path>).")
         return _ascii("\n".join(lines))
-    return _ascii("\n".join([
+    return _ascii("\n".join(lines + [
+        "",
         "No cohort tracking sheets are configured on this machine.",
         "",
-        "They are the Excel files named Connectome_NN_Animal_Tracking.xlsx.",
+        "They are the Excel files named as each project's sheet name above says.",
         "Tell mousedb where they are, once:",
         "",
         "    mousedb cohort-sheets --discover      # look for them",

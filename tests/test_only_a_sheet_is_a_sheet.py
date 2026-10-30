@@ -77,13 +77,13 @@ class TestLegitimateSheetsStillCount:
     """Anchoring must not lose a real sheet. Each of these shapes is in use."""
 
     @pytest.mark.parametrize("name,cohort", [
-        ("Connectome_05_Animal_Tracking.xlsx", "05"),
-        ("Connectome_04_Animal_Tracking1.xlsx", "04"),               # trailing digit
-        ("Connectome_00_Animal_Tracking(room20260101).xlsx", "00"),   # a note in brackets
-        ("Connectome_05_Animal_Tracking (2).xlsx", "05"),             # a "(2)" copy
-        ("Connectome_5_Animal_Tracking.xlsx", "05"),                  # one-digit cohort
-        ("connectome_05_animal_tracking.XLSX", "05"),                 # case differs
-        ("Connectome_05_Animal_Tracking-OTHERPC.xlsx", "05"),         # sync conflict copy
+        ("Connectome_05_Animal_Tracking.xlsx", "CNT_05"),
+        ("Connectome_04_Animal_Tracking1.xlsx", "CNT_04"),               # trailing digit
+        ("Connectome_00_Animal_Tracking(room20260101).xlsx", "CNT_00"),   # a note in brackets
+        ("Connectome_05_Animal_Tracking (2).xlsx", "CNT_05"),             # a "(2)" copy
+        ("Connectome_5_Animal_Tracking.xlsx", "CNT_05"),                  # one-digit cohort
+        ("connectome_05_animal_tracking.XLSX", "CNT_05"),                 # case differs
+        ("Connectome_05_Animal_Tracking-OTHERPC.xlsx", "CNT_05"),         # sync conflict copy
     ])
     def test_it_is_a_sheet(self, name, cohort):
         assert cs._sheet_cohort(name) == cohort
@@ -135,7 +135,7 @@ class TestStrayFilesAreNotSheets:
     def test_a_cohort_known_only_from_a_stray_file_is_not_a_cohort(self, folder):
         (folder / "Copy of Connectome_09_Animal_Tracking.xlsx").write_bytes(b"x")
         (folder / "~$Connectome_08_Animal_Tracking.xlsx").write_bytes(b"x")
-        assert cs.available_cohorts() == ["05"]
+        assert cs.available_cohorts() == ["CNT_05"]
         assert cs.find_cohort_sheet("CNT_09") is None
 
     def test_a_folder_holding_only_stray_files_is_not_the_sheets_folder(
@@ -158,10 +158,12 @@ class TestStrayFilesAreNotSheets:
         would quietly bring the stray files back."""
         import re
         text = Path(cs.__file__).read_text(encoding="utf-8")
-        # \b so the deliberate, display-only _LOOKS_LIKE_SHEET_RE search is not
-        # mistaken for a lookup.
-        assert not re.search(r"\b_SHEET_RE\.search\(", text)
-        assert cs._SHEET_RE.pattern.startswith("^")
+        # The rule lives in sheet_projects now: one anchored pattern per
+        # project, and only its display-only "resembles" search is unanchored.
+        assert "_projects.match(name)" in text
+        from mousedb import sheet_projects
+        for p in sheet_projects.definitions().values():
+            assert p.matcher().pattern.startswith("^")
 
     @pytest.mark.parametrize("sheet", [
         "Connectome_05_Animal_Tracking1.xlsx",
@@ -285,13 +287,13 @@ class TestAPinMustNameAFileThatIsThere:
         msg = str(e.value)
         assert "no file of that name" in msg and REAL in msg
         msg.encode("ascii")
-        assert cs._stored_pin("05") is None          # nothing was recorded
+        assert cs._stored_pin("CNT_05") is None          # nothing was recorded
 
     def test_a_case_difference_is_stored_as_the_real_name(self, folder):
         """Windows does not care about letter case; an exact-name comparison
         does. Storing the file's real name keeps the pin in force."""
         cs.pin_cohort_sheet("CNT_05", REAL.lower())
-        assert cs._stored_pin("05") == REAL
+        assert cs._stored_pin("CNT_05") == REAL
         assert cs.pinned_sheet("CNT_05") == REAL
 
 
@@ -401,9 +403,9 @@ class TestABrokenPinIsAnnounced:
         (folder / other).write_bytes(b"x")
         _pin_directly("CNT_05", other)
         assert cs.refused_sheet_files() == []
-        assert "06" in cs.available_cohorts() and cs.find_cohort_sheet("CNT_06").name == other
+        assert "CNT_06" in cs.available_cohorts() and cs.find_cohort_sheet("CNT_06").name == other
         [b] = cs.broken_pins()
-        assert b["pinned"] == other and "is not named as cohort 05's sheet" in b["why"]
+        assert b["pinned"] == other and "is not named as cohort CNT_05's sheet" in b["why"]
         assert cs.find_cohort_sheet("CNT_05").name == REAL
 
     def test_a_pin_recorded_on_a_now_refused_file_says_why(self, folder):

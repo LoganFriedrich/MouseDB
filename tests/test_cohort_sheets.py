@@ -151,7 +151,7 @@ class TestFindingASheet:
         assert cs.find_cohort_sheet("CNT_05").name.startswith("Connectome_")
 
     def test_available_cohorts_lists_what_is_there(self, sheets):
-        assert cs.available_cohorts() == ["00", "01", "05"]
+        assert cs.available_cohorts() == ["CNT_00", "CNT_01", "CNT_05"]
 
 
 class TestFetchingAFreshCopy:

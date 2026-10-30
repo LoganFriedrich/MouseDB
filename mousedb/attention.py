@@ -70,8 +70,7 @@ def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
     from .sheet_sync import _read_ledger
     if cohort_ids is None:
         from .cohort_sheets import available_cohorts
-        from .sheet_sync import _folder_cohort_id
-        cohort_ids = [_folder_cohort_id(n) for n in available_cohorts()]
+        cohort_ids = list(available_cohorts())
     last: Dict[str, dict] = {}
     for e in _read_ledger():
         if e.get("cohort_id") in cohort_ids and not e.get("dry_run"):

@@ -54,8 +54,10 @@ def _check_tracking_sheets(db, stats):
     # cohort's sheet, when it was edited and imported, and any file that is
     # not read as a sheet (with the reason).
     sheet_sync.main(["status"])
+    from mousedb import sheet_projects
+    projects = set(sheet_projects.definitions())   # the tracking-sheet projects, not ASPA's
     has_sheets = any(c.get("sheet") for c in st.get("cohorts", [])
-                     if c.get("project") == sheet_sync.SHEET_FOLDER_PROJECT)
+                     if c.get("project") in projects)
     if st.get("problem") or not has_sheets:
         print("    Nothing to import (see above).")
     elif stats.get('subjects', 0) != 0:

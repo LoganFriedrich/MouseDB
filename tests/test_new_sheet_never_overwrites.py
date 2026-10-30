@@ -387,7 +387,7 @@ def _folder_status(d, cohorts=(), **extra):
     ("CNT_05_01", "is not a cohort name"),
     ("01", "is not a cohort name"),
     ("CNT_01", "already has a workbook"),
-    ("ENCR_02", "not a CNT cohort"),       # this folder is read for CNT sheets only
+    ("ENCR_02", "not a cohort of a project with sheets here"),   # only configured projects
 ])
 def test_the_tab_refuses_in_a_message_box_and_starts_nothing(sheets, make_tab, ui,
                                                               monkeypatch, typed, says):

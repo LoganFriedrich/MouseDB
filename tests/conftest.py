@@ -23,6 +23,21 @@ def _no_production_hand_scores(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _lab_settings_for_tests(tmp_path_factory, monkeypatch):
+    """Every test reads its OWN lab settings file, never the lab's: one project
+    whose sheets are named Connectome_NN_Animal_Tracking.xlsx, the name the
+    suite's sheet fixtures use. WHY suite-wide: which file names are sheets is
+    lab configuration (mousedb.sheet_projects) with no built-in default, and a
+    test must not depend on, or write to, the machine's real settings. A test
+    about the settings themselves points MOUSEDB_LAB_CONFIG somewhere else."""
+    import json
+    f = tmp_path_factory.mktemp("lab_settings") / "mousedb_lab_config.json"
+    f.write_text(json.dumps({"sheet_projects": {
+        "CNT": {"sheet_name": "Connectome_{NN}_Animal_Tracking.xlsx"}}}), encoding="utf-8")
+    monkeypatch.setenv("MOUSEDB_LAB_CONFIG", str(f))
+
+
+@pytest.fixture(autouse=True)
 def _no_production_lock(monkeypatch):
     def guarded(self, name="central-db", stale_minutes=45, base_dir=None):
         if base_dir is None:

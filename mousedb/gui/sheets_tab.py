@@ -75,7 +75,8 @@ STATE_TEXT = {
 NEW_SHEET_TIMEOUT_S = 600
 
 QUICK_GUIDE = """\
-The tracking workbooks (one per cohort, e.g. Connectome_05_Animal_Tracking.xlsx)
+The tracking workbooks (one per cohort, named as the lab settings say for each
+project -- "mousedb sheet-projects --show" lists them)
 are the lab's hand-kept record: animals, weights, ramps, manual tray scores, injury
 and surgery details. The database only knows what has been IMPORTED from them.
 
@@ -93,8 +94,8 @@ needs you:
   has no file left at all, put its workbook back in the folder, or forget the pin.
 * NOT READ AS A SHEET -- a file in the folder looks like a sheet but is never
   imported (a "Copy of ...", an export a tool made from a sheet, an Excel lock file).
-  If it really is a cohort's sheet, rename it so its name STARTS with
-  Connectome_NN_Animal_Tracking. Otherwise nothing to do.
+  If it really is a cohort's sheet, rename it so its name STARTS with its
+  project's sheet name. Otherwise nothing to do.
 * If the folder set for this machine holds NO readable sheet at all (say every
   sheet there was renamed "Copy of ..."), the table stays empty and the line at
   the top says so -- and the red box still lists what is in that folder.
@@ -384,12 +385,15 @@ class TrackingSheetsTab(QWidget):
         if on_done is not None:
             self._guarded(on_done, r)
 
-    def _folder_project(self) -> str:
-        """The project whose sheets the sheets folder holds (sheet_sync's
-        SHEET_FOLDER_PROJECT): the only cohorts a new sheet may be made for
-        here, since the folder reads only that project's workbook name."""
-        from .. import sheet_sync
-        return getattr(sheet_sync, "SHEET_FOLDER_PROJECT", "CNT")
+    def _folder_projects(self) -> List[str]:
+        """The projects whose sheets the sheets folder holds: those with a sheet
+        name in the lab settings (sheet_projects). The only cohorts a new sheet
+        may be made for here, since the folder reads only those names."""
+        from .. import sheet_projects
+        try:
+            return sorted(sheet_projects.definitions())
+        except ValueError:
+            return []
 
     # ------------------------------------------------------------- status
     def refresh(self):
@@ -537,7 +541,7 @@ class TrackingSheetsTab(QWidget):
             self._log("Select exactly one cohort row.")
             return
         c = sel[0]
-        if c.get("project") not in (None, self._folder_project()):
+        if c.get("project") is not None and c.get("project") not in self._folder_projects():
             QMessageBox.information(
                 self, "Nothing to choose",
                 "%s keeps one workbook per cohort in its own folder; there is no "
@@ -625,7 +629,7 @@ class TrackingSheetsTab(QWidget):
         if not folder.is_dir():
             return "%s is not a folder" % folder
         if not available_cohorts(folder):
-            return "%s holds no tracking sheet (a file named Connectome_NN_Animal_Tracking.xlsx)" % folder
+            return "%s holds no tracking sheet (named as 'mousedb sheet-projects --show' lists)" % folder
         return None
 
     def set_folder(self):
@@ -648,7 +652,7 @@ class TrackingSheetsTab(QWidget):
             QMessageBox.warning(
                 self, "Not the sheets folder",
                 "%s.\n\nThe sheets folder setting was not changed. Pick the folder that "
-                "holds the live Connectome_NN_Animal_Tracking.xlsx workbooks.%s"
+                "holds the live tracking workbooks.%s"
                 % (why, ("\n\nFiles there that look like sheets but are not read:" + extra)
                         if extra else ""))
             return
@@ -714,23 +718,25 @@ class TrackingSheetsTab(QWidget):
             self.refresh()
             return
         from ..cohort_tools import make_sheets as ms
-        project = self._folder_project()
+        projects = self._folder_projects()
+        example = (projects or ["PROJ"])[0]
         text, ok = QInputDialog.getText(
             self, "New cohort sheet",
-            "Name of the NEW cohort, exactly as %s_NN (for example %s_07):" % (project, project))
+            "Name of the NEW cohort, exactly as PROJECT_NN (for example %s_07).\n"
+            "Projects with sheets here: %s" % (example, ", ".join(projects) or "none set"))
         if not ok:
             return
         try:
             cname = ms.parse_cohort_name(text)
-            if cname.prefix != project:
-                # WHY: this folder is read for one project's workbook name only;
-                # another project's workbook made here would never be read.
+            if cname.prefix not in projects:
+                # WHY: this folder is read only for the projects named in the lab
+                # settings; a workbook for another project made here would never
+                # be read.
                 raise ms.NewSheetRefused(
-                    "%s is not a %s cohort. This folder holds %s tracking sheets only, so "
-                    "a workbook for %s made here would never be read. Make it in that "
-                    "project's own folder: mousedb-make-sheets --new --cohort %s "
-                    "--start-date <YYYY-MM-DD> --output-dir <that folder>"
-                    % (cname.cohort_id, project, project, cname.cohort_id, cname.cohort_id))
+                    "%s is not a cohort of a project with sheets here (%s), so a workbook "
+                    "made for it here would never be read. Add the project's sheet name "
+                    "first: mousedb sheet-projects --set %s \"<file name with {NN}>\""
+                    % (cname.cohort_id, ", ".join(projects) or "none set", cname.prefix))
             ms.refuse_if_cohort_has_a_workbook(d, cname)
         except ms.NewSheetRefused as e:
             self._refuse_new_sheet(str(e))

@@ -53,8 +53,8 @@ def test_the_fix_these_file_is_written_and_removed_when_nothing_is_left(tmp_path
     assert ws["A1"].value == "CNT_05: 1 thing(s) to fix"
     assert ws["A5"].value == "REPAIRED ..."
     # never mistaken for the cohort's sheet
-    from mousedb.cohort_sheets import _SHEET_RE
-    assert not _SHEET_RE.match(p.name)
+    from mousedb.cohort_sheets import _sheet_cohort
+    assert _sheet_cohort(p.name) is None
     assert attention.write_fix_these("CNT_05", [], tmp_path) is None
     assert not p.exists()
 

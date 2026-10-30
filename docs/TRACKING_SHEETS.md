@@ -4,8 +4,10 @@ This page is for the person doing the work. No codebase knowledge assumed.
 
 ## What this is about
 
-Each cohort has one tracking workbook, `Connectome_NN_Animal_Tracking.xlsx`
-(NN = cohort number), kept in a shared folder the lab chooses. It is the
+Each cohort has one tracking workbook, named by its project's sheet name
+(for example `ProjectA_NN_Animal_Tracking.xlsx`, NN = cohort number -- each
+project's name is set once for the whole lab, see "Which projects' sheets are
+read" below), kept in a shared folder the lab chooses. It is the
 hand-kept record of that cohort: the animals, weights, ramp days, manual
 tray scores (which pellet was missed / displaced / retrieved), the injury,
 the injection surgery, the virus batch. Nothing in mousedb ever edits it.
@@ -481,14 +483,17 @@ The letter (ASPA) workbooks are frozen, so nothing is listed for them.
 
 ### Which file is read: the name, and pins
 
-**The name.** A file is a cohort's sheet only if its name STARTS with
-`Connectome_NN_Animal_Tracking` and ends `.xlsx`. Anything may sit between:
+**The name.** A file is a cohort's sheet only if its name STARTS with its
+project's sheet name (see "Which projects' sheets are read") up to `.xlsx`,
+and ends `.xlsx`; the cohort is then that project's cohort of the number in
+the name. Anything may sit between:
 `..._Animal_Tracking1.xlsx`, `..._Animal_Tracking (2).xlsx`,
 `..._Animal_Tracking(<a note>).xlsx`, a copy the sync program made. These are
 never read as a sheet, whatever else they are called:
 
 - an Excel lock file, `~$...` (Excel makes one while the workbook is open);
-- a name that only CONTAINS the sheet's name, such as `Copy of Connectome_...`;
+- a name that only CONTAINS the sheet's name, such as `Copy of <the sheet's name>`;
+- a name that fits two projects' sheet names at once (rename it so it fits one);
 - a file a mousedb tool wrote from a sheet: `_ODC`, `_summary_matrix`,
   `_updated` or `_fixed` anywhere after the sheet's name;
 - anything inside a folder named `archive`, `_archive`, `backup`, `generated`
@@ -501,7 +506,7 @@ A file that looks like a sheet but is not read is never dropped in silence:
 lists it as `NOT read: <file> -- <reason>`. The Tracking Sheets tab lists it in
 its red box as `NOT READ AS A SHEET: <file> -- <reason>`. If such a file
 really is a cohort's sheet, rename it so its
-name starts with `Connectome_NN_Animal_Tracking`. Until then, if it is that
+name starts with its project's sheet name. Until then, if it is that
 cohort's only file, the cohort has no row in the table and is not imported.
 
 **When several files match a cohort** -- a `(2)` copy, a dated backup, a draft
@@ -656,17 +661,18 @@ animal-details copy, video data and tissue data are not touched.
 | `Nothing from <workbook> was saved: the import stopped on the error(s) above ...` | Fix the error listed with it and import again; none of that workbook's weights, scores, surgeries and so on were written. |
 | `[!] animal details left as they were: ...` (in a dry run, `... would be left as they are: ...`) | Nothing more than for the `FAIL` line above it: fix that error and import again. The animal details are refreshed by the next import that saves. |
 | `REFUSED: <file> was not imported.` | Run the command on its *Instead* line. |
-| `FAIL ... no tracking sheet for <id>: the sheets folder holds CNT workbooks only ...` | Name the cohort as `CNT_NN` or `NN`. |
+| `FAIL ... no tracking sheet for <id>: no sheet name is set for project <P> in the lab settings ...` | If `<P>` is a typo, name the cohort correctly (`PROJECT_NN`). If it is a real project whose sheets should be read, set its sheet name (see "Which projects' sheets are read"). |
+| `FAIL ... '<NN>' names no project, and the sheets folder holds more than one project's sheets ...` | Give the whole cohort id, for example `PROJA_05`: with two projects a bare number could mean either. |
 | `FAIL ... '<text>' is not a cohort id ...` | The same: `CNT_NN` or `NN`, not an animal id. |
 | `FAIL ... no tracking sheet for CNT_NN in the sheets folder (cohorts with a sheet: ...)` | Check the number; `mousedb-sheets status` lists every cohort's sheet. |
 | `FAIL ... Could not read the workbook: it is open in Microsoft Excel (process N) on this computer ...` | Someone has the workbook open in Excel on the computer that runs the import (open in a web browser does not count; open in the Excel program on that computer does). Save and close it there. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. Any other program named: close that one. |
 | `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same cause, when Windows could not say which program: close the workbook wherever it is open on that computer. |
 | `FAIL ... could not acquire the database-task lock after 1500s ...` | Another database task held the lock for 25 minutes. Import again later; if it keeps happening, find the task that is stuck. |
 | `Sheets: NOTHING IMPORTED -- ...` | Read the reason on that line; usually the sheets folder is not set or not found (see "Setting the folder"). |
-| `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with `Connectome_NN_Animal_Tracking`; otherwise nothing. |
+| `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with its project's sheet name; otherwise nothing. If the reason is that the name fits more than one project, rename it so it fits one. |
 | `[!] CNT_NN is pinned to <file>, which ...` (or `PIN BROKEN: ...`) | Pin the right file again, or unpin (see "A broken pin"). |
 | `[FAIL] cannot pin '<file>' as the sheet for cohort NN: ... -- nothing was pinned` (in the tab, a *Not pinned* box) | Copy the exact name (from the list in the message, or `mousedb-sheets status`) and pin again. In the tab the table is read again: select the row and choose from the files that are there. |
-| `[FAIL] <folder> ...; the sheets folder setting was not changed` (in the tab, a *Not the sheets folder* box) | Give the folder that holds the live `Connectome_NN_Animal_Tracking.xlsx` workbooks. |
+| `[FAIL] <folder> ...; the sheets folder setting was not changed` (in the tab, a *Not the sheets folder* box) | Give the folder that holds the live tracking workbooks. If it does hold them, check the sheet names are set (`mousedb sheet-projects --show`): with none set, no file there counts as a sheet. |
 | *Recorded -- but another folder is in use* | The `MOUSEDB_COHORT_SHEETS` environment variable names another folder, and it comes first. Clear or change it. |
 | `'<text>' is not a cohort name. Expected ...` or `... does not start with a project this tool builds sheets for ...` (New cohort sheet) | Type the new cohort's name as `CNT_NN`, for example `CNT_07`. |
 | `<cohort> already has a workbook in <folder>: <files> ...` | Nothing was written. For a new cohort, use its own number; if this cohort really needs a fresh sheet, move its existing file(s) out of the folder first. |
@@ -677,10 +683,60 @@ animal-details copy, video data and tissue data are not touched.
 | `Replace removed N ... rows ..., and the sheet gave back M ...` | Nothing, if you removed rows from the sheet; otherwise read the other warnings for why rows were skipped. |
 | `Replace of <cohort> undone -- nothing in the database was changed ...` | Fix the error listed under it and Replace again. |
 
+## Which projects' sheets are read (once for the whole lab)
+
+Every project that keeps a tracking workbook per cohort has a **sheet name**:
+the pattern its workbooks are named by, with `{NN}` where the cohort number
+goes. Only files that start with a project's sheet name are read as sheets,
+and the project of the name decides which cohort the workbook's animals go
+under.
+
+The names live in ONE settings file for the whole lab, beside the database
+on the shared storage: `<mousedb_root>/config/mousedb_lab_config.json` (the
+`MOUSEDB_LAB_CONFIG` environment variable can point elsewhere). Every
+machine and every login reads that same file, so a project is added once,
+from any machine, and nothing is set per person.
+
+See what is set:
+
+```bash
+mousedb sheet-projects
+```
+
+Add a project, or change its name (for example a second project whose
+workbooks are named `ProjectB_01_Animal_Tracking.xlsx`,
+`ProjectB_02_Animal_Tracking.xlsx`, ...):
+
+```bash
+mousedb sheet-projects --set PROJB "ProjectB_{NN}_Animal_Tracking.xlsx"
+```
+
+- `PROJB` is the project's code: the capital letters its cohort ids start
+  with (`PROJB_01`, `PROJB_02`). It must be exactly that, because the
+  cohorts and animals are filed under it.
+- The name must hold `{NN}` exactly once, have text before it, and end in
+  `.xlsx`; anything else is refused and nothing is changed.
+- After setting it, press **Refresh** in the Tracking Sheets tab: that
+  project's cohorts appear as rows and are imported like every other.
+
+**There is no built-in name.** With no project set, NO file in the folder
+counts as a sheet: the tab's table is empty, the import says *no tracking
+sheet* and names the command above, and nothing is imported. This is
+deliberate -- a guessed name is a wrong import waiting to happen.
+
+**Two projects, the same cohort number.** `PROJA_02` and `PROJB_02` are two
+cohorts with two workbooks; neither is ever given the other's. A bare number
+(`02`) names a cohort only while one project is set; with more, give the
+whole id.
+
+**A name that fits two projects' sheet names** (say one name is the start
+of the other) is not read as either: it is listed as *not read as a sheet*
+with that reason. Rename the file so it fits one.
+
 ## Setting the folder (once per machine, and if it ever moves)
 
 Press **Set sheets folder...** and pick the folder that contains the
-`Connectome_NN_Animal_Tracking.xlsx` files. **Open folder** opens the current
+tracking workbooks. **Open folder** opens the current
 one in Explorer.
 
 A folder that holds no file read as a sheet, or that is inside an archive or

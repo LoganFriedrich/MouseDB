@@ -423,7 +423,7 @@ def setup_check(monkeypatch, tmp_path):
     monkeypatch.setattr(exporters, "QueryExporter", FakeExporter)
     monkeypatch.setattr(importers, "import_all_cohorts", old_route)
     monkeypatch.setattr(ss, "status", lambda: {"cohorts": [{
-        "cohort_id": "CNT_05", "project": ss.SHEET_FOLDER_PROJECT, "sheet": SHEET}],
+        "cohort_id": "CNT_05", "project": "CNT", "sheet": SHEET}],
         "problem": None})
     monkeypatch.setattr(ss, "main", lambda argv=None: 0)
     monkeypatch.setattr(ss, "import_cohorts", fake_import_cohorts)

@@ -145,8 +145,9 @@ def cmd_cohort_sheets(args):
             sys.exit(1)
         found = available_cohorts(target)
         if not found:
+            from .sheet_projects import describe
             print(_ascii(f"No cohort tracking sheets in {target}"))
-            print("Expected files named Connectome_NN_Animal_Tracking.xlsx")
+            print(_ascii("Expected files named by a project's sheet name -- %s" % describe()))
             sys.exit(1)
         if snapshot_folder_of(target):
             print(_ascii(f"REFUSING: {target} looks like a snapshot folder, not the"))
@@ -1290,6 +1291,32 @@ def cmd_study_facts(args):
         print(sf.describe(args.project))
 
 
+def cmd_sheet_projects(args):
+    """mousedb sheet-projects: what each project's tracking sheets are called
+    (see mousedb.sheet_projects). Exits 1 on a refused setting."""
+    from .sheet_sync import _ascii
+    from . import sheet_projects as sp
+    if args.set:
+        project, name = args.set
+        try:
+            path = sp.set_project(project, name, template=args.template)
+        except ValueError as e:
+            print(_ascii("[FAIL] %s -- nothing was changed" % e))
+            raise SystemExit(1)
+        print(_ascii("[OK] %s sheets are named %s  (saved to %s)" % (project.upper(), name, path)))
+    try:
+        print(_ascii("Lab settings file: %s" % sp.config_path()))
+        print(_ascii("Sheet names by project: %s" % sp.describe()))
+        for p in sp.definitions().values():
+            if p.template:
+                print(_ascii("  %s new sheets are made from %s%s" % (
+                    p.project, p.template, "" if p.template.is_file() else "  [!] FILE NOT FOUND")))
+    except ValueError as e:
+        print(_ascii("[FAIL] %s" % e))
+        raise SystemExit(1)
+
+
+
 def cmd_export_example(args):
     """mousedb export-example (see mousedb.exporters.example_export).
 
@@ -1371,6 +1398,20 @@ def main():
                               help="Set one fact (PROJECT may be 'default' for every project)")
     study_parser.add_argument('--unset', nargs=2, metavar=('PROJECT', 'FIELD'), help='Remove one fact')
     study_parser.set_defaults(func=cmd_study_facts)
+
+    # mousedb sheet-projects -- each project's tracking-sheet file name, in the
+    # lab's settings file on the shared storage (one file for every machine)
+    sp_parser = subparsers.add_parser(
+        'sheet-projects',
+        help="Show or set each project's tracking-sheet file name (e.g. "
+             "PROJA -> ProjectA_{NN}_Animal_Tracking.xlsx)")
+    sp_parser.add_argument('--show', action='store_true', help='Print every project (the default)')
+    sp_parser.add_argument('--set', nargs=2, metavar=('PROJECT', 'SHEET_NAME'),
+                           help="Set a project's sheet name; {NN} marks the cohort number")
+    sp_parser.add_argument('--template', default=None,
+                           help="With --set: the blank workbook new cohorts' sheets are made from, "
+                                "relative to the settings file's folder ('' removes it)")
+    sp_parser.set_defaults(func=cmd_sheet_projects)
 
     # mousedb export-example -- one cohort, fast, for looking at while changing it
     ex_p = subparsers.add_parser(
@@ -1479,7 +1520,7 @@ def main():
     export_parser.add_argument(
         '--output', '-o',
         help="Output path (file or directory). Refused inside a sheets folder or under a "
-             "tracking sheet's name (Connectome_NN_Animal_Tracking.xlsx): an export must "
+             "tracking sheet's name (a project's sheet name, 'mousedb sheet-projects'): an export must "
              "never replace a sheet")
     export_parser.set_defaults(func=cmd_export)
 

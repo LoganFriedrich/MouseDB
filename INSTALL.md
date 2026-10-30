@@ -28,7 +28,13 @@ conda activate <env_dir>
 # 2b. Tell mousedb where things are on this machine (see "Configuration" below)
 mousedb config --set mousedb_root <folder for connectome.db, exports/, logs/>
 
-# 2c. ...and where the tracking workbooks (Connectome_NN_Animal_Tracking.xlsx) are
+# 2c. ...what each project's tracking workbooks are called -- ONCE for the whole lab,
+#     not per machine: it is saved beside the database on the shared storage
+#     ({NN} = where the cohort number goes; docs/TRACKING_SHEETS.md, "Which
+#     projects' sheets are read"). Repeat for each project that keeps sheets.
+mousedb sheet-projects --set PROJA "ProjectA_{NN}_Animal_Tracking.xlsx"
+
+# 2d. ...and where the tracking workbooks are
 mousedb-sheets set-dir <folder holding the tracking workbooks>
 
 # 3. Initialize the database
