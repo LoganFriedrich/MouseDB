@@ -198,3 +198,19 @@ def test_the_command_line_refuses_with_its_own_exit_code(lab, capsys):
     assert ms.main(["--new", "--cohort", "PROJA_07", "--animals", "01-03",
                     "--output-dir", str(sheets)]) == ms.REFUSED_EXIT
     assert "REFUSED:" in capsys.readouterr().err
+
+
+def test_a_colour_rule_that_maps_onto_itself_is_not_reported(lab):
+    """Same number of new animals as the template: a block's colour rule comes
+    out identical, which is correct, not a problem."""
+    ref, sheets = lab
+    wb = openpyxl.load_workbook(ref)
+    from openpyxl.formatting.rule import CellIsRule
+    from openpyxl.styles import PatternFill
+    wb["Weights"].conditional_formatting.add(
+        "D2:D4", CellIsRule(operator="lessThan", formula=["1"], fill=PatternFill("solid", fgColor="FF0000")))
+    wb.save(ref)
+    st.make_project_template("PROJA", ref, "PROJA_05")
+    target, problems = st.build_sheet("PROJA_07", "01-03", sheets)
+    assert problems == []
+    assert [str(c.sqref) for c in openpyxl.load_workbook(target)["Weights"].conditional_formatting] == ["D2:D4"]

@@ -606,12 +606,12 @@ def _remap_conditional_formats(ws, tab: str, lay: "_Layout", problems: List[str]
     for cf in old:
         parts = []
         for rng in str(cf.sqref).split():
-            fixed = _repoint_ref(rng, tab, lay, None, None, [], "")
-            if fixed == rng and ":" in rng and not rng.rstrip("0123456789").endswith(":"):
-                m = _REF.match(rng)
-                if m and m.group("r2") and int(m.group("r2").lstrip("$")) < 1048576:
-                    problems.append("%s: colour rule on %s kept as written" % (tab, rng))
-            parts.append(fixed)
+            # Only a range that could NOT be re-pointed is reported; one that
+            # comes out the same (as many new animals as the template had) is fine.
+            failed: List[str] = []
+            parts.append(_repoint_ref(rng, tab, lay, None, None, failed, ""))
+            if failed:
+                problems.append("%s: colour rule on %s kept as written" % (tab, rng))
         for rule in cf.rules:
             new.add(" ".join(parts), rule)
     ws.conditional_formatting = new
