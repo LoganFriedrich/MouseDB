@@ -17,8 +17,9 @@ nightly refresh keeps current, one folder:
         ODC_sessions_DATA_DICTIONARY.csv  (and one dictionary per other kind)
         MANIFEST.json                     when, from what, how many rows, problems
         README.txt                        what each file is, in plain words
-        <PROJECT>/<COHORT>/               each cohort's files (exporters.layout)
-        <PROJECT>/*_all_cohorts*          each project's cohorts combined
+        [<GRANT>/]<PROJECT>/<COHORT>/     each cohort's files (exporters.layout; a
+                                          project in a grant sits in its folder)
+        [<GRANT>/]<PROJECT>/*_all_cohorts*  each project's cohorts combined
 
 It reads the analysis SNAPSHOT (parquet), never connectome.db, for the two
 big tables -- so it can run anywhere, any time, without touching the live
@@ -69,7 +70,9 @@ HOW THE FOLDER IS ARRANGED
   This folder (the top)   files covering every project at once (reach_data.csv,
                           manual_scores.csv), every data dictionary, and
                           analysis_EXCLUSIONS.csv.
-  CNT\, ASPA\, ...        one folder per project.
+  CNT\, ASPA\, ...        one folder per project. A project the lab lists under
+                          a grant ("mousedb grants") sits inside the grant's
+                          folder: GRANT\PROJECT\.
   CNT\CNT_05\             one folder per cohort, holding that cohort's files.
                           The cohort is in every file name too, so a file copied
                           out of its folder still says which cohort it is.
@@ -271,7 +274,12 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #       than 20 is an identified error (export_exclusions check 7)
     #  16 = files grouped into <project>/<cohort>/ folders, plus a combined file
     #       per kind per project (exporters.layout)
-    sig["output_format"] = 16
+    #  17 = a project listed under a grant sits in the grant's folder
+    sig["output_format"] = 17
+    # Which grant holds which project decides where the files go, so a change
+    # to it must re-export even when no data changed.
+    from ..grants import grants as _grants
+    sig["grants"] = _grants()
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
@@ -334,6 +342,7 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
     # (exporters.layout); then any left at the top by the old flat layout.
     layout.combine_all(out_dir, layout.SESSION_KINDS, {layout.project_of(c) for c in cohorts}, manifest)
     layout.archive_flat_layout(out_dir)
+    layout.archive_moved_project_folders(out_dir)
 
 
 def _mtime(p: Path) -> Optional[str]:

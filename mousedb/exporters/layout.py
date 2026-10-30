@@ -5,9 +5,9 @@ and a combined file per kind beside the cohort folders.
         reach_data.csv, manual_scores.csv, ...       every project, as before
         <kind>_DATA_DICTIONARY.csv                    one per kind, shared by every file of it
         analysis_EXCLUSIONS.csv
-        <PROJECT>/                                    e.g. CNT, ASPA
+        [<GRANT>/]<PROJECT>/                          e.g. GrantA/PROJA, or PROJC in no grant
             <PROJECT>_all_cohorts files               every cohort of the project, one file per kind
-            <COHORT>/                                 e.g. CNT_05, ASPA_04_D
+            <COHORT>/                                 e.g. PROJA_05, PROJC_04_D
                 ODC_reaches_<COHORT>.csv, reaches_<COHORT>_summary.csv,
                 reaches_<COHORT>_analysis.csv, sessions_<COHORT>_analysis.csv,
                 ODC_sessions_<COHORT>.csv
@@ -16,7 +16,9 @@ WHY (Logan, 2026-10-29): with every cohort's files side by side in one folder, a
 person looking for one cohort, or one project, read past a hundred names. Grouped
 by project and then cohort, the folder answers "where is CNT_05?" by its shape.
 The combined file answers the other common question -- "all of CNT at once" --
-without each person concatenating the cohort files themselves.
+without each person concatenating the cohort files themselves. A project the lab
+settings list under a grant (mousedb.grants) sits inside the grant's folder
+(Logan, 2026-10-30: one grant funds two projects, and they belong together).
 
 The cohort label stays in every file name although the folder already says it:
 a file copied out of its folder must still say which cohort it is.
@@ -85,8 +87,17 @@ def file_name(kind: str, label: str) -> str:
     return KINDS[kind][0].format(label=label)
 
 
+def project_dir(root: Path, project: str) -> Path:
+    """A project's folder: <root>/<GRANT>/<PROJECT> when the lab settings list the
+    project under a grant (mousedb.grants), else <root>/<PROJECT>. WHY: one grant
+    may fund several projects, and its projects belong together (2026-10-30)."""
+    from ..grants import grant_of
+    grant = grant_of(project)
+    return Path(root) / grant / project if grant else Path(root) / project
+
+
 def cohort_dir(root: Path, cohort_id: str, label: str) -> Path:
-    return Path(root) / project_of(cohort_id) / label
+    return project_dir(root, project_of(cohort_id)) / label
 
 
 def cohort_file(root: Path, kind: str, cohort_id: str, label: str) -> Path:
@@ -94,7 +105,7 @@ def cohort_file(root: Path, kind: str, cohort_id: str, label: str) -> Path:
 
 
 def combined_file(root: Path, kind: str, project: str) -> Path:
-    return Path(root) / project / file_name(kind, "%s_%s" % (project, ALL_COHORTS))
+    return project_dir(root, project) / file_name(kind, "%s_%s" % (project, ALL_COHORTS))
 
 
 def current_root() -> Path:
@@ -124,7 +135,7 @@ def locate(kind: str, cohort_id: str, root: Optional[Path] = None) -> Path:
             return path
         raise FileNotFoundError("no combined %s file for project %s at %s" % (kind, cohort_id, path))
     cohort_id = str(cohort_id).upper()
-    pdir = root / project_of(cohort_id)
+    pdir = project_dir(root, project_of(cohort_id))
     labels = sorted(d.name for d in pdir.iterdir() if d.is_dir()
                     and (d.name == cohort_id or re.fullmatch(re.escape(cohort_id) + r"_[A-Z]", d.name))
                     ) if pdir.is_dir() else []
@@ -142,7 +153,7 @@ def key(root: Path, path: Path) -> str:
 
 def _cohort_files(root: Path, kind: str, project: str) -> List[Path]:
     """This project's per-cohort files of one kind, in cohort order."""
-    pdir = Path(root) / project
+    pdir = project_dir(root, project)
     if not pdir.is_dir():
         return []
     found = []
@@ -243,7 +254,25 @@ def archive_flat_layout(root: Path) -> List[str]:
             m = re.fullmatch(pattern.replace(".csv", "").replace("{label}", "(?P<label>.+)"), stem)
             if m:
                 label = m.group("label")
-                if (root / project_of_label(label) / label / f.name).is_file():
+                if (project_dir(root, project_of_label(label)) / label / f.name).is_file():
                     stale.append(f.name)
                 break
     return archive_old_names(root, stale, "flat_layout") if stale else []
+
+
+def archive_moved_project_folders(root: Path) -> List[str]:
+    """Move a project's folder left at <root>/<PROJECT> into the archive (never
+    deleted) once the project's grant folder holds its replacement, i.e. once a
+    grant has been set for it and the export has written the new folder. One
+    left behind is harmless but misleading: it looks current and is not
+    rewritten. Returns what was moved."""
+    from ..grants import grants
+    from .odc_reaches import archive_old_names
+    root = Path(root)
+    moved: List[str] = []
+    for grant, projects in grants().items():
+        for project in projects:
+            old, new = root / project, root / grant / project
+            if old.is_dir() and new.is_dir() and any(new.iterdir()):
+                moved += archive_old_names(root, [project], "grant_layout")
+    return moved

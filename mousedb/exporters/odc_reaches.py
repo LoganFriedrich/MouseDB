@@ -977,6 +977,9 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         moved = layout.archive_flat_layout(final_dir)
         if moved:
             manifest["archived_flat_layout_files"] = len(moved)
+        regrouped = layout.archive_moved_project_folders(final_dir)
+        if regrouped:
+            manifest["archived_regrouped_project_folders"] = len(regrouped)
 
     # Per-cohort dictionaries from before 2026-10-16 are superseded by the shared
     # ones: moved out of the folder (archived, never deleted) once the shared

@@ -1369,6 +1369,33 @@ def cmd_new_sheet(args):
         print(_ascii("  [!] %s" % line))
 
 
+def cmd_grants(args):
+    """mousedb grants: which projects each grant holds (mousedb.grants). A
+    grant's projects sit inside its folder in the exports. Exits 1 on a refused
+    setting."""
+    from .sheet_sync import _ascii
+    from . import grants as g
+    if args.set:
+        grant, projects = args.set[0], args.set[1:]
+        try:
+            path = g.set_grant(grant, projects)
+        except ValueError as e:
+            print(_ascii("[FAIL] %s -- nothing was changed" % e))
+            raise SystemExit(1)
+        print(_ascii("[OK] grant %s: %s  (saved to %s)" % (
+            grant, ", ".join(p.upper() for p in projects) or "removed", path)))
+    try:
+        known = g.grants()
+    except ValueError as e:
+        print(_ascii("[FAIL] %s" % e))
+        raise SystemExit(1)
+    if not known:
+        print("No grants set: every project's exports are in their own top-level folder. "
+              "Set one with: " + g.SET_COMMAND)
+    for grant, projects in known.items():
+        print(_ascii("%s: %s" % (grant, ", ".join(projects))))
+
+
 
 def cmd_export_example(args):
     """mousedb export-example (see mousedb.exporters.example_export).
@@ -1490,6 +1517,15 @@ def main():
     ns_parser.add_argument('--output-dir', default=None,
                            help="Folder to write into (default: the sheets folder)")
     ns_parser.set_defaults(func=cmd_new_sheet)
+
+    # mousedb grants -- which projects each grant holds (the exports put a
+    # grant's projects inside its folder)
+    gr_parser = subparsers.add_parser(
+        'grants', help="Show or set which projects each grant holds")
+    gr_parser.add_argument('--show', action='store_true', help='Print every grant (the default)')
+    gr_parser.add_argument('--set', nargs='+', metavar='NAME',
+                           help="GRANT followed by its project codes; GRANT alone removes it")
+    gr_parser.set_defaults(func=cmd_grants)
 
     # mousedb export-example -- one cohort, fast, for looking at while changing it
     ex_p = subparsers.add_parser(

@@ -29,18 +29,39 @@ exports/current/
     reach_data.csv, manual_scores.csv     every project at once
     *_DATA_DICTIONARY.csv                 one per kind of file, for every project and cohort
     analysis_EXCLUSIONS.csv, MANIFEST.json, README.txt
-    CNT/                                  one folder per project (CNT, ASPA, ...)
-        ODC_reaches_CNT_all_cohorts.csv   every CNT cohort in one file, one per kind
-        reaches_CNT_all_cohorts_summary.csv, reaches_CNT_all_cohorts_analysis.csv,
-        sessions_CNT_all_cohorts_analysis.csv, ODC_sessions_CNT_all_cohorts.csv
-        CNT_05/                           one folder per cohort
-            ODC_reaches_CNT_05.csv, reaches_CNT_05_summary.csv, reaches_CNT_05_analysis.csv,
-            sessions_CNT_05_analysis.csv, ODC_sessions_CNT_05.csv
+    GrantA/                               a grant's projects sit together (see below)
+        PROJA/                            one folder per project
+            ODC_reaches_PROJA_all_cohorts.csv   every PROJA cohort in one file, one per kind
+            reaches_PROJA_all_cohorts_summary.csv, reaches_PROJA_all_cohorts_analysis.csv,
+            sessions_PROJA_all_cohorts_analysis.csv, ODC_sessions_PROJA_all_cohorts.csv
+            PROJA_05/                     one folder per cohort
+                ODC_reaches_PROJA_05.csv, reaches_PROJA_05_summary.csv,
+                reaches_PROJA_05_analysis.csv, sessions_PROJA_05_analysis.csv,
+                ODC_sessions_PROJA_05.csv
+        PROJAB/                           the grant's second project, laid out the same way
+    PROJC/                                a project in no grant: at the top, laid out the same way
 ```
 
-- **One cohort:** open its folder, e.g. `CNT/CNT_05/`. The cohort is in every
-  file name as well, so a file copied out of its folder still says which cohort
-  it is.
+- **One cohort:** open its folder, e.g. `GrantA/PROJA/PROJA_05/`. The cohort
+  is in every file name as well, so a file copied out of its folder still says
+  which cohort it is.
+- **Grants.** One grant can fund several projects (two wings of one study);
+  its projects' folders sit inside the grant's folder. Which projects belong to
+  which grant is set once for the whole lab, in the lab settings file
+  (`<mousedb_root>/config/mousedb_lab_config.json`):
+
+  ```bash
+  mousedb grants                                  # what is set
+  mousedb grants --set GrantA PROJA PROJAB        # GrantA holds PROJA and PROJAB
+  mousedb grants --set GrantA                     # remove GrantA (its projects go back to the top)
+  ```
+
+  A project can be in one grant only; a grant name must be usable as a folder
+  name (letters, digits, `-`, `_`). The next export writes the files in the new
+  place and moves the project's previous folder into
+  `<mousedb_root>/_archived/exports_current/<date>_grant_layout/` -- moved,
+  never deleted, so nothing old looks current. A project in no grant keeps its
+  folder at the top.
 - **A whole project at once:** the `*_all_cohorts*` files beside the cohort
   folders. Each is that project's cohort files of one kind put one after the
   other, in cohort order, after all of them have been written: the same rows and
