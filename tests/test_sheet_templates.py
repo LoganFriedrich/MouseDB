@@ -214,3 +214,18 @@ def test_a_colour_rule_that_maps_onto_itself_is_not_reported(lab):
     target, problems = st.build_sheet("PROJA_07", "01-03", sheets)
     assert problems == []
     assert [str(c.sqref) for c in openpyxl.load_workbook(target)["Weights"].conditional_formatting] == ["D2:D4"]
+
+
+def test_a_virus_batch_is_emptied_but_its_formulas_stay():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Batch one - 20260826"])
+    ws.append(["Virus", "Starting concentration", "Solution Parts Total", "parts for this virus"])
+    ws.append(["AAV-A", 100, 6, "=C3/B3"])
+    ws.append(["AAV-B", 60, 6, "=C4/B4"])
+    ws.append(["Totals", None, None, "=SUM(D3:D4)"])
+    assert st._clear_batch_blocks(ws) == 1
+    assert ws["A1"].value == "Batch <label> - YYYYMMDD"
+    assert ws["A3"].value is None and ws["B3"].value is None and ws["C4"].value is None
+    assert ws["D3"].value == "=C3/B3" and ws["D5"].value == "=SUM(D3:D4)"
+    assert ws["A5"].value == "Totals"

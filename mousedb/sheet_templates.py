@@ -299,8 +299,10 @@ def make_template(reference, cohort_id: str, out, keep: Optional[Dict[str, Seque
                     if _is_date(c.value):
                         c.value = None
                         cleared_dates += 1
-            rep.add("[%s] no animal rows: kept as is%s" % (
-                ws.title, ", %d dates cleared" % cleared_dates if cleared_dates else ""))
+            cleared_batches = _clear_batch_blocks(ws)
+            rep.add("[%s] no animal rows: kept as is%s%s" % (
+                ws.title, ", %d dates cleared" % cleared_dates if cleared_dates else "",
+                ", %d virus batch(es) emptied" % cleared_batches if cleared_batches else ""))
             continue
         for t in ts:
             if t.id_col is None:
@@ -385,6 +387,36 @@ def make_template(reference, cohort_id: str, out, keep: Optional[Dict[str, Seque
     from .cohort_tools.make_sheets import _save_workbook_no_clobber
     _save_workbook_no_clobber(wb, out)
     return rep
+
+
+def _clear_batch_blocks(ws) -> int:
+    """Empty every virus batch block on a tab and return how many there were:
+    the title goes back to its placeholder and each virus row loses what was typed,
+    keeping its formulas.
+
+    WHY: a batch is a record of one prep for one cohort, not a constant, but it has
+    no animal rows and its date sits inside a title, so the general clearing above
+    keeps it. A template made from one cohort handed that cohort's prep to every
+    new sheet, and the import then recorded it as the new cohort's own."""
+    n = 0
+    for row in ws.iter_rows():
+        if not any(isinstance(c.value, str) and "solution parts total" in c.value.lower()
+                   for c in row):
+            continue
+        n += 1
+        h = row[0].row
+        if h > 1 and isinstance(ws.cell(h - 1, 1).value, str):
+            ws.cell(h - 1, 1).value = "Batch <label> - YYYYMMDD"
+        r = h + 1
+        while r <= ws.max_row:
+            name = ws.cell(r, 1).value
+            if _blank(name) or str(name).strip().lower().startswith("total"):
+                break
+            for c in range(1, ws.max_column + 1):
+                if not _is_formula(ws.cell(r, c).value):
+                    ws.cell(r, c).value = None
+            r += 1
+    return n
 
 
 def _drop_stray_colour_rules(ws, ts: List[Table], rep: Report) -> None:

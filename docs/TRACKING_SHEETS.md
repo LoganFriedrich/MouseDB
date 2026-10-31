@@ -654,6 +654,7 @@ animal-details copy, video data and tissue data are not touched.
 | `Could not determine a start date for cohort <cohort> from the sheet ...` | The same: type the dated day-0 weigh-in. (It comes with the line above, or the one below.) |
 | `Cohort <cohort> is not in the database and its tracking sheet gives no start date, so nothing could be filed ...` | Type a dated day-0 weigh-in; the waiting rows land on the next import. |
 | `0_Injection_Calculations: the virus prep for '...' was NOT imported -- this calculator has no date ...` | Add a date row (e.g. `Prep_Date`) to the calculator, or enter the prep as a dated batch block. |
+| `0_Injection_Calculations: batch '...' not imported: dated ..., before this cohort began` or `... already recorded for <cohort>` | The block was copied from an earlier cohort's workbook, so it is not this cohort's prep. Clear the block in the sheet, or give it this cohort's own date if the prep really was made for it. If an earlier import had recorded it, that record has been removed; one entered by a person is never removed. |
 | `0_Injection_Calculations: vertical format is empty template` | Nothing: the calculator is still empty. |
 | `6_Ladder: ladder result not imported: the animal has no other record ...` | Record the animal elsewhere in the sheet first (`0a_Metadata`, a weight or a tray row); the next import takes the ladder row. |
 | `6_Ladder: ladder result not imported: a step-count cell holds something that is not a number` | Correct the cell to a number. |
@@ -781,6 +782,8 @@ shows the exact file name, the folder, how many animals and the template,
 and asks *Yes* or *No*; *No* changes nothing. On *Yes* the workbook is
 created in the sheets folder. The tab stays usable while it is built (a
 minute or less). Fill it in as the cohort runs; import whenever you like.
+
+**Virus batches are emptied when a template is made.** A batch on `0_Injection_Calculations` records one prep for one cohort, so the template keeps the block's layout and formulas but not its title date, viruses or amounts. Formula cells in an empty block can show an error until the block is filled in; that is expected.
 
 **What the new sheet holds.** Every tab of the template. In every tab with an
 animal column, the template's rows for one model animal are repeated for
