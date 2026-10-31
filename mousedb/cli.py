@@ -539,6 +539,7 @@ def cmd_browse(args):
                 col_name = col_name.strip()
                 value = value.strip()
                 if hasattr(model, col_name):
+                    from sqlalchemy import String
                     col = getattr(model, col_name)
                     # Check if it's a string column for LIKE matching
                     if hasattr(col.type, 'impl') or isinstance(col.type, String):
