@@ -427,7 +427,8 @@ def main(argv=None) -> int:
         print(f"[FAIL] Source not found: {src}")
         return 1
 
-    wb = openpyxl.load_workbook(src, read_only=True, data_only=True)
+    from mousedb.file_holders import readable_workbook
+    wb = openpyxl.load_workbook(readable_workbook(src), read_only=True, data_only=True)
     if ODC_TAB not in wb.sheetnames:
         print(f"[FAIL] '{ODC_TAB}' not in {src.name}")
         return 1

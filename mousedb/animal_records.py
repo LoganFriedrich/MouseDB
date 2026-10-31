@@ -575,8 +575,9 @@ def _records_from_rows(rows, header, tab, cohort_id, subject_col, source, warnin
 def read_cnt_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[dict]:
     """Records from a project cohort workbook's animal-level tabs (header in row 1)."""
     import openpyxl
+    from .file_holders import readable_workbook
     path = Path(path)
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    wb = openpyxl.load_workbook(readable_workbook(path), read_only=True, data_only=True)
     out: List[dict] = []
     try:
         for tab in CNT_TABS:
@@ -631,8 +632,9 @@ def _tray_fields(ws, cohort_id: str, source: str) -> List[dict]:
 def read_odc_tab(path: Path, cohort_id: str, warnings: List[str]) -> List[dict]:
     """Records from a frozen letter-cohort workbook's ODC tab (header row found by 'Animal ID')."""
     import openpyxl
+    from .file_holders import readable_workbook
     path = Path(path)
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    wb = openpyxl.load_workbook(readable_workbook(path), read_only=True, data_only=True)
     try:
         if ODC_TAB not in wb.sheetnames:
             return []

@@ -99,11 +99,14 @@ class ExcelImporter:
 
         # Read all sheets
         try:
-            xl = pd.ExcelFile(excel_path)
+            # readable_workbook reads a sheet someone has open in Excel, so
+            # keeping it open does not stop the import (see file_holders).
+            from .file_holders import readable_workbook
+            xl = pd.ExcelFile(readable_workbook(excel_path))
             available_sheets = xl.sheet_names
         except PermissionError as e:
-            # Almost always the workbook is open in Excel on this computer, which
-            # locks it; say which program, so a person knows what to close.
+            # Rare now: a program holding the file so that nothing can read it.
+            # Say which program, so a person knows what to close.
             from .file_holders import holders
             held = holders(excel_path)
             if held:

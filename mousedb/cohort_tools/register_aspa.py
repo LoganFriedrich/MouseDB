@@ -69,7 +69,8 @@ def animals_in_sheet(path: Path, letter: str) -> Set[int]:
     # on the animal id itself. Without it, D, E, F and G yield no animals at all.
     pattern = re.compile(r"^(?:Opt)?%s[-\s]?(\d{1,2})$" % re.escape(letter), re.I)
     found: Set[int] = set()
-    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    from mousedb.file_holders import readable_workbook
+    wb = openpyxl.load_workbook(readable_workbook(path), data_only=True, read_only=True)
     try:
         for sheet in wb.sheetnames:
             for row in wb[sheet].iter_rows(values_only=True):

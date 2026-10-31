@@ -5608,7 +5608,8 @@ class CohortSetupTab(QWidget):
         """
         try:
             import pandas as pd
-            xl = pd.ExcelFile(path)
+            from mousedb.file_holders import readable_workbook
+            xl = pd.ExcelFile(readable_workbook(path))
             return importer._detect_start_date(xl, xl.sheet_names) or None
         except Exception:
             return None

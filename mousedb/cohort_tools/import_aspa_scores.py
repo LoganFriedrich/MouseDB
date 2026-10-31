@@ -101,7 +101,8 @@ def parse_workbook(path: Path, cohort_id: str, warnings: List[str],
     ``repairs`` (if given) collects {date as typed: {date read}} for every
     date cell read by day_only_dates."""
     import openpyxl
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    from mousedb.file_holders import readable_workbook
+    wb = openpyxl.load_workbook(readable_workbook(path), read_only=True, data_only=True)
     try:
         if SCORE_SHEET not in wb.sheetnames:
             warnings.append("%s: no '%s' tab" % (path.name, SCORE_SHEET))

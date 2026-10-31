@@ -499,7 +499,8 @@ def scan_cohort_files_for_planning(script_dir, exclude_file=None):
             continue
             
         try:
-            wb = openpyxl.load_workbook(f, read_only=True, data_only=True)
+            from mousedb.file_holders import readable_workbook
+            wb = openpyxl.load_workbook(readable_workbook(f), read_only=True, data_only=True)
             
             start_date = None
             cohort_name = None

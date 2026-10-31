@@ -280,7 +280,8 @@ def make_template(reference, cohort_id: str, out, keep: Optional[Dict[str, Seque
         raise FileExistsError("%s already exists; a template is never written over" % out)
     keep = {k: set(v) for k, v in (keep or {}).items()}
     ids = _id_regex(cohort_id)
-    wb = openpyxl.load_workbook(reference)
+    from .file_holders import readable_workbook
+    wb = openpyxl.load_workbook(readable_workbook(reference))
     tables = _workbook_tables(wb, ids)
     counts = _row_counts(tables)
     if not counts:

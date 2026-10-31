@@ -57,7 +57,8 @@ _DATE_COL, _ANIMAL_COL, _PHASE_COL = "Date", "Animal", "Test_Phase"
 
 
 def _read_long(path: Path, tab: str = SOURCE_TAB) -> List[dict]:
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    from mousedb.file_holders import readable_workbook
+    wb = openpyxl.load_workbook(readable_workbook(path), read_only=True, data_only=True)
     if tab not in wb.sheetnames:
         wb.close()
         raise SystemExit(f"[FAIL] '{tab}' not found in {path.name}. Tabs: {wb.sheetnames}")

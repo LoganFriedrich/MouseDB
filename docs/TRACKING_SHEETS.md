@@ -666,8 +666,9 @@ animal-details copy, video data and tissue data are not touched.
 | `FAIL ... '<NN>' names no project, and the sheets folder holds more than one project's sheets ...` | Give the whole cohort id, for example `PROJA_05`: with two projects a bare number could mean either. |
 | `FAIL ... '<text>' is not a cohort id ...` | The same: `CNT_NN` or `NN`, not an animal id. |
 | `FAIL ... no tracking sheet for CNT_NN in the sheets folder (cohorts with a sheet: ...)` | Check the number; `mousedb-sheets status` lists every cohort's sheet. |
-| `FAIL ... Could not read the workbook: it is open in Microsoft Excel (process N) on this computer ...` | Someone has the workbook open in Excel on the computer that runs the import (open in a web browser does not count; open in the Excel program on that computer does). Save and close it there. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. Any other program named: close that one. |
-| `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same cause, when Windows could not say which program: close the workbook wherever it is open on that computer. |
+| `<workbook> is open in another program: read its last saved version` | Nothing to do. This is not a failure: you may leave a workbook open in Excel, and the import reads what was last saved. Changes you have not saved are not in the file; save them and the next import picks them up. |
+| `FAIL ... Could not read the workbook: it is open in <program> (process N) on this computer ...` | Rare. Excel does not cause this; it means the program named is holding the file so that nothing at all can read it. Close that program. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. |
+| `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same, when Windows could not say which program. Also check that your account can read the file. |
 | `FAIL ... could not acquire the database-task lock after 1500s ...` | Another database task held the lock for 25 minutes. Import again later; if it keeps happening, find the task that is stuck. |
 | `Sheets: NOTHING IMPORTED -- ...` | Read the reason on that line; usually the sheets folder is not set or not found (see "Setting the folder"). |
 | `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with its project's sheet name; otherwise nothing. If the reason is that the name fits more than one project, rename it so it fits one. |
@@ -894,9 +895,9 @@ reads its structure every time; nothing else needs changing.
   were. Copy the message and report it.
 - **LAST IMPORT FAILED** with *could not acquire the database-task lock*:
   another database task held the lock for 25 minutes. Import again later.
-- **A sheet is open in Excel on another machine**: import still works (it
-  reads a shared copy); if it ever refuses with *Permission denied*, retry
-  in a minute.
+- **A sheet is open in Excel, on this computer or another**: import still
+  works and reads what was last saved. Leave it open. Unsaved changes arrive
+  with the first import after you save.
 - **A cohort's row is missing from the table**: it has no file that is read
   as its sheet. The red box above the table says why -- a `NOT READ AS A
   SHEET` or `PIN BROKEN` line (see "Which file is read"). From a terminal,
