@@ -1580,6 +1580,24 @@ class ExcelImporter:
             # Legacy single-row horizontal format (CNT_01 style)
             self._import_injection_horizontal(df, cohort_id, session, dry_run)
 
+    def _carried_over_batch(self, cohort_id: str, prep_date, virus_name: str,
+                            session) -> Optional[str]:
+        """Why a batch block looks copied from an earlier cohort's workbook, or
+        None. Two tests, because neither alone is enough: a prep dated before its
+        cohort began cannot be that cohort's, but a copy made into a cohort already
+        under way is dated after its start; and the same date and the same viruses
+        already recorded under an EARLIER cohort is a copy, whatever the dates."""
+        cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
+        start = cohort.start_date if cohort else None
+        if start is not None and prep_date < start:
+            return "dated %s, before this cohort began on %s" % (prep_date, start)
+        same = session.query(VirusPrep).filter_by(
+            prep_date=prep_date, virus_name=virus_name).all()
+        earlier = sorted(p.cohort_id for p in same if p.cohort_id < cohort_id)
+        if earlier:
+            return "the same date and viruses are already recorded for %s" % earlier[0]
+        return None
+
     def _import_injection_batches(self, df, cohort_id: str, session, dry_run: bool) -> bool:
         """Parse every batch block on the sheet into VirusPrep records.
 
@@ -1677,6 +1695,25 @@ class ExcelImporter:
             existing = session.query(VirusPrep).filter_by(
                 cohort_id=cohort_id, prep_date=prep_date
             ).first()
+            virus_name = ' + '.join(v['name'] for v in viruses)
+            carried = self._carried_over_batch(
+                cohort_id, prep_date, virus_name, session)
+            if carried:
+                # WHY (2026-10-30): a new workbook starts as a copy of an earlier
+                # cohort's, and CNT_05's batch reached CNT_06 and CNT_07 that way
+                # -- recorded as those cohorts' prep. A row this importer wrote
+                # from such a block is taken back, so a sheet that was copied
+                # corrects itself; a row a person entered is never touched.
+                removed = False
+                if existing and existing.entered_by == 'excel_import' and not dry_run:
+                    session.delete(existing)
+                    removed = True
+                self.warnings.append(
+                    "0_Injection_Calculations: batch %r not imported: %s. Clear the block "
+                    "or give it this cohort's own date%s"
+                    % (title, carried,
+                       "; the earlier import of it was removed" if removed else ""))
+                continue
             if existing:
                 continue
 
@@ -1690,7 +1727,7 @@ class ExcelImporter:
             virus_prep = VirusPrep(
                 cohort_id=cohort_id,
                 prep_date=prep_date,
-                virus_name=' + '.join(v['name'] for v in viruses),
+                virus_name=virus_name,
                 final_titer=disamb_total if disamb_total > 0 else None,
                 num_animals=mice_total or None,
                 preparation_notes=label or None,

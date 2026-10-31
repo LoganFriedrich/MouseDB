@@ -8,6 +8,7 @@ placeholders, a Totals row) -- while the two legacy layouts still fall
 through to their old parsers.
 """
 import tempfile
+from datetime import date
 from pathlib import Path
 
 import openpyxl
@@ -27,6 +28,9 @@ class _Query:
 
     def first(self):
         return None
+
+    def all(self):
+        return []
 
 
 class FakeSession:
@@ -146,3 +150,84 @@ class TestImporter:
         s = FakeSession()
         assert imp._import_injection_batches(_sheet_df(rows), 'CNT_05', s, False)
         assert len(s.added) == 1
+
+
+class _Row:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _StoreQuery:
+    def __init__(self, session, model):
+        self.session, self.model, self.kw = session, model, {}
+
+    def filter_by(self, **kw):
+        self.kw = kw
+        return self
+
+    def _rows(self):
+        rows = self.session.cohorts if self.model.__name__ == "Cohort" else self.session.preps
+        return [r for r in rows if all(getattr(r, k) == v for k, v in self.kw.items())]
+
+    def first(self):
+        rows = self._rows()
+        return rows[0] if rows else None
+
+    def all(self):
+        return self._rows()
+
+
+class StoreSession(FakeSession):
+    """Holds a cohort and virus preps, so a test can start from what is on record."""
+    def __init__(self, start, preps=(), cohort="CNT_07"):
+        super().__init__()
+        self.cohorts = [_Row(cohort_id=cohort, start_date=start)]
+        self.preps, self.deleted = list(preps), []
+
+    def query(self, model):
+        return _StoreQuery(self, model)
+
+    def delete(self, obj):
+        self.deleted.append(obj)
+
+
+class TestCarriedOverBatches:
+    """A new workbook starts as a copy of an earlier one, so a batch can arrive
+    on a cohort it does not belong to."""
+    NAME = " + ".join(r[0] for r in LAB_BLOCK[2:5])
+    PREP = date(2026, 8, 26)
+
+    def _prep(self, cohort, by="excel_import"):
+        return _Row(cohort_id=cohort, prep_date=self.PREP, virus_name=self.NAME, entered_by=by)
+
+    def test_a_batch_dated_before_the_cohort_began_is_not_imported(self):
+        imp, s = _importer(), StoreSession(date(2026, 11, 1))
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, False)
+        assert imp.imported_counts["virus_preps"] == 0 and s.added == []
+        assert any("before this cohort began" in w for w in imp.warnings)
+
+    def test_a_copy_of_an_earlier_cohorts_batch_is_not_imported(self):
+        imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_05")])
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, False)
+        assert s.added == [] and any("recorded for CNT_05" in w for w in imp.warnings)
+
+    def test_the_cohort_that_owns_the_batch_keeps_it(self):
+        imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_07")], "CNT_05")
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_05", s, False)
+        assert s.deleted == [] and len(s.added) == 1
+
+    def test_a_row_the_import_wrote_from_a_copy_is_taken_back(self):
+        own = self._prep("CNT_07")
+        imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_05"), own])
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, False)
+        assert s.deleted == [own]
+
+    def test_a_dry_run_or_a_hand_entered_row_is_never_removed(self):
+        own = self._prep("CNT_07")
+        imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_05"), own])
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, True)
+        assert s.deleted == []
+        hand = self._prep("CNT_07", by="a person")
+        imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_05"), hand])
+        imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, False)
+        assert s.deleted == []
