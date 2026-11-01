@@ -70,6 +70,61 @@ def test_the_description_is_not_just_the_name_back(key):
     assert len(text) > 60, "%s is too short to be explaining anything: %r" % (key, text)
 
 
+ANCHOR_WORDS = "calculated between the nose and the slit edge, not a detected hand position"
+
+
+@pytest.mark.parametrize("key", ["righthand_total_path_mm", "rhout_peak_speed_mm_per_frame",
+                                 "rhleft_path_directness", "rhright_apex_speed_px_per_frame",
+                                 "paw_velocity_correlation"])
+def test_a_path_measure_says_its_ends_are_calculated(key):
+    """Extractor 2.3.0: a reader must not take the ends of the path for hand positions."""
+    assert "calculated between the nose and the slit edge" in ex._describe(key)
+
+
+@pytest.mark.parametrize("key", ["righthand_apex_frame", "rhout_extension_past_nose_mm"])
+def test_the_furthest_point_is_said_to_use_detected_frames(key):
+    """These two read detected frames only, so the anchored basis would be wrong."""
+    text = ex._describe(key)
+    assert "detected frames only" in text
+    assert ANCHOR_WORDS not in text
+
+
+def test_the_flat_wrist_columns_say_their_ends_are_calculated():
+    from mousedb.exporters import data_dictionary as dd
+    rows = {r["VariableName"]: r for r in dd.REACH_DATA}
+    for name in ("peak_velocity_px_per_frame", "mean_velocity_px_per_frame",
+                 "trajectory_straightness", "trajectory_smoothness"):
+        assert ANCHOR_WORDS in rows[name]["Description"], name
+    assert "first to last wrist" not in rows["trajectory_straightness"]["Description"]
+    assert "start anchor to the end anchor" in rows["trajectory_straightness"]["Description"]
+
+
+def test_the_anchor_columns_are_defined_and_not_called_numbers():
+    rows = {r["VariableName"]: r for r in ex.dictionary_rows(
+        ["anchor_start_source", "anchor_end_source",
+         "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach"])}
+    assert len(rows) == 4
+    for name, row in rows.items():
+        assert "No written definition yet" not in row["Description"], name
+    source = rows["ext_anchor_start_source"]
+    assert ANCHOR_WORDS in source["Description"]
+    assert source["DataType"] == "text", source
+    for word in ("anchor_frame", "nearest_frame", "video_edge", "none"):
+        assert word in source["PermittedValues"]
+    assert rows["ext_anchor_end_in_neighbour_reach"]["DataType"] == "boolean"
+
+
+def test_the_analysis_file_keeps_the_anchor_columns_as_words():
+    """Everything not named a text column is read as a number there, which would
+    write every anchor source as NA."""
+    from mousedb.exporters import analysis_reaches as ar
+    for name in ("anchor_start_source", "anchor_end_source",
+                 "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach"):
+        assert name in ar.TEXT_COLUMNS
+    extra = dict(ar.other_kinematics(["ext_anchor_start_source"]))
+    assert extra["ext_anchor_start_source"] == "anchor_start_source"
+
+
 def test_a_variant_says_what_it_was_taken_over():
     """max of what? mean over what? -- the part a bare name never carries."""
     assert "largest value over the frames" in ex._describe("paw_spread_max_max_mm")
@@ -79,10 +134,10 @@ def test_a_variant_says_what_it_was_taken_over():
 
 
 def test_trajectory_measures_state_the_frame_of_reference():
-    """These are nose-relative with synthetic anchors; a reader cannot guess that."""
+    """These are nose-relative between calculated anchors; a reader cannot guess that."""
     text = ex._describe("righthand_total_path_mm")
     assert "relative to the nose" in text
-    assert "synthetic" in text
+    assert ANCHOR_WORDS in text
 
 
 def test_inter_paw_measures_name_which_points(ter=None):

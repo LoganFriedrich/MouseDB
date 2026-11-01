@@ -127,14 +127,32 @@ _LANDMARKS = {
     "frames": "",
 }
 
-# Every trajectory measure is computed on the paw position with the NOSE
-# SUBTRACTED, bracketed by two synthetic anchors: the midpoint of nose and left
-# box edge at the first frame, and of nose and right box edge at the last. Said
-# once here so each description below can be about its own formula.
-_BASIS = ("Measured on the path of %s relative to the nose, bracketed by a "
-          "synthetic start point at the midpoint of nose and left box edge and a "
-          "synthetic end point at the midpoint of nose and right box edge, so "
-          "reaches are comparable regardless of where the animal stood.")
+# Every path measure is computed on the paw position with the NOSE SUBTRACTED, and
+# the path starts and ends at an anchor, because a reach starts and ends at the nose
+# with the hand hidden (kinematics extractor 2.3.0; before it the per-landmark anchors
+# were placed from the first and last detected frames). Said once here so each
+# description below can be about its own formula.
+_BASIS = ("Measured on the path of %s relative to the nose, so reaches are comparable "
+          "regardless of where the animal stood. The path starts and ends at an anchor "
+          "point calculated between the nose and the slit edge, not a detected hand "
+          "position: the midpoint of the nose and the left slit corner in the frame "
+          "before the paw is detected, and the midpoint of the nose and the right slit "
+          "corner in the frame after it disappears. Empty when the reach has no anchor "
+          "(anchor_start_source or anchor_end_source is none).")
+
+# The apex and the extension ask for the paw's furthest point, which a calculated
+# point can never be, so these two read detected frames only and exist without anchors.
+_DETECTED_BASIS = ("Measured relative to the nose on detected frames only: the anchor "
+                   "points that begin and end the path measures are calculated, not "
+                   "detected, and are not considered.")
+
+_ANCHOR_SOURCE = ("How this reach's %s anchor was placed. The anchor is a point "
+                  "calculated between the nose and the slit edge, not a detected hand "
+                  "position; this says which frames its landmarks came from.")
+_ANCHOR_NEIGHBOUR = ("True when the frame %s, which holds this reach's %s anchor, falls "
+                     "inside another detected reach. Only the nose and slit are read "
+                     "from that frame, never the hand, so the anchor still stands; this "
+                     "lets an analysis set such reaches aside.")
 
 _MEASURES = {
     "apex_frame":
@@ -143,13 +161,15 @@ _MEASURES = {
     "extension_past_nose":
         "How far %s got past the nose at the furthest point of the reach.",
     "total_path":
-        "Total distance %s travelled, summed frame to frame along the whole path.",
+        "Total distance %s travelled, summed frame to frame along the whole path, "
+        "including the steps from the start anchor and to the end anchor.",
     "lateral_spread":
-        "The full side-to-side range of %s during the reach: its rightmost "
-        "position minus its leftmost.",
+        "The full side-to-side range of %s along the path, anchors included: its "
+        "rightmost position minus its leftmost.",
     "swept_area":
-        "The area enclosed by the path of %s, as the polygon through every "
-        "tracked position in order (shoelace formula).",
+        "The area enclosed by the path of %s, as the polygon through the start "
+        "anchor, every detected position in order and the end anchor (shoelace "
+        "formula).",
     "path_directness":
         "How straight the reach was: straight-line distance from the start anchor "
         "to the end anchor divided by the total distance %s actually travelled. "
@@ -160,16 +180,19 @@ _MEASURES = {
         "for smooth motion and falls towards 0 as the path becomes jerky.",
     "lateral_deviation":
         "How far %s departed sideways from a straight reach: the greatest "
-        "perpendicular distance from any tracked position to the straight line "
+        "perpendicular distance from any position on the path to the straight line "
         "between the start and end anchors.",
     "mean_speed":
         "Average speed of %s: total distance travelled divided by the number of "
-        "frame-to-frame steps.",
+        "frame-to-frame steps, which is one more than the reach's detected frames.",
     "peak_speed":
-        "Fastest single frame-to-frame step made by %s during the reach.",
+        "Fastest single frame-to-frame step made by %s along the path. The first and "
+        "last steps, between an anchor and a detected position, count, and they can "
+        "be the fastest.",
     "apex_speed":
         "Speed of %s at the furthest point of the reach: the length of the "
-        "frame-to-frame step straddling the apex frame.",
+        "frame-to-frame step leaving the apex frame. When the apex is the last "
+        "detected frame, that step ends at the end anchor.",
     "visibility":
         "How confidently the tracker placed %s -- its reported likelihood, where "
         "values below 0.5 are treated as unreliable everywhere else in this "
@@ -203,7 +226,10 @@ _MEASURES = {
     "velocity_correlation":
         "How alike the four tracked paw points move: the average Pearson "
         "correlation between their frame-to-frame speed profiles, over every "
-        "pair. Near 1 means they speed up and slow down together.",
+        "pair. Near 1 means they speed up and slow down together. The speeds "
+        "include the steps from the start anchor and to the end anchor, which are "
+        "points calculated between the nose and the slit edge, not detected hand "
+        "positions.",
     "apex_lead_frames":
         "How many frames separate the earliest and the latest of the four paw "
         "points in reaching their own furthest extension -- the paw's internal "
@@ -211,6 +237,27 @@ _MEASURES = {
     "leading_point":
         "Which of the four tracked paw points led the reach, as the one whose "
         "own furthest extension falls at the earliest frame.",
+    "anchor_start_source": _ANCHOR_SOURCE % "start",
+    "anchor_end_source": _ANCHOR_SOURCE % "end",
+    "anchor_start_in_neighbour_reach": _ANCHOR_NEIGHBOUR % ("before the reach", "start"),
+    "anchor_end_in_neighbour_reach": _ANCHOR_NEIGHBOUR % ("after the reach", "end"),
+}
+
+# The extended block is nearly all numbers; these four are not, so a dictionary row
+# calling them numbers would be wrong. (data type, permitted values, what they mean).
+_ANCHOR_SOURCE_VALUES = (
+    "text", "anchor_frame; nearest_frame; video_edge; none",
+    "anchor_frame=nose and slit corner both trusted in the anchor frame; "
+    "nearest_frame=a landmark was not trusted there, so its nearest trusted position "
+    "within 30 frames was used; video_edge=the anchor frame is outside the video, so "
+    "the nearest frame inside it stands in; none=no trusted landmark in range, so "
+    "there is no anchor and the path measures are empty")
+_ANCHOR_NEIGHBOUR_VALUES = ("boolean", "True; False", "")
+_NOT_NUMBERS = {
+    "anchor_start_source": _ANCHOR_SOURCE_VALUES,
+    "anchor_end_source": _ANCHOR_SOURCE_VALUES,
+    "anchor_start_in_neighbour_reach": _ANCHOR_NEIGHBOUR_VALUES,
+    "anchor_end_in_neighbour_reach": _ANCHOR_NEIGHBOUR_VALUES,
 }
 
 _VARIANTS = {
@@ -224,11 +271,12 @@ _VARIANTS = {
     "range": "The largest value over the reach minus the smallest.",
 }
 
-_TRAJECTORY_MEASURES = {
-    "apex_frame", "extension_past_nose", "total_path", "lateral_spread",
-    "swept_area", "path_directness", "motion_smoothness", "lateral_deviation",
-    "mean_speed", "peak_speed", "apex_speed",
+_ANCHORED_MEASURES = {
+    "total_path", "lateral_spread", "swept_area", "path_directness",
+    "motion_smoothness", "lateral_deviation", "mean_speed", "peak_speed", "apex_speed",
 }
+_DETECTED_FRAME_MEASURES = {"apex_frame", "extension_past_nose"}
+_PAW_POINTS = ("righthand", "lefthand", "rhleft", "rhright", "rhout")
 
 
 def _split_key(key):
@@ -273,9 +321,10 @@ def _describe(key: str) -> str:
 
     if variant and _VARIANTS.get(variant):
         text += " " + _VARIANTS[variant]
-    if measure in _TRAJECTORY_MEASURES and landmark in (
-            "righthand", "lefthand", "rhleft", "rhright", "rhout"):
+    if measure in _ANCHORED_MEASURES and landmark in _PAW_POINTS:
         text += " " + (_BASIS % subject)
+    elif measure in _DETECTED_FRAME_MEASURES and landmark in _PAW_POINTS:
+        text += " " + _DETECTED_BASIS
     return text
 
 
@@ -300,12 +349,15 @@ def dictionary_rows(keys: Iterable[str]) -> List[dict]:
     rows = []
     for key in keys:
         note = _NOTES.get(key, "")
+        dtype, permitted, permitted_meaning = _NOT_NUMBERS.get(key, ("number", "", ""))
         rows.append(dd._row(
             PREFIX + key,
             key.replace("_", " ")[:1].upper() + key.replace("_", " ")[1:],
             _describe(key),
             _unit_for(key),
-            "number",
+            dtype,
+            permitted,
+            permitted_meaning,
             comments=note or "Per-reach extended measurement produced by the kinematics extractor.",
         ))
     return rows

@@ -150,6 +150,22 @@ def apply_odc_names(df, rows: List[dict]):
     return df, out
 
 
+# WHY THE FLAT WRIST COLUMNS SAY THIS. Since kinematics extractor 2.3.0 the path they
+# are measured on no longer starts and stops where tracking first and last saw the
+# paw. A reach starts and ends at the nose, with the hand hidden, so both ends are
+# calculated. A reader who takes these columns for hand positions the camera saw will
+# misread the largest steps, so the definition has to say it outright.
+_ANCHORED_WRIST_PATH = (
+    "The path starts and ends at an anchor point calculated between the nose and the "
+    "slit edge, not a detected hand position: the midpoint of the nose and the left "
+    "slit corner in the frame before the paw is detected, and the midpoint of the nose "
+    "and the right slit corner in the frame after it disappears.")
+# Filed videos are re-run in turn, so a file can hold rows from both versions until
+# that finishes. extractor_version on the row says which it is.
+_BEFORE_ANCHORS = ("On rows with an extractor_version before 2.3.0 the path ran between "
+                   "the first and last detected positions, with no anchors.")
+
+
 def _row(name, title, desc, unit="", dtype="", pv="", pvd="", mn="", mx="", comments=""):
     return {"VariableName": name, "Title": title, "Description": desc,
             "Unit_of_Measure": unit, "DataType": dtype, "PermittedValues": pv,
@@ -213,16 +229,16 @@ REACH_DATA = [
     _row("start_frame", "Reach start frame", "Video frame the reach begins (paw leaves the slit region).", "frame index", "integer", "", "", "0"),
     _row("apex_frame", "Reach apex frame", "Video frame of maximum extension.", "frame index", "integer", "", "", "0"),
     _row("end_frame", "Reach end frame", "Video frame the reach ends (paw withdrawn).", "frame index", "integer", "", "", "0"),
-    _row("duration_frames", "Reach duration", "end_frame - start_frame + 1.", "frames", "integer", "", "", "1"),
+    _row("duration_frames", "Reach duration", "end_frame - start_frame + 1. Counts detected frames only: the two anchor frames that begin and end the path measures are not counted.", "frames", "integer", "", "", "1"),
     _row("max_extent_pixels", "Maximum extent (pixels)", "How far the paw reached, in pixels. Empty on every reach from the current detector (only legacy detector output carries a value, and that value measured the sideways axis).", "pixels", "number", "", "", "", "", "See KINEMATICS_FIELDS.md 5.3 before using."),
     _row("max_extent_ruler", "Maximum extent (ruler lengths)", "max_extent_pixels divided by the 9 mm ruler length in pixels. Same coverage caveat as max_extent_pixels.", "ruler lengths (1.0 = 9 mm)", "number"),
     _row("max_extent_mm", "Maximum extent (mm)", "max_extent_ruler x 9.0. Same coverage caveat as max_extent_pixels.", "mm", "number"),
-    _row("velocity_at_apex_px_per_frame", "Wrist speed at apex (px/frame)", "Wrist (RightHand point) displacement in the frame step starting at the apex. Empty when the apex is the reach's last frame.", "pixels per frame", "number", "", "", "0"),
-    _row("velocity_at_apex_mm_per_sec", "Wrist speed at apex (mm/s)", "velocity_at_apex_px_per_frame converted with the 9 mm ruler and an assumed 30 frames per second.", "mm per second", "number", "", "", "0", "", "Assumes 30 fps."),
-    _row("peak_velocity_px_per_frame", "Peak wrist speed", "Largest single-frame wrist displacement during the reach.", "pixels per frame", "number", "", "", "0"),
-    _row("mean_velocity_px_per_frame", "Mean wrist speed", "Mean single-frame wrist displacement during the reach.", "pixels per frame", "number", "", "", "0"),
-    _row("trajectory_straightness", "Trajectory straightness", "Straight-line distance from first to last wrist position divided by the total path length. 1.0 = perfectly straight.", "dimensionless", "number", "", "", "0", "1"),
-    _row("trajectory_smoothness", "Trajectory smoothness", "1 / (1 + mean absolute third difference of wrist position). 1.0 = perfectly smooth. Empty for reaches shorter than 3 frames.", "dimensionless", "number", "", "", "0", "1"),
+    _row("velocity_at_apex_px_per_frame", "Wrist speed at apex (px/frame)", "Wrist (RightHand point) displacement in the frame step leaving the apex. When the apex is the last detected frame, that step ends at the end anchor, which is a point calculated between the nose and the slit edge, not a detected hand position. Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS + " On those rows it is also empty when the apex is the reach's last frame."),
+    _row("velocity_at_apex_mm_per_sec", "Wrist speed at apex (mm/s)", "velocity_at_apex_px_per_frame converted with the 9 mm ruler and an assumed 30 frames per second. Same anchor rule as velocity_at_apex_px_per_frame.", "mm per second", "number", "", "", "0", "", "Assumes 30 fps. " + _BEFORE_ANCHORS),
+    _row("peak_velocity_px_per_frame", "Peak wrist speed", "Largest single-frame wrist displacement along the anchored path. " + _ANCHORED_WRIST_PATH + " The first and last steps, between an anchor and a detected position, count, and they can be the largest. Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS),
+    _row("mean_velocity_px_per_frame", "Mean wrist speed", "Mean single-frame wrist displacement along the anchored path, over duration_frames + 1 steps. " + _ANCHORED_WRIST_PATH + " Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS),
+    _row("trajectory_straightness", "Trajectory straightness", "Straight-line distance from the start anchor to the end anchor divided by the total length of the anchored wrist path. 1.0 = perfectly straight. " + _ANCHORED_WRIST_PATH + " Empty when the reach has no anchor.", "dimensionless", "number", "", "", "0", "1", _BEFORE_ANCHORS),
+    _row("trajectory_smoothness", "Trajectory smoothness", "1 / (1 + mean absolute third difference of wrist position along the anchored path). 1.0 = perfectly smooth. " + _ANCHORED_WRIST_PATH + " Empty for a reach of one detected frame, whose path is too short for a third difference, and when the reach has no anchor.", "dimensionless", "number", "", "", "0", "1", _BEFORE_ANCHORS + " On those rows it is empty for reaches shorter than 4 detected frames."),
     _row("hand_angle_at_apex_deg", "Paw angle at apex", "Orientation of the paw at the apex, from the angle between the two paw-side points.", "degrees", "number", "", "", "-180", "180"),
     _row("hand_rotation_total_deg", "Total paw rotation", "Sum of absolute frame-to-frame paw angle changes over the reach (wraparound handled).", "degrees", "number", "", "", "0"),
     _row("grasp_aperture_max_mm", "Maximum grasp aperture", NEVER_COMPUTED, "mm", "number", "", "", "", "", "Always empty; paw_width_proxy_max_mm in the extended features is the working replacement."),
@@ -260,7 +276,7 @@ REACH_DATA = [
     _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...).", "", "text"),
     _row("contact_group", "Did this reach meet the pellet (algorithm)", "What THIS reach did, in the words for a reach: contacted when the pipeline identified the frame at which its paw met the pellet (only ever on the reach credited with the pellet), otherwise missed.", "", "text", "missed; contacted", "missed=this reach did not meet the pellet; contacted=it did"),
     _row("segment_contact_group", "Was the pellet moved (algorithm)", "What happened to the pellet this reach was aimed at, in the words for a pellet, on every reach at that pellet: contacted when it was retrieved or displaced, untouched when nothing moved it, empty when the algorithm has no answer (a pellet a person saw moved by something other than a reach).", "", "text", "untouched; contacted", "untouched=no reach moved the pellet; contacted=retrieved or displaced"),
-    _row("extended_features", "Extended features (JSON)", "The full per-reach extended feature block (161 values: per-paw-point kinematics) as a JSON string. See KINEMATICS_FIELDS.md section 6.", "", "text (JSON)"),
+    _row("extended_features", "Extended features (JSON)", "The full per-reach extended feature block as a JSON string: 165 values, the per-paw-point kinematics and four recording how the reach's anchors were placed (161 on rows from an extractor before 2.3.0). See KINEMATICS_FIELDS.md section 6.", "", "text (JSON)"),
 ]
 # The algorithm's pellet and reach outcome columns read "Not applicable" on an
 # easy or flat tray (exporters/trays.py says why); every one says so.

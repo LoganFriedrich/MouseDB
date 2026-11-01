@@ -5,6 +5,15 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Changed
+- The data dictionary now describes the path measures as MouseReach kinematics
+  extractor 2.3.0 computes them: the path starts and ends at an anchor point
+  calculated between the nose and the slit edge, not a detected hand position.
+  Covers peak, mean and apex wrist speed, straightness, smoothness and every
+  per-landmark path measure. The apex frame and extension past the nose are now
+  said to use detected frames only. The new `anchor_*` columns have definitions,
+  and the analysis file writes their values as words rather than NA.
+
 ### Added
 - `reach_data` has an index on `(subject_id, session_date)`
   (`ix_reach_data_subject_session`). The phase re-labelling after each reach

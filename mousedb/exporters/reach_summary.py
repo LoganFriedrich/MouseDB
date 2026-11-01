@@ -218,8 +218,12 @@ REASONS: Dict[str, str] = {
     # The question cannot apply to this row.
     "days_post_injury": missing.NOT_APPLICABLE,        # session before the injury
     "exclusion_reason": missing.NOT_APPLICABLE,        # the animal was not excluded
-    "speed_at_apex_mm_per_sec": missing.NOT_APPLICABLE,  # apex is the reach's last frame
-    "trajectory_smoothness": missing.NOT_APPLICABLE,     # reach shorter than 3 frames
+    # No anchor, so no path to measure (extractor 2.3.0). Rows from before it are
+    # also empty when the apex is the reach's last frame.
+    "speed_at_apex_mm_per_sec": missing.NOT_APPLICABLE,
+    # No anchor, or one detected frame: too short for a third difference. Rows from
+    # before extractor 2.3.0 are empty below 4 detected frames.
+    "trajectory_smoothness": missing.NOT_APPLICABLE,
     # A source should carry it and does not: the hand scores are a separate
     # measurement stream (post-hoc tray inspection), absent for some sessions; the
     # head measurements need both ears tracked confidently and sometimes they are not.
