@@ -243,7 +243,7 @@ _MEASURES = {
     "anchor_end_in_neighbour_reach": _ANCHOR_NEIGHBOUR % ("after the reach", "end"),
 }
 
-# The extended block is nearly all numbers; these four are not, so a dictionary row
+# The extended block is nearly all numbers; these five are not, so a dictionary row
 # calling them numbers would be wrong. (data type, permitted values, what they mean).
 _ANCHOR_SOURCE_VALUES = (
     "text", "anchor_frame; nearest_frame; video_edge; none",
@@ -258,6 +258,10 @@ _NOT_NUMBERS = {
     "anchor_end_source": _ANCHOR_SOURCE_VALUES,
     "anchor_start_in_neighbour_reach": _ANCHOR_NEIGHBOUR_VALUES,
     "anchor_end_in_neighbour_reach": _ANCHOR_NEIGHBOUR_VALUES,
+    "paw_leading_point": (
+        "text", "righthand; rhleft; rhright; rhout",
+        "righthand=the right hand; rhleft=the left edge of the right hand; "
+        "rhright=the right edge of the right hand; rhout=the outer edge of the right hand"),
 }
 
 _VARIANTS = {

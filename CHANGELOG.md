@@ -5,6 +5,11 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Fixed
+- `paw_leading_point` holds the name of a paw point, and the analysis file read it
+  as a number, so it came out NA on every row. The analysis file now writes the name,
+  and every data dictionary calls the column text and lists its four values.
+
 ### Changed
 - The data dictionary now describes the path measures as MouseReach kinematics
   extractor 2.3.0 computes them: the path starts and ends at an anchor point

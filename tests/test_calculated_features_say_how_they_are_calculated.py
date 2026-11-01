@@ -114,15 +114,26 @@ def test_the_anchor_columns_are_defined_and_not_called_numbers():
     assert rows["ext_anchor_end_in_neighbour_reach"]["DataType"] == "boolean"
 
 
-def test_the_analysis_file_keeps_the_anchor_columns_as_words():
+def test_the_leading_point_is_defined_and_not_called_a_number():
+    row = ex.dictionary_rows(["paw_leading_point"])[0]
+    assert row["DataType"] == "text", row
+    assert "No written definition yet" not in row["Description"]
+    for word in ("righthand", "rhleft", "rhright", "rhout"):
+        assert word in row["PermittedValues"]
+        assert word + "=" in row["PVDescribed"]
+
+
+def test_the_analysis_file_keeps_the_worded_columns_as_words():
     """Everything not named a text column is read as a number there, which would
-    write every anchor source as NA."""
+    write every anchor source and every leading point as NA."""
     from mousedb.exporters import analysis_reaches as ar
     for name in ("anchor_start_source", "anchor_end_source",
-                 "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach"):
+                 "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach",
+                 "paw_leading_point"):
         assert name in ar.TEXT_COLUMNS
-    extra = dict(ar.other_kinematics(["ext_anchor_start_source"]))
+    extra = dict(ar.other_kinematics(["ext_anchor_start_source", "ext_paw_leading_point"]))
     assert extra["ext_anchor_start_source"] == "anchor_start_source"
+    assert extra["ext_paw_leading_point"] == "paw_leading_point"
 
 
 def test_a_variant_says_what_it_was_taken_over():

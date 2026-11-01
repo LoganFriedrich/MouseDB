@@ -249,6 +249,8 @@ TEXT_COLUMNS = {
     # come out NA on every row, and the dictionary row would describe nothing.
     "anchor_start_source", "anchor_end_source",
     "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach",
+    # The name of a paw point, so the same applies: as a number it is NA on every row.
+    "paw_leading_point",
 }
 
 
