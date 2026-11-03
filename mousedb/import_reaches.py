@@ -652,8 +652,20 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     todo = []
     for p in files:
         key = str(p.relative_to(root)).replace("\\", "/")
-        st = p.stat()
-        stamp = "%d:%d" % (st.st_size, int(st.st_mtime))
+        # A file can be gone between the listing and this read: the watcher
+        # refiles a video by replacing its results, and a re-run moves a bundle
+        # into a queue. Skipped here like the vanished-file case further down,
+        # and found again next run. WHY (2026-11-03): the 2026-11-02 21:00 run
+        # stopped on one such file and imported nothing, while a version bump
+        # was rewriting thousands of results files a day.
+        try:
+            st = p.stat()
+            stamp = "%d:%d" % (st.st_size, int(st.st_mtime))
+        except FileNotFoundError:
+            res.skipped += 1
+            res.messages.append("%s: vanished while listing -- skipped" % p.name)
+            log("  [skip] %s vanished while listing" % p.name)
+            continue
         if key in moved_from:
             # Same file, new folder: its entry moves with it (see _moved_entries).
             ledger[key] = ledger.pop(moved_from[key])
@@ -665,7 +677,13 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         if not all_files and isinstance(prev, dict) and prev.get("stamp") == stamp:
             res.skipped += 1
             continue
-        h = file_hash(p)
+        try:
+            h = file_hash(p)
+        except FileNotFoundError:
+            res.skipped += 1
+            res.messages.append("%s: vanished while listing -- skipped" % p.name)
+            log("  [skip] %s vanished while listing" % p.name)
+            continue
         if not all_files and isinstance(prev, dict) and prev.get("hash") == h:
             ledger[key] = {"hash": h, "stamp": stamp}
             res.skipped += 1
