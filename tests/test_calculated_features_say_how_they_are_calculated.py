@@ -73,9 +73,8 @@ def test_the_description_is_not_just_the_name_back(key):
 ANCHOR_WORDS = "calculated between the nose and the slit edge, not a detected hand position"
 
 
-@pytest.mark.parametrize("key", ["righthand_total_path_mm", "rhout_peak_speed_mm_per_frame",
-                                 "rhleft_path_directness", "rhright_apex_speed_px_per_frame",
-                                 "paw_velocity_correlation"])
+@pytest.mark.parametrize("key", ["righthand_total_path_mm", "rhout_mean_speed_mm_per_frame",
+                                 "rhleft_path_directness", "paw_velocity_correlation"])
 def test_a_path_measure_says_its_ends_are_calculated(key):
     """Extractor 2.3.0: a reader must not take the ends of the path for hand positions."""
     assert "calculated between the nose and the slit edge" in ex._describe(key)
@@ -89,10 +88,32 @@ def test_the_furthest_point_is_said_to_use_detected_frames(key):
     assert ANCHOR_WORDS not in text
 
 
+@pytest.mark.parametrize("key", ["rhout_peak_speed_mm_per_frame", "rhright_apex_speed_px_per_frame"])
+def test_peak_and_apex_speed_say_the_anchor_steps_are_left_out(key):
+    """Extractor 2.4.0: these two come only from steps between two detected frames."""
+    text = ex._describe(key)
+    assert "only on steps between two detected frames" in text
+    assert "left out" in text
+    assert "2.3.0" in text
+    assert ANCHOR_WORDS not in text
+
+
+def test_the_flat_peak_and_apex_columns_say_the_anchor_steps_are_left_out():
+    from mousedb.exporters import analysis_reaches as ar
+    from mousedb.exporters import data_dictionary as dd
+    rows = {r["VariableName"]: r for r in dd.REACH_DATA}
+    for name in ("peak_velocity_px_per_frame", "velocity_at_apex_px_per_frame"):
+        assert "between two detected frames" in rows[name]["Description"], name
+        assert "left out" in rows[name]["Description"], name
+        assert "2.3.0" in rows[name]["Comments"], name
+    assert "last detected frame" in rows["velocity_at_apex_px_per_frame"]["Description"]
+    assert "left out" in ar._WHOLE_REACH_ROWS["peak_speed_px_per_frame"][3]
+
+
 def test_the_flat_wrist_columns_say_their_ends_are_calculated():
     from mousedb.exporters import data_dictionary as dd
     rows = {r["VariableName"]: r for r in dd.REACH_DATA}
-    for name in ("peak_velocity_px_per_frame", "mean_velocity_px_per_frame",
+    for name in ("mean_velocity_px_per_frame",
                  "trajectory_straightness", "trajectory_smoothness"):
         assert ANCHOR_WORDS in rows[name]["Description"], name
     assert "first to last wrist" not in rows["trajectory_straightness"]["Description"]

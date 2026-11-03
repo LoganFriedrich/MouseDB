@@ -146,6 +146,14 @@ _DETECTED_BASIS = ("Measured relative to the nose on detected frames only: the a
                    "points that begin and end the path measures are calculated, not "
                    "detected, and are not considered.")
 
+# Peak and apex speed ask how fast the hand moved, and the steps to and from an anchor
+# are charged to one frame, so they measure geometry instead (extractor 2.4.0).
+_TRACKED_STEPS_BASIS = ("Measured relative to the nose, only on steps between two detected "
+                        "frames: the steps to and from the anchor points that begin and "
+                        "end the path are calculated, not detected, and are left out. "
+                        "Rows with extractor_version 2.3.0 counted them, so those values "
+                        "are not comparable with any other version.")
+
 _ANCHOR_SOURCE = ("How this reach's %s anchor was placed. The anchor is a point "
                   "calculated between the nose and the slit edge, not a detected hand "
                   "position; this says which frames its landmarks came from.")
@@ -186,13 +194,12 @@ _MEASURES = {
         "Average speed of %s: total distance travelled divided by the number of "
         "frame-to-frame steps, which is one more than the reach's detected frames.",
     "peak_speed":
-        "Fastest single frame-to-frame step made by %s along the path. The first and "
-        "last steps, between an anchor and a detected position, count, and they can "
-        "be the fastest.",
+        "Fastest single frame-to-frame step made by %s. Empty for a reach of one "
+        "detected frame.",
     "apex_speed":
         "Speed of %s at the furthest point of the reach: the length of the "
-        "frame-to-frame step leaving the apex frame. When the apex is the last "
-        "detected frame, that step ends at the end anchor.",
+        "frame-to-frame step leaving the apex frame, to the next detected frame. Empty "
+        "when the apex is the last detected frame, because no detected frame follows.",
     "visibility":
         "How confidently the tracker placed %s -- its reported likelihood, where "
         "values below 0.5 are treated as unreliable everywhere else in this "
@@ -277,9 +284,10 @@ _VARIANTS = {
 
 _ANCHORED_MEASURES = {
     "total_path", "lateral_spread", "swept_area", "path_directness",
-    "motion_smoothness", "lateral_deviation", "mean_speed", "peak_speed", "apex_speed",
+    "motion_smoothness", "lateral_deviation", "mean_speed",
 }
 _DETECTED_FRAME_MEASURES = {"apex_frame", "extension_past_nose"}
+_TRACKED_STEP_MEASURES = {"peak_speed", "apex_speed"}
 _PAW_POINTS = ("righthand", "lefthand", "rhleft", "rhright", "rhout")
 
 
@@ -329,6 +337,8 @@ def _describe(key: str) -> str:
         text += " " + (_BASIS % subject)
     elif measure in _DETECTED_FRAME_MEASURES and landmark in _PAW_POINTS:
         text += " " + _DETECTED_BASIS
+    elif measure in _TRACKED_STEP_MEASURES and landmark in _PAW_POINTS:
+        text += " " + _TRACKED_STEPS_BASIS
     return text
 
 

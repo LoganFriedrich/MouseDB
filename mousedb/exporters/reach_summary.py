@@ -218,8 +218,9 @@ REASONS: Dict[str, str] = {
     # The question cannot apply to this row.
     "days_post_injury": missing.NOT_APPLICABLE,        # session before the injury
     "exclusion_reason": missing.NOT_APPLICABLE,        # the animal was not excluded
-    # No anchor, so no path to measure (extractor 2.3.0). Rows from before it are
-    # also empty when the apex is the reach's last frame.
+    # The apex is the reach's last detected frame, so no detected frame follows it and
+    # there is no step to measure (extractor 2.4.0). A 2.3.0 row may be empty instead
+    # because the reach had no anchor.
     "speed_at_apex_mm_per_sec": missing.NOT_APPLICABLE,
     # No anchor, or one detected frame: too short for a third difference. Rows from
     # before extractor 2.3.0 are empty below 4 detected frames.

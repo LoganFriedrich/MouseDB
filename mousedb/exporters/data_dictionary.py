@@ -164,6 +164,16 @@ _ANCHORED_WRIST_PATH = (
 # that finishes. extractor_version on the row says which it is.
 _BEFORE_ANCHORS = ("On rows with an extractor_version before 2.3.0 the path ran between "
                    "the first and last detected positions, with no anchors.")
+# WHY PEAK AND APEX SAY SOMETHING DIFFERENT. Since extractor 2.4.0 these two come only
+# from steps between two detected frames. The steps to and from an anchor are charged
+# to one frame, so they measure geometry and not how fast the hand moved. Extractor
+# 2.3.0 counted them, so its rows must not be read as the same measurement.
+_TRACKED_STEPS_ONLY = ("Only steps between two detected frames count. The first and last "
+                       "steps of the wrist path, to and from an anchor point calculated "
+                       "between the nose and the slit edge, are left out, because they "
+                       "measure geometry and not how fast the hand moved.")
+_ON_2_3_0 = ("On rows with extractor_version 2.3.0 the steps to and from the anchors "
+             "counted, so those values are not comparable with any other version.")
 
 
 def _row(name, title, desc, unit="", dtype="", pv="", pvd="", mn="", mx="", comments=""):
@@ -233,9 +243,9 @@ REACH_DATA = [
     _row("max_extent_pixels", "Maximum extent (pixels)", "How far the paw reached, in pixels. Empty on every reach from the current detector (only legacy detector output carries a value, and that value measured the sideways axis).", "pixels", "number", "", "", "", "", "See KINEMATICS_FIELDS.md 5.3 before using."),
     _row("max_extent_ruler", "Maximum extent (ruler lengths)", "max_extent_pixels divided by the 9 mm ruler length in pixels. Same coverage caveat as max_extent_pixels.", "ruler lengths (1.0 = 9 mm)", "number"),
     _row("max_extent_mm", "Maximum extent (mm)", "max_extent_ruler x 9.0. Same coverage caveat as max_extent_pixels.", "mm", "number"),
-    _row("velocity_at_apex_px_per_frame", "Wrist speed at apex (px/frame)", "Wrist (RightHand point) displacement in the frame step leaving the apex. When the apex is the last detected frame, that step ends at the end anchor, which is a point calculated between the nose and the slit edge, not a detected hand position. Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS + " On those rows it is also empty when the apex is the reach's last frame."),
-    _row("velocity_at_apex_mm_per_sec", "Wrist speed at apex (mm/s)", "velocity_at_apex_px_per_frame converted with the 9 mm ruler and an assumed 30 frames per second. Same anchor rule as velocity_at_apex_px_per_frame.", "mm per second", "number", "", "", "0", "", "Assumes 30 fps. " + _BEFORE_ANCHORS),
-    _row("peak_velocity_px_per_frame", "Peak wrist speed", "Largest single-frame wrist displacement along the anchored path. " + _ANCHORED_WRIST_PATH + " The first and last steps, between an anchor and a detected position, count, and they can be the largest. Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS),
+    _row("velocity_at_apex_px_per_frame", "Wrist speed at apex (px/frame)", "Wrist (RightHand point) displacement in the frame step leaving the apex, to the next detected frame. " + _TRACKED_STEPS_ONLY + " Empty when the apex is the last detected frame, because no detected frame follows it.", "pixels per frame", "number", "", "", "0", "", _ON_2_3_0),
+    _row("velocity_at_apex_mm_per_sec", "Wrist speed at apex (mm/s)", "velocity_at_apex_px_per_frame converted with the 9 mm ruler and an assumed 30 frames per second. Empty on the same rows as velocity_at_apex_px_per_frame.", "mm per second", "number", "", "", "0", "", "Assumes 30 fps. " + _ON_2_3_0),
+    _row("peak_velocity_px_per_frame", "Peak wrist speed", "Largest single-frame wrist displacement between two detected frames. " + _TRACKED_STEPS_ONLY + " Empty for a reach of one detected frame.", "pixels per frame", "number", "", "", "0", "", _ON_2_3_0),
     _row("mean_velocity_px_per_frame", "Mean wrist speed", "Mean single-frame wrist displacement along the anchored path, over duration_frames + 1 steps. " + _ANCHORED_WRIST_PATH + " Empty when the reach has no anchor.", "pixels per frame", "number", "", "", "0", "", _BEFORE_ANCHORS),
     _row("trajectory_straightness", "Trajectory straightness", "Straight-line distance from the start anchor to the end anchor divided by the total length of the anchored wrist path. 1.0 = perfectly straight. " + _ANCHORED_WRIST_PATH + " Empty when the reach has no anchor.", "dimensionless", "number", "", "", "0", "1", _BEFORE_ANCHORS),
     _row("trajectory_smoothness", "Trajectory smoothness", "1 / (1 + mean absolute third difference of wrist position along the anchored path). 1.0 = perfectly smooth. " + _ANCHORED_WRIST_PATH + " Empty for a reach of one detected frame, whose path is too short for a third difference, and when the reach has no anchor.", "dimensionless", "number", "", "", "0", "1", _BEFORE_ANCHORS + " On those rows it is empty for reaches shorter than 4 detected frames."),

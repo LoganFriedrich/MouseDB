@@ -163,23 +163,26 @@ _WHOLE_REACH_ROWS = {
         "columns; this is the reach's own, from the hand point."),
     "speed_at_apex_px_per_frame": (
         "Speed at the apex (pixels per frame)", "number", "pixels per frame",
-        "How fast the hand was moving as it left the frame of furthest extension. "
-        "When that is the last detected frame, the step ends at the end anchor, a "
-        "point calculated between the nose and the slit edge, not a detected hand "
-        "position. The same measurement in real units is speed_at_apex_mm_per_sec."),
+        "How fast the hand was moving as it left the frame of furthest extension, "
+        "from that frame to the next detected frame. Empty when that is the last "
+        "detected frame, because the only step left runs to a point calculated between "
+        "the nose and the slit edge, which is not a measured speed. The same "
+        "measurement in real units is speed_at_apex_mm_per_sec."),
     "peak_speed_px_per_frame": (
         "Peak speed of the hand (pixels per frame)", "number", "pixels per frame",
-        "The fastest the hand point moved between two frames along its path, which "
-        "starts and ends at an anchor point calculated between the nose and the slit "
-        "edge, not a detected hand position; the steps to and from the anchors can be "
-        "the fastest. Measured in the image, which is why it differs from the "
-        "per-landmark peak speeds: those are measured relative to the nose."),
+        "The fastest the hand point moved between two detected frames. The steps to "
+        "and from the anchor points that begin and end its path are left out: they run "
+        "to a point calculated between the nose and the slit edge, so they measure "
+        "geometry and not how fast the hand moved. Measured in the image, which is why "
+        "it differs from the per-landmark peak speeds: those are measured relative to "
+        "the nose."),
     "mean_speed_px_per_frame": (
         "Mean speed of the hand (pixels per frame)", "number", "pixels per frame",
-        "Average frame-to-frame movement of the hand point along the same path as "
-        "the peak: it starts and ends at an anchor point calculated between the nose "
-        "and the slit edge, not a detected hand position, and is measured in the "
-        "image rather than relative to the nose."),
+        "Average frame-to-frame movement of the hand point along its whole path, "
+        "which starts and ends at an anchor point calculated between the nose and the "
+        "slit edge, not a detected hand position, and is measured in the image rather "
+        "than relative to the nose. Unlike the peak, it includes the steps to and from "
+        "those points."),
     "tracking_confidence_mean": (
         "Mean tracking confidence for the hand", "number", "",
         "The tracker's reported likelihood for the hand point, averaged over the "
