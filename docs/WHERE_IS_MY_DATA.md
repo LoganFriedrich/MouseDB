@@ -290,6 +290,48 @@ whole lab. The per-cohort ODC session files, and their combined file, refresh
 only on the scheduled run, which is the only time the database may be read
 safely.
 
+## The weekly page: the answer already written down
+
+`mousedb-weekly-report` writes the answer to a page you open by double-clicking,
+so it is ready before anyone asks (for a meeting, say). Run it on a schedule
+(Task Scheduler, weekly) or by hand:
+
+    conda activate <your MouseDB environment>
+    mousedb-weekly-report                 # into <mousedb_root>/reports/Where is my data/
+    mousedb-weekly-report --out <folder>  # somewhere else
+
+Each run writes two files in that folder:
+
+- `Where is my data YYYY-MM-DD.html` -- that run's page, kept.
+- `Where is my data - LATEST.html` -- the same page, replaced every run.
+
+The page shows, from the pipeline census and the database snapshot:
+
+1. **Videos by stage**, per project and per cohort: done, waiting for triage,
+   waiting for deep review, being posed, not started (pillar trays and
+   Easy/Flat trays separately), set aside.
+2. **Why videos have not started** (pillar trays only -- trays your work order
+   leaves until machines are idle are behind on purpose). Each not-started
+   session falls in one of these:
+   - *Queued for cutting* -- its recording is in the intake folder, waiting its
+     turn. If your work order (`priority_order.json` in the MouseReach pipeline
+     folder) has a priority list for that project, the row says whether the
+     session is on it. The work order's own note is quoted above the table.
+   - *Not queued: the recording's name does not read as animal IDs* -- nothing
+     will ever pick it up. The recording needs a person to rename it.
+   - *Not queued: no recording for it in the intake folder* -- the census
+     expects the session but its recording is not waiting anywhere. The names
+     are listed; each one needs a look.
+3. When the machines and the review backlog should finish at recent pace.
+4. **Machines right now**, from each machine's own status report.
+5. **In the database**: the per-cohort table from the snapshot.
+6. **Problems mousedb knows about** (stale snapshot, failing overnight jobs...).
+
+A section whose source cannot be read says so on the page. It never shows zero
+in place of an unknown number. The page reads only files mousedb already keeps,
+so it does not slow the database or the pipeline. It takes a few minutes, mostly
+reading the snapshot.
+
 ## How reach data gets into the database
 
 MouseReach writes one `<video>_features.json` per video into its Analyzed

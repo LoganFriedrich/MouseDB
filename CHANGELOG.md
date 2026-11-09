@@ -5,6 +5,12 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Added
+- `mousedb-weekly-report` writes a dated "Where is my data" HTML page (and a
+  LATEST copy): videos by stage per project and cohort, why pillar-tray sessions
+  have not started, finish estimates, machine status, the database table and
+  known problems. Meant for a weekly scheduled task.
+
 ### Fixed
 - `paw_leading_point` holds the name of a paw point, and the analysis file read it
   as a number, so it came out NA on every row. The analysis file now writes the name,
