@@ -38,6 +38,16 @@ def _lab_settings_for_tests(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_machine_settings(tmp_path_factory, monkeypatch):
+    """No test reads this computer's shared settings file (mousedb.config,
+    source 3): a test that expects "not configured" must not be configured by
+    the machine it happens to run on. A test about the machine file points
+    MOUSEDB_MACHINE_CONFIG at a file of its own."""
+    missing = tmp_path_factory.mktemp("machine_settings") / "config.json"
+    monkeypatch.setenv("MOUSEDB_MACHINE_CONFIG", str(missing))
+
+
+@pytest.fixture(autouse=True)
 def _no_production_lock(monkeypatch):
     def guarded(self, name="central-db", stale_minutes=45, base_dir=None):
         if base_dir is None:

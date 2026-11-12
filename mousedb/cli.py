@@ -1266,13 +1266,21 @@ def cmd_import_analyses(args):
 def cmd_config(args):
     """mousedb config: the machine-specific locations (see mousedb.config)."""
     from . import config as cfg
-    if args.set:
-        key, value = args.set
-        path = cfg.set_value(key, value)
-        print("[OK] %s = %s  (saved to %s)" % (key, value, path))
-    if args.unset:
-        path = cfg.set_value(args.unset, None)
-        print("[OK] %s removed  (saved to %s)" % (args.unset, path))
+    machine = getattr(args, "machine", False)
+    try:
+        if args.set:
+            key, value = args.set
+            path = cfg.set_value(key, value, machine=machine)
+            print("[OK] %s = %s  (saved to %s)" % (key, value, path))
+        if args.unset:
+            path = cfg.set_value(args.unset, None, machine=machine)
+            print("[OK] %s removed  (saved to %s)" % (args.unset, path))
+    except PermissionError as e:
+        # The machine file's folder may be writable only by an administrator.
+        print("[FAIL] could not write %s: %s\n"
+              "  Run this from an administrator PowerShell, or ask whoever looks "
+              "after this computer." % (cfg.machine_config_path(), e))
+        raise SystemExit(1)
     if args.show or not (args.set or args.unset):
         print(cfg.describe())
 
@@ -1466,6 +1474,10 @@ def main():
     config_parser.add_argument('--show', action='store_true', help='Print every key, value and source')
     config_parser.add_argument('--set', nargs=2, metavar=('KEY', 'VALUE'), help='Set one key')
     config_parser.add_argument('--unset', metavar='KEY', help='Remove one key')
+    config_parser.add_argument(
+        '--machine', action='store_true',
+        help='With --set/--unset: change the settings file shared by everyone who '
+             'logs in to this computer, instead of your own')
     config_parser.set_defaults(func=cmd_config)
 
     # mousedb study-facts -- study-wide ODC facts per project (strain, supplier,

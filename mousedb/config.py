@@ -11,10 +11,21 @@ a new machine, a moved share, or another lab got silent wrong answers.
 
 Where values come from, in order:
   1. an environment variable (per key, listed below) -- for one-off runs,
-  2. ``~/.mousedb/config.json`` -- the normal place; set with
+  2. ``~/.mousedb/config.json`` -- this person's own settings; set with
         mousedb config --set <key> <value>
      and inspect with ``mousedb config --show``,
-  3. for the MouseReach pipeline root only: MouseReach's own
+  3. the MACHINE settings file, shared by everyone who logs in to this
+     computer: ``%ProgramData%\\mousedb\\config.json`` on Windows,
+     ``/etc/mousedb/config.json`` elsewhere (``MOUSEDB_MACHINE_CONFIG`` names
+     another file). Set with ``mousedb config --machine --set <key> <value>``.
+     WHY it exists: the locations are a property of the COMPUTER, not of the
+     person. With only a per-person file, every new login on a shared
+     computer met "mousedb does not know where the snapshot is" the first
+     time they double-clicked a MouseDB shortcut, and had to be talked
+     through a terminal command -- the thing the shortcuts exist to avoid.
+     A person's own file still wins, key by key, so one person can point
+     somewhere else without changing it for everyone.
+  4. for the MouseReach pipeline root only: MouseReach's own
      ``~/.mousereach/config.json`` (``nas_root``), because on a machine that
      runs MouseReach that file already says where the pipeline is.
 
@@ -42,6 +53,19 @@ from pathlib import Path
 from typing import Optional
 
 CONFIG_PATH = Path.home() / ".mousedb" / "config.json"
+MACHINE_CONFIG_ENV = "MOUSEDB_MACHINE_CONFIG"
+
+
+def machine_config_path() -> Path:
+    """The settings file shared by every login on this computer (see the
+    module docstring, source 3)."""
+    override = os.environ.get(MACHINE_CONFIG_ENV)
+    if override:
+        return Path(override)
+    if os.name == "nt":
+        base = os.environ.get("PROGRAMDATA") or "C:\\ProgramData"
+        return Path(base) / "mousedb" / "config.json"
+    return Path("/etc/mousedb/config.json")
 
 KEYS = {
     "mousedb_root": "MOUSEDB_ROOT",
@@ -61,27 +85,54 @@ class ConfigError(RuntimeError):
     """A required location is not configured. The message says how to set it."""
 
 
-def read_config() -> dict:
+def _read_file(path: Path) -> dict:
     try:
-        if CONFIG_PATH.is_file():
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if path.is_file():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
     except Exception:
         pass
     return {}
 
 
-def set_value(key: str, value: Optional[str]) -> Path:
-    """Write one key (None removes it). Returns the config file path."""
+def read_user_config() -> dict:
+    """This person's own file only."""
+    return _read_file(CONFIG_PATH)
+
+
+def read_machine_config() -> dict:
+    """The file shared by every login on this computer only."""
+    return _read_file(machine_config_path())
+
+
+def read_config() -> dict:
+    """The settings in force: the machine file, with this person's own file
+    laid over it key by key (theirs wins)."""
+    merged = read_machine_config()
+    merged.update(read_user_config())
+    return merged
+
+
+def set_value(key: str, value: Optional[str], machine: bool = False) -> Path:
+    """Write one key (None removes it) to this person's file, or with
+    ``machine=True`` to the file every login on this computer shares.
+    Returns the file written.
+
+    Only the chosen file is read and rewritten -- never the merged view --
+    so setting one key for yourself never copies the machine's values into
+    your own file (where they would then hide later changes to the machine
+    file)."""
     if key not in KEYS:
         raise KeyError("unknown mousedb config key %r (known: %s)" % (key, ", ".join(KEYS)))
-    cfg = read_config()
+    path = machine_config_path() if machine else CONFIG_PATH
+    cfg = _read_file(path)
     if value is None:
         cfg.pop(key, None)
     else:
         cfg[key] = str(value)
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    return CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def get(key: str) -> Optional[str]:
@@ -173,9 +224,12 @@ def require(key: str) -> Path:
     if v is None:
         raise ConfigError(
             "mousedb does not know '%s' on this machine.\n"
-            "  Set it once:   mousedb config --set %s <path>\n"
+            "  Set it once for everyone on this computer:\n"
+            "                   mousedb config --machine --set %s <path>\n"
+            "  or just for you: mousedb config --set %s <path>\n"
             "  or for this run: set the environment variable %s\n"
-            "  (config file: %s)" % (key, key, KEYS[key], CONFIG_PATH))
+            "  (files: %s, %s)" % (key, key, key, KEYS[key],
+                                   machine_config_path(), CONFIG_PATH))
     return v
 
 
@@ -234,17 +288,20 @@ def status() -> list:
     each deciding what "derived" means will.
 
     Each entry: {key, value, source, kind, help, required, exists}
-      source  "environment <VAR>" | "config file" | "derived" | "not set"
+      source  "environment <VAR>" | "config file" | "machine config file"
+              | "derived" | "not set"
       exists  True / False for a path, None when there is nothing to check
     """
-    cfg = read_config()
+    user, machine = read_user_config(), read_machine_config()
     out = []
     for key, env in KEYS.items():
         kind, help_text = KEY_HELP.get(key, ("text", ""))
         if os.environ.get(env):
             source, value = "environment %s" % env, os.environ[env]
-        elif cfg.get(key):
-            source, value = "config file", str(cfg[key])
+        elif user.get(key):
+            source, value = "config file", str(user[key])
+        elif machine.get(key):
+            source, value = "machine config file", str(machine[key])
         else:
             fn = _ACCESSORS.get(key)
             derived = fn() if fn else None
@@ -281,7 +338,10 @@ def problems() -> list:
 
 def describe() -> str:
     """Human-readable table of every key, its value and where it came from."""
-    lines = ["mousedb configuration (%s)" % CONFIG_PATH, ""]
+    lines = ["mousedb configuration",
+             "  your own file:   %s" % CONFIG_PATH,
+             "  machine file:    %s  (shared by everyone on this computer)"
+             % machine_config_path(), ""]
     for entry in status():
         mark = ""
         if entry["exists"] is False:

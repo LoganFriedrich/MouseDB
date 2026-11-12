@@ -99,3 +99,40 @@ def test_the_setup_tab_imports_cleanly():
     from mousedb.gui import setup_tab
     assert hasattr(setup_tab, "SetupTab")
     assert "terminal" in setup_tab.__doc__
+
+
+# --------------------------------------------------------------------------
+# the machine file: settings shared by every login on one computer
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def machine_file(clean_env, tmp_path, monkeypatch):
+    f = tmp_path / "machine" / "config.json"
+    monkeypatch.setenv(cfg.MACHINE_CONFIG_ENV, str(f))
+    return f
+
+
+def test_a_new_login_on_a_set_up_computer_is_already_configured(machine_file, tmp_path):
+    """The whole point: a person who never ran a command still gets the
+    computer's locations (so a desktop shortcut works on their first click)."""
+    cfg.set_value("mousedb_root", str(tmp_path), machine=True)
+    cfg.set_value("snapshot_dir", str(tmp_path), machine=True)
+    assert not cfg.CONFIG_PATH.exists(), "the person's own file must not be written"
+    assert cfg.mousedb_root() == tmp_path
+    entry = next(e for e in cfg.status() if e["key"] == "mousedb_root")
+    assert entry["source"] == "machine config file"
+    assert not cfg.problems()
+
+
+def test_a_persons_own_setting_wins_over_the_machines(machine_file, tmp_path):
+    cfg.set_value("lab_name", "machine", machine=True)
+    cfg.set_value("lab_name", "mine")
+    assert cfg.lab_name() == "mine"
+    assert next(e for e in cfg.status() if e["key"] == "lab_name")["source"] == "config file"
+
+
+def test_setting_your_own_key_does_not_copy_the_machines_into_your_file(machine_file):
+    cfg.set_value("lab_name", "machine", machine=True)
+    cfg.set_value("snapshot_dir", "elsewhere")
+    mine = json.loads(cfg.CONFIG_PATH.read_text(encoding="utf-8"))
+    assert mine == {"snapshot_dir": "elsewhere"}
