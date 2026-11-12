@@ -270,8 +270,9 @@ undocumented columns, and an upload would be rejected until they are added.
 
 ## The longer answer: the "Where Is My Data" tab
 
-Open the mousedb GUI (MouseDB environment active, then `mousedb-entry`) and
-find **11. Where Is My Data**. One row per cohort:
+Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
+**MouseDB** -> **MouseDB**; from a terminal: MouseDB environment active, then
+`mousedb-entry`) and find **11. Where Is My Data**. One row per cohort:
 
 | column | meaning |
 |---|---|

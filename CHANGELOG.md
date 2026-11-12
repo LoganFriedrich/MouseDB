@@ -6,6 +6,18 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- `mousedb-make-shortcuts`: puts **MouseDB** (the window) and **MouseDB -
+  Browse the data** on the Desktop and in a MouseDB folder of the Start menu,
+  for you, or with `--all-users` for everyone who logs in to the computer
+  (administrator). They run `pythonw -m mousedb.gui` / `-m mousedb.data_browser`,
+  never an exe shim. `python -m mousedb.gui` is new: the window without a
+  console, with a message box (and `%LOCALAPPDATA%\mousedb\gui.log`) when it
+  cannot start.
+- A machine settings file shared by every login on a computer
+  (`%ProgramData%\mousedb\config.json`; `mousedb config --machine --set ...`).
+  A person's own `~/.mousedb/config.json` still wins key by key. Without it,
+  everyone but the person who installed mousedb was told "mousedb does not
+  know where the snapshot is" on their first click.
 - Data browser: the **Browse the data** button on the Where Is My Data tab (and
   `mousedb-data-browser`, and a desktop shortcut it can make) opens every table
   the database holds in the web browser, read-only, with sort, facets, filters,

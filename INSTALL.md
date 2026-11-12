@@ -46,9 +46,55 @@ mousedb import --all --dry-run
 # 5. Import for real (one line per cohort, OK or FAIL; exit code 1 if any cohort failed)
 mousedb import --all
 
-# 6. Launch the GUI
+# 6. Shortcuts, so nobody needs this terminal again (see "Shortcuts" below)
+mousedb-make-shortcuts            # for you;  --all-users for everyone (administrator)
+
+# 7. Launch the GUI (or double-click "MouseDB" on the desktop)
 mousedb entry
 ```
+
+## Opening MouseDB (for everyone, no terminal)
+
+- **MouseDB** on the desktop, or Start menu -> **MouseDB** folder -> **MouseDB**:
+  the MouseDB window (tracking sheets, Where Is My Data, data entry).
+- **MouseDB - Browse the data**, in the same two places: the read-only data
+  browser (docs/DATA_BROWSER.md).
+
+Double-click and wait a few seconds; no console window appears. If MouseDB
+cannot start, a message box says why and names its log file
+(`%LOCALAPPDATA%\mousedb\gui.log`). If the shortcuts are not there, ask
+whoever looks after the computer to make them (next section).
+
+## Shortcuts (once per computer)
+
+The shortcuts run `pythonw -m mousedb.gui` and `pythonw -m mousedb.data_browser`
+of the environment mousedb is installed in -- never an `.exe` in `Scripts\`,
+because a running `.exe` blocks the next `pip install`. Nothing is copied, so
+they keep working after every update. Make them with the MouseDB environment
+active:
+
+```bash
+# for EVERYONE who logs in to this computer: Public Desktop + all-users Start menu
+#   -> run from an ADMINISTRATOR PowerShell (Windows refuses these folders otherwise)
+mousedb-make-shortcuts --all-users
+
+# for yourself only (your Desktop + your Start menu); no administrator needed
+mousedb-make-shortcuts
+
+# both shortcuts into one existing folder you may write to (e.g. one person's Desktop)
+mousedb-make-shortcuts --folder <folder>
+```
+
+`--no-desktop` / `--no-start-menu` leave one place out. Running it again
+replaces the shortcuts in place. It refuses, in words and before writing
+anything, a folder it may not write to, and it never creates a folder that is
+not already there (other than the MouseDB folder in the Start menu). The same
+command without the console script: `python -m mousedb.shortcuts`.
+
+A shortcut only works for a person if mousedb knows, for that person, where
+the database and the snapshot are. On a computer several people use, set the
+locations once for everyone with `--machine` (see "Configuration" below), not
+in each person's own settings.
 
 ## Data browser (optional)
 
@@ -61,9 +107,11 @@ conda activate <env_dir>
 pip install -e ".[browse]"      # from the mousedb checkout; adds Datasette
 ```
 
-Nothing else is installed system-wide. Each person who wants a desktop icon
-opens the browser once and presses "Put a shortcut on my desktop" in its small
-window (or runs `mousedb-data-browser --make-shortcut`). Each person's private
+Nothing else is installed system-wide. Its shortcut, **MouseDB - Browse the
+data**, is made for everyone with the MouseDB shortcut by
+`mousedb-make-shortcuts --all-users` (see "Shortcuts"); a person can also
+make their own by opening the browser once and pressing "Put a shortcut on my
+desktop" in its small window (or `mousedb-data-browser --make-shortcut`). Each person's private
 copy (about half a gigabyte) lives in their own `%LOCALAPPDATA%\mousedb\data_browser`.
 Operator guide, and why the copy: [docs/DATA_BROWSER.md](docs/DATA_BROWSER.md).
 
@@ -231,7 +279,20 @@ pip install -e <repo>
 
 ## Configuration (once per machine)
 
-mousedb has NO built-in paths. After installing, tell it where things are:
+mousedb has NO built-in paths. After installing, tell it where things are.
+
+**On a computer several people log in to, add `--machine` to every `--set`
+line below.** That writes the computer's settings file
+(`%ProgramData%\mousedb\config.json` on Windows, `/etc/mousedb/config.json`
+elsewhere; `MOUSEDB_MACHINE_CONFIG` names another file), which everyone who
+logs in reads. Without `--machine` a value is saved in your own
+`~/.mousedb/config.json` and nobody else gets it: the next person to
+double-click a MouseDB shortcut would be told mousedb does not know where the
+snapshot is. A person's own file wins over the machine file, key by key, so
+one person can still point somewhere else. Only put locations every login can
+reach in the machine file (a folder inside one person's OneDrive is not one).
+If Windows refuses to write the machine file, run the command from an
+administrator PowerShell.
 
 ```
 mousedb config --set mousedb_root <folder holding connectome.db, exports/, logs/>
@@ -246,7 +307,11 @@ mousedb config --show
 
 Any command that needs a location that is not set stops with a message naming
 the exact `mousedb config --set` line to run. Values can also be given per run
-as environment variables (`mousedb config --show` lists them).
+as environment variables (`mousedb config --show` lists them). Order of
+precedence: environment variable, then your own file, then the machine file;
+`mousedb config --show` names both files and, for every key, which one its
+value came from (`config file` = yours, `machine config file` = the
+computer's).
 
 ### Study facts (once per study)
 

@@ -5,14 +5,18 @@ no SQL, nothing to install on your side.
 
 ## Opening it
 
-Either of these:
+Any of these:
 
-- In MouseDB (`mousedb entry`), open the **Where Is My Data** tab and press
-  **Browse the data** (the purple button).
-- Double-click **MouseDB - Browse the data** on your desktop. You do not have
-  it yet? Open the browser once with the button, then press **Put a shortcut on
-  my desktop** in its small window. (Each person makes their own; it takes one
-  click.)
+- Double-click **MouseDB - Browse the data** on the desktop.
+- Or open the Windows **Start** menu, find the **MouseDB** folder, and click
+  **MouseDB - Browse the data**.
+- Or, inside MouseDB (double-click **MouseDB** on the desktop), open the
+  **Where Is My Data** tab and press **Browse the data** (the purple button).
+
+The desktop and Start-menu shortcuts are there for everyone who logs in to a
+computer that has been set up for it (see "For whoever looks after mousedb"
+below). Not on your desktop? Open the browser once from inside MouseDB, then
+press **Put a shortcut on my desktop** in its small window.
 
 What happens next:
 
@@ -141,9 +145,18 @@ Every problem is reported in a message box saying what to do. The common ones:
 - **Install** (once per Python environment): `pip install -e ".[browse]"` from
   the mousedb checkout (or `pip install "mousedb[browse]"`). This adds
   Datasette and its dependencies; nothing system-wide.
+- **Shortcuts for everyone on a computer:** run `mousedb-make-shortcuts
+  --all-users` once, from an administrator PowerShell with the MouseDB
+  environment active. It puts **MouseDB** and **MouseDB - Browse the data** on
+  the Public Desktop and in a **MouseDB** folder of the all-users Start menu,
+  so every login sees both. Without `--all-users` it does the same for you
+  only (no administrator needed). Also set the locations once for the whole
+  computer (`mousedb config --machine --set ...`, see INSTALL.md,
+  "Configuration"): a shortcut only helps a person if mousedb knows, for them,
+  where the snapshot is. Full steps: INSTALL.md, "Shortcuts".
 - **Commands:** `mousedb-data-browser` opens it from a terminal;
   `--build-only` makes (or reuses) your copy and prints where it is and when
-  each table was taken; `--make-shortcut` puts the desktop shortcut in place;
+  each table was taken; `--make-shortcut` puts your own desktop shortcut in place;
   `--no-browser` opens the window without starting the web browser. (Not to be
   confused with the older `mousedb browse`, a terminal table printer that reads
   the live database.)

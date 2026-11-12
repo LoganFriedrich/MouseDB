@@ -37,9 +37,10 @@ cannot make video data disappear.)
 
 ## Where to do it
 
-Open the mousedb GUI: activate the MouseDB conda environment
-(`conda activate MouseDB`, or the full path of the environment if it was
-created with `--prefix`) and run `mousedb-entry`. Find the
+Open the mousedb GUI: double-click **MouseDB** on the desktop (or Start menu
+-> **MouseDB** folder -> **MouseDB**). From a terminal instead: activate the
+MouseDB conda environment (`conda activate MouseDB`, or the full path of the
+environment if it was created with `--prefix`) and run `mousedb-entry`. Find the
 **10. Tracking Sheets** tab. Everything below is a button on that tab unless
 it says otherwise.
 
