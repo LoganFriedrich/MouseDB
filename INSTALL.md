@@ -50,6 +50,23 @@ mousedb import --all
 mousedb entry
 ```
 
+## Data browser (optional)
+
+The "Browse the data" button (Where Is My Data tab) and `mousedb-data-browser`
+show the database's snapshot in each person's web browser, read-only. They need
+one extra package set, installed once in the MouseDB environment:
+
+```bash
+conda activate <env_dir>
+pip install -e ".[browse]"      # from the mousedb checkout; adds Datasette
+```
+
+Nothing else is installed system-wide. Each person who wants a desktop icon
+opens the browser once and presses "Put a shortcut on my desktop" in its small
+window (or runs `mousedb-data-browser --make-shortcut`). Each person's private
+copy (about half a gigabyte) lives in their own `%LOCALAPPDATA%\mousedb\data_browser`.
+Operator guide, and why the copy: [docs/DATA_BROWSER.md](docs/DATA_BROWSER.md).
+
 ## Running the tests
 
 ```bash

@@ -2,6 +2,11 @@
 
 This page is for the person doing the work. No codebase knowledge assumed.
 
+**Just want to look?** The **Browse the data** button on the Where Is My Data
+tab opens every table the database holds in your web browser -- sort, filter,
+save as CSV, no code. See [Browse the data](DATA_BROWSER.md). The files below
+are what you keep, analyze and send.
+
 ## The short answer
 
 `<mousedb_root>/exports/current/` (run `mousedb config --show` to see the

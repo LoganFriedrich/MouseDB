@@ -6,6 +6,27 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- Data browser: the **Browse the data** button on the Where Is My Data tab (and
+  `mousedb-data-browser`, and a desktop shortcut it can make) opens every table
+  the database holds in the web browser, read-only, with sort, facets, filters,
+  CSV of what is on screen, a description on every column (from the data
+  dictionaries), ready-made tables (animals, sessions, reaches, brain region and
+  group counts) and three fill-in questions. It shows each person's private
+  copy of the snapshot, never the live database, and holds no snapshot file
+  open, so it can be left open overnight. Served by Datasette on 127.0.0.1 only;
+  optional extra `pip install -e ".[browse]"`. Guide: docs/DATA_BROWSER.md.
+
+### Changed
+- The snapshot also copies `projects`, `surgeries`, `brain_samples`,
+  `region_counts` and `elife_region_counts` (small tables the data browser
+  shows; no export reads them).
+
+### Fixed
+- The snapshot refresh no longer fails when a reader has a table file open at
+  the moment it swaps the new one in (on Windows a replace fails while the file
+  is open). It waits up to two minutes for the reader to let go.
+
+### Added
 - `mousedb-weekly-report` writes a dated "Where is my data" HTML page (and a
   LATEST copy): videos by stage per project and cohort, why pillar-tray sessions
   have not started, finish estimates, machine status, the database table and

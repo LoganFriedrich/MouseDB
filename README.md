@@ -84,6 +84,7 @@ GUI bugs, a screenshot helps a lot.
 ## Operator guides (no codebase knowledge assumed)
 
 - [Where is my data?](docs/WHERE_IS_MY_DATA.md) -- the current exports folder (CSV + data dictionaries, ODC-SCI shape), the per-cohort status tab, and how reach data gets into the database (`mousedb import-reaches`).
+- [Browse the data](docs/DATA_BROWSER.md) -- look at every table the database holds in your web browser: read-only, point and click, sort, filter, save as CSV, a description for every column. The "Browse the data" button on the Where Is My Data tab, or a desktop shortcut.
 - [Tracking Sheets](docs/TRACKING_SHEETS.md) -- importing the lab's tracking workbooks from a button, choosing between duplicate files, creating a new cohort sheet.
 - Tissue analyses -- MouseBrain's analysis outputs (measurements, figures, `registry.json` provenance) are mirrored into `<mousedb_root>/exports/<analysis>` and `figures/<analysis>` by `mousedb import-analyses` (hourly where scheduled); `exports/ANALYSES_MANIFEST.json` and the Where Is My Data tab show one line per analysis. See "How tissue analysis outputs get here" in [Where is my data?](docs/WHERE_IS_MY_DATA.md).
 - `mousedb config --show` -- every machine-specific location (database, snapshot, pipeline folders, sheets folder, lab name) and where each value came from. Nothing lab-specific is in the source; everything is set once per machine with `mousedb config --set <key> <value>`.
