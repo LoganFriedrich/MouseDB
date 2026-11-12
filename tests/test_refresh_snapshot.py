@@ -9,6 +9,7 @@ overrides, that a watcher appearing after the snapshot withholds the vouch,
 and that a watcher running before it still aborts the whole run.
 """
 import sqlite3
+import sys
 
 import pytest
 
@@ -167,3 +168,36 @@ def test_a_write_that_fails_keeps_the_previous_snapshot_intact(configured, monke
         rs.refresh()
     assert (configured / "reach_data.parquet").read_bytes() == before
     assert pd.read_parquet(configured / "reach_data.parquet")["id"].tolist() == [1]
+
+
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="only Windows refuses to replace a file that is open")
+def test_swap_waits_for_a_reader_to_let_go(tmp_path):
+    """WHY: anything reading the snapshot (the Where Is My Data tab, the data
+    browser making its private copy) holds a table file open for seconds. On
+    Windows a replace fails while the file is open, so without a wait one such
+    read at the wrong moment failed the whole nightly refresh."""
+    import threading
+    import time
+    out = tmp_path / "t.parquet"
+    out.write_bytes(b"old")
+    tmp = tmp_path / "t.parquet.tmp"
+    tmp.write_bytes(b"new")
+    reader = open(out, "rb")
+    threading.Thread(target=lambda: (time.sleep(1.5), reader.close())).start()
+    rs.swap_in(tmp, out, wait_seconds=30)
+    assert out.read_bytes() == b"new"
+    assert not tmp.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="only Windows refuses to replace a file that is open")
+def test_swap_gives_up_loudly_on_a_reader_that_never_lets_go(tmp_path):
+    out = tmp_path / "t.parquet"
+    out.write_bytes(b"old")
+    tmp = tmp_path / "t.parquet.tmp"
+    tmp.write_bytes(b"new")
+    with open(out, "rb"):
+        with pytest.raises(PermissionError):
+            rs.swap_in(tmp, out, wait_seconds=1)
+    assert out.read_bytes() == b"old"

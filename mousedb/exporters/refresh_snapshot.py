@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -106,6 +107,42 @@ def watcher_running() -> bool:
         return True
 
 
+# How long a swap waits for readers of the old file to let go. Readers of the
+# snapshot (the Where Is My Data tab, the bench scan, the data browser making
+# its private copy) hold a table file for seconds, so two minutes is generous;
+# a reader that holds one longer than that is a defect to find, and the job
+# still fails loudly rather than waiting forever.
+SWAP_WAIT_SECONDS = 120
+
+
+def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
+    """Move ``tmp`` onto ``out``, waiting while a reader has ``out`` open.
+
+    WHY: on Windows, replacing a file fails ("Access is denied") while ANY
+    program has it open -- whatever sharing that program asked for (tested
+    2026-11-12: even a reader that opened it with delete sharing blocks the
+    replace). Snapshot readers open these files at any time of day. Without a
+    wait, a person refreshing the Where Is My Data tab, or opening the data
+    browser, at the moment of the swap would fail the whole nightly refresh.
+    A reader lets go within seconds, so the swap retries once a second.
+    """
+    wait_seconds = SWAP_WAIT_SECONDS if wait_seconds is None else wait_seconds
+    deadline = time.monotonic() + wait_seconds
+    said = False
+    while True:
+        try:
+            os.replace(tmp, out)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            if not said:
+                print("  %s is open in another program; waiting up to %d s for it "
+                      "to let go ..." % (out.name, wait_seconds), flush=True)
+                said = True
+            time.sleep(1)
+
+
 def refresh(db_path: Path = None, snapshot_dir: Path = None,
            tables=TABLES, force: bool = False) -> dict:
     """Export each table in ``tables`` from ``db_path`` to
@@ -163,7 +200,7 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
                 # so a reader sees the old snapshot or the new one, never half.
                 tmp = out.with_name(out.name + ".tmp")
                 df.to_parquet(tmp, index=False)
-                os.replace(tmp, out)
+                swap_in(tmp, out)
                 counts[table] = len(df)
                 print("  %s: %d rows -> %s" % (table, len(df), out), flush=True)
         finally:
