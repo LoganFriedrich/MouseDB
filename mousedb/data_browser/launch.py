@@ -279,18 +279,8 @@ def _clear_state(server: Server) -> None:
 def desktop_dir() -> Path:
     """This person's Desktop folder, wherever Windows keeps it (it can be
     redirected, e.g. into OneDrive, so ~/Desktop is not good enough)."""
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-             "[Environment]::GetFolderPath('Desktop')"],
-            capture_output=True, text=True, timeout=30,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        p = Path(out.stdout.strip())
-        if out.returncode == 0 and str(p) and p.is_dir():
-            return p
-    except Exception:
-        pass
-    return Path.home() / "Desktop"
+    from .. import shortcuts
+    return shortcuts.desktop_dir()
 
 
 def shortcut_path(desktop: Optional[Path] = None) -> Path:
@@ -300,24 +290,14 @@ def shortcut_path(desktop: Optional[Path] = None) -> Path:
 def make_desktop_shortcut(desktop: Optional[Path] = None) -> Path:
     """Put "MouseDB - Browse the data" on this person's desktop.
 
-    It runs ``pythonw -m mousedb.data_browser`` of THIS environment, so it keeps
+    The same shortcut ``mousedb-make-shortcuts`` makes (mousedb.shortcuts):
+    ``pythonw -m mousedb.data_browser`` of THIS environment, so it keeps
     working after the code is updated (no exe shim, no copied file)."""
-    if sys.platform != "win32":
-        raise BrowserError("Desktop shortcuts are made on Windows only.")
-    link = shortcut_path(desktop)
-    env = dict(os.environ, MDB_LNK=str(link), MDB_TGT=str(pythonw()),
-               MDB_ARGS="-m %s" % MODULE, MDB_WD=str(Path.home()),
-               MDB_DESC="Browse what mousedb holds (read-only copy of the snapshot)")
-    script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MDB_LNK); "
-              "$s.TargetPath = $env:MDB_TGT; $s.Arguments = $env:MDB_ARGS; "
-              "$s.WorkingDirectory = $env:MDB_WD; $s.Description = $env:MDB_DESC; $s.Save()")
-    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                       env=env, capture_output=True, text=True, timeout=60,
-                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if r.returncode != 0 or not link.is_file():
-        raise BrowserError("The desktop shortcut could not be made (%s)."
-                           % (r.stderr.strip() or "no reason given"))
-    return link
+    from .. import shortcuts
+    try:
+        return shortcuts.write_shortcut(shortcuts.BROWSER, desktop or desktop_dir())
+    except shortcuts.ShortcutError as e:
+        raise BrowserError(str(e)) from None
 
 
 def start_detached() -> None:
