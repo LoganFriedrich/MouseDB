@@ -62,10 +62,19 @@ DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
 # reads it, however complete the database is. Food restriction state is not a
 # small covariate in a task where the animal works for food.
 TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records",
-          "weights", "video_pellets"]
+          "weights", "video_pellets",
+          "projects", "surgeries", "brain_samples", "region_counts",
+          "elife_region_counts"]
 # "video_pellets" (2026-10-16): one row per pellet the pipeline cut each video
 # into, reached for or not. Without it the exports could only count pellets that
 # had a reach, and "pellets presented" came out below 20 in most sessions.
+#
+# "projects" .. "elife_region_counts" (2026-11-12): read by the data browser
+# (mousedb.data_browser), which shows the snapshot and NEVER the live
+# database -- so a table missing from here is a table nobody can browse. They
+# are small (one row per project, surgery, brain, and brain region), so they
+# add seconds to a refresh. No export reads them; detected_cells (one row per
+# cell) is left out on purpose because of its size.
 
 
 def watcher_blocks_db() -> bool:
