@@ -108,6 +108,15 @@ their combined file) wait for the scheduled job, because they read the
 database itself.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
+BROWSE THE DATA: opens the data browser -- every table the database holds,
+in your web browser, read-only, no code. A small window appears while it
+makes your own copy of the snapshot (under a minute, once a day), then your
+web browser opens. Click a column to sort, a value to filter, CSV to save
+what you see. Close the small window when you are done. It shows the
+snapshot (as of the time it names), never the live database, so it cannot
+get in the way of the imports. Its window can put a shortcut on your
+desktop. Guide: docs/DATA_BROWSER.md. Terminal: mousedb-data-browser
+
 TISSUE ANALYSES: below the export files, one line per MouseBrain analysis
 says how many samples are current, how many were produced with a method
 other than the one now approved (stale -- re-run before use), how many were
@@ -218,6 +227,12 @@ class DataStatusTab(QWidget):
             ("Open exports folder", self.open_exports,
              "Open the folder of current CSVs (+ data dictionaries) in Explorer.",
              "background:#16405a; color:white; font-weight:bold;"),
+            ("Browse the data", self.browse_data,
+             "Open every table the database holds in your web browser -- read-only, "
+             "point and click, save any view as CSV. Shows your own copy of the "
+             "snapshot, never the live database, so leaving it open is harmless. "
+             "A small window appears first; closing it closes the browser.",
+             "background:#5a3d7a; color:white; font-weight:bold;"),
             ("Refresh exports now", self.refresh_exports,
              "Rewrite reach_data.csv, manual_scores.csv, every cohort's reach files and "
              "each project's combined reach files from the latest snapshot right now "
@@ -509,6 +524,29 @@ class DataStatusTab(QWidget):
             os.startfile(d)
         else:
             self.exports.append("No exports folder yet -- press 'Refresh exports now'.")
+
+    def browse_data(self):
+        """Start the data browser as its own process (mousedb.data_browser).
+
+        WHY a separate process, not a window of this one: the browser serves a
+        web page for as long as someone keeps looking at it, and this GUI must
+        stay free -- and closing this GUI must not close someone's browsing.
+        It never opens the live database (see mousedb/data_browser)."""
+        from ..data_browser.launch import datasette_missing_message, start_detached
+        missing = datasette_missing_message()
+        if missing:
+            QMessageBox.warning(self, "Browse the data", missing)
+            return
+        try:
+            start_detached()
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Browse the data",
+                "The data browser could not be started:\n%s: %s\n\nTry again; if it "
+                "keeps happening, tell whoever looks after mousedb." % (type(e).__name__, e))
+            return
+        self.exports.append("Opening the data browser: a small window appears, and your "
+                            "web browser opens when your copy is ready (under a minute).")
 
     def refresh_exports(self):
         self.exports.append("Rewriting current exports from the latest snapshot...")
