@@ -88,6 +88,9 @@ checked-in code, not what's planned.
   which then deleted the second one's lock. The lock
   (`logs/.update.task.lock`) is now taken in one step, kept while the update's
   program is running, and taken over at once only when that program is gone.
+  The old `update.lock` is still written, and touched every minute while the
+  update runs, so a window running an earlier version (which takes over an
+  `update.lock` older than 2 hours) refuses for the whole update.
 - The snapshot refresh's `--retry-minutes` window now starts at the first
   "database is locked", not when the job starts. Time spent waiting for an
   import to finish (up to `--lock-wait-minutes`) used to spend the window, so

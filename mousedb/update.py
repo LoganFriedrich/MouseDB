@@ -83,6 +83,13 @@ LOCK_MUTEX_NAME = "update"
 # so while an update runs this version writes it too, and refuses to start
 # while a running earlier update holds it. Without this, an old window and a
 # new one would not see each other and both would run.
+#
+# An earlier version judges this marker by AGE alone: one less than two hours
+# old is a running update, an older one is taken over. Updates of this version
+# can run longer than that (the snapshot step's limit is 12 hours), so the
+# marker is touched every task_mutex.HEARTBEAT_SECONDS for as long as the
+# update holds the lock (_start_legacy_heartbeat). Written once and left, it
+# would let an old window start a second update two hours in.
 LEGACY_LOCK_NAME = "update.lock"
 # Only for a holder this computer cannot look up (an update started on another
 # computer that shares the logs folder): its lockfile is touched every minute
@@ -249,6 +256,33 @@ def _write_legacy_marker(logs: Path, mutex) -> None:
         pass
 
 
+def _start_legacy_heartbeat(logs: Path, mutex):
+    """Keep the earlier versions' marker young while this update runs.
+
+    Returns the Event that stops it (set it in run_update's finally). Touches
+    the marker only while it still carries this update's token, so a marker
+    some other update has since written is never kept alive by this one.
+    See LEGACY_LOCK_NAME for why."""
+    import threading
+    from . import task_mutex
+    stop = threading.Event()
+    marker = logs / LEGACY_LOCK_NAME
+    token = mutex._identity
+    interval = task_mutex.HEARTBEAT_SECONDS
+
+    def beat():
+        while not stop.wait(interval):
+            try:
+                if json.loads(marker.read_text(encoding="utf-8")).get("token") != token:
+                    return
+                os.utime(marker, None)
+            except Exception:
+                pass        # unreadable for a moment (being written): try again next beat
+
+    threading.Thread(target=beat, name="mousedb-update-legacy-marker", daemon=True).start()
+    return stop
+
+
 def _remove_legacy_marker(logs: Path, mutex) -> None:
     """Remove the marker only if this update wrote it."""
     p = logs / LEGACY_LOCK_NAME
@@ -283,6 +317,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
         res.finished = res.started
         log("update skipped: " + held)
         return res
+    legacy_beat = _start_legacy_heartbeat(logs, mutex)
     try:
         for key, label, cmd in STEPS:
             if key in skip:
@@ -300,6 +335,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
         res.message = ("Everything landed." if not failed
                        else "%d step(s) failed: %s" % (len(failed), "; ".join(failed)))
     finally:
+        legacy_beat.set()
         _remove_legacy_marker(logs, mutex)
         mutex.release(log=log)
     # Record: the last result for the GUI label, and an append-only ledger.

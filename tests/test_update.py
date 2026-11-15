@@ -249,3 +249,29 @@ def test_an_earlier_version_sees_this_update_running(root):
     up.run_update(triggered_by="test", runner=runner, log=lambda s: None)
     assert seen and all(seen)
     assert not (root / "logs" / up.LEGACY_LOCK_NAME).exists()
+
+
+def test_an_earlier_version_still_sees_this_update_after_two_hours(root, monkeypatch):
+    """An earlier version takes over an update.lock older than two hours. This
+    version's updates can run longer than that, so the marker it writes must
+    stay young for as long as the update runs."""
+    from mousedb import task_mutex
+    monkeypatch.setattr(task_mutex, "HEARTBEAT_SECONDS", 0.05)
+    refused_by_old_rule = []
+
+    def runner(cmd):
+        # the earlier versions' file name, spelled out so this test means the
+        # same thing against any version
+        marker = root / "logs" / "update.lock"
+        old = time.time() - 3 * 3600                  # three hours into the update
+        os.utime(marker, (old, old))
+        deadline = time.time() + 5
+        while time.time() - marker.stat().st_mtime >= 2 * 3600 and time.time() < deadline:
+            time.sleep(0.05)
+        # the earlier versions' own rule: younger than 2 hours means running
+        refused_by_old_rule.append(time.time() - marker.stat().st_mtime < 2 * 3600)
+        return 0, "ok"
+
+    up.run_update(triggered_by="test", skip=up.STEP_KEYS[1:], runner=runner, log=lambda s: None)
+    assert refused_by_old_rule == [True]
+

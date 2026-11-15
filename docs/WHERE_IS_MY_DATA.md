@@ -549,17 +549,20 @@ names the update that is running (its process number, when it started, and
 its command). An update keeps that place for as long as its program is still
 running, however long that is; if the program that started it has gone (the
 window was closed or the computer restarted mid-update), the next press
-takes over at once. The marker is `logs/.update.task.lock` beside the
-database. While an update runs, an `update.lock` is written beside it too, so
-a window still running an earlier version of this tool also sees it and
-refuses; and an update started by such a window is respected the same way
-(an `update.lock` whose program has gone is ignored). A
+takes over at once. The marker is `<mousedb_root>/logs/.update.task.lock`
+(the `logs` folder under the configured `mousedb_root`). While an update
+runs, an `update.lock` is written beside it too and touched every minute
+until the update ends, so a window still running an earlier version of this
+tool -- which treats an `update.lock` older than two hours as left over --
+also sees it and refuses, however long the update takes; and an update
+started by such a window is respected the same way (an `update.lock` whose
+program has gone is ignored). A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
 
 From a terminal the same thing is `mousedb update` (`--skip sheets` etc.
-leaves a step out). Its full record is `logs/updates.jsonl` beside the
-database; the newest entry holds each step's last 15 lines of output.
+leaves a step out). Its full record is `<mousedb_root>/logs/updates.jsonl`;
+the newest entry holds each step's last 15 lines of output.
 
 **When a step shows [FAIL]:** read its last line in the dialog. "database is
 locked" means something else was writing at that moment -- press the button
