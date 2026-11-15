@@ -84,10 +84,11 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config import require
 from .pipeline_tree import iter_files
+from .task_mutex import LockWaitTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -479,6 +480,45 @@ def load_pending_phases(consequence: str = BEFORE_IMPORTING) -> set:
 
 def save_pending_phases(cohorts: Iterable[str]) -> None:
     _write_json_atomically(pending_phases_path(), sorted(cohorts))
+
+
+# How long a writer of the list of cohorts still to re-label waits for another
+# writer to finish with it. Each holds it for one read and one write of a small
+# file (well under a second, a few seconds over a slow share), so a minute
+# means something is wrong, not that the other writer is busy.
+PENDING_PHASES_LOCK_WAIT_SECONDS = 60
+
+
+def update_pending_phases(change: Callable[[set], set],
+                          consequence: str = BEFORE_IMPORTING) -> set:
+    """Read the list of cohorts still to re-label, apply ``change`` to it, and
+    write the result -- as ONE step no other writer can interleave with; the
+    new list.
+
+    WHY: two programs write this list. The reach import adds the cohorts it
+    imported into and takes off those it re-labelled; a save in the MouseDB
+    window whose own phase refresh failed adds that cohort
+    (``Database._queue_for_reach_import``). The commonest reason that refresh
+    fails is a database busy with the running reach import -- so the two write
+    the list at the very moments they are most likely to overlap. Each used to
+    read the file, change it in memory and write it back: a window write that
+    landed between the import's read and its write was overwritten, and that
+    cohort kept labels from its old dates with nothing reporting it.
+
+    HOW: the read-change-write runs under its own lock (a ``TaskMutex`` named
+    ``reach-phases-list`` in the same folder, so the import's hold of the
+    database lock never blocks it, and a writer that crashed while holding it
+    is recognised and its lock broken, as for the database lock). A writer
+    that cannot get the lock within ``PENDING_PHASES_LOCK_WAIT_SECONDS``
+    raises ``LockWaitTimeout``, having changed nothing."""
+    from .task_mutex import TaskMutex
+    lock = TaskMutex("reach-phases-list", base_dir=pending_phases_path().parent)
+    with lock.acquire(wait_seconds=PENDING_PHASES_LOCK_WAIT_SECONDS,
+                      log=lambda *_: None,
+                      waiting_for="another writer of the list of cohorts to re-label"):
+        new = set(change(load_pending_phases(consequence)))
+        save_pending_phases(new)
+    return new
 
 
 # ---------------------------------------------------------------------------
@@ -1053,8 +1093,10 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         # run read at its start: another program adds to it while the import
         # runs (a save in the window whose phase refresh failed --
         # Database._queue_for_reach_import), and writing only this run's set
-        # would drop that cohort, leaving its labels wrong for good.
-        save_pending_phases(load_pending_phases(PART_WAY) | pending | res.cohorts_touched)
+        # would drop that cohort, leaving its labels wrong for good. The
+        # read and the write are one locked step (update_pending_phases), so
+        # that program's write cannot land between them either.
+        update_pending_phases(lambda now: now | pending | res.cohorts_touched, PART_WAY)
         save_ledger(ledger)
 
     last_save = time.monotonic()
@@ -1082,7 +1124,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                         if time.monotonic() - last_save >= LEDGER_SAVE_SECONDS:
                             try:
                                 checkpoint()
-                            except (OSError, StateFileUnreadable) as e:
+                            except (OSError, StateFileUnreadable, LockWaitTimeout) as e:
                                 # Not fatal: the import goes on and the save at
                                 # the end tries again (and fails the run if it
                                 # still cannot write, or still cannot read the
@@ -1171,7 +1213,8 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                             # cohort just re-labelled leaves the list. A cohort
                             # done earlier in this loop and queued AGAIN since
                             # (a later failure elsewhere) stays on it.
-                            save_pending_phases((load_pending_phases(PART_WAY) - {cohort}) | left)
+                            update_pending_phases(
+                                lambda now, c=cohort: (now - {c}) | left, PART_WAY)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)

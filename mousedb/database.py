@@ -232,7 +232,9 @@ class Database:
         database's list. The list is read fresh just before it is written,
         never written from a copy held in memory, so the cohorts already on
         it -- put there by a reach import that stopped, or an earlier
-        failure -- are kept."""
+        failure -- are kept; and the read and the write hold the list's lock,
+        so a reach import writing it at the same moment cannot drop this
+        cohort, nor this write drop the import's."""
         try:
             from .config import require
             if Path(require("db_path")).resolve() != Path(self.db_path).resolve():
@@ -240,9 +242,12 @@ class Database:
         except Exception:
             return False                    # not configured: no live list to add to
         try:
-            from .import_reaches import load_pending_phases, save_pending_phases
-            save_pending_phases(load_pending_phases("the cohort was not added to it")
-                                | {cohort_id})
+            # One locked read-and-write (update_pending_phases): the running
+            # reach import writes the same list, and a write of ours landing
+            # between its read and its write would be lost.
+            from .import_reaches import update_pending_phases
+            update_pending_phases(lambda now: now | {cohort_id},
+                                  "the cohort was not added to it")
             return True
         except Exception as exc:
             print(f"[!] Could not queue cohort {cohort_id} for re-labelling by the "

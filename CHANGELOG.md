@@ -83,7 +83,10 @@ checked-in code, not what's planned.
   next nightly import re-derives it; the window shows a warning box; and a
   sheet import made from the window records the failure in its ledger line, as
   the scheduled one does. The reach import now adds to that list instead of
-  overwriting it, so a cohort put there while it runs is kept. Only the
+  overwriting it, so a cohort put there while it runs is kept. Every change
+  to that list (by the import, or by the window) is one locked read-and-write,
+  so a cohort the window adds between the import's read and its write is no
+  longer overwritten. Only the
   configured database's list is used; a database opened on another file never
   writes to it.
 - `mousedb import-reaches` reports every video that has rows in the database

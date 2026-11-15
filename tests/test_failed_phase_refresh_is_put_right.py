@@ -248,3 +248,70 @@ def test_a_share_drop_while_reading_the_list_keeps_every_cohort_on_it(tmp_path, 
     assert _pending(pending) == ["PROJB_02", "PROJC_03"]         # nothing dropped
     assert db.phase_refreshes[-1].get("queued_for_reach_import") is False
     assert any("Could not queue cohort PROJA_01" in s and "backfill-phases" in s for s in said)
+
+
+def test_a_cohort_queued_between_the_imports_read_and_write_is_not_lost(tmp_path, monkeypatch):
+    """The two writers of the list interleave: the window queues a cohort
+    after the import has read the list and just before its write lands. With
+    a plain read-change-write the import's write dropped that cohort; under
+    the list's lock the window's write waits for the import's and then adds
+    to what the import wrote.
+
+    The window's queue call runs on its own thread, started from inside the
+    import's first write of the list, and is given a moment to finish before
+    that write lands. A writer that does not wait for the import finishes in
+    that moment and is then overwritten; one that waits adds afterwards."""
+    import threading
+    root, db_file = _setup(tmp_path, monkeypatch)
+    monkeypatch.setenv("MOUSEDB_ROOT", str(tmp_path / "dbroot"))
+    monkeypatch.setenv("MOUSEDB_DB_PATH", str(db_file))
+    window_db = Database(db_file)
+    _features(root / "Analyzed" / "Project" / "PROJA01", "20260102_PROJA0101_P1")
+    import mousedb.backfill as bf
+    relabelled = []
+    monkeypatch.setattr(bf, "backfill_phases", lambda **k: relabelled.append(k["cohort_id"]))
+    real_save, real_load = ir.save_pending_phases, ir.load_pending_phases
+
+    def window_queues():
+        queue = getattr(window_db, "_queue_for_reach_import", None)
+        if queue is not None:
+            return queue("PROJB_02")
+        real_save(real_load() | {"PROJB_02"})        # a plain read-change-write
+        return True
+
+    window = []
+
+    def import_writes(cohorts):
+        if not window:
+            t = threading.Thread(target=lambda: window.append(window_queues()))
+            window.append(t)
+            t.start()
+            t.join(timeout=1.5)
+        return real_save(cohorts)
+    monkeypatch.setattr(ir, "save_pending_phases", import_writes)
+    ir.run(log=lambda *_: None)
+    window[0].join(timeout=30)
+    monkeypatch.setattr(ir, "save_pending_phases", real_save)
+    assert window[1:] == [True]                      # the window says it queued it
+    # Either the import re-labelled it in this run, or it waits for the next.
+    assert "PROJB_02" in relabelled or "PROJB_02" in real_load()
+    assert "PROJA_01" in relabelled
+
+
+def test_a_writer_that_cannot_get_the_lists_lock_changes_nothing(tmp_path, monkeypatch):
+    """A test of the locked read-and-write helper (update_pending_phases)
+    only: a writer that cannot get the list's lock in time raises and leaves
+    the list as it was."""
+    from mousedb.task_mutex import LockWaitTimeout, TaskMutex
+    root, db_file = _setup(tmp_path, monkeypatch)
+    ir.save_pending_phases({"PROJA_01"})
+    monkeypatch.setattr(ir, "PENDING_PHASES_LOCK_WAIT_SECONDS", 0)
+    other = TaskMutex("reach-phases-list", base_dir=ir.pending_phases_path().parent)
+    assert other.try_acquire()
+    try:
+        import pytest
+        with pytest.raises(LockWaitTimeout):
+            ir.update_pending_phases(lambda now: now | {"PROJB_02"})
+    finally:
+        other.release()
+    assert ir.load_pending_phases() == {"PROJA_01"}

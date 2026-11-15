@@ -399,7 +399,14 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
   a cohort's phases failed also puts that cohort on this list, so the next
   import puts its labels right; the window says so in a warning box. The
   import adds to the list and takes off only the cohorts it has re-labelled,
-  so a cohort put there while it runs is kept.
+  so a cohort put there while it runs is kept. Each change to the list takes
+  a short lock first (the file `.reach-phases-list.task.lock` in the same
+  `logs` folder, there only for the second or so the change takes), so a save
+  in the window and the running import can never overwrite each other's
+  change. A lock left behind by a program that crashed is cleared by the next
+  writer, as for the database lock; if a writer still cannot get it within a
+  minute it changes nothing and says so (the window's warning box then tells
+  you to run `mousedb backfill-phases`).
 
 **An unreadable ledger stops the import; it is never started again from
 nothing by itself.** If the ledger, or the list of cohorts still to re-label,
