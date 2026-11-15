@@ -76,6 +76,14 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb import-reaches` reports every video that has rows in the database
+  but no results file in the pipeline and is not in a review queue -- in its
+  output (before the summary line), in `logs/reach_rows_without_file.json`
+  and on the Where Is My Data tab. Such rows (a results file deleted or moved
+  away without going through review) used to stay in the database and the
+  exports unnoticed. Report only: nothing is removed and the exit code is
+  unchanged. A results file renamed without re-processing is matched by the
+  file name its rows record, so it is not listed while it is in the pipeline.
 - `mousedb import-reaches --pellets-only` skips a filed video whose newer run
   waits in a review queue, as the import itself does, and says how many it
   skipped. It used to write that video's filed pellet answers -- the ones

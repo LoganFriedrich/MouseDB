@@ -396,6 +396,35 @@ def scheduled_job_health(problems: List[str]) -> Optional[dict]:
     return report
 
 
+def rows_without_file_problem(path: Path) -> Optional[str]:
+    """A problem line when the last reach import found videos whose rows are in
+    the database but whose results file is gone from the pipeline (and that are
+    not in a review queue); None when it found none, or has not checked yet.
+
+    WHY HERE: those rows stay in the database and in every export as if the
+    video were still filed. The import deliberately does not remove them -- a
+    failed listing must never delete data -- so a person has to see them, and
+    nobody reads the import's log. The list itself is the file the import
+    writes (``import_reaches.ROWS_WITHOUT_FILE_NAME``)."""
+    try:
+        report = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        return ("the reach import's list of videos with rows but no results file "
+                "could not be read (%s): %s" % (path, e))
+    videos = (report.get("videos") or []) if isinstance(report, dict) else []
+    if not videos:
+        return None
+    shown = ", ".join(videos[:5]) + (", ..." if len(videos) > 5 else "")
+    return ("%d video(s) have reaches in the database but no results file in the "
+            "pipeline, and are not in review (%s; found by the reach import of %s). "
+            "Nothing was removed: put the file back, or hand the line to whoever "
+            "looks after the database (docs/WHERE_IS_MY_DATA.md, 'Reaches whose "
+            "results file has gone'). "
+            "Full list: %s" % (len(videos), shown, report.get("checked_at") or "?", path))
+
+
 def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     snapshot_dir = snapshot_dir or require("snapshot_dir")
     import pandas as pd
@@ -467,6 +496,15 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "not appear until it does." % (out["snapshot_age"], snap_time))
 
     out["jobs"] = scheduled_job_health(out["problems"])
+    try:
+        from .import_reaches import ROWS_WITHOUT_FILE_NAME
+        line = rows_without_file_problem(
+            Path(require("mousedb_root")) / "logs" / ROWS_WITHOUT_FILE_NAME)
+        if line:
+            out["problems"].append(line)
+    except Exception as e:
+        out["problems"].append("the reach import's list of rows without a results "
+                               "file is unavailable: %s" % e)
 
     rd["cohort"] = rd["subject_id"].str.rsplit("_", n=1).str[0]
     ps["cohort"] = ps["subject_id"].str.rsplit("_", n=1).str[0]

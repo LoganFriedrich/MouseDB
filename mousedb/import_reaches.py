@@ -56,6 +56,10 @@ WHAT IT DOES
      results file sits in a review queue (``Processing/Review``) and no longer
      in Analyzed, or a NEWER run of it waits there while the old one is still
      filed. See ``videos_back_in_review`` and ``withdraw_videos_back_in_review``.
+  8. REPORTS (never removes) every video that has rows in the database but no
+     results file anywhere it looked and is not in a review queue: in the run's
+     output and in ``<mousedb_root>/logs/reach_rows_without_file.json``, which
+     the Where Is My Data tab shows. See ``rows_without_a_filed_file``.
 
 Usage:
     mousedb import-reaches                 # what is new or changed
@@ -171,6 +175,7 @@ class ImportResult:
     moved: int = 0                # results files found under a new folder, not re-imported
     withdrawn_reaches: int = 0
     held: int = 0                 # filed results not imported: a newer run waits in review
+    without_file: List[str] = field(default_factory=list)  # rows in the db, no results file filed
     cohorts_touched: set = field(default_factory=set)
     messages: List[str] = field(default_factory=list)
 
@@ -977,6 +982,69 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     return videos, withdrawn, messages
 
 
+ROWS_WITHOUT_FILE_NAME = "reach_rows_without_file.json"
+# How many of those videos the run's output names; the file holds them all.
+ROWS_WITHOUT_FILE_SHOWN = 20
+
+
+def rows_without_file_path() -> Path:
+    return require("mousedb_root") / "logs" / ROWS_WITHOUT_FILE_NAME
+
+
+def rows_without_a_filed_file(conn: sqlite3.Connection, listed: Iterable[str],
+                              in_review: Iterable[str]) -> List[str]:
+    """Videos with rows in reach_data or video_pellets whose results file is
+    neither among ``listed`` (the results files this run found) nor in a
+    review queue (``in_review``), sorted.
+
+    WHY: rows leave the database only on positive evidence -- the video's
+    results sit in a review queue (``videos_back_in_review``). A results file
+    that leaves Analyzed any other way (deleted, moved somewhere the import
+    does not look) leaves its rows in the database, and in every export, as
+    if the video were still filed, and nothing said so. Deleting them here
+    would turn a failed or partial listing into lost data, so this only
+    REPORTS them: a person looks, and either puts the file back or hands the
+    question to whoever looks after the database. There is deliberately no
+    route here, or anywhere in this tool, that takes the rows out.
+
+    Matching. ``listed`` and ``in_review`` hold names as the RESULTS FILES
+    are named (the file name minus ``_features.json``). The rows carry the
+    name written INSIDE the file (``video_name``) and also the name of the
+    file they came from (``source_file``). The two names agree unless a file
+    was renamed without re-processing, so the rows' ``source_file`` is what is
+    matched: a renamed file that is there is not reported. ``video_name``
+    stands in only for rows that recorded no ``source_file``.
+
+    Cost: the first DISTINCT reads walk an index, not the table (reach_data's
+    unique (video_name, reach_id) and video_pellets' primary key both start
+    with video_name). Names that match a listed file outright are done; only
+    the few left over have their ``source_file`` looked up, one indexed read
+    each, so the nightly cost does not grow with the size of reach_data."""
+    listed, in_review = set(listed), set(in_review)
+    known = listed | in_review
+    tables = ["reach_data", "video_pellets"]
+    have = set()
+    for t in list(tables):
+        try:
+            have |= {r[0] for r in conn.execute("SELECT DISTINCT video_name FROM %s" % t)}
+        except sqlite3.OperationalError:
+            tables.remove(t)            # a database the import has never written to
+    out = []
+    for v in sorted(x for x in have - known if x):
+        sources = set()
+        for t in tables:
+            sources |= {r[0] for r in conn.execute(
+                "SELECT DISTINCT source_file FROM %s WHERE video_name = ?" % t, (v,))}
+        stems = {Path(str(f)).name[:-len(FEATURES_SUFFIX)]
+                 if str(f).endswith(FEATURES_SUFFIX) else Path(str(f)).stem
+                 for f in sources if f}
+        if None in sources or "" in sources:
+            stems.add(v)                # rows that recorded no file: match by name
+        if not stems & known:
+            out.append(v)
+    return out
+
+
 def watcher_running() -> bool:
     """Kept for compatibility; the run() guard uses watcher_blocks_db (a watcher
     that cannot write the central database must not stall imports)."""
@@ -1171,6 +1239,32 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     checkpoint=checkpoint)
                 res.withdrawn, res.withdrawn_reaches = v, r
                 res.messages.extend(msgs)
+                # Rows whose results file is gone without passing through a
+                # review queue: reported, never removed (rows_without_a_filed_file).
+                # Reported HERE, before the summary line, because the update
+                # job shows each step's last line and that must stay the summary.
+                # ``held`` is the review-queue test worked out before the
+                # loop over the same listing; no second walk of the queues.
+                res.without_file = rows_without_a_filed_file(conn, filed, held)
+                if res.without_file:
+                    shown = res.without_file[:ROWS_WITHOUT_FILE_SHOWN]
+                    line = ("%d videos have rows in the database but no results file in the "
+                            "pipeline and are not in review -- nothing was taken out; a person "
+                            "should look (%s%s)" % (
+                                len(res.without_file), ", ".join(shown),
+                                ", ..." if len(res.without_file) > len(shown) else ""))
+                    res.messages.append(line)
+                    log("  [!] " + line)
+                if not dry_run:
+                    try:
+                        _write_json_atomically(rows_without_file_path(), {
+                            "checked_at": datetime.now().isoformat(timespec="seconds"),
+                            "count": len(res.without_file),
+                            "videos": res.without_file})
+                    except OSError as e:
+                        res.messages.append("could not save the list of rows without a "
+                                            "results file: %s" % e)
+                        log("  [!] could not save the list of rows without a results file: %s" % e)
             else:
                 res.messages.append("no filed results found; nothing taken out")
         finally:

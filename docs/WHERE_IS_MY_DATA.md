@@ -643,6 +643,60 @@ exactly:
   wrote them, putting the pellet answers under review back into the exports
   until the next import took them out again.
 
+**Reaches whose results file has gone are reported, never removed.** A video
+leaves the database only through a review queue (above). If a filed video's
+results file disappears from the pipeline any other way -- deleted, moved to a
+folder the import does not look in -- its reaches would otherwise
+stay in the database and in every export as if the video were still filed,
+with nothing saying so. So every import, after taking out the videos sent
+back to review, compares the videos that have rows
+in the database with the results files it found, and lists every video that
+has rows but no file and is not in a review queue:
+
+- in its output, before its summary line:
+  `[!] N videos have rows in the database but no results file in the pipeline and are not in review -- nothing was taken out; a person should look (<first 20 names>)`;
+- in `<mousedb_root>/logs/reach_rows_without_file.json` (every name, and when
+  it checked, `checked_at`). The file is rewritten only by an import that
+  writes, finds filed results files, and gets past taking out the videos sent
+  back to review; an empty list there means THAT import found none. Every
+  other run leaves the last list as it was: a `--dry-run` (it prints the
+  `[!]` line but writes no file), `--pellets-only` (it does not make this
+  check at all), a run whose listing found no filed results at all (its
+  output says `no filed results found; nothing taken out` -- an empty listing
+  is treated as a broken listing, never as "every file is gone"), and a run
+  that stopped earlier (an unreadable ledger or list, a failed save). So the
+  list can be older than the last import; its date tells you how old;
+- on the **Where Is My Data** tab, among the problems at the top, with that
+  date (`found by the reach import of <checked_at>`).
+
+Nothing is deleted, and the import still succeeds: a listing that missed some
+files must never cost data. What to do: find out where the file went. If it
+was moved or renamed by mistake, put it back -- the next import clears the
+line. A video that was being moved
+between folders while the import ran can show up for one night and then
+disappear from the list by itself, and so can a video imported by hand with
+`--include-processing` while it is still being processed, until it is filed.
+
+How the import decides a video's file is there: every row in the database
+records the name of the results file it was imported from. The import
+compares those file names with the names of the results files it finds. So a
+results file that was renamed (a typo in the name corrected, for example) is
+NOT listed, as long as the renamed file is in the pipeline -- even though the
+name written inside it is still the old one, and the rows still carry that
+old name. (Rows imported before that file name was recorded fall back to the
+video name written inside the file.)
+
+**If the video really should no longer be in the database** (it was withdrawn
+on purpose, or recorded by mistake), that is a decision for a person, and
+there is deliberately no button or command for it in this tool. Do not delete
+rows by hand. Hand the line from the list to whoever looks after the
+database, and leave the line on the list until they have decided; it does no
+harm there.
+
+Never try to take out the rows of a video that IS filed (its results file is
+in the pipeline): the next import would bring them back anyway, and a video
+that needs another look goes back through a review queue instead.
+
 ## How tissue analysis outputs get here
 
 MouseBrain keeps its own record of every analysis output it produces -- the
@@ -897,6 +951,9 @@ in `<mousedb_root>/logs/tasks/bench_scan.log`.
   *In review* first -- held videos are not final yet. Then run
   `mousedb import-reaches --dry-run` to see whether files are waiting to be
   imported.
+- **"N video(s) have reaches in the database but no results file"** at the top
+  of the tab: see "Reaches whose results file has gone are reported, never
+  removed" above.
 - **"complete for ODC upload: False"**: a new column reached the exports
   without a dictionary entry. The problems list names it; the definition is
   added in `mousedb/exporters/data_dictionary.py`.
