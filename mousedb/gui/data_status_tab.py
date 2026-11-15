@@ -105,7 +105,13 @@ panel says when that last was). "Refresh exports now" rewrites reach_data,
 manual_scores, every cohort's reach files and each project's combined reach
 files immediately from the latest snapshot; the ODC_sessions files (and
 their combined file) wait for the scheduled job, because they read the
-database itself.
+database itself. Only one refresh writes the exports at a time: if another
+is already writing (often the nightly job), the button changes nothing and
+says "already being written -- try again when it finishes". If a refresh
+ran but a file could not be rewritten, a box says "The exports were not
+fully rewritten" and names what to fix; those files keep their previous
+version. While any job of this tab is running, the buttons say "still
+running" instead of starting another.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
 BROWSE THE DATA: opens the data browser -- every table the database holds,

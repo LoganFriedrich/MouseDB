@@ -389,14 +389,15 @@ reports `[FAIL]` for its exports; the button's export finishes them.
 **When "Refresh exports now" shows a warning instead.** If the refresh ran but
 did not finish cleanly -- a cohort's file could not be written, the snapshot
 was taken half before and half after an import, one of the "left out" checks
-could not read its input, or the wait for another refresh ran out -- a box
+could not read its input -- a box
 says "The exports were not fully rewritten:" followed by the end of what the
 exporter printed. Files that could not be rewritten keep their previous
 version; `MANIFEST.json` lists what went wrong under `problems` and
 `failures`. Read the message: it names the file, folder or cohort and what to
 do (close a file that is open in another program, reconnect a drive, wait for
 an import to finish). Then press the button again, or leave it to the nightly
-run.
+run. (When another refresh is already writing, the button never waits for it:
+it shows the "already being written" box above instead, and changes nothing.)
 
 ## The weekly page: the answer already written down
 
