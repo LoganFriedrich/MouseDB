@@ -34,6 +34,17 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb import-reaches` saves its ledger every few minutes during a run,
+  not only at the end, so a run stopped by the scheduled task's time limit and
+  restarted carries on where it stopped instead of importing every file again.
+  A video enters the ledger only after its rows are committed; every save is
+  written beside the ledger and swapped in whole, so a stop mid-save cannot
+  corrupt it (a corrupt ledger used to mean a full re-import); the cohorts
+  still to re-label are kept in `logs/reach_imports_phases_pending.json` until
+  done, so a run stopped before re-labelling has the next run do it; and a
+  video going back to review loses its ledger entry before its rows are
+  deleted, so a stop in between can no longer leave it skipped when it is
+  filed again.
 - The snapshot refresh no longer fails when a reader has a table file open at
   the moment it swaps the new one in (on Windows a replace fails while the file
   is open). It waits up to two minutes for the reader to let go.

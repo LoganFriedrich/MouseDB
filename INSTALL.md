@@ -226,7 +226,7 @@ All subjects with session summaries for analysis:
 | Location | Purpose |
 |----------|---------|
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
-| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`) |
+| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete) |
 | `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
 | `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarised in `exports/ANALYSES_MANIFEST.json` |
 | `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |
@@ -350,7 +350,7 @@ environment:
 |---|---|---|---|
 | snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it) |
 | sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | every 4 h | imports the tracking workbooks (they are filled in by hand, so hourly only adds load) |
-| reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented |
+| reach import | `python -m mousedb.import_reaches` | hourly | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
 | analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
 | bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree, writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere) and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
 

@@ -358,6 +358,28 @@ import)`). A moved file whose content changed is imported as usual. If two
 remembered files share the moved file's name, the import does not guess and
 imports it again, which is safe, only slower.
 
+**A stopped import carries on where it stopped.** The import writes down
+which files it has imported (its ledger, `<mousedb_root>/logs/reach_imports.json`)
+every few minutes while it runs, not only at the end. So when a run is ended
+part-way -- the scheduled task's time limit, End in Task Scheduler, the
+computer restarting -- the next run (the task's automatic restart, or the
+next night's) skips everything already imported and does only the rest. At
+most the last few minutes of work are done again, which is safe: importing a
+video again replaces its rows, it never doubles them. You do not need to do
+anything; the restarted run's first line says how many files are still to
+import. Three rules keep a stopped run from leaving anything wrong behind:
+
+- A video is written into the ledger only after its reaches are in the
+  database, never before. A run stopped in between imports that video again.
+- The ledger file is never left half-written: each save is written beside it
+  and swapped in whole.
+- The cohorts whose protocol phases still have to be re-derived are kept in
+  `<mousedb_root>/logs/reach_imports_phases_pending.json` until that is done.
+  A run stopped before re-deriving them has the next run do it, even though
+  that run imports nothing new for those cohorts; its output then says
+  `N cohort(s) still to re-label from an earlier run that stopped`. Do not
+  delete this file: a cohort left out of it keeps reaches with no phase.
+
 **Only filed videos are in the database.** Filing means a video is done. When
 a filed video is sent back to a review queue -- a pellet nobody answered, a
 disagreement with the hand scores, a person asked "are you sure?" -- it is not
@@ -375,7 +397,11 @@ exactly:
   queue that is older than the filed one.
 - Its rows are copied first, to
   `_archived/reach_withdrawals/<date_time>/<video>_reach_data.csv` and
-  `<video>_video_pellets.csv`, then deleted.
+  `<video>_video_pellets.csv`, then deleted. Before any row is deleted the
+  import forgets that it had imported the video (its ledger entry goes, and
+  the ledger is saved). So an import stopped in the middle of this never
+  leaves a video gone from the database while the ledger still says it was
+  imported -- which would make the import skip it when it is filed again.
 - The import's log says so, one line per video:
   `[withdrawn] <video>: back in the triage queue, so not done -- N reach rows taken out until it is filed again`
   (or `a newer run is in the triage queue`),
