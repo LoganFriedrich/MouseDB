@@ -7,6 +7,12 @@
     <h1>Pipeline Status</h1>
 </div>
 
+{# Whose records these are: this computer's watcher only. The whole
+   pipeline's state is the pipeline census (Where Is My Data tab). #}
+<div class="card" style="background:#FFF8E1;border:1px solid #FFB300;">
+    {% for line in scope_lines %}<p style="margin:2px 0;">{{ line }}</p>{% endfor %}
+</div>
+
 <div class="card-grid" hx-get="/dashboard/summary-cards" hx-trigger="every 30s" hx-swap="innerHTML">
     {% include "components/summary_cards.html" %}
 </div>

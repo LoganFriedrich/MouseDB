@@ -16,6 +16,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPainter, QPen
 
 from ..watcher_bridge import (
+    watcher_scope_lines,
     WatcherBridge, STATE_DISPLAY, PIPELINE_STATES, ERROR_STATES, DONE_STATES,
 )
 
@@ -97,6 +98,18 @@ class VideoStatusTab(QWidget):
         self.refresh_btn.clicked.connect(self._refresh)
         header.addWidget(self.refresh_btn)
         main_layout.addLayout(header)
+
+        # Whose records these are. WHY: the watcher database holds only
+        # what THIS computer's watcher did; other computers' work is not in
+        # it, so its counts are not the pipeline's state (that is the
+        # pipeline census on the Where Is My Data tab). See
+        # watcher_bridge.watcher_scope_lines.
+        self.scope_label = QLabel("")
+        self.scope_label.setWordWrap(True)
+        self.scope_label.setStyleSheet(
+            "background: #FFF8E1; border: 1px solid #FFB300;"
+            " border-radius: 4px; padding: 6px; color: #5D4037;")
+        main_layout.addWidget(self.scope_label)
 
         # --- Unavailable placeholder ---
         self.unavailable_frame = QFrame()
@@ -223,13 +236,15 @@ class VideoStatusTab(QWidget):
                 f"This tab will populate once the watcher starts processing videos."
             )
             self.status_label.setText("Watcher not available")
+            self.scope_label.hide()
             return
 
         self.unavailable_frame.hide()
         self.content_widget.show()
+        self.scope_label.setText("\n".join(watcher_scope_lines(self.bridge.status)))
+        self.scope_label.show()
         self.status_label.setText(
-            f"Source: {self.bridge.status.db_path}  |  "
-            f"Updated: {datetime.now().strftime('%H:%M:%S')}"
+            f"Refreshed: {datetime.now().strftime('%H:%M:%S')}"
         )
 
         # Summary

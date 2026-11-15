@@ -655,6 +655,7 @@ def cmd_video_status(args):
     """Show video pipeline status from watcher.db."""
     from .watcher_bridge import (
         WatcherBridge, STATE_DISPLAY, PIPELINE_STATES, ERROR_STATES, DONE_STATES,
+        WATCHER_SCOPE, watcher_db_last_written, watcher_scope_lines,
     )
 
     bridge = WatcherBridge()
@@ -673,6 +674,10 @@ def cmd_video_status(args):
         import json
         output = {
             'watcher_db': str(bridge.status.db_path),
+            # Whose records these are: this computer's watcher only (see
+            # watcher_scope_lines). The pipeline census has the whole state.
+            'scope': WATCHER_SCOPE,
+            'watcher_db_last_written': watcher_db_last_written(bridge.status),
             'summary': {
                 'total_videos': summary.total_videos,
                 'total_collages': summary.total_collages,
@@ -703,7 +708,8 @@ def cmd_video_status(args):
 
     # Text output
     print(f"\n=== Video Pipeline Status ===")
-    print(f"Source: {bridge.status.db_path}")
+    for line in watcher_scope_lines(bridge.status):
+        print(line)
 
     done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
     in_progress = (summary.total_videos - done
@@ -778,6 +784,7 @@ def cmd_archive_status(args):
     """Show archive processing and version compliance status."""
     from .watcher_bridge import (
         WatcherBridge, ARCHIVE_STATE_DISPLAY,
+        WATCHER_SCOPE, watcher_db_last_written, watcher_scope_lines,
     )
 
     bridge = WatcherBridge()
@@ -797,6 +804,10 @@ def cmd_archive_status(args):
         cohort_rollup = bridge.get_archive_cohort_rollup()
         output = {
             'watcher_db': str(bridge.status.db_path),
+            # Whose records these are: this computer's watcher only (see
+            # watcher_scope_lines). The pipeline census has the whole state.
+            'scope': WATCHER_SCOPE,
+            'watcher_db_last_written': watcher_db_last_written(bridge.status),
             'versions_json': str(summary.versions_path) if summary.versions_path else None,
             'versions': (summary.versions_info.get('versions', {})
                          if summary.versions_info else {}),
@@ -847,10 +858,10 @@ def cmd_archive_status(args):
 
     # Text output
     print("\n=== Archive Processing Status ===")
-    source_parts = [f"Source: {bridge.status.db_path}"]
+    for line in watcher_scope_lines(bridge.status):
+        print(line)
     if summary.versions_path:
-        source_parts.append(f"Versions: {summary.versions_path}")
-    print('  |  '.join(source_parts))
+        print(f"Versions: {summary.versions_path}")
 
     if summary.versions_info and summary.versions_info.get('versions'):
         v = summary.versions_info['versions']

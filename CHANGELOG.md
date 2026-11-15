@@ -76,6 +76,16 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- The Video Pipeline and Archive Status tabs, `mousedb video-status`,
+  `mousedb archive-status` and the web dashboard read the watcher database
+  the watcher actually writes: a `db_path` set in the `watcher` section of
+  `~/.mousereach/config.json` now comes before `<processing_root>/watcher.db`
+  (the same order MouseReach uses). They read the default file before, which
+  on a computer set up that way is an old copy. Each view now also says, above
+  its numbers, that these are this computer's watcher records only, names the
+  file and when it was last written, and points to the Where Is My Data tab for
+  the whole pipeline. `--json` gains `scope` and `watcher_db_last_written`.
+  Guide: docs/WATCHER_VIEWS.md.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
   a large database, so the update could never finish and left the current

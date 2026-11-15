@@ -5,7 +5,9 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from ...database import get_db
-from ...watcher_bridge import WatcherBridge, STATE_DISPLAY, find_watcher_db
+from ...watcher_bridge import (
+    WatcherBridge, STATE_DISPLAY, find_watcher_db, watcher_scope_lines,
+)
 from ..dependencies import get_watcher
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,10 @@ async def dashboard_page(request: Request):
         "summary": summary,
         "animals": animals,
         "state_display": STATE_DISPLAY,
+        # Whose records these are (this computer's watcher only); shown
+        # above the numbers. Empty when no watcher database was found.
+        "scope_lines": (watcher_scope_lines(watcher.status)
+                        if watcher.is_available else [watcher.status.message]),
     })
 
 

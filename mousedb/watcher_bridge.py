@@ -4,6 +4,11 @@ Read-only bridge to MouseReach watcher.db for video pipeline status rollup.
 This module reads the watcher's SQLite database to provide cross-database views:
 "For animal CNT_01_15, how many videos are processed vs pending vs failed?"
 
+SCOPE: the watcher database holds what THIS computer's watcher recorded; it
+is not the pipeline's state (other computers' work is not in it). Every view
+built on this module says so (watcher_scope_lines); the pipeline's state is
+the pipeline census, read from the folders (pipeline_census.py).
+
 RULES:
 - NEVER writes to watcher.db (read-only)
 - NEVER imports mousereach (reads config.json directly)
@@ -144,12 +149,22 @@ class ArchiveAnimalSummary:
 
 def find_watcher_db() -> WatcherStatus:
     """
-    Locate watcher.db using discovery chain.
+    Locate the watcher database this computer's watcher WRITES.
 
-    Order:
+    Order (the same rule MouseReach's own commands use; mousedb reads the
+    config file directly and never imports mousereach):
     1. MOUSEDB_WATCHER_DB environment variable
-    2. ~/.mousereach/config.json -> processing_root/watcher.db
-    3. Hardcoded fallback path
+    2. ~/.mousereach/config.json -> watcher.db_path (the configured database)
+    3. ~/.mousereach/config.json -> processing_root/watcher.db (the default)
+    4. mousedb config: mousereach_pipeline_root/watcher.db
+
+    WHY step 2 comes before step 3: a node may point its watcher at another
+    file (``db_path`` in the ``watcher`` section, set because SQLite over a
+    network share loses writes). The watcher then writes ONLY that file, and
+    the default ``<processing_root>/watcher.db`` may still exist beside it
+    holding old rows. Reading the default showed that stale copy as the
+    pipeline's state. When the configured file is missing, nothing is shown:
+    falling back to the default would show the stale copy again.
     """
     # 1. Environment variable
     env_path = os.environ.get('MOUSEDB_WATCHER_DB')
@@ -160,12 +175,26 @@ def find_watcher_db() -> WatcherStatus:
         return WatcherStatus(False, None,
                              f"MOUSEDB_WATCHER_DB set but file not found: {p}")
 
-    # 2. Read MouseReach config.json (no mousereach import!)
+    # 2./3. Read MouseReach config.json (no mousereach import!)
     config_file = Path.home() / ".mousereach" / "config.json"
     if config_file.exists():
         try:
             with open(config_file, 'r') as f:
                 config = json.load(f)
+            watcher_cfg = config.get('watcher') or {}
+            configured = (watcher_cfg.get('db_path')
+                          if isinstance(watcher_cfg, dict) else None)
+            if configured:
+                p = Path(configured)
+                if p.exists():
+                    return WatcherStatus(
+                        True, p, f"Found via mousereach config watcher.db_path: {p}")
+                return WatcherStatus(
+                    False, None,
+                    f"The watcher is configured to write {p} (watcher.db_path in "
+                    f"~/.mousereach/config.json), but that file does not exist. "
+                    f"The watcher may not have been started yet."
+                )
             processing_root = config.get('processing_root')
             if processing_root:
                 p = Path(processing_root) / "watcher.db"
@@ -193,6 +222,43 @@ def find_watcher_db() -> WatcherStatus:
         False, None,
         "watcher.db not found. Set MOUSEDB_WATCHER_DB or run mousereach-setup."
     )
+
+
+# Machine-readable name of what the watcher views cover (in --json output).
+WATCHER_SCOPE = "this_computer_watcher_records_only"
+
+
+def watcher_db_last_written(status: WatcherStatus) -> Optional[str]:
+    """When the watcher database was last written ('YYYY-MM-DD HH:MM', local
+    time), or None. The watcher keeps its database in rollback-journal mode,
+    so every committed change rewrites the file and its modified time is the
+    time of the last recorded change."""
+    if not status or not status.db_path:
+        return None
+    try:
+        import time
+        return time.strftime("%Y-%m-%d %H:%M",
+                             time.localtime(os.path.getmtime(status.db_path)))
+    except OSError:
+        return None
+
+
+def watcher_scope_lines(status: WatcherStatus) -> List[str]:
+    """The lines every watcher view (two GUI tabs, two commands, the web
+    dashboard) shows above its numbers. ASCII only: the commands print them.
+
+    WHY: the watcher database records what THIS computer's watcher did. Work
+    done by other computers, and anything moved by hand, is not in it, so its
+    counts are not the pipeline's state. The pipeline's state is its folders,
+    which the pipeline census reads (Where Is My Data tab). A person reading
+    these views must be told which of the two they are looking at."""
+    when = watcher_db_last_written(status) or "unknown"
+    return [
+        f"Records of this computer's watcher only: {status.db_path} "
+        f"(last written {when}).",
+        "Work done on other computers is not in these records. The whole "
+        "pipeline's state, read from its folders, is on the Where Is My Data tab.",
+    ]
 
 
 def find_versions_json() -> Optional[Path]:
