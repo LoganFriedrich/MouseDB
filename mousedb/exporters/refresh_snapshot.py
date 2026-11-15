@@ -408,8 +408,19 @@ def retake_census() -> bool:
 
 
 def _finish(counts: dict, force: bool) -> int:
+    """Rewrite the current exports from the snapshot just taken. Returns this
+    job's exit code: 1 when the exports could not be rewritten or came out
+    incomplete (MANIFEST.json ``complete`` False), else 0.
+
+    WHY non-zero: the exports are what people read ("where is my data?"),
+    and this job is what keeps them current. A run that refreshed the
+    snapshot but not the exports used to print a [warn] and exit 0, so the
+    task looked healthy while ``exports/current`` stayed as it was; nothing
+    that checks the scheduled jobs looks for [warn]. A failure now prints
+    [FAIL] and fails the task."""
     snapshot_ok = True
-    print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()))
+    # flush: a run stopped during the exports must still show this line.
+    print("Done: %s" % ", ".join("%s=%d" % kv for kv in counts.items()), flush=True)
 
     # The snapshot is for code; the CURRENT EXPORTS are for people ("where is
     # my data?"). Rewrite them from the snapshot just taken.
@@ -431,11 +442,20 @@ def _finish(counts: dict, force: bool) -> int:
     try:
         from mousedb.exporters.current import refresh_current
         m = refresh_current(db_ok=db_ok)
-        print("Current exports: %d files, complete=%s%s" % (
-            len(m["files"]), m["complete"],
-            ("; problems: " + " | ".join(m["problems"])) if m["problems"] else ""))
     except Exception as e:
-        print("  [warn] current exports not refreshed: %s" % e)
+        print("  [FAIL] current exports not refreshed: %s: %s. The files in "
+              "exports/current are still those of the last good refresh."
+              % (type(e).__name__, e), flush=True)
+        return 1
+    print("Current exports: %d files, complete=%s%s" % (
+        len(m["files"]), m["complete"],
+        ("; problems: " + " | ".join(m["problems"])) if m["problems"] else ""), flush=True)
+    for note in m.get("notes") or []:
+        print("  [note] %s" % note, flush=True)
+    if not m["complete"]:
+        print("  [FAIL] current exports are incomplete (MANIFEST.json says complete=False; "
+              "the problems are listed above and in the manifest)", flush=True)
+        return 1
     return 0
 
 

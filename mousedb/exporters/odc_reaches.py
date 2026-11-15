@@ -817,9 +817,12 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         exclusions = export_exclusions.compute(
             snapshot_dir, mousereach_pipeline_root(), _cfg("cohort_sheets_dir"))
     except Exception as e:
-        manifest["problems"].append(
-            "analysis exclusions could not be computed (%s: %s) -- the analysis "
-            "files were not written rather than written unfiltered" % (type(e).__name__, e))
+        msg = ("analysis exclusions could not be computed (%s: %s) -- the analysis "
+               "files were not written rather than written unfiltered" % (type(e).__name__, e))
+        manifest["problems"].append(msg)
+        # "failures": problems that mean a file is missing or stale -- the
+        # export is incomplete (exporters.current), not merely annotated.
+        manifest.setdefault("failures", []).append(msg)
         return manifest
     exclusion_report = []
     for cid in wanted:
@@ -865,7 +868,9 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                     "rows": entry["session_rows"], "columns": entry["session_columns"],
                     "dictionary": "sessions_analysis_DATA_DICTIONARY.csv"}
         except Exception as e:
-            manifest["problems"].append("ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e))
+            msg = "ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e)
+            manifest["problems"].append(msg)
+            manifest.setdefault("failures", []).append(msg)
 
     # One dictionary for every analysis file of each kind. Their columns do not
     # vary by cohort, so thirteen copies under thirteen names would be thirteen

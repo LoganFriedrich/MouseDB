@@ -296,6 +296,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
             manifest[k] = part[k]
     manifest["files"].update(part["files"])
     manifest["problems"].extend(part["problems"])
+    manifest.setdefault("failures", []).extend(part.get("failures", []))
     if not part["problems"]:
         sig_file.write_text(json.dumps({"signature": sig, "files": part["files"]}, indent=1),
                             encoding="utf-8")
@@ -334,7 +335,9 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
                 manifest["files"][name]["cohort"] = cohort_source(cid) or label
                 archive_old_names(out_dir, ["ODC_sessions_%s.csv" % cid], label)
         except Exception as e:
-            manifest["problems"].append("ODC_sessions_%s: %s: %s" % (cid, type(e).__name__, e))
+            msg = "ODC_sessions_%s: %s: %s" % (cid, type(e).__name__, e)
+            manifest["problems"].append(msg)
+            manifest.setdefault("failures", []).append(msg)
         finally:
             if xlsx.exists():
                 xlsx.unlink()
@@ -390,20 +393,28 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
         # snapshot written before refreshes were numbered).
         "snapshot_generation": generation,
     }
+    # A part that FAILED makes the whole refresh incomplete: its files are
+    # the previous run's (or missing), and "complete" is what the nightly job
+    # and the Where Is My Data tab judge the exports by.
     for fn in (_reach_data_csv, _manual_scores_csv, _odc_reaches_csvs):
         try:
             fn(snapshot_dir, out_dir, manifest)
         except Exception as e:
+            manifest["complete"] = False
             manifest["problems"].append("%s: %s: %s" % (fn.__name__, type(e).__name__, e))
     if db_ok:
         try:
             _odc_sessions_csvs(out_dir, manifest)
         except Exception as e:
+            manifest["complete"] = False
             manifest["problems"].append("ODC sessions: %s: %s" % (type(e).__name__, e))
     else:
         manifest["problems"].append(
             "ODC_sessions_*.csv not refreshed this run (database not readable now); "
             "the files present are from the previous refresh")
+
+    if manifest.get("failures"):
+        manifest["complete"] = False
 
     # Did a new generation land while the files were being written? Then they
     # mix two refreshes: say so, loudly, rather than present them as current.

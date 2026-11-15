@@ -51,7 +51,12 @@ def _snapshot(tmp_path):
     return snap
 
 
-def test_refresh_from_snapshot_alone_is_complete(tmp_path):
+def test_refresh_from_snapshot_alone_is_complete(tmp_path, monkeypatch):
+    # This snapshot holds only the two tables this test is about; the per-reach
+    # ODC export needs more (its own tests cover it), and a cohort file that
+    # fails to build makes the export incomplete -- so it is left out here.
+    from mousedb.exporters import current
+    monkeypatch.setattr(current, "_odc_reaches_csvs", lambda *a: None)
     out = tmp_path / "current"
     m = refresh_current(_snapshot(tmp_path), out, db_ok=False)
     assert (out / "reach_data.csv").is_file()

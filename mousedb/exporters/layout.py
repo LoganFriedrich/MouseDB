@@ -233,8 +233,12 @@ def combine_all(root: Path, kinds: Iterable[str], projects: Iterable[str],
                 if entry is not None:
                     manifest["files"][key(root, combined_file(root, kind, project))] = entry
             except Exception as e:
-                manifest["problems"].append("combined %s %s file not written: %s: %s"
-                                            % (project, kind, type(e).__name__, e))
+                msg = ("combined %s %s file not written: %s: %s"
+                       % (project, kind, type(e).__name__, e))
+                manifest["problems"].append(msg)
+                # A file that should exist and was not written: a failure,
+                # which makes the export incomplete (exporters.current).
+                manifest.setdefault("failures", []).append(msg)
 
 
 def archive_flat_layout(root: Path) -> List[str]:
