@@ -110,11 +110,11 @@ def test_no_empty_cells_survive_the_wider_document():
 def test_the_skip_signature_changed_with_the_output():
     """A machine holding older code must not skip the rewrite.
 
-    The per-reach files are skipped when their INPUTS are unchanged, so a format
-    change has to be declared or superseded files sit there looking current.
+    The per-reach files are skipped when their INPUTS are unchanged, so the
+    exporter's own code is part of the signature: a hash of the package source,
+    never a number someone has to remember to bump.
     """
     from mousedb.exporters import current
     import inspect
-    source = inspect.getsource(current)
-    assert 'sig["output_format"] = 18' in source, (
-        "bump output_format whenever these columns change")
+    source = inspect.getsource(current.odc_reaches_signature)
+    assert 'sig["output_format"] = exporter_code_hash()' in source
