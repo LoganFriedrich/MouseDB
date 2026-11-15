@@ -485,10 +485,10 @@ class TestNoInventedDates:
         with db.session() as s:
             s.add(Cohort(cohort_id='CNT_02', project_code='CNT', start_date=DAY0))
         imp = BrainGlobeImporter(db)
-        brain = '002_CNT_02_08_1p625x_z4'
+        brain = '002_CNT_02_01_1p625x_z4'
         with db.session() as s:
             assert imp._ensure_brain_sample(s, brain, imp.parse_brain_name(brain), False) is not None
-            assert s.query(Subject).filter_by(subject_id='CNT_02_08').one().cohort_id == 'CNT_02'
+            assert s.query(Subject).filter_by(subject_id='CNT_02_01').one().cohort_id == 'CNT_02'
 
 
 class _FakeSession:
