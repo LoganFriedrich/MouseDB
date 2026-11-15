@@ -78,9 +78,13 @@ tracking-sheet folder (check 5). Two cases are kept apart:
   the manifest lists as a problem. Nothing is hidden: it is a standing fact.
 * the input EXISTS but cannot be read tonight (a locked or damaged database, a
   record that does not parse, a sheet folder that is set but cannot be
-  reached): compute() raises ExclusionInputUnreadable. The analysis files are
-  then not written at all -- last night's stay -- and the export is incomplete,
-  so the nightly job fails loudly. WHY: before, the check was skipped with a
+  reached): compute() raises ExclusionInputUnreadable. Then no per-reach
+  file is rewritten -- not the complete record, the summary, the analysis
+  files, analysis_EXCLUSIONS.csv or the combined files; last night's stay --
+  and the export is incomplete, so the nightly job fails loudly. A database
+  that is only busy (a watcher writing at that moment) is waited for and
+  tried again first (collage_listing); one that opens but has no collage
+  table counts as unreadable, because it cannot say which recordings exist. WHY: before, the check was skipped with a
   note (or, for a collage database, with nothing at all), the entries it would
   have left out went into the analysis files, and the job stayed green.
 """
@@ -124,8 +128,10 @@ POST_INJURY_STAGES = {"After injury", "Rehabilitation", "After rehabilitation"}
 
 
 class ExclusionInputUnreadable(RuntimeError):
-    """An input the checks need exists but cannot be read right now. The
-    analysis files must not be written without it (see the module docstring)."""
+    """An input the checks need exists but cannot be read right now. No
+    per-reach file may be rewritten without it -- complete record, summary,
+    analysis files, exclusions report, combined files; last night's stay (see
+    the module docstring)."""
 
 
 @dataclass
@@ -197,11 +203,27 @@ COLLAGE_SOURCES = (("watcher.db", "collages"),
                    ("watcher_central.db", "pipeline_collages"))
 
 
-def collage_listing(pipeline_root: Optional[Path]) -> Dict[str, object]:
+# A watcher writing at the moment the export reads holds a short write lock.
+# Since an unreadable database now stops the analysis files (compute(), fail
+# closed), one busy answer must not count as "unreadable": each read waits up
+# to COLLAGE_BUSY_TIMEOUT seconds for the lock, and a read still refused as
+# locked/busy is tried COLLAGE_TRIES times, COLLAGE_RETRY_SECONDS apart. Any
+# other error (a damaged file, a missing table) is not retried: waiting does
+# not change it.
+COLLAGE_BUSY_TIMEOUT = 30
+COLLAGE_TRIES = 3
+COLLAGE_RETRY_SECONDS = 20
+
+
+def collage_listing(pipeline_root: Optional[Path],
+                    errors: Optional[Dict[str, str]] = None) -> Dict[str, object]:
     """{database name: sorted collage file names, or "absent" / "unreadable"}.
 
     The one place the collage names are read, so the exclusion checks and the
-    current-exports skip signature (exporters.current) see the same thing."""
+    current-exports skip signature (exporters.current) see the same thing.
+    ``errors``, when given, receives {database name: the error} for each one
+    that was unreadable, so the refusal can say why."""
+    import time
     out: Dict[str, object] = {}
     if pipeline_root is None:
         return out
@@ -210,15 +232,26 @@ def collage_listing(pipeline_root: Optional[Path]) -> Dict[str, object]:
         if not path.exists():
             out[db_name] = "absent"
             continue
-        try:
-            con = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True, timeout=5)
+        for attempt in range(1, COLLAGE_TRIES + 1):
             try:
-                out[db_name] = sorted(str(r[0]) for r in
-                                      con.execute("SELECT filename FROM %s" % table))
-            finally:
-                con.close()
-        except sqlite3.Error:
-            out[db_name] = "unreadable"
+                con = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True,
+                                      timeout=COLLAGE_BUSY_TIMEOUT)
+                try:
+                    out[db_name] = sorted(str(r[0]) for r in
+                                          con.execute("SELECT filename FROM %s" % table))
+                finally:
+                    con.close()
+                break
+            except sqlite3.Error as e:
+                out[db_name] = "unreadable"
+                if errors is not None:
+                    errors[db_name] = "%s: %s" % (type(e).__name__, e)
+                busy = any(w in str(e).lower() for w in ("locked", "busy"))
+                if not busy or attempt == COLLAGE_TRIES:
+                    break
+                time.sleep(COLLAGE_RETRY_SECONDS)
+        if isinstance(out[db_name], list) and errors is not None:
+            errors.pop(db_name, None)
     return out
 
 
@@ -367,13 +400,15 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
     snapshot = Path(snapshot_dir)
     ex = Exclusions()
     pipeline = Path(pipeline_root) if pipeline_root else None
-    listing = collage_listing(pipeline)
+    errors: Dict[str, str] = {}
+    listing = collage_listing(pipeline, errors)
     unreadable = sorted(db for db, v in listing.items() if v == "unreadable")
     if unreadable:
         raise ExclusionInputUnreadable(
             "the MouseReach watcher database(s) %s in %s exist but could not be read "
-            "(locked or damaged), so the recordings each video was cut from are not "
-            "known tonight" % (", ".join(unreadable), pipeline))
+            "(%s), so the recordings each video was cut from are not known tonight"
+            % (", ".join(unreadable), pipeline,
+               "; ".join("%s: %s" % (db, errors.get(db, "unreadable")) for db in unreadable)))
     if listing.get("watcher_central.db", "absent") == "absent":
         ex.notes.append(
             "recording checks (identity, collision) ran without the central watcher "

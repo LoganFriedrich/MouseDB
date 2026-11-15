@@ -370,13 +370,65 @@ def _one_video(tmp_path):
                      hand=[(a, DAY, "P", 1, _vector(1))])
 
 
+def _refuses(snap, names, **inputs):
+    """compute() must REFUSE, naming the input -- not run the checks without it.
+
+    Written as an assertion on what compute() does, so the old behaviour (the
+    check skipped and compute() returning as if all were well) fails here
+    with the notes it returned, not with a missing name."""
+    try:
+        ex = ee.compute(snap, **inputs)
+    except Exception as e:                      # noqa: BLE001 -- judged below
+        assert type(e).__name__ == "ExclusionInputUnreadable", repr(e)
+        assert names in str(e), str(e)
+        return
+    pytest.fail("the checks ran without an input that exists but cannot be read; "
+                "they returned drop_videos=%r notes=%r" % (sorted(ex.drop_videos), ex.notes))
+
+
 def test_a_collage_database_that_cannot_be_read_stops_the_checks(tmp_path):
     snap = _one_video(tmp_path)
     pipeline = tmp_path / "pipe"
     pipeline.mkdir()
     (pipeline / "watcher.db").write_bytes(b"this is not a database file at all" * 40)
-    with pytest.raises(ee.ExclusionInputUnreadable, match="watcher.db"):
-        ee.compute(snap, pipeline_root=pipeline)
+    _refuses(snap, "watcher.db", pipeline_root=pipeline)
+
+
+def test_a_collage_database_without_its_table_stops_the_checks(tmp_path):
+    """A database that opens but has no collage table cannot say which
+    recordings exist either: refused, not treated as "no recordings"."""
+    snap = _one_video(tmp_path)
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    con = sqlite3.connect(str(pipeline / "watcher.db"))
+    con.execute("CREATE TABLE something_else (x)")
+    con.commit()
+    con.close()
+    _refuses(snap, "no such table", pipeline_root=pipeline)
+
+
+def test_a_briefly_locked_collage_database_is_waited_for(tmp_path, monkeypatch):
+    """A watcher writing at that moment holds a short write lock. One busy
+    answer is not "unreadable": the read is tried again before giving up."""
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    con = sqlite3.connect(str(pipeline / "watcher.db"))
+    con.execute("CREATE TABLE collages (filename TEXT)")
+    con.execute("INSERT INTO collages VALUES ('20250310_PROJ0101_PROJ0102_P1.mp4')")
+    con.commit()
+    con.close()
+    real_connect = sqlite3.connect
+    tries = []
+
+    def busy_once(*a, **k):
+        tries.append(1)
+        if len(tries) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real_connect(*a, **k)
+    monkeypatch.setattr(ee.sqlite3, "connect", busy_once)
+    monkeypatch.setattr(ee, "COLLAGE_RETRY_SECONDS", 0, raising=False)
+    listing = ee.collage_listing(pipeline)
+    assert listing["watcher.db"] == ["20250310_PROJ0101_PROJ0102_P1.mp4"], listing
 
 
 def test_a_name_audit_record_that_does_not_parse_stops_the_checks(tmp_path):
@@ -385,14 +437,12 @@ def test_a_name_audit_record_that_does_not_parse_stops_the_checks(tmp_path):
     (pipeline / "pipeline_records").mkdir(parents=True)
     (pipeline / "pipeline_records" / "archive_name_conflicts.json").write_text(
         '{"conflicts": [{"recording": ', encoding="utf-8")   # cut off mid-write
-    with pytest.raises(ee.ExclusionInputUnreadable, match="name-audit record"):
-        ee.compute(snap, pipeline_root=pipeline)
+    _refuses(snap, "name-audit record", pipeline_root=pipeline)
 
 
 def test_a_sheet_folder_that_is_set_but_gone_stops_the_checks(tmp_path):
     snap = _one_video(tmp_path)
-    with pytest.raises(ee.ExclusionInputUnreadable, match="tracking-sheet folder"):
-        ee.compute(snap, sheets_dir=tmp_path / "moved_away")
+    _refuses(snap, "tracking-sheet folder", sheets_dir=tmp_path / "moved_away")
 
 
 def test_inputs_that_do_not_exist_are_notes_not_failures(tmp_path):
@@ -408,16 +458,36 @@ def test_inputs_that_do_not_exist_are_notes_not_failures(tmp_path):
 
 
 def test_the_export_writes_no_analysis_file_when_an_input_cannot_be_read(tmp_path, monkeypatch):
-    """End to end: the per-reach export takes the failure path (files not
-    written, a failure listed, so the export is incomplete)."""
+    """End to end: with readable inputs the analysis file IS written (the
+    control, so the second half cannot pass by accident); with a sheet folder
+    that is set but gone, no per-reach file is rewritten and the export lists
+    a failure, so it is incomplete."""
     from mousedb.exporters import odc_reaches
     (tmp_path / "s").mkdir()
     snap = _one_video(tmp_path / "s")
-    monkeypatch.setenv("MOUSEDB_COHORT_SHEETS", str(tmp_path / "moved_away"))
+    reach = pd.read_parquet(snap / "reach_data.parquet")
+    # The columns a cohort's analysis file is built from.
+    reach["reach_id"] = range(1, len(reach) + 1)
+    reach["reach_num"] = 1
+    reach["attention_score"] = 0.5
+    reach["test_phase"] = "Pillar"
+    reach["phase_group"] = "Baseline"
+    reach["extended_features"] = "{}"
+    reach.to_parquet(snap / "reach_data.parquet", index=False)
+    pd.DataFrame([{"subject_id": "PROJ_01_01", "sex": "F", "date_of_birth": None}]
+                 ).to_parquet(snap / "subjects.parquet", index=False)
     monkeypatch.setattr(odc_reaches, "load_snapshot", lambda d: {
-        "reach": pd.read_parquet(snap / "reach_data.parquet"), "subjects": None,
+        "reach": pd.read_parquet(snap / "reach_data.parquet"),
+        "subjects": pd.read_parquet(snap / "subjects.parquet"),
         "pellets": None, "records": pd.DataFrame(), "video_pellets": None})
+
+    control = tmp_path / "control"
+    m = odc_reaches.export(snap, control)
+    assert not m.get("failures"), m.get("failures")
+    assert list(control.rglob("reaches_*_analysis.csv")), "control wrote no analysis file"
+
+    monkeypatch.setenv("MOUSEDB_COHORT_SHEETS", str(tmp_path / "moved_away"))
     out = tmp_path / "out"
     m = odc_reaches.export(snap, out)
     assert m.get("failures") and "tracking-sheet folder" in m["failures"][0]
-    assert not list(out.rglob("reaches_*_analysis.csv"))
+    assert not list(out.rglob("*.csv")), sorted(p.name for p in out.rglob("*.csv"))
