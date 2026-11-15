@@ -1080,8 +1080,14 @@ def main(argv=None) -> int:
         # Writing into the live exports folder: wait for any other refresh of
         # it to finish first, and keep it out while this runs (the reasons are
         # at exporters.current.EXPORTS_LOCK).
-        from .current import hold_exports_lock
-        with hold_exports_lock():
+        from .current import EXIT_LOCK_TIMEOUT, hold_exports_lock, lock_timeout_message
+        from ..task_mutex import LockWaitTimeout
+        try:
+            lock = hold_exports_lock()
+        except LockWaitTimeout as e:
+            print(lock_timeout_message(e), flush=True)
+            return EXIT_LOCK_TIMEOUT
+        with lock:
             m = export(snap, out, args.cohort)
     else:
         m = export(snap, out, args.cohort)

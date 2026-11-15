@@ -481,7 +481,8 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
             raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
         return mutex
     return mutex.acquire(wait_seconds=lock_wait_seconds,
-                         waiting_for="another export refresh")
+                         waiting_for="another export refresh",
+                         lock_label="the current-exports lock")
 
 
 def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
@@ -588,10 +589,24 @@ def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool) -> d
 # The exit code of ``--no-wait`` when another refresh is writing: distinct from
 # 1 (an export that ran and is incomplete) so a caller can say "busy" instead.
 EXIT_BUSY = 3
+# The exit code when this run WAITED for another refresh and the wait ran out
+# (its budget used up, or the other refresh showed no progress for
+# task_mutex.STALL_MINUTES). Nothing was changed; distinct from 1 and 3.
+EXIT_LOCK_TIMEOUT = 4
+
+
+def lock_timeout_message(e: Exception) -> str:
+    """The plain line a terminal user sees when the wait for the exports lock
+    ran out (task_mutex.LockWaitTimeout), instead of a Python traceback."""
+    return ("[!] another export refresh is still writing the current exports, and this "
+            "run stopped waiting for it. Nothing was changed: the files are those of "
+            "the last refresh that finished. Run it again once the other one is done. "
+            "Details: %s" % e)
 
 
 def main(argv=None) -> int:
     import argparse
+    from ..task_mutex import LockWaitTimeout
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
@@ -611,6 +626,9 @@ def main(argv=None) -> int:
     except ExportsBusy as e:
         print("[!] %s" % e, flush=True)
         return EXIT_BUSY
+    except LockWaitTimeout as e:
+        print(lock_timeout_message(e), flush=True)
+        return EXIT_LOCK_TIMEOUT
     if args.json:
         print(json.dumps(m, indent=1, default=str))
     else:

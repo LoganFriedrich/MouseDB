@@ -104,3 +104,48 @@ def test_the_command_line_says_busy_with_its_own_exit_code(tmp_path, capsys):
     assert code == current.EXIT_BUSY
     assert "already being written" in capsys.readouterr().out
     assert not (tmp_path / "c" / "MANIFEST.json").exists()
+
+
+# A command that WAITS (no --no-wait) and runs out of wait -- its budget used
+# up, or the other refresh showing no progress -- must say so in one plain line
+# that names the exports lock, change nothing, and exit with its own code. It
+# used to end in a Python traceback that spoke of "the database-task lock", a
+# different lock, which sent the person to look at the wrong jobs.
+
+def test_the_command_line_says_when_its_wait_ran_out(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")
+    snap = _snapshot(tmp_path)
+    holder = current.hold_exports_lock(lock_wait_seconds=0)
+    try:
+        try:
+            code = current.main(["--snapshot-dir", str(snap), "--out-dir", str(tmp_path / "c")])
+        except Exception as e:                  # noqa: BLE001 -- the old behaviour
+            pytest.fail("the command ended in a traceback: %r" % e)
+    finally:
+        holder.release()
+    out = capsys.readouterr().out
+    assert code not in (0, 1, current.EXIT_BUSY), code
+    assert "still writing" in out and "current-exports lock" in out, out
+    assert "database-task lock" not in out, out
+    assert not (tmp_path / "c" / "MANIFEST.json").exists()
+
+
+def test_the_per_reach_command_says_when_its_wait_ran_out(tmp_path, capsys, monkeypatch):
+    from mousedb import config
+    from mousedb.exporters import odc_reaches
+    monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")
+    snap = _snapshot(tmp_path)
+    root = tmp_path / "root"
+    monkeypatch.setattr(config, "require", lambda key: root)
+    holder = current.hold_exports_lock(lock_wait_seconds=0)
+    try:
+        try:
+            code = odc_reaches.main(["--snapshot-dir", str(snap)])
+        except Exception as e:                  # noqa: BLE001 -- the old behaviour
+            pytest.fail("the command ended in a traceback: %r" % e)
+    finally:
+        holder.release()
+    out = capsys.readouterr().out
+    assert code not in (0, 1), code
+    assert "still writing" in out and "current-exports lock" in out, out
+    assert not (root / "exports" / "current").exists()

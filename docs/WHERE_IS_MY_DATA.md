@@ -346,14 +346,44 @@ moment". When a job finishes, the tab re-reads itself.
 
 **Only one refresh writes the exports at a time.** The nightly job, this
 button and the terminal commands all write the same folder, and two at once
-would spoil each other's half-written files. So each takes a lock first
-(`<mousedb_root>/logs/.current-exports.task.lock`). If you press **Refresh
-exports now** while another refresh is writing -- usually the nightly job,
-which runs from midnight -- a box says the exports are already being written:
-nothing was changed, press it again when that one has finished. The nightly
-job and the terminal commands do not give up; they wait for the other refresh
-to finish and then run (`mousedb-current-exports --no-wait` stops at once
-instead, with exit code 3).
+would spoil each other's half-written files. So each takes a lock first: the
+file `.current-exports.task.lock` in the folder mousedb keeps its task locks in
+(normally `<mousedb_root>/logs`). What each one does when another refresh is
+already writing:
+
+- **Refresh exports now** does not wait. A box says "The exports are already
+  being written -- try again when it finishes. Nothing was changed." Usually
+  the other one is the nightly job, which runs from midnight.
+- **The nightly job and the terminal commands wait** while the other refresh
+  is working: the nightly job up to 180 minutes, `mousedb-current-exports` and
+  `mousedb export-odc-reaches` up to 40 minutes (change either with
+  `MOUSEDB_LOCK_WAIT_MINUTES`, or the nightly job's `--lock-wait-minutes`). If
+  the other refresh is still writing when that time is up, or shows no sign of
+  progress for 30 minutes (it may be stuck), they stop without changing
+  anything, and the files stay those of the last refresh that finished. The
+  nightly job then prints `[FAIL] current exports not refreshed` and reports
+  itself as failed; a terminal command prints one line starting
+  `[!] another export refresh is still writing the current exports` and exits
+  with code 4. Run it again once the other one is done.
+- `mousedb-current-exports --no-wait` does not wait either: it stops at once
+  with exit code 3.
+
+While the nightly job waits for a button-started export, it still holds the
+database-task lock it took for the snapshot, so the other scheduled database
+jobs wait behind it too. A button-started export of a large lab takes a while;
+pressing it shortly before midnight delays the whole night's jobs by that long.
+
+**When "Refresh exports now" shows a warning instead.** If the refresh ran but
+did not finish cleanly -- a cohort's file could not be written, the snapshot
+was taken half before and half after an import, one of the "left out" checks
+could not read its input, or the wait for another refresh ran out -- a box
+says "The exports were not fully rewritten:" followed by the end of what the
+exporter printed. Files that could not be rewritten keep their previous
+version; `MANIFEST.json` lists what went wrong under `problems` and
+`failures`. Read the message: it names the file, folder or cohort and what to
+do (close a file that is open in another program, reconnect a drive, wait for
+an import to finish). Then press the button again, or leave it to the nightly
+run.
 
 ## The weekly page: the answer already written down
 

@@ -109,10 +109,18 @@ checked-in code, not what's planned.
   `mousedb export-odc-reaches` (into the live folder) shared one staging folder
   and fixed temporary names with no lock, so two at once could delete or
   publish each other's half-written files. They now take a lock
-  (`logs/.current-exports.task.lock`): the nightly job and the commands wait
-  for the other refresh to finish; the button says "already being written --
-  try again when it finishes" and changes nothing; `mousedb-current-exports
-  --no-wait` stops at once with exit code 3.
+  (`.current-exports.task.lock` in mousedb's task-lock folder): the nightly
+  job and the commands wait while the other refresh is working, up to their
+  wait budget (180 minutes nightly, 40 for the commands; 30 minutes with no
+  progress counts as stuck), then stop with nothing changed -- the nightly job
+  with `[FAIL]`, a command with a one-line `[!]` message naming the exports
+  lock and exit code 4 (it used to be a traceback that named the database-task
+  lock). The button says "already being written -- try again when it
+  finishes" and changes nothing, and shows a warning with the exporter's
+  output when a refresh it started did not finish cleanly;
+  `mousedb-current-exports --no-wait` stops at once with exit code 3. Restart
+  every open MouseDB window after installing: one opened before still runs
+  the old unlocked export.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
   a large database, so the update could never finish and left the current

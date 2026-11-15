@@ -250,6 +250,15 @@ If you modify the package code:
 # Just restart Python/GUI to pick up changes
 ```
 
+**After installing new code, close and reopen every open MouseDB window**
+(every person logged in to that computer). A window keeps the code it was
+started with. In particular a Where Is My Data tab opened before an install
+that added the current-exports lock still runs the OLD in-window export: it
+takes no lock and empties the shared staging folder, so a press of
+**Refresh exports now** there can spoil a nightly refresh running at the same
+time. Restarted, the button runs the installed exporter as a program of its
+own and respects the lock.
+
 If you add new CLI commands to pyproject.toml:
 ```bash
 conda activate <env_dir>

@@ -410,8 +410,13 @@ class TaskMutex:
 
     def acquire(self, wait_seconds: Optional[float] = None, log=_say,
                 waiting_for: str = "another database task",
-                stall_seconds: Optional[float] = None) -> "TaskMutex":
+                stall_seconds: Optional[float] = None,
+                lock_label: str = "the database-task lock") -> "TaskMutex":
         """Wait for the lock, then take it.
+
+        ``lock_label`` names this lock in the messages: a job waiting on a
+        different lock (the current-exports lock) must not say it waited for
+        the database-task lock, or the person looks at the wrong jobs.
 
         Waits as long as the holder is running AND getting somewhere, up to
         ``wait_seconds`` (default: ``default_wait_seconds()``). WHY so long:
@@ -448,10 +453,10 @@ class TaskMutex:
             gave_up = _gave_up_on.get(text)
             if text and gave_up is not None and now - gave_up < budget:
                 raise LockWaitTimeout(
-                    "could not acquire the database-task lock: this job already waited "
+                    "could not acquire %s: this job already waited "
                     "for %s (%s) and gave up on it; it still holds the lock, so this "
                     "step is not waited for again. Nothing was changed by this step."
-                    % (waiting_for, who))
+                    % (lock_label, waiting_for, who))
             sig = self._activity(text, state)
             if sig != last_sig:
                 last_sig, last_change = sig, now
@@ -467,25 +472,25 @@ class TaskMutex:
             if now - t0 >= budget:
                 _gave_up_on[text] = now
                 raise LockWaitTimeout(
-                    "could not acquire the database-task lock: waited the full %d minutes "
+                    "could not acquire %s: waited the full %d minutes "
                     "this job allows and %s still holds it (%s). It was left running. "
                     "Nothing was changed by this job, and it does NOT run again by "
                     "itself -- run it by hand once the holder has finished, or it "
                     "runs at its next scheduled time. If this keeps happening, give "
                     "this job a longer wait (%s, or --lock-wait-minutes where the job "
                     "has it) that still fits inside its time limit."
-                    % (budget // 60, waiting_for, who, WAIT_ENV))
+                    % (lock_label, budget // 60, waiting_for, who, WAIT_ENV))
             if state == "alive" and now - last_change >= stall:
                 _gave_up_on[text] = now
                 raise LockWaitTimeout(
-                    "could not acquire the database-task lock: %s holds it (%s) and has "
+                    "could not acquire %s: %s holds it (%s) and has "
                     "shown no sign of progress for %d minutes, so it may be hung. "
                     "Its lock is not broken while it is still running. Nothing was "
                     "changed by this job, and it does NOT run again by itself: look "
                     "at the holder (its log, or the operating system's scheduler), end "
                     "it if it is "
                     "stuck, then run this job by hand."
-                    % (waiting_for, who, (now - last_change) // 60))
+                    % (lock_label, waiting_for, who, (now - last_change) // 60))
             sleep(POLL_SECONDS)
         self._start_heartbeat()
         return self
