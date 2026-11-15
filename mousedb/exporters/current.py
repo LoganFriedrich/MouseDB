@@ -356,7 +356,8 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
         return
     part = {"files": {}, "problems": [], "notes": []}
     odc_reaches.export(snapshot_dir, out_dir, manifest=part, staging_dir=_staging_dir(snapshot_dir))
-    for k in ("archived_flat_layout_files", "archived_per_cohort_dictionaries"):
+    for k in ("archived_flat_layout_files", "archived_per_cohort_dictionaries",
+              "archived_cohorts_without_reaches", "archived_combined_files"):
         if k in part:
             manifest[k] = part[k]
     manifest["files"].update(part["files"])

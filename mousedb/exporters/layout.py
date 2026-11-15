@@ -225,13 +225,25 @@ def combine_all(root: Path, kinds: Iterable[str], projects: Iterable[str],
                 manifest: dict, staging: Optional[Path] = None) -> None:
     """combine() every kind for every project, recording each in the manifest.
     A failure is a manifest problem, never a crash: the cohort files are already
-    written and stay usable without the combined one."""
+    written and stay usable without the combined one.
+
+    A project left with NO cohort file of a kind has its old combined file of
+    that kind archived (never deleted), listed under
+    ``archived_combined_files``. WHY: the combined file is built from the
+    cohort files on disk; with none left it used to stay as it was, holding
+    cohorts that are no longer exported and looking current."""
     for project in sorted(set(projects)):
         for kind in kinds:
             try:
                 entry = combine(root, kind, project, staging)
                 if entry is not None:
                     manifest["files"][key(root, combined_file(root, kind, project))] = entry
+                elif combined_file(root, kind, project).is_file():
+                    from .odc_reaches import archive_old_names
+                    archive_old_names(root, [key(root, combined_file(root, kind, project))],
+                                      "combined_without_cohorts")
+                    manifest.setdefault("archived_combined_files", []).append(
+                        key(root, combined_file(root, kind, project)))
             except Exception as e:
                 msg = ("combined %s %s file not written: %s: %s"
                        % (project, kind, type(e).__name__, e))
@@ -239,6 +251,31 @@ def combine_all(root: Path, kinds: Iterable[str], projects: Iterable[str],
                 # A file that should exist and was not written: a failure,
                 # which makes the export incomplete (exporters.current).
                 manifest.setdefault("failures", []).append(msg)
+
+
+def cohort_files_on_disk(root: Path, kinds: Iterable[str]) -> Dict[str, List[str]]:
+    """{cohort id: [its files of these kinds, as manifest keys]} for every cohort
+    folder in the folder layout as it is now (grant/project/cohort).
+
+    A file counts only where the layout would write it today, so a project
+    folder left over from an older layout (archive_moved_project_folders) and
+    anything under a folder starting with "_" are not counted."""
+    root = Path(root)
+    kinds = list(kinds)
+    found: Dict[str, List[str]] = {}
+    if not root.is_dir():
+        return found
+    for f in sorted(root.rglob("*.csv")):
+        rel = f.relative_to(root)
+        if any(part.startswith("_") for part in rel.parts) or len(rel.parts) < 3:
+            continue
+        label = f.parent.name
+        cohort_id = re.sub(r"_[A-Z]$", "", label)
+        for kind in kinds:
+            if f.name == file_name(kind, label) and f == cohort_file(root, kind, cohort_id, label):
+                found.setdefault(cohort_id, []).append(key(root, f))
+                break
+    return found
 
 
 def archive_flat_layout(root: Path) -> List[str]:

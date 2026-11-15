@@ -158,3 +158,78 @@ def test_locate_finds_a_cohort_whose_folder_carries_a_letter(tmp_path):
     f.write_text("x")
     (tmp_path / "PROJA" / "PROJA_40").mkdir()              # a longer number is not a match
     assert layout.locate("reaches_analysis", "PROJA_04", tmp_path) == f
+
+
+# ------------------------------------------ a cohort with no reaches any more
+
+# WHY: files were written only for cohorts that have reaches, so a cohort whose
+# reaches all left the database (a typo cohort renamed away, a withdrawn video)
+# kept its last files, and the project's combined file -- built from the files
+# on disk -- went on counting them. They are archived (never deleted) instead.
+
+def _drop_cohort(snapshot, cohort):
+    rd = pd.read_parquet(snapshot / "reach_data.parquet")
+    rd = rd[~rd["subject_id"].str.startswith(cohort + "_")]
+    rd.to_parquet(snapshot / "reach_data.parquet", index=False)
+
+
+def test_a_cohort_whose_reaches_are_gone_is_archived_and_leaves_the_combined_file(snapshot, tmp_path):
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    assert (out / "PROJA" / "PROJA_02" / "reaches_PROJA_02_analysis.csv").is_file()
+    _drop_cohort(snapshot, "PROJA_02")
+    m = ox.export(snapshot, out)
+    for kind in layout.REACH_KINDS:
+        assert not (out / "PROJA" / "PROJA_02" / layout.file_name(kind, "PROJA_02")).exists(), kind
+        combined = m["files"][layout.key(out, layout.combined_file(out, kind, "PROJA"))]
+        assert combined["cohorts"] == ["PROJA_01"], kind
+    archived = sorted(p.name for p in (tmp_path / "_archived").rglob("*PROJA_02*.csv"))
+    assert len(archived) == len(layout.REACH_KINDS)
+    assert len(m["archived_cohorts_without_reaches"]) == len(layout.REACH_KINDS)
+
+
+def test_a_project_with_no_cohort_left_has_its_combined_file_archived(snapshot, tmp_path):
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    assert layout.combined_file(out, "ODC_reaches", "PROJAB").is_file()
+    _drop_cohort(snapshot, "PROJAB_01")
+    m = ox.export(snapshot, out)
+    for kind in layout.REACH_KINDS:
+        assert not layout.combined_file(out, kind, "PROJAB").exists(), kind
+    assert m.get("archived_combined_files")
+
+
+def test_a_named_export_archives_a_named_cohort_that_came_out_empty(snapshot, tmp_path):
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    _drop_cohort(snapshot, "PROJA_02")
+    ox.export(snapshot, out, cohorts=["PROJA_02"])
+    assert not (out / "PROJA" / "PROJA_02" / "ODC_reaches_PROJA_02.csv").exists()
+    # A cohort not named keeps its files.
+    assert (out / "PROJA" / "PROJA_01" / "ODC_reaches_PROJA_01.csv").is_file()
+
+
+def test_an_empty_reach_table_archives_nothing(snapshot, tmp_path):
+    """An empty reach table is a broken snapshot, not a lab with no reaches."""
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    rd = pd.read_parquet(snapshot / "reach_data.parquet")
+    rd.iloc[0:0].to_parquet(snapshot / "reach_data.parquet", index=False)
+    ox.export(snapshot, out)
+    assert (out / "PROJA" / "PROJA_02" / "ODC_reaches_PROJA_02.csv").is_file()
+    assert layout.combined_file(out, "ODC_reaches", "PROJA").is_file()
+
+
+def test_a_cohort_whose_build_failed_keeps_its_files(snapshot, tmp_path, monkeypatch):
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    real = ox.build_cohort
+
+    def fails_for_02(cid, *a, **k):
+        if cid == "PROJA_02":
+            raise RuntimeError("cannot build")
+        return real(cid, *a, **k)
+    monkeypatch.setattr(ox, "build_cohort", fails_for_02)
+    m = ox.export(snapshot, out)
+    assert m.get("failures")
+    assert (out / "PROJA" / "PROJA_02" / "ODC_reaches_PROJA_02.csv").is_file()

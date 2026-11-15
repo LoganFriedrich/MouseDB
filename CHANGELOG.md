@@ -76,6 +76,13 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Current exports: a cohort that no longer has any reaches has its reach
+  files archived (never deleted) and leaves its project's combined files; a
+  project with no cohort file of a kind left has that combined file archived.
+  The old files used to stay, looking current, and the combined file was
+  built from whatever was on disk. Not done for a cohort whose build failed,
+  or when the snapshot's reach table is empty. The first refresh after this
+  change archives any such files already there.
 - Analysis exclusions fail closed. A watcher database that exists but cannot
   be read, a name-audit record that does not parse, or a tracking-sheet folder
   that is set but cannot be reached used to skip its check (a collage

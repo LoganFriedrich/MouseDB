@@ -99,6 +99,22 @@ exports/current/
 - Until 2026-10-29 every cohort's file sat at the top of the folder. Those are
   moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first
   time the new layout is written.
+- **A cohort that no longer has any reaches loses its reach files.** If every
+  reach of a cohort leaves the database -- a cohort invented by a typo in a
+  video name and since renamed, or videos withdrawn back into review -- its
+  four reach files (`ODC_reaches_`, `reaches_..._summary`, `reaches_..._analysis`,
+  `sessions_..._analysis`) are moved to
+  `<mousedb_root>/_archived/exports_current/<date>_cohorts_without_reaches/`
+  (never deleted) on the next refresh, and the project's combined files are
+  rebuilt without it. If no cohort of a project is left, its combined files go
+  to the archive too (`<date>_combined_without_cohorts`). `MANIFEST.json`
+  lists what was moved (`archived_cohorts_without_reaches`,
+  `archived_combined_files`). Before, the old files stayed and looked current,
+  and the combined file kept counting them. Two cases never archive anything:
+  a cohort whose files failed to build this time (the failure is reported and
+  its old files stay), and a snapshot with no reaches at all (that is a broken
+  snapshot, not a lab with no reaches). A one-cohort export (`--cohort`)
+  archives only a named cohort that came out empty.
 
 **A tray presents 20 pellets; anything else is an error, and it is handled like one.** A video the pipeline cut into some other number of pellets has the wrong pellet number on its reaches, so that session is left out of the analysis files. A tray whose hand scores number other than 20 keeps its reaches but has its hand-score columns left empty. Both are listed in `analysis_EXCLUSIONS.csv` with the count that was found, and both come back on their own once the video is reprocessed or the sheet is corrected.
 

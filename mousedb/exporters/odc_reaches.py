@@ -827,6 +827,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         manifest.setdefault("failures", []).append(msg)
         return manifest
     exclusion_report = []
+    built_empty, build_failed = set(), set()
     for cid in wanted:
         try:
             df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
@@ -838,6 +839,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             name = lambda kind: layout.key(final_dir, layout.cohort_file(final_dir, kind, cid, label))
             if df.empty:
                 manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
+                built_empty.add(cid)
                 continue
             entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
                                         analysis_only=analysis_only)
@@ -873,6 +875,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             msg = "ODC_reaches_%s: %s: %s" % (cid, type(e).__name__, e)
             manifest["problems"].append(msg)
             manifest.setdefault("failures", []).append(msg)
+            build_failed.add(cid)
 
     # One dictionary for every analysis file of each kind. Their columns do not
     # vary by cohort, so thirteen copies under thirteen names would be thirteen
@@ -985,11 +988,39 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             shutil.copyfile(f, tmp)
             tmp.replace(target)
 
+    # A cohort that has no reaches any more keeps no reach files. WHY: files
+    # are written only for cohorts with reaches, so a cohort whose reaches all
+    # left the database (renamed, withdrawn, moved to another cohort) kept its
+    # last files -- and the combined file below, built from the files on disk,
+    # kept counting them. Its reach files are archived (never deleted) before
+    # combining. Which cohorts: on a full export, every cohort folder on disk
+    # whose cohort is not in the reach table; on a named export (--cohort), the
+    # named cohorts that came out empty. A cohort whose build FAILED keeps its
+    # files (the failure is reported; the old files are the best there is).
+    # Skipped when the reach table is empty: that is a broken snapshot, not a
+    # lab with no reaches, and it must not empty the folder.
+    combine_projects = {layout.project_of(c) for c in wanted}
+    if len(t["reach"]):
+        on_disk = layout.cohort_files_on_disk(final_dir, layout.REACH_KINDS)
+        gone = set(built_empty)
+        if not cohorts:
+            gone |= set(on_disk) - set(cohorts_in(t["reach"]))
+        gone -= build_failed
+        stale = sorted(f for cid in gone for f in on_disk.get(cid, []))
+        if stale:
+            moved = archive_old_names(final_dir, stale, "cohorts_without_reaches")
+            manifest["archived_cohorts_without_reaches"] = stale
+            if moved:
+                manifest.setdefault("notes", []).append(
+                    "%d file(s) of cohort(s) that no longer have any reaches were moved to the "
+                    "archive: %s" % (len(moved), ", ".join(sorted(gone & set(on_disk)))))
+            combine_projects |= {layout.project_of(c) for c in gone}
+
     # Each project's combined files, put together from the cohort files now on
     # disk -- so a one-cohort export still yields a combined file holding every
     # cohort (see exporters.layout). Then the per-cohort files the layout before
     # 2026-10-29 left at the top of the folder are archived.
-    layout.combine_all(final_dir, layout.REACH_KINDS, {layout.project_of(c) for c in wanted},
+    layout.combine_all(final_dir, layout.REACH_KINDS, combine_projects,
                        manifest, staging=(Path(staging_dir) / "_combined") if staging_dir else None)
     if not analysis_only:
         moved = layout.archive_flat_layout(final_dir)
