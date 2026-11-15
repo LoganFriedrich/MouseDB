@@ -33,7 +33,7 @@ What happens on **Save Protocol** depends on what you changed:
 | you changed | what Save does |
 |---|---|
 | only the name and/or description | saves them into the protocol. The message says "updated". |
-| any phase (added, removed, moved, or any value edited -- including surgery records and staggering, which the table does not show) | does **not** change the protocol. It asks: **Save as a new protocol?** |
+| any phase (added, removed, or any value edited -- including surgery records and staggering, which the table does not show) | does **not** change the protocol. It asks: **Save as a new protocol?** |
 
 **Why phases are never changed in place:** cohorts already assigned to the
 protocol were scheduled from its phases. Rewriting them would change what

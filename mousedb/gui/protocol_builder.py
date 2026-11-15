@@ -502,7 +502,9 @@ class ProtocolBuilderDialog(QDialog):
 
     def _phases_changed(self, table_rows) -> bool:
         """True when the table's phases differ from the stored ones: a phase
-        added, removed or moved, or any edited field changed."""
+        added or removed (the list of phase ids differs), or any edited
+        field changed. The Protocol Manager has no control that reorders
+        phases; comparing the ids in order also catches any such change."""
         if [pid for pid, _ in table_rows] != self._loaded_order:
             return True
         for pid, phase in table_rows:
