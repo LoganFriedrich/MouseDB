@@ -268,3 +268,29 @@ def test_a_retry_does_not_queue_for_the_task_lock_again(configured, db_ok_seen, 
     monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
     assert rs.main(["--skip-census"]) == 0
     assert len(reads) > 1 and taken == [1]
+
+
+def test_the_session_exports_are_written_under_the_task_lock(configured, monkeypatch):
+    """The per-cohort session exports read the live database for minutes; an
+    import committing at the same time is the stall the task lock prevents."""
+    import contextlib
+    from mousedb import task_mutex
+    state = {"held": False, "exports_under_lock": None}
+
+    @contextlib.contextmanager
+    def hold(*a, **k):
+        state["held"] = True
+        try:
+            yield
+        finally:
+            state["held"] = False
+
+    def refresh_current(*a, **k):
+        state["exports_under_lock"] = state["held"]
+        return {"files": {}, "complete": True, "problems": []}
+
+    monkeypatch.setattr(task_mutex, "hold", hold)
+    monkeypatch.setattr(current_mod, "refresh_current", refresh_current)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main(["--skip-census"]) == 0
+    assert state["exports_under_lock"] is True

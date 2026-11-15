@@ -442,14 +442,20 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   starts. For the snapshot refresh it starts the first time the refresh finds
   the database locked by another program -- NOT when the job starts -- because
   the refresh may first wait up to `--lock-wait-minutes` for an import ahead of
-  it, and counting that wait used up the whole window before a single retry.
-  The refresh takes the lock between jobs once and keeps it through its
-  retries, so a retry never queues behind another import a second time (other
-  mousedb jobs wait those few extra minutes). It also refuses a running
-  MouseReach watcher before it starts waiting for that lock, not after. So size the snapshot task's time limit as: lock wait (`--lock-wait-minutes`,
-  default 180) + retry window (`--retry-minutes`, default 25) + how long a
-  successful refresh, exports and census take. If that does not fit, lower
-  `--lock-wait-minutes` or raise the limit.
+  it and then read for an hour, and counting that used up the whole window
+  before a single retry. The refresh takes the lock between mousedb jobs once
+  and keeps it through its retries and while it writes the exports, so a retry
+  never queues behind another import a second time. It refuses a running
+  MouseReach watcher before it starts waiting for that lock, not after.
+
+  So size the snapshot task's time limit for the worst case: lock wait
+  (`--lock-wait-minutes`, default 180) + the refresh that met the lock + retry
+  window (`--retry-minutes`, default 25) + the refresh that succeeds + the
+  exports and the census. If that does not fit, lower `--lock-wait-minutes` or
+  raise the limit. While the refresh pauses between retries it keeps the lock,
+  so another mousedb job waiting behind it may give up after 30 minutes with
+  no sign of progress ("may be hung"); that only happens while another program
+  keeps the database locked, which would refuse that job's own work anyway.
 
   Retrying only ever rescues a lock that clears in minutes. A session left open
   for an hour will outlast any window worth having, and that is what the

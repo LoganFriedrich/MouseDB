@@ -129,7 +129,9 @@ def retry_while_locked(
             ("The analysis snapshot refresh").
         window_minutes: stop trying after this long, counted from the first
             attempt (or, with ``from_first_lock``, from the first lock error).
-            A job will not run past its window even if a retry is due.
+            No retry STARTS after the window has run out; an attempt started
+            inside it runs to its end, so the job can finish up to one
+            attempt's length past the window.
         gap_minutes: how long to wait between attempts.
         announce: where to put progress for a person -- usually print. Each
             wait is announced, because a silent job that takes 45 minutes looks
@@ -142,7 +144,8 @@ def retry_while_locked(
             first attempt, that wait used up the window, so the first outside
             lock afterwards ended the job at once, without one retry, while
             the message claimed it had waited the whole window. The job's time
-            limit must then allow for the lock wait + this window + the run.
+            limit must then allow for the lock wait + the attempt that met the
+            lock + this window + the attempt that succeeds.
             The short jobs keep the default, so their whole run stays inside
             the window.
 

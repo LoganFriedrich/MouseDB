@@ -374,38 +374,50 @@ def main(argv=None) -> int:
     # make the retry wait the whole --lock-wait-minutes a second time, and the
     # job overran its time limit part way through rewriting the exports. Held
     # across the retries, the job's time is bounded by
-    #     lock wait + retry window + one successful run
-    # (INSTALL.md). Keeping it during a pause only makes this tool's own jobs
-    # wait a few minutes longer; the lock being waited out is someone else's.
+    #     lock wait + prefetch + up to two runs + retry window + exports
+    # (the run that met the outside lock, then the retry that succeeds;
+    # INSTALL.md). Keeping it during a pause makes this tool's other jobs wait
+    # longer, and one waiting behind a pause of over STALL_MINUTES may give up
+    # on it as "may be hung" -- but only while an outside program keeps the
+    # database locked, which would refuse that job's own reads as well.
+    #
+    # The prefetch runs INSIDE the lock: warmed before a wait of up to hours
+    # behind an import that rewrites the file, the cache would be stale or
+    # evicted by the time the tables are read.
     from ..task_mutex import hold
     # Refuse a running watcher BEFORE queueing for the mutex, which can take
     # hours; refresh() checks again at every attempt.
     _refuse_while_watcher_runs(args.force)
-    with warmed(require("db_path"), log=lambda m: print(m, flush=True)):
-        try:
-            with hold(waiting_for="the reach/brain import"):
-                counts = retry_while_locked(
-                    lambda: refresh(force=args.force, hold_lock=False),
-                    what="The analysis snapshot refresh",
-                    window_minutes=args.retry_minutes,
-                    gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
-                    # The window opens at the first outside lock, not when this
-                    # run started: the reads before it (an hour on a large
-                    # database) used to spend the window, and so -- when
-                    # refresh() still took the mutex inside the attempt -- did
-                    # the wait for the import ahead of it, before one retry.
-                    from_first_lock=True,
-                    announce=lambda m: print(m, flush=True))
-        except DatabaseBusy as busy:
-            print("  [FAIL] %s" % busy, flush=True)
-            return 1
-        except task_mutex.LockWaitTimeout as waited:
-            # Loud and non-zero: the snapshot and the exports were NOT
-            # refreshed, and nothing will re-run this job before its next
-            # scheduled time (see task_mutex, "HOW LONG A JOB WAITS").
-            print("  [FAIL] snapshot not refreshed: %s" % waited, flush=True)
-            return 1
-        rc = _finish(counts, args.force)
+    try:
+        with hold(waiting_for="the reach/brain import"), \
+                warmed(require("db_path"), log=lambda m: print(m, flush=True)):
+            counts = retry_while_locked(
+                lambda: refresh(force=args.force, hold_lock=False),
+                what="The analysis snapshot refresh",
+                window_minutes=args.retry_minutes,
+                gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
+                # The window opens at the first outside lock, not when this
+                # run started: the reads before it (an hour on a large
+                # database) used to spend the window, and so -- when
+                # refresh() still took the mutex inside the attempt -- did
+                # the wait for the import ahead of it, before one retry.
+                from_first_lock=True,
+                announce=lambda m: print(m, flush=True))
+            # The per-cohort session exports read the database file too: they
+            # run while it is still warm, and under the lock, so their long
+            # reads cannot overlap an import's commits -- the stall this lock
+            # exists to prevent. (Before the lock moved here, it was released
+            # between the snapshot and these reads.)
+            rc = _finish(counts, args.force)
+    except DatabaseBusy as busy:
+        print("  [FAIL] %s" % busy, flush=True)
+        return 1
+    except task_mutex.LockWaitTimeout as waited:
+        # Loud and non-zero: the snapshot and the exports were NOT
+        # refreshed, and nothing will re-run this job before its next
+        # scheduled time (see task_mutex, "HOW LONG A JOB WAITS").
+        print("  [FAIL] snapshot not refreshed: %s" % waited, flush=True)
+        return 1
     if not args.skip_census:
         retake_census()
     return rc
