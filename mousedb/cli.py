@@ -969,7 +969,8 @@ def cmd_import_brains(args):
     # they share -- on 2026-09-15 three scheduled runs in a row failed "database
     # is locked" while another task held the database. Waiting its turn costs
     # seconds; failing costs everything until the next scheduled run. The
-    # with-block also releases on the sys.exit calls inside the body.
+    # body returns 1 on failure, and the with-block releases the lock on any
+    # exit from it, normal or not.
     #
     # The retry wrapper handles the blockage the mutex CANNOT: a lock held by a
     # program outside this tool (see db_contention). This import normally
