@@ -16,7 +16,8 @@ checked-in code, not what's planned.
   removal is in the import's output, in its ledger line (`sheet_sync`, kept
   whole) and in the audit log, with the old values. A sheet that reads as
   broken (a tab missing or unreadable, nothing parsed, or more than a quarter
-  of the cohort's rows gone or changed) removes and changes nothing and says
+  of the cohort's rows gone, or their stored values overwritten -- filling
+  an empty value never counts) removes and changes nothing and says
   so: a `NOT SYNCED <table>` warning, exit code 1, the cohort shown as NOT
   SYNCED in the Tracking Sheets and Where Is My Data tabs, and an item in the
   attention box and the FIX THESE file. `mousedb-sheets import --cohort <id>

@@ -1372,7 +1372,7 @@ class ExcelImporter:
     # The one exception is a read that looks broken: a tab that could not be
     # read, a sheet that parses to nothing, or one that would take away more
     # than SYNC_MAX_REMOVED_FRACTION of what the database holds for the
-    # cohort (or change more than SYNC_MAX_CHANGED_FRACTION of its values) is
+    # cohort (or overwrite more than SYNC_MAX_CHANGED_FRACTION of its values) is
     # far more likely a tab renamed, a file caught mid-save or columns shifted
     # than a real edit. Then NOTHING is removed or changed in that table (new
     # rows are still added, as before), and the import says so loudly: a
@@ -1421,7 +1421,11 @@ class ExcelImporter:
         """Why this table must NOT be brought in step with the sheet on this
         read, or None. n_units/n_gone: the stored units (rows, or trays for
         pellet scores) the import wrote, and how many the sheet no longer has;
-        n_rows/n_changed: stored rows and how many the sheet would change."""
+        n_rows/n_changed: stored rows and how many of them the sheet would
+        OVERWRITE -- a stored value replaced by a different one. Filling in a
+        value that was stored empty is not counted: columns typed in later
+        (accessory details, backfilled days after the scores) fill blanks,
+        while a shifted column or a broken read overwrites values."""
         unread = self.__dict__.get('_unread_tabs', {}).get(table)
         if unread:
             return unread
@@ -1435,9 +1439,9 @@ class ExcelImporter:
                     "cohort (more than %d%%), which looks like a broken read rather than an "
                     "edit" % (n_gone, n_units, unit, round(100 * self.SYNC_MAX_REMOVED_FRACTION)))
         if n_changed > self.SYNC_SMALL and n_changed > self.SYNC_MAX_CHANGED_FRACTION * n_rows:
-            return ("the sheet would change %d of the %d values the import wrote for this "
-                    "cohort (more than %d%%), which looks like shifted columns rather than "
-                    "corrections" % (n_changed, n_rows, round(100 * self.SYNC_MAX_CHANGED_FRACTION)))
+            return ("the sheet would overwrite values in %d of the %d rows the import wrote "
+                    "for this cohort (more than %d%%), which looks like shifted columns rather "
+                    "than corrections" % (n_changed, n_rows, round(100 * self.SYNC_MAX_CHANGED_FRACTION)))
         return None
 
     def _sync_state(self) -> Dict:
@@ -1542,8 +1546,12 @@ class ExcelImporter:
             if diff:
                 changed.append((r, diff))
 
+        # Rows whose stored value would be OVERWRITTEN (not merely filled in):
+        # what the shifted-column guard counts (see _sync_guard).
+        overwritten = sum(1 for _r, diff in changed
+                          if any(not self._blank(old) for old, _new in diff.values()))
         why = self._sync_guard(table, 'rows', len(ours), len(gone), len(ours),
-                               len(changed), not seen)
+                               overwritten, not seen)
         if why:
             self._sync_refuse(table, why)
             return

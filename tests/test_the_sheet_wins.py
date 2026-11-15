@@ -88,9 +88,10 @@ def _workbook(path, days=DAYS, trays=(1,), score_edit=None, weights=True, surger
         s.append([a, d, "Contusion", grams, kd, "Y"])
     if ramp:
         r = wb.create_sheet("3a_Manual_Ramp")
-        r.append(["Animal", "Date", "Weight"])
-        for a, d, g in ramp:
-            r.append([a, d, g])
+        food = len(ramp[0]) > 3
+        r.append(["Animal", "Date", "Weight"] + (["Food_Start_(g)", "Food_End_(g)"] if food else []))
+        for row in ramp:
+            r.append(list(row))
     wb.save(path)
     return path
 
@@ -433,3 +434,25 @@ def test_the_export_signature_follows_the_phase_labels(tmp_path):
     one = snapshot_generation.table_hash(tmp_path, "reach_data")
     df.assign(test_phase="Pillar").to_parquet(tmp_path / "reach_data.parquet")
     assert one and snapshot_generation.table_hash(tmp_path, "reach_data") != one
+
+
+def test_filling_in_values_typed_later_is_not_a_broken_read(tmp_path):
+    """Columns are often typed in days after a row (the food weighed in and
+    out on a ramp day). Filling a value that was stored empty is a correction
+    like any other, and never counts toward the shifted-column guard."""
+    db = _db(tmp_path)
+    days = [date(2026, 2, 23) + timedelta(days=i) for i in range(4)]
+    _import(db, _workbook(_sheet(tmp_path), ramp=[(a, d, 22.0) for a in ANIMALS for d in days]))
+
+    r = _import(db, _workbook(_sheet(tmp_path),
+                              ramp=[(a, d, 22.0, 3.0, 2.5) for a in ANIMALS for d in days]))
+
+    assert "refused" not in r.get("sheet_sync", {})
+    assert len(r["sheet_sync"]["ramp_entries"]["changed"]) == 8
+    with db.session() as s:
+        assert {(x.tray_start_grams, x.tray_end_grams) for x in s.query(RampEntry)} == {(3.0, 2.5)}
+
+    # Overwriting most of them, by contrast, is refused.
+    r = _import(db, _workbook(_sheet(tmp_path),
+                              ramp=[(a, d, 22.0, 9.0, 2.5) for a in ANIMALS for d in days]))
+    assert any(x.startswith("NOT SYNCED ramp_entries") for x in r["sheet_sync"]["refused"])

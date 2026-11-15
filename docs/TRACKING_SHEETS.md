@@ -192,8 +192,11 @@ changes NOTHING in a table when:
 - the sheet reads as holding none of that table's rows for the cohort while
   the database holds some;
 - it would remove more than a quarter of the rows (trays, for pellet scores)
-  earlier imports wrote for the cohort, or change more than a quarter of
-  their values -- unless that is 5 or fewer, which is always an ordinary edit.
+  earlier imports wrote for the cohort, or overwrite stored values in more
+  than a quarter of them -- unless that is 5 or fewer, which is always an
+  ordinary edit. Filling in a value that was stored EMPTY never counts: a
+  column typed in days later (the food weighed on a ramp day, say) fills
+  blanks, while a shifted column overwrites values.
 
 New rows are still added. The cohort's line then carries a warning that
 starts `NOT SYNCED <table>: ...`, printed under the cohort's line with
