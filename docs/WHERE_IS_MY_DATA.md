@@ -549,7 +549,12 @@ names the update that is running (its process number, when it started, and
 its command). An update keeps that place for as long as its program is still
 running, however long that is; if the program that started it has gone (the
 window was closed or the computer restarted mid-update), the next press
-takes over at once. The marker is `<mousedb_root>/logs/.update.task.lock`
+takes over at once. That check works only for an update started on the same
+computer as the press: an update started on another computer cannot be looked
+up from here, so if it dies its place is taken over only once its marker
+(below) has gone 45 minutes untouched -- a running update touches it once a
+minute. Until then a press is refused, and the refusal names that other
+computer. The marker is `<mousedb_root>/logs/.update.task.lock`
 (the `logs` folder under the configured `mousedb_root`). While an update
 runs, an `update.lock` is written beside it too and touched every minute
 until the update ends, so a window still running an earlier version of this

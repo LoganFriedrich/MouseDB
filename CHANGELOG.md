@@ -133,6 +133,10 @@ checked-in code, not what's planned.
   which then deleted the second one's lock. The lock
   (`logs/.update.task.lock`) is now taken in one step, kept while the update's
   program is running, and taken over at once only when that program is gone.
+  An update started on another computer cannot be looked up from the computer
+  where the button is pressed, so if it dies its place is taken over only
+  after 45 minutes without its once-a-minute touch; until then a press is
+  refused and names that computer.
   The old `update.lock` is still written, and touched every minute while the
   update runs, so a window running an earlier version (which takes over an
   `update.lock` older than 2 hours) refuses for the whole update.
