@@ -330,3 +330,86 @@ def test_a_list_damaged_part_way_says_the_run_stopped_part_way(tmp_path, monkeyp
     assert "nothing was imported" not in str(e.value)
     assert _reach_rows(db) == 4                            # both videos landed
     assert not any("[FAIL]" in s for s in said)            # no video counted as failed
+
+
+# ---------------------------------------------------------------------------
+# A network share that drops for a moment is not a missing ledger.
+# WHY: on Windows an unreachable mapped drive answers "network path not found"
+# (error 53) or "network name not found" (67), which Python raises as
+# FileNotFoundError -- the same exception as a file that is truly not there.
+# Read as "no ledger yet", one such moment re-imported every results file.
+# ---------------------------------------------------------------------------
+
+def share_unreachable(path):
+    """The exception a read on an unreachable mapped share raises."""
+    import errno
+    import os
+    if os.name == "nt":
+        e = OSError(None, "The network path was not found", str(path), 53)
+    else:
+        e = FileNotFoundError(errno.ENOENT, "The network path was not found", str(path))
+    assert isinstance(e, FileNotFoundError)
+    return e
+
+
+def _share_down(monkeypatch, path_type, name, logs_listable=False):
+    """Reads of ``name`` fail as on an unreachable share; so does listing its
+    folder unless ``logs_listable``."""
+    import os
+    real_read = path_type.read_text
+    real_scandir = os.scandir
+
+    def read(self, *a, **k):
+        if self.name == name:
+            raise share_unreachable(self)
+        return real_read(self, *a, **k)
+
+    def scandir(folder="."):
+        if not logs_listable and os.path.basename(os.fspath(folder)) == "logs":
+            raise share_unreachable(folder)
+        return real_scandir(folder)
+    monkeypatch.setattr(path_type, "read_text", read)
+    monkeypatch.setattr(ir.os, "scandir", scandir)
+
+
+def test_a_share_drop_while_reading_the_ledger_reimports_nothing(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    _features(folder, VIDEOS[1])
+    assert ir.run(log=lambda *_: None).imported == 2
+    before = _ledger_file(tmp_path).read_text(encoding="utf-8")
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = ir.import_file
+    imported = []
+
+    def spy(conn, path, dry_run=False):
+        imported.append(path.name)
+        return real(conn, path, dry_run=dry_run)
+    monkeypatch.setattr(ir, "import_file", spy)
+    _share_down(monkeypatch, type(folder), ir.LEDGER_NAME)
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert imported == []                                  # nothing imported again
+    monkeypatch.undo()
+    assert _ledger_file(tmp_path).read_text(encoding="utf-8") == before
+
+
+def test_a_ledger_reported_missing_but_listed_in_its_folder_is_retried(tmp_path, monkeypatch):
+    """The folder answers and names the file: the read failed, the file is there."""
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(folder).read_text
+    fails = []
+
+    def once(self, *a, **k):
+        if self.name == ir.LEDGER_NAME and not fails:
+            fails.append(1)
+            raise share_unreachable(self)
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(folder), "read_text", once)
+    res = ir.run(log=lambda *_: None)
+    assert fails == [1] and res.imported == 0 and res.skipped == 1

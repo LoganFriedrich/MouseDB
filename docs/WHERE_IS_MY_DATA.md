@@ -415,7 +415,13 @@ line says which file and what to do:
 
 - Most often the shared drive was unavailable for a moment. The import already
   tries again for about ten seconds; if the drive is back, simply run
-  `mousedb import-reaches` again (or wait for the next night).
+  `mousedb import-reaches` again (or wait for the next night). This includes
+  the case where the drive answers "network path not found": the import
+  believes a ledger is missing only when it can list the `logs` folder (or,
+  for a new database with no `logs` folder yet, the folder above it) and the
+  ledger is not in the listing. When it cannot list the folder either, the
+  drive is not answering, and it stops as above rather than importing
+  everything again.
 - If the file itself is damaged ("is not valid JSON"), rename it -- for
   example add `.damaged` to its name; do not delete it -- and run the import
   again. With no ledger the import brings in every results file once more.

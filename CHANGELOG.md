@@ -108,7 +108,13 @@ checked-in code, not what's planned.
   lock) or forgot which cohorts still needed their phases re-derived. A read
   that fails with a share error is retried for about ten seconds first. A
   ledger that does not exist yet still means "import everything", and the
-  run now says so.
+  run now says so -- but only when its folder can be listed and the listing
+  shows no ledger. A mapped network drive that is briefly unreachable makes
+  Windows answer "network path not found", which reads exactly like a
+  missing file; that answer alone no longer starts a full re-import, and no
+  longer empties the list of cohorts still to re-label (a save that adds a
+  cohort to the list now refuses, and says so, instead of replacing the list
+  with that one cohort).
 - Protocol Manager: Save on an existing protocol no longer throws phase
   changes away while saying "updated". A name/description change is still
   saved in place; a phase change (added, removed or edited, including

@@ -298,6 +298,38 @@ STATE_READ_ATTEMPTS = 5
 STATE_READ_RETRY_SECONDS = 2.0
 
 
+def _confirmed_absent(p: Path) -> bool:
+    """True only when a folder above ``p`` can be listed and the listing shows
+    that ``p`` is not there.
+
+    WHY: a FileNotFoundError alone does not mean the file is missing. On
+    Windows a mapped network drive that is briefly unreachable answers
+    "network path not found" / "network name not found", and Python raises
+    those as FileNotFoundError too. Read as "no ledger", that one moment
+    re-imported every results file (hours, under the database lock), and read
+    as "no cohorts waiting", the next save of that list dropped every cohort
+    on it. So "missing" is believed only from a folder that answers: the
+    nearest folder above ``p`` that can be listed must not name the next part
+    of the path (a new database has no logs folder yet, which is the same
+    answer one level up). A folder that cannot be listed at all, up to the
+    root of the drive, means the share is not answering -- not a missing
+    file."""
+    child = p
+    folder = p.parent
+    while True:
+        try:
+            with os.scandir(folder) as it:
+                names = {os.path.normcase(e.name) for e in it}
+        except FileNotFoundError:
+            if folder.parent == folder:
+                return False            # even the drive root is not there
+            child, folder = folder, folder.parent
+            continue
+        except OSError:
+            return False
+        return os.path.normcase(child.name) not in names
+
+
 def _read_state_file(p: Path, what: str, kind: type, start_over: str,
                      consequence: str) -> Optional[Any]:
     """The parsed content of ``p``; None when the file does not exist.
@@ -309,7 +341,10 @@ def _read_state_file(p: Path, what: str, kind: type, start_over: str,
     again: every reach of every filed video rewritten over the share, a run of
     several hours that holds the database lock all that time -- and nothing
     said why. A ledger that is truly missing (a new database, a new machine)
-    still starts empty: then importing everything is the right thing to do.
+    still starts empty: then importing everything is the right thing to do --
+    but "truly missing" is believed only from a folder listing
+    (``_confirmed_absent``), never from a FileNotFoundError alone, which a
+    dropped network share also raises.
     A ledger that is there but unreadable stops the run with one line naming
     the file, what the stop means (``consequence``: whether anything was
     imported before it) and what to do (``start_over``).
@@ -322,8 +357,12 @@ def _read_state_file(p: Path, what: str, kind: type, start_over: str,
         try:
             text = p.read_text(encoding="utf-8")
             break
-        except FileNotFoundError:
-            return None
+        except FileNotFoundError as e:
+            if _confirmed_absent(p):
+                return None
+            last = e                    # the share, not the file: retry, then refuse
+            if attempt + 1 < STATE_READ_ATTEMPTS:
+                time.sleep(STATE_READ_RETRY_SECONDS)
         except OSError as e:
             last = e
             if attempt + 1 < STATE_READ_ATTEMPTS:

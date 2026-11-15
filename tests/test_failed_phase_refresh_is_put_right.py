@@ -228,3 +228,23 @@ def test_the_warning_box_says_the_save_stood_and_what_happens_next():
     text = app.phase_refresh_failed_text(
         {"cohort_id": COHORT, "error": "RuntimeError: locked", "queued_for_reach_import": True})
     assert "was saved" in text and "FAILED" in text and "next scheduled reach import" in text
+
+
+def test_a_share_drop_while_reading_the_list_keeps_every_cohort_on_it(tmp_path, monkeypatch):
+    """A read that fails as an unreachable share does (FileNotFoundError on
+    Windows) is not an empty list: the cohorts already waiting are kept, the
+    queue call says it did not queue, and why."""
+    from tests.test_killed_import_resumes import _share_down
+    db, pending = _configured_db(tmp_path, monkeypatch)
+    pending.parent.mkdir(parents=True, exist_ok=True)
+    pending.write_text(json.dumps(["PROJB_02", "PROJC_03"]), encoding="utf-8")
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    _share_down(monkeypatch, type(pending), ir.PENDING_PHASES_NAME)
+    _failing_refresh(monkeypatch)
+    said = []
+    monkeypatch.setattr("builtins.print", lambda *a, **k: said.append(" ".join(map(str, a))))
+    _save_a_cohort(db)
+    monkeypatch.undo()
+    assert _pending(pending) == ["PROJB_02", "PROJC_03"]         # nothing dropped
+    assert db.phase_refreshes[-1].get("queued_for_reach_import") is False
+    assert any("Could not queue cohort PROJA_01" in s and "backfill-phases" in s for s in said)
