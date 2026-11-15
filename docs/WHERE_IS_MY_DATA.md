@@ -410,11 +410,17 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
 
 **An unreadable ledger stops the import; it is never started again from
 nothing by itself.** If the ledger, or the list of cohorts still to re-label,
-is there but cannot be read, the import stops -- before it imports anything
-when the file is unreadable from the start (`nothing was imported`), or at its
-next save when it becomes unreadable during the run (`the run stopped
-part-way ...`; what it imported is kept). The job then fails, and its last
-line says which file and what to do:
+is there but cannot be read, the import stops. When the file is unreadable
+from the start, it stops before it imports anything (`nothing was imported`).
+When the file becomes unreadable while the import is running, the import
+carries on: each save it tries along the way fails and is logged as
+`[!] ledger save during the run failed: ...`, and it stops at its final save
+with `the run stopped part-way ...`. The rows it already imported stay in the
+database, but the videos imported since the last save that worked are not
+recorded in the ledger, so the next run imports them again (safe: their rows
+are replaced, never doubled), and the cohorts they belong to are re-labelled
+by that next run instead of this one. The job then fails, and its last line
+says which file and what to do:
 
 ```
 [FAIL] the reach import ledger <path> cannot be read (...); nothing was imported. If the share was briefly unavailable, run again; otherwise rename that file (keep it) and run again -- the run then imports every results file again, which takes hours
