@@ -241,7 +241,8 @@ class Database:
             return False                    # not configured: no live list to add to
         try:
             from .import_reaches import load_pending_phases, save_pending_phases
-            save_pending_phases(load_pending_phases() | {cohort_id})
+            save_pending_phases(load_pending_phases("the cohort was not added to it")
+                                | {cohort_id})
             return True
         except Exception as exc:
             print(f"[!] Could not queue cohort {cohort_id} for re-labelling by the "

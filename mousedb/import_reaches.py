@@ -298,7 +298,8 @@ STATE_READ_ATTEMPTS = 5
 STATE_READ_RETRY_SECONDS = 2.0
 
 
-def _read_state_file(p: Path, what: str, kind: type, start_over: str) -> Optional[Any]:
+def _read_state_file(p: Path, what: str, kind: type, start_over: str,
+                     consequence: str) -> Optional[Any]:
     """The parsed content of ``p``; None when the file does not exist.
 
     WHY THIS REFUSES INSTEAD OF STARTING AFRESH: the ledger is the only record
@@ -310,7 +311,8 @@ def _read_state_file(p: Path, what: str, kind: type, start_over: str) -> Optiona
     said why. A ledger that is truly missing (a new database, a new machine)
     still starts empty: then importing everything is the right thing to do.
     A ledger that is there but unreadable stops the run with one line naming
-    the file and what to do (``start_over``).
+    the file, what the stop means (``consequence``: whether anything was
+    imported before it) and what to do (``start_over``).
 
     A read that fails with an OSError is retried for a few seconds first
     (``STATE_READ_ATTEMPTS``); content that is not JSON, or not a ``kind``,
@@ -328,24 +330,30 @@ def _read_state_file(p: Path, what: str, kind: type, start_over: str) -> Optiona
                 time.sleep(STATE_READ_RETRY_SECONDS)
     else:
         raise StateFileUnreadable(
-            "the %s %s cannot be read (%s: %s); nothing was imported. If the share "
+            "the %s %s cannot be read (%s: %s); %s. If the share "
             "was briefly unavailable, run again; %s"
-            % (what, p, type(last).__name__, last, start_over))
+            % (what, p, type(last).__name__, last, consequence, start_over))
     try:
         data = json.loads(text)
     except ValueError as e:
         raise StateFileUnreadable(
-            "the %s %s is not valid JSON (%s); nothing was imported. %s"
-            % (what, p, e, start_over[:1].upper() + start_over[1:]))
+            "the %s %s is not valid JSON (%s); %s. %s"
+            % (what, p, e, consequence, start_over[:1].upper() + start_over[1:]))
     if not isinstance(data, kind):
         raise StateFileUnreadable(
-            "the %s %s holds a %s, not a %s; nothing was imported. %s"
-            % (what, p, type(data).__name__, kind.__name__,
+            "the %s %s holds a %s, not a %s; %s. %s"
+            % (what, p, type(data).__name__, kind.__name__, consequence,
                start_over[:1].upper() + start_over[1:]))
     return data
 
 
-def load_ledger() -> Dict[str, str]:
+# What a stop on an unreadable state file means, for the [FAIL] line.
+BEFORE_IMPORTING = "nothing was imported"
+PART_WAY = ("the run stopped part-way; videos imported since its last save "
+            "are imported again by the next run")
+
+
+def load_ledger(consequence: str = BEFORE_IMPORTING) -> Dict[str, str]:
     """The import ledger; {} when there is none yet. Raises
     ``StateFileUnreadable`` when one exists but cannot be read (see
     ``_read_state_file``: an unreadable ledger used to mean "import every
@@ -354,7 +362,7 @@ def load_ledger() -> Dict[str, str]:
     data = _read_state_file(
         p, "reach import ledger", dict,
         "otherwise rename that file (keep it) and run again -- the run then "
-        "imports every results file again, which takes hours")
+        "imports every results file again, which takes hours", consequence)
     if data is None:
         logger.warning("no reach import ledger at %s yet: every results file will be imported", p)
         return {}
@@ -418,7 +426,7 @@ def pending_phases_path() -> Path:
     return require("mousedb_root") / "logs" / PENDING_PHASES_NAME
 
 
-def load_pending_phases() -> set:
+def load_pending_phases(consequence: str = BEFORE_IMPORTING) -> set:
     """Cohorts still to re-label; empty when the file does not exist. Raises
     ``StateFileUnreadable`` when it exists but cannot be read: treated as
     empty, the cohorts it named would keep wrong test-phase labels and
@@ -426,7 +434,7 @@ def load_pending_phases() -> set:
     data = _read_state_file(
         pending_phases_path(), "list of cohorts still to re-label", list,
         "otherwise rename that file (keep it), run 'mousedb backfill-phases' "
-        "to re-label every cohort, and run again")
+        "to re-label every cohort, and run again", consequence)
     return set(data or ())
 
 
@@ -1007,7 +1015,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         # runs (a save in the window whose phase refresh failed --
         # Database._queue_for_reach_import), and writing only this run's set
         # would drop that cohort, leaving its labels wrong for good.
-        save_pending_phases(load_pending_phases() | pending | res.cohorts_touched)
+        save_pending_phases(load_pending_phases(PART_WAY) | pending | res.cohorts_touched)
         save_ledger(ledger)
 
     last_save = time.monotonic()
@@ -1035,10 +1043,13 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                         if time.monotonic() - last_save >= LEDGER_SAVE_SECONDS:
                             try:
                                 checkpoint()
-                            except OSError as e:
+                            except (OSError, StateFileUnreadable) as e:
                                 # Not fatal: the import goes on and the save at
                                 # the end tries again (and fails the run if it
-                                # still cannot write).
+                                # still cannot write, or still cannot read the
+                                # list of cohorts it adds to). Caught HERE so
+                                # it is never counted as this video failing:
+                                # the video's rows are committed.
                                 res.messages.append("ledger save during the run failed: %s" % e)
                                 log("  [!] ledger save during the run failed: %s" % e)
                             last_save = time.monotonic()
@@ -1101,7 +1112,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             checkpoint()  # also persists refreshed stamps for unchanged files
             # Re-read: a cohort queued by another program during this run
             # (see checkpoint) is re-labelled now rather than a night later.
-            relabel = load_pending_phases() | pending | res.cohorts_touched
+            relabel = load_pending_phases(PART_WAY) | pending | res.cohorts_touched
             left = set(relabel)
             if relabel:
                 try:
@@ -1121,7 +1132,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                             # cohort just re-labelled leaves the list. A cohort
                             # done earlier in this loop and queued AGAIN since
                             # (a later failure elsewhere) stays on it.
-                            save_pending_phases((load_pending_phases() - {cohort}) | left)
+                            save_pending_phases((load_pending_phases(PART_WAY) - {cohort}) | left)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)

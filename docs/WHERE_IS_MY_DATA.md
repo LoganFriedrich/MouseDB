@@ -403,8 +403,11 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
 
 **An unreadable ledger stops the import; it is never started again from
 nothing by itself.** If the ledger, or the list of cohorts still to re-label,
-is there but cannot be read, the import stops before it imports anything. The
-job then fails, and its last line says which file and what to do:
+is there but cannot be read, the import stops -- before it imports anything
+when the file is unreadable from the start (`nothing was imported`), or at its
+next save when it becomes unreadable during the run (`the run stopped
+part-way ...`; what it imported is kept). The job then fails, and its last
+line says which file and what to do:
 
 ```
 [FAIL] the reach import ledger <path> cannot be read (...); nothing was imported. If the share was briefly unavailable, run again; otherwise rename that file (keep it) and run again -- the run then imports every results file again, which takes hours
@@ -498,7 +501,8 @@ was moved or renamed by mistake, put it back -- the next import clears the
 line. If the video really should no longer be in the database, that is a
 decision for a person, not for the import. A video that was being moved
 between folders while the import ran can show up for one night and then
-disappear from the list by itself.
+disappear from the list by itself, and so can a video imported by hand with
+`--include-processing` while it is still being processed, until it is filed.
 
 How the import decides a video's file is there: every row in the database
 records the name of the results file it was imported from. The import

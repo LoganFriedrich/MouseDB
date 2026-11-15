@@ -306,3 +306,27 @@ def test_a_damaged_list_of_cohorts_to_relabel_stops_the_run(tmp_path, monkeypatc
     with pytest.raises(RuntimeError, match="nothing was imported"):
         ir.run(log=lambda *_: None)
     assert _reach_rows(db) == 0                           # nothing imported
+
+
+def test_a_list_damaged_part_way_says_the_run_stopped_part_way(tmp_path, monkeypatch):
+    """Only a stop before the first import may say "nothing was imported"."""
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    _features(folder, VIDEOS[1])
+    monkeypatch.setattr(ir, "LEDGER_SAVE_SECONDS", 0)
+    pending = tmp_path / "dbroot" / "logs" / ir.PENDING_PHASES_NAME
+    real = ir.import_file
+
+    def damages_the_list(conn, path, dry_run=False):
+        out = real(conn, path, dry_run=dry_run)
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text('["PROJA_0', encoding="utf-8")
+        return out
+    monkeypatch.setattr(ir, "import_file", damages_the_list)
+    said = []
+    with pytest.raises(RuntimeError, match="stopped part-way") as e:
+        ir.run(log=said.append)
+    assert "nothing was imported" not in str(e.value)
+    assert _reach_rows(db) == 4                            # both videos landed
+    assert not any("[FAIL]" in s for s in said)            # no video counted as failed
