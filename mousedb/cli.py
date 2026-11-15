@@ -984,11 +984,15 @@ def cmd_import_brains(args):
         with hold(waiting_for="another database task"):
             return _import_brains_body(args, summary_dir)
 
+    from .task_mutex import LockWaitTimeout
     try:
         return retry_while_locked(once, what="The brain import",
                                   announce=lambda m: print(m, flush=True))
     except DatabaseBusy as busy:
         print("  [FAIL] %s" % busy, flush=True)
+        return 1
+    except LockWaitTimeout as waited:
+        print("  [FAIL] brain import not run: %s" % waited, flush=True)
         return 1
 
 

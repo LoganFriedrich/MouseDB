@@ -118,9 +118,15 @@ def _default_runner(cmd: Sequence[str]) -> Tuple[int, str]:
     A child process keeps one step's crash from taking the others down, and
     keeps the GUI's own database connection out of the writers' way."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console pop-ups from the GUI
+    # A step waits for the cross-task lock for the interactive budget, not a
+    # scheduled job's hours: a person is waiting, and each step is stopped at
+    # STEP_TIMEOUT_SECONDS anyway (task_mutex.INTERACTIVE_WAIT_MINUTES).
+    from . import task_mutex
+    env = dict(os.environ)
+    env.setdefault(task_mutex.WAIT_ENV, str(task_mutex.INTERACTIVE_WAIT_MINUTES))
     try:
         p = subprocess.run(list(cmd), capture_output=True, text=True,
-                           timeout=STEP_TIMEOUT_SECONDS, creationflags=flags)
+                           timeout=STEP_TIMEOUT_SECONDS, creationflags=flags, env=env)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
         return 124, "step exceeded %d s and was stopped" % STEP_TIMEOUT_SECONDS

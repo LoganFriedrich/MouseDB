@@ -43,6 +43,19 @@ contents it judged dead. Every break is written to the job's log and to a
 permanent record beside the lock (``<lock>.breaks.log``), so a broken lock is
 never a silent event.
 
+HOW LONG A JOB WAITS. A job waits while the holder is running and making
+progress (its CPU time and read/write count move; for a holder this machine
+cannot look up, its lockfile's heartbeat), up to the job's WAIT BUDGET -- a
+bound that must fit inside the job's own time limit with room for its own
+work. Then it fails loudly: ``LockWaitTimeout``, holder named, nothing
+changed. It also fails early when a live holder shows no progress for
+``STALL_MINUTES``: it may be hung, and a live holder's lock is never broken.
+WHY wait so long: the operating system's "restart on failure" re-runs a task
+only when it could not be STARTED, never one that started and then exited
+with an error. A job that gave up after a fixed short wait while the job ahead
+of it was still busy was therefore simply lost until its next scheduled run.
+Waiting turns a slow job into a delay for the next one instead of a loss.
+
 RELEASE REMOVES ONLY ITS OWN LOCK. Each lock carries its holder's identity
 (pid, time, computer, and a random token). ``release()`` deletes the lockfile
 only if it still carries that identity: a holder whose lock was broken while
@@ -63,6 +76,69 @@ from typing import Callable, Optional, Tuple
 # be cleared.
 BREAK_TOKEN_STALE_SECONDS = 60
 
+# -- how long a job waits for the lock ----------------------------------------
+#
+# A scheduled job waits while the holder is running and getting somewhere, up
+# to its WAIT BUDGET. The budget must fit inside the job's own time limit in
+# the operating system's scheduler, with room left for the job's own work:
+#     budget = time limit - (how long a successful run of this job takes)
+# DEFAULT_WAIT_MINUTES is the budget of a job that does not set one: sized so a
+# short job (seconds to minutes of its own work) still fits inside a one-hour
+# time limit. A job that runs after a long one and has a longer limit sets its
+# own with ``set_wait_minutes`` (the snapshot refresh: ``--lock-wait-minutes``),
+# and the environment variable WAIT_ENV overrides both for one task without
+# editing anything.
+DEFAULT_WAIT_MINUTES = 40
+WAIT_ENV = "MOUSEDB_LOCK_WAIT_MINUTES"
+# For a window a person is sitting at: the wait blocks the window, and a
+# person will not sit through two hours of it.
+INTERACTIVE_WAIT_MINUTES = 25
+# A holder that has shown no progress (CPU time, read/write count) for this
+# long may be hung. Waiting longer will not help, and its lock is never broken
+# while it runs, so the waiter gives up loudly instead.
+STALL_MINUTES = 30
+# A long wait says so in the log every this-many minutes: a silent job that
+# waits for two hours looks exactly like a hung one, and gets killed.
+REPORT_EVERY_MINUTES = 10
+POLL_SECONDS = 5
+# How often a holder touches its lockfile to show it is alive (see _heartbeat).
+HEARTBEAT_SECONDS = 60
+
+_process_wait_minutes: Optional[float] = None
+# Lockfile contents this process already gave up waiting on -> when (monotonic).
+_gave_up_on: dict = {}
+
+
+class LockWaitTimeout(RuntimeError):
+    """The lock did not come free within this job's wait budget, or its holder
+    stopped making progress. Nothing was changed; the message says what to do."""
+
+
+def set_wait_minutes(minutes: Optional[float]) -> None:
+    """Set this process's wait budget (None: back to the default)."""
+    global _process_wait_minutes
+    _process_wait_minutes = None if minutes is None else float(minutes)
+
+
+def default_wait_seconds() -> float:
+    """The wait budget, in seconds: WAIT_ENV, else ``set_wait_minutes``, else
+    DEFAULT_WAIT_MINUTES."""
+    env = os.environ.get(WAIT_ENV, "").strip()
+    if env:
+        try:
+            return float(env) * 60.0
+        except ValueError:
+            pass
+    if _process_wait_minutes is not None:
+        return _process_wait_minutes * 60.0
+    return DEFAULT_WAIT_MINUTES * 60.0
+
+
+def _say(message: str) -> None:
+    # flush: a scheduled job's output goes to a log file, where Python buffers
+    # it until the process ends -- a waiting job would look silent.
+    print(message, flush=True)
+
 
 def _this_host() -> str:
     return socket.gethostname().strip().lower() or "unknown-host"
@@ -80,6 +156,10 @@ class TaskMutex:
         self.stale_seconds = stale_minutes * 60
         self._held = False
         self._identity: Optional[str] = None
+        self._heartbeat_stop = None
+        # Injected so the waiting rules can be tested without waiting.
+        self._clock = time.monotonic
+        self._sleep = time.sleep
 
     # -- the lockfile's contents ---------------------------------------------
 
@@ -255,24 +335,148 @@ class TaskMutex:
             return self._break(seen, why, log) and self._create()
         return False
 
-    def acquire(self, wait_seconds: int = 1500, log=print,
-                waiting_for: str = "another database task") -> "TaskMutex":
-        t0 = time.time()
+    # -- waiting for the holder ---------------------------------------------
+
+    def _activity(self, text: Optional[str], state: str):
+        """Something that changes while the holder is getting somewhere.
+
+        A holder on THIS machine: its CPU time and its count of read/write
+        operations -- a job rewriting tables over a slow share moves both,
+        a job hung on a dead connection moves neither. A holder that cannot be
+        looked up (another computer, no psutil): the lockfile's modification
+        time, which a holder running this version touches every
+        ``HEARTBEAT_SECONDS`` (see ``_heartbeat``). A lock that changed hands
+        is progress too: the queue is moving.
+        """
+        sig = [text]
+        if state == "alive":
+            try:
+                import psutil
+                proc = psutil.Process(int(text.split()[0]))
+                cpu = proc.cpu_times()
+                sig.append(round(cpu.user + cpu.system, 1))
+                try:
+                    io = proc.io_counters()
+                    sig.append((io.read_count, io.write_count))
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        else:
+            try:
+                sig.append(self.path.stat().st_mtime)
+            except OSError:
+                pass
+        return tuple(sig)
+
+    def acquire(self, wait_seconds: Optional[float] = None, log=_say,
+                waiting_for: str = "another database task",
+                stall_seconds: Optional[float] = None) -> "TaskMutex":
+        """Wait for the lock, then take it.
+
+        Waits as long as the holder is running AND getting somewhere, up to
+        ``wait_seconds`` (default: ``default_wait_seconds()``). WHY so long:
+        a job that gives up while the job before it is still working is a
+        night's work lost -- the scheduler's "restart on failure" does not
+        re-run a job that started and then exited with an error, so nothing
+        brings it back until its next scheduled run. Waiting means a slow
+        import DELAYS the next job instead of cancelling it. The bound must fit
+        inside the waiting job's own time limit with room for its own work.
+
+        Gives up early, loudly, when the holder has made no progress for
+        ``stall_seconds`` (default ``STALL_MINUTES``): a hung holder will not
+        finish however long we wait, and its lock is never broken while it is
+        alive -- a person has to look at it. Either way raises
+        ``LockWaitTimeout`` with the holder named and nothing changed.
+
+        A job that already gave up on THIS holder (same lockfile contents)
+        within its budget does not wait for it again: a job that takes the lock
+        once per item (the sheet import: once per cohort) would otherwise sit
+        through the whole wait once per item behind the same hung holder.
+        """
+        budget = default_wait_seconds() if wait_seconds is None else float(wait_seconds)
+        stall = STALL_MINUTES * 60.0 if stall_seconds is None else float(stall_seconds)
+        clock, sleep = self._clock, self._sleep
+        t0 = clock()
+        last_change = t0
+        last_report = t0
+        last_sig = None
         said = False
         while not self.try_acquire(log=log):
+            now = clock()
+            text = self._read()
+            state, who = self._classify(text)
+            gave_up = _gave_up_on.get(text)
+            if text and gave_up is not None and now - gave_up < budget:
+                raise LockWaitTimeout(
+                    "could not acquire the database-task lock: this job already waited "
+                    "for %s (%s) and gave up on it; it still holds the lock, so this "
+                    "step is not waited for again. Nothing was changed by this step."
+                    % (waiting_for, who))
+            sig = self._activity(text, state)
+            if sig != last_sig:
+                last_sig, last_change = sig, now
+            waited = (now - t0) / 60.0
             if not said:
-                _, who = self.holder()
-                log("  waiting for %s to finish (%s)" % (waiting_for, who))
+                log("  waiting for %s to finish (%s); will wait up to %d min "
+                    "while it is working" % (waiting_for, who, budget // 60))
                 said = True
-            if time.time() - t0 > wait_seconds:
-                _, who = self.holder()
-                raise RuntimeError(
-                    "could not acquire the database-task lock after %ds; "
-                    "%s still holds it (%s). Nothing was changed; this job "
-                    "runs again on its next schedule."
-                    % (wait_seconds, waiting_for, who))
-            time.sleep(5)
+            elif now - last_report >= REPORT_EVERY_MINUTES * 60:
+                log("  still waiting after %d min for %s (%s; last sign of progress "
+                    "%d min ago)" % (waited, waiting_for, who, (now - last_change) // 60))
+                last_report = now
+            if now - t0 >= budget:
+                _gave_up_on[text] = now
+                raise LockWaitTimeout(
+                    "could not acquire the database-task lock: waited the full %d minutes "
+                    "this job allows and %s still holds it (%s). It was left running. "
+                    "Nothing was changed by this job, and it does NOT run again by "
+                    "itself -- run it by hand once the holder has finished, or it "
+                    "runs at its next scheduled time. If this keeps happening, give "
+                    "this job a longer wait (%s, or --lock-wait-minutes where the job "
+                    "has it) that still fits inside its time limit."
+                    % (budget // 60, waiting_for, who, WAIT_ENV))
+            if state == "alive" and now - last_change >= stall:
+                _gave_up_on[text] = now
+                raise LockWaitTimeout(
+                    "could not acquire the database-task lock: %s holds it (%s) and has "
+                    "shown no sign of progress for %d minutes, so it may be hung. "
+                    "Its lock is not broken while it is still running. Nothing was "
+                    "changed by this job, and it does NOT run again by itself: look "
+                    "at the holder (its log, or the operating system's scheduler), end "
+                    "it if it is "
+                    "stuck, then run this job by hand."
+                    % (waiting_for, who, (now - last_change) // 60))
+            sleep(POLL_SECONDS)
+        self._start_heartbeat()
         return self
+
+    # -- heartbeat ------------------------------------------------------------
+
+    def _start_heartbeat(self) -> None:
+        """Touch the lockfile every HEARTBEAT_SECONDS while held.
+
+        WHY: a waiter that cannot look the holder up (it runs on another
+        computer, or psutil is missing) judges it only by the lockfile's age.
+        Without a heartbeat, a live holder on another computer looked "stale"
+        after ``stale_minutes`` and its lock was broken under it. With one, the
+        age means "time since the holder last showed it was alive"."""
+        import threading
+        stop = threading.Event()
+        identity = self._identity
+
+        def beat():
+            while not stop.wait(HEARTBEAT_SECONDS):
+                if self._read() != identity:
+                    return
+                try:
+                    os.utime(self.path, None)
+                except OSError:
+                    pass
+
+        t = threading.Thread(target=beat, name="mousedb-task-lock-heartbeat", daemon=True)
+        t.start()
+        self._heartbeat_stop = stop
 
     def release(self, log: Optional[Callable] = None) -> None:
         """Give the lock back -- only if the lockfile is still this holder's.
@@ -281,6 +485,9 @@ class TaskMutex:
         breaking it at the same moment. If the token cannot be had within a
         few seconds (its holder is stuck), the lock is still removed if it is
         ours: leaving our own lock behind would block every later job."""
+        if self._heartbeat_stop is not None:
+            self._heartbeat_stop.set()
+            self._heartbeat_stop = None
         if not self._held:
             return
         self._held = False
@@ -310,8 +517,10 @@ class TaskMutex:
         self.release()
 
 
-def hold(name: str = "central-db", wait_seconds: int = 1500, log=print,
+def hold(name: str = "central-db", wait_seconds: Optional[float] = None, log=_say,
          waiting_for: str = "another database task") -> TaskMutex:
-    """Acquire (waiting if needed) and return the held mutex, for ``with``."""
+    """Acquire (waiting if needed) and return the held mutex, for ``with``.
+
+    ``wait_seconds`` None: this process's wait budget (``default_wait_seconds``)."""
     return TaskMutex(name).acquire(wait_seconds=wait_seconds, log=log,
                                    waiting_for=waiting_for)

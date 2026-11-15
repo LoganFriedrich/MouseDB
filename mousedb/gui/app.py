@@ -6689,6 +6689,10 @@ def main():
     # and then fails visibly instead of freezing the GUI for minutes.
     import os
     os.environ.setdefault("MOUSEDB_DB_TIMEOUT", "30")
+    # Likewise the cross-task lock: a scheduled job waits for it for hours (see
+    # task_mutex), but here the wait blocks the window a person is looking at.
+    from .. import task_mutex
+    task_mutex.set_wait_minutes(task_mutex.INTERACTIVE_WAIT_MINUTES)
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
 

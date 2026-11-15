@@ -114,6 +114,15 @@ def watcher_running() -> bool:
 # still fails loudly rather than waiting forever.
 SWAP_WAIT_SECONDS = 120
 
+# How long this job waits for the cross-task lock while another job holds it
+# and is still working (task_mutex: "HOW LONG A JOB WAITS"). Longer than the
+# other jobs' default because this is the job that runs after the imports, so
+# it is the one most often queued behind a long import; and a refresh that
+# gives up is a whole day without new exports, since the scheduler does not
+# re-run a job that started and failed. Size it as: the task's time limit,
+# minus how long a successful refresh (snapshot, exports and census) takes.
+DEFAULT_LOCK_WAIT_MINUTES = 180
+
 
 def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
     """Move ``tmp`` onto ``out``, waiting while a reader has ``out`` open.
@@ -262,6 +271,13 @@ def main(argv=None) -> int:
                     help="Do not retake the pipeline census after the exports "
                          "(it is a 5-25 minute read-only scan of the pipeline "
                          "folders). The nightly job leaves it on.")
+    ap.add_argument("--lock-wait-minutes", type=float, default=None,
+                    help="How long to wait for another mousedb job (an import) "
+                         "that holds the database-task lock and is still working "
+                         "(default %d). Set it to this task's time limit minus "
+                         "how long a successful refresh takes. The environment "
+                         "variable MOUSEDB_LOCK_WAIT_MINUTES overrides it."
+                         % DEFAULT_LOCK_WAIT_MINUTES)
     ap.add_argument("--retry-minutes", type=int, default=25,
                     help="How long to keep retrying if another program has the "
                          "database locked (default 25). A retry restarts this "
@@ -269,8 +285,12 @@ def main(argv=None) -> int:
                          "and the next one on your schedule, minus how long a "
                          "successful refresh takes. 0 disables retrying.")
     args = ap.parse_args(argv)
+    from .. import task_mutex
+    task_mutex.set_wait_minutes(DEFAULT_LOCK_WAIT_MINUTES if args.lock_wait_minutes is None
+                                else args.lock_wait_minutes)
 
-    print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"))
+    print("Refreshing analysis snapshot at %s" % datetime.now().isoformat(timespec="seconds"),
+          flush=True)
     if args.import_sheets:
         import_sheets_first(force=args.force)
     # A running watcher makes refresh() raise, and that aborts this whole
@@ -319,6 +339,12 @@ def main(argv=None) -> int:
                 announce=lambda m: print(m, flush=True))
         except DatabaseBusy as busy:
             print("  [FAIL] %s" % busy, flush=True)
+            return 1
+        except task_mutex.LockWaitTimeout as waited:
+            # Loud and non-zero: the snapshot and the exports were NOT
+            # refreshed, and nothing will re-run this job before its next
+            # scheduled time (see task_mutex, "HOW LONG A JOB WAITS").
+            print("  [FAIL] snapshot not refreshed: %s" % waited, flush=True)
             return 1
         rc = _finish(counts, args.force)
     if not args.skip_census:
