@@ -396,6 +396,33 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
   `N cohort(s) still to re-label from an earlier run that stopped`. Do not
   delete this file: a cohort left out of it keeps reaches with no phase.
 
+**An unreadable ledger stops the import; it is never started again from
+nothing by itself.** If the ledger, or the list of cohorts still to re-label,
+is there but cannot be read, the import stops before it imports anything. The
+job then fails, and its last line says which file and what to do:
+
+```
+[FAIL] the reach import ledger <path> cannot be read (...); nothing was imported. If the share was briefly unavailable, run again; otherwise rename that file (keep it) and run again -- the run then imports every results file again, which takes hours
+```
+
+- Most often the shared drive was unavailable for a moment. The import already
+  tries again for about ten seconds; if the drive is back, simply run
+  `mousedb import-reaches` again (or wait for the next night).
+- If the file itself is damaged ("is not valid JSON"), rename it -- for
+  example add `.damaged` to its name; do not delete it -- and run the import
+  again. With no ledger the import brings in every results file once more.
+  That is safe (a video imported again has its rows replaced, never doubled)
+  but takes hours, which is exactly why the import no longer does it on its
+  own. Its first line then says `no import ledger yet ... every results file
+  will be imported`.
+- If the damaged file is `reach_imports_phases_pending.json`, rename it, run
+  `mousedb backfill-phases` once (it re-derives every cohort's phases, since
+  nobody can tell any more which ones were waiting), then run the import.
+
+Why: until this was changed, a ledger that could not be read was treated as
+empty and the import silently re-imported every file -- hours of work over the
+share, holding the database lock, with nothing saying why.
+
 **Only filed videos are in the database.** Filing means a video is done. When
 a filed video is sent back to a review queue -- a pellet nobody answered, a
 disagreement with the hand scores, a person asked "are you sure?" -- it is not

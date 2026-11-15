@@ -15,6 +15,7 @@ A kill is simulated with a BaseException (KeyboardInterrupt), which no
 import contextlib
 import json
 import shutil
+import sqlite3
 
 import pytest
 
@@ -202,3 +203,106 @@ def test_a_dry_run_writes_no_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(ir, "LEDGER_SAVE_SECONDS", 0)
     ir.run(dry_run=True, log=lambda *_: None)
     assert not (tmp_path / "dbroot" / "logs").exists()
+
+
+# ---------------------------------------------------------------------------
+# An unreadable ledger stops the run; it is never read as "nothing imported".
+# WHY: an unreadable ledger used to be treated as empty, so the run imported
+# every results file again (hours, under the database lock) and said nothing.
+# ---------------------------------------------------------------------------
+
+def _reach_rows(db):
+    with contextlib.closing(sqlite3.connect(str(db))) as c:
+        return c.execute("SELECT COUNT(*) FROM reach_data").fetchone()[0]
+
+
+def _ledger_file(tmp_path):
+    return tmp_path / "dbroot" / "logs" / ir.LEDGER_NAME
+
+
+def test_a_damaged_ledger_stops_the_run_and_imports_nothing(tmp_path, monkeypatch, capsys):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    _features(folder, VIDEOS[1])
+    _ledger_file(tmp_path).write_text('{"Analyzed/Project/PROJA01/x', encoding="utf-8")
+    damaged = _ledger_file(tmp_path).read_text(encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _count(db, VIDEOS[1]) == (0, 0)                 # nothing imported
+    assert _ledger_file(tmp_path).read_text(encoding="utf-8") == damaged   # left as found
+
+    assert ir.main([]) == 1
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[-1].startswith("[FAIL] ") and str(_ledger_file(tmp_path)) in out[-1]
+    assert "rename that file" in out[-1]
+    out[-1].encode("ascii")                                # one console-safe line
+
+
+def test_a_ledger_that_is_not_a_mapping_is_refused(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    _ledger_file(tmp_path).parent.mkdir(parents=True)
+    _ledger_file(tmp_path).write_text("[]", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _reach_rows(db) == 0                           # nothing imported
+
+
+def test_a_ledger_read_that_fails_briefly_is_retried(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(_ledger_file(tmp_path)).read_text
+    fails = []
+
+    def flaky(self, *a, **k):
+        if self.name == ir.LEDGER_NAME and len(fails) < 2:
+            fails.append(1)
+            raise OSError("the network name is no longer available")
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(_ledger_file(tmp_path)), "read_text", flaky)
+    res = ir.run(log=lambda *_: None)
+    assert len(fails) == 2 and res.imported == 0 and res.skipped == 1
+
+
+def test_a_ledger_read_that_keeps_failing_stops_the_run(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    _features(folder, VIDEOS[1])
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(_ledger_file(tmp_path)).read_text
+
+    def down(self, *a, **k):
+        if self.name == ir.LEDGER_NAME:
+            raise OSError("the network name is no longer available")
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(_ledger_file(tmp_path)), "read_text", down)
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _count(db, VIDEOS[1]) == (0, 0)
+
+
+def test_no_ledger_at_all_imports_everything_and_says_so(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    said = []
+    assert ir.run(log=said.append).imported == 1
+    assert any("no import ledger yet" in s for s in said)
+
+
+def test_a_damaged_list_of_cohorts_to_relabel_stops_the_run(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    pending = tmp_path / "dbroot" / "logs" / ir.PENDING_PHASES_NAME
+    pending.parent.mkdir(parents=True)
+    pending.write_text('["PROJA_0', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _reach_rows(db) == 0                           # nothing imported

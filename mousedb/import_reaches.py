@@ -31,7 +31,9 @@ WHAT IT DOES
      each video only after its rows are committed, and always whole (written
      beside and swapped in). So a run that is killed -- the scheduled task's
      time limit -- and restarted carries on where it stopped instead of
-     importing every file again.
+     importing every file again. A ledger that exists but cannot be read
+     STOPS the run ([FAIL], exit 1) instead of being taken as empty: taken
+     as empty it meant "import every file again", silently (``load_ledger``).
   4. Leaves out every filed video whose NEWER run waits in a review queue
      (the test of step 6): not imported, not entered in the ledger, its
      cohort not re-labelled. Importing it would only have its rows taken out
@@ -275,14 +277,82 @@ def ledger_path() -> Path:
     return require("mousedb_root") / "logs" / LEDGER_NAME
 
 
-def load_ledger() -> Dict[str, str]:
-    p = ledger_path()
-    if p.is_file():
+class StateFileUnreadable(RuntimeError):
+    """The ledger or the pending-cohorts file exists but cannot be read.
+
+    Raised instead of carrying on as if the file were empty; see
+    ``_read_state_file`` for why."""
+
+
+# How long a read of the ledger (or the pending-cohorts file) is retried
+# before the run stops. WHY: the files live on a network share, and a share
+# that drops for a moment answers with an OSError that is gone a few seconds
+# later. That should cost a few seconds, not a failed night.
+STATE_READ_ATTEMPTS = 5
+STATE_READ_RETRY_SECONDS = 2.0
+
+
+def _read_state_file(p: Path, what: str, kind: type, start_over: str) -> Optional[Any]:
+    """The parsed content of ``p``; None when the file does not exist.
+
+    WHY THIS REFUSES INSTEAD OF STARTING AFRESH: the ledger is the only record
+    of which results files are already in the database. Until this was
+    changed, a ledger that could not be read (a share error, a file another
+    program had damaged) was treated as EMPTY, so the run imported every file
+    again: every reach of every filed video rewritten over the share, a run of
+    several hours that holds the database lock all that time -- and nothing
+    said why. A ledger that is truly missing (a new database, a new machine)
+    still starts empty: then importing everything is the right thing to do.
+    A ledger that is there but unreadable stops the run with one line naming
+    the file and what to do (``start_over``).
+
+    A read that fails with an OSError is retried for a few seconds first
+    (``STATE_READ_ATTEMPTS``); content that is not JSON, or not a ``kind``,
+    is refused at once -- reading it again would not change it."""
+    last: Optional[BaseException] = None
+    for attempt in range(STATE_READ_ATTEMPTS):
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning("ledger %s unreadable; starting a new one", p)
-    return {}
+            text = p.read_text(encoding="utf-8")
+            break
+        except FileNotFoundError:
+            return None
+        except OSError as e:
+            last = e
+            if attempt + 1 < STATE_READ_ATTEMPTS:
+                time.sleep(STATE_READ_RETRY_SECONDS)
+    else:
+        raise StateFileUnreadable(
+            "the %s %s cannot be read (%s: %s); nothing was imported. If the share "
+            "was briefly unavailable, run again; %s"
+            % (what, p, type(last).__name__, last, start_over))
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise StateFileUnreadable(
+            "the %s %s is not valid JSON (%s); nothing was imported. %s"
+            % (what, p, e, start_over[:1].upper() + start_over[1:]))
+    if not isinstance(data, kind):
+        raise StateFileUnreadable(
+            "the %s %s holds a %s, not a %s; nothing was imported. %s"
+            % (what, p, type(data).__name__, kind.__name__,
+               start_over[:1].upper() + start_over[1:]))
+    return data
+
+
+def load_ledger() -> Dict[str, str]:
+    """The import ledger; {} when there is none yet. Raises
+    ``StateFileUnreadable`` when one exists but cannot be read (see
+    ``_read_state_file``: an unreadable ledger used to mean "import every
+    file again", silently)."""
+    p = ledger_path()
+    data = _read_state_file(
+        p, "reach import ledger", dict,
+        "otherwise rename that file (keep it) and run again -- the run then "
+        "imports every results file again, which takes hours")
+    if data is None:
+        logger.warning("no reach import ledger at %s yet: every results file will be imported", p)
+        return {}
+    return data
 
 
 def _write_json_atomically(p: Path, obj: Any) -> None:
@@ -343,13 +413,15 @@ def pending_phases_path() -> Path:
 
 
 def load_pending_phases() -> set:
-    p = pending_phases_path()
-    if p.is_file():
-        try:
-            return set(json.loads(p.read_text(encoding="utf-8")))
-        except Exception:
-            logger.warning("%s unreadable; treating as empty", p)
-    return set()
+    """Cohorts still to re-label; empty when the file does not exist. Raises
+    ``StateFileUnreadable`` when it exists but cannot be read: treated as
+    empty, the cohorts it named would keep wrong test-phase labels and
+    nothing would ever say so."""
+    data = _read_state_file(
+        pending_phases_path(), "list of cohorts still to re-label", list,
+        "otherwise rename that file (keep it), run 'mousedb backfill-phases' "
+        "to re-label every cohort, and run again")
+    return set(data or ())
 
 
 def save_pending_phases(cohorts: Iterable[str]) -> None:
@@ -754,7 +826,10 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                            "written concurrently over the share. Stop it, or pass --force for a deliberate run.")
     files = find_features_files(root, include_processing)
     res.scanned = len(files)
-    ledger = load_ledger()
+    ledger = load_ledger()           # stops the run if a ledger exists but cannot be read
+    if not ledger and files and not all_files:
+        log("import-reaches: no import ledger yet at %s -- every results file will be imported"
+            % ledger_path())
     moved_from = _moved_entries(ledger, root, files) if not all_files else {}
     res.moved = len(moved_from)
     # Filed videos whose NEWER run waits in a review queue: their filed results

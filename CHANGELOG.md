@@ -76,6 +76,15 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb import-reaches`: a ledger (`logs/reach_imports.json`) or a list of
+  cohorts still to re-label (`logs/reach_imports_phases_pending.json`) that is
+  there but cannot be read now stops the run with a `[FAIL]` line naming the
+  file and what to do, and exit code 1. It used to be read as empty, so the
+  run silently imported every results file again (hours, under the database
+  lock) or forgot which cohorts still needed their phases re-derived. A read
+  that fails with a share error is retried for about ten seconds first. A
+  ledger that does not exist yet still means "import everything", and the
+  run now says so.
 - Protocol Manager: Save on an existing protocol no longer throws phase
   changes away while saying "updated". A name/description change is still
   saved in place; a phase change (added, removed or edited, including
