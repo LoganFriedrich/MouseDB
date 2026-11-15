@@ -302,7 +302,14 @@ class ExcelImporter:
             # the re-derivation FAILED, which the hook itself only prints.
             done = [r for r in refreshes[refreshes_before:] if r.get('cohort_id') == cohort_id]
             if done:
-                self.__dict__['_phase_refresh'] = done[-1]
+                record = dict(done[-1])
+                # The import relabels the cohort's pellet scores itself before
+                # its commit (_assign_pellet_phases), so the hook finds them
+                # already right; count those here, or the report would say no
+                # hand score was relabelled.
+                record['pellet_rows_relabelled'] = (record.get('pellet_rows_relabelled', 0)
+                                                    + self.__dict__.get('_pellets_relabelled', 0))
+                self.__dict__['_phase_refresh'] = record
         return self._get_result()
 
     @contextmanager
@@ -1911,16 +1918,26 @@ class ExcelImporter:
             return
 
         assignments = assign_phases_for_cohort(pairs)
+        from sqlalchemy import or_
+        relabelled = 0
         for a in assignments:
-            session.query(PelletScore).filter(
+            # Only rows whose label is not already right are written (and
+            # counted): the count is reported as the pellet rows this import
+            # relabelled (see import_cohort_file, phases_rederived).
+            relabelled += session.query(PelletScore).filter(
                 PelletScore.session_date == a.session_date,
                 PelletScore.subject_id.in_(
                     session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
                 ),
+                or_(PelletScore.test_phase.is_(None), PelletScore.test_phase != a.test_phase,
+                    PelletScore.phase_group.is_(None), PelletScore.phase_group != a.phase_group),
             ).update(
                 {"test_phase": a.test_phase, "phase_group": a.phase_group},
                 synchronize_session=False,
-            )
+            ) or 0
+        if relabelled:
+            self.__dict__['_pellets_relabelled'] = (
+                self.__dict__.get('_pellets_relabelled', 0) + relabelled)
 
     def _import_surgeries(self, xl: pd.ExcelFile, cohort_id: str,
                           session, surgery_type: str, dry_run: bool):
@@ -2803,7 +2820,7 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync', '_phase_refresh', '_seen_rows', '_unread_tabs',
+                     '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_seen_rows', '_unread_tabs',
                      '_notes_cleared'):
             self.__dict__.pop(name, None)
 

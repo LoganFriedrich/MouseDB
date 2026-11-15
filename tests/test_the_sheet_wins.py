@@ -212,6 +212,8 @@ def test_a_session_moved_out_of_the_sheet_is_removed_and_the_phases_rederived(tm
         assert {p.test_phase for p in s.query(PelletScore).filter_by(session_date=BASELINE_DAY)} == {"Pillar"}
     ph = r["phases_rederived"]
     assert ph["cohort_id"] == COHORT and ph["reach_rows_relabelled"] == 1 and "error" not in ph
+    # BASELINE_DAY's 40 hand scores moved from training to baseline.
+    assert ph["pellet_rows_relabelled"] == 40
     # Every removed row is in the audit log with its old values.
     with db.session() as s:
         dels = s.query(AuditLog).filter_by(table_name="pellet_scores", action="DELETE").all()
