@@ -24,8 +24,6 @@ not error, and a test that called it an error was asserting something about
 mice that nobody had checked (2026-10-15: the first version used 125% and
 failed on exactly this).
 """
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
@@ -69,24 +67,26 @@ def test_an_absent_percentage_stays_absent(tmp_path):
     assert out["weight_percent"].iloc[1] == pytest.approx(90.0)
 
 
-def _snapshot_weights():
-    from mousedb.config import snapshot_dir
-    try:
-        root = Path(snapshot_dir())
-    except Exception:
-        return None
-    if not (root / "weights.parquet").exists():
-        return None
-    return odc_reaches.session_weights(root)
+def _cohorts_in_both_units(tmp_path):
+    """A weights table the way the live one is: whole cohorts stored as
+    fractions (0.87) and whole cohorts stored as percentages (87), with real
+    spread -- restriction lows near 75%, growth past 120%."""
+    rows = []
+    spread = [0.76, 0.82, 0.86, 0.9, 0.95, 1.02, 1.12, 1.24]
+    for cohort, scale in (("PROJA_01", 1.0), ("PROJA_02", 100.0)):
+        for i, frac in enumerate(spread):
+            rows.append({"subject_id": "%s_%02d" % (cohort, i + 1), "date": "2026-01-0%d" % (i % 9 + 1),
+                         "weight_grams": 20.0, "weight_percent": frac * scale})
+    pd.DataFrame(rows).to_parquet(tmp_path / "weights.parquet", index=False)
+    return odc_reaches.session_weights(tmp_path)
 
 
-def test_every_real_cohort_lands_where_a_mouse_can_be():
-    """On the live snapshot, not on a fixture: this is the check that would have
-    caught the shipped 9,000%."""
-    weights = _snapshot_weights()
-    if weights is None or weights.empty:
-        pytest.skip("no weights in the snapshot on this machine")
-    weights = weights.dropna(subset=["weight_percent"])
+def test_every_cohort_lands_where_a_mouse_can_be(tmp_path):
+    """Per cohort, whichever unit it was stored in: the check that would have
+    caught the shipped 9,000%. It used to run on this computer's live snapshot
+    and so ran nowhere else; a test reads only its own inputs, so the live
+    table's mix of units is reproduced here."""
+    weights = _cohorts_in_both_units(tmp_path).dropna(subset=["weight_percent"])
     weights["cohort"] = weights["subject_id"].str.rsplit("_", n=1).str[0]
     problems = []
     for cohort, group in weights.groupby("cohort"):
@@ -100,3 +100,4 @@ def test_every_real_cohort_lands_where_a_mouse_can_be():
                             % (cohort, len(outside), PLAUSIBLE[0], PLAUSIBLE[1],
                                outside["weight_percent"].iloc[0]))
     assert not problems, "; ".join(problems)
+    assert set(weights["cohort"]) == {"PROJA_01", "PROJA_02"}

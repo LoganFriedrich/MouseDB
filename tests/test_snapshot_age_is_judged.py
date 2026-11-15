@@ -7,6 +7,7 @@ enough: it asks the reader to know what today is, know how often the job is
 meant to run, and do the subtraction. Three days once passed that way.
 """
 import datetime as dt
+import json
 
 import pytest
 
@@ -33,12 +34,27 @@ def test_an_unknown_age_says_unknown_rather_than_guessing():
 # ------------------------------------------------------- judged, not reported
 @pytest.fixture(autouse=True)
 def _no_live_census(tmp_path, monkeypatch):
-    """status() reads the pipeline census from the configured mousedb root --
-    the live one. These tests are about ages, so the census comes from
-    tmp_path: none unless a test writes one."""
+    """status() reads the pipeline census, the job health report and the
+    exports' manifest from the configured mousedb root, and the review queues
+    from the reaching pipeline -- the live ones. These tests are about ages,
+    so all of them come from tmp_path: none unless a test writes one."""
     from mousedb import pipeline_census
     cache = tmp_path / "census" / "pipeline_census.json"
     monkeypatch.setattr(pipeline_census, "cache_path", lambda: cache)
+    # Everything else status() reads (the overnight jobs' health report, the
+    # current exports' manifest, the reaching pipeline's review queues) comes
+    # from a mousedb root and a pipeline folder of the test's own, both empty.
+    # The suite leaves both unset, and a test must never read the live ones.
+    monkeypatch.setenv("MOUSEDB_ROOT", str(tmp_path / "mousedb_root"))
+    monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path / "pipeline"))
+    for queue in ("triage", "deep_review"):      # empty review queues
+        (tmp_path / "pipeline" / "Processing" / "Review" / queue).mkdir(parents=True)
+    # and a health check that ran an hour ago and found nothing failing.
+    logs = tmp_path / "mousedb_root" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "health.json").write_text(json.dumps({
+        "checked_at": (dt.datetime.now() - dt.timedelta(hours=1)).isoformat(timespec="seconds"),
+        "failing": [], "jobs": []}), encoding="utf-8")
     return cache
 
 

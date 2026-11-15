@@ -139,32 +139,33 @@ def test_the_write_path_applies_the_rule():
 
 # ------------------------------------------------------- the files we actually ship
 
-def _written_csvs():
-    from mousedb.config import export_path
-    out = export_path()
-    if out is None:
-        return []
-    out = Path(out) / "current"
-    if not out.exists():
-        return []
-    return sorted(out.glob("*.csv")) + sorted((out / "Example").glob("*.csv"))
+@pytest.fixture(scope="module")
+def written_csvs(tmp_path_factory):
+    """Export files written by the real exporters from synthetic inputs
+    (tests/synthetic_exports.py). This check used to read this computer's live
+    exports folder -- which no test may touch, and which meant it checked
+    nothing on any other machine."""
+    from tests.synthetic_exports import build, csv_files
+    files = csv_files(build(tmp_path_factory.mktemp("exports") / "current"))
+    assert files
+    return files
 
 
-@pytest.mark.parametrize("csv_path", _written_csvs(), ids=lambda p: p.name)
-def test_an_exported_file_carries_no_illegal_column_name(csv_path):
-    head = pd.read_csv(csv_path, nrows=0)
-    problems = {c: _illegal(c) for c in head.columns if _illegal(c)}
-    assert not problems, "%s: %s" % (
-        csv_path.name, "; ".join("%r %s" % (c, why) for c, why in problems.items()))
+def test_an_exported_file_carries_no_illegal_column_name(written_csvs):
+    for csv_path in written_csvs:
+        head = pd.read_csv(csv_path, nrows=0)
+        problems = {c: _illegal(c) for c in head.columns if _illegal(c)}
+        assert not problems, "%s: %s" % (
+            csv_path.name, "; ".join("%r %s" % (c, why) for c, why in problems.items()))
 
 
-@pytest.mark.parametrize(
-    "csv_path", [p for p in _written_csvs() if p.name.endswith("DATA_DICTIONARY.csv")],
-    ids=lambda p: p.name)
-def test_a_written_dictionary_carries_no_illegal_variable_name(csv_path):
-    frame = pd.read_csv(csv_path)
-    assert "VariableName" in frame.columns, csv_path.name
-    problems = {v: _illegal(v) for v in frame["VariableName"].astype(str)
-                if _illegal(v)}
-    assert not problems, "%s: %s" % (
-        csv_path.name, "; ".join("%r %s" % (v, why) for v, why in problems.items()))
+def test_a_written_dictionary_carries_no_illegal_variable_name(written_csvs):
+    dictionaries = [p for p in written_csvs if p.name.endswith("DATA_DICTIONARY.csv")]
+    assert dictionaries
+    for csv_path in dictionaries:
+        frame = pd.read_csv(csv_path)
+        assert "VariableName" in frame.columns, csv_path.name
+        problems = {v: _illegal(v) for v in frame["VariableName"].astype(str)
+                    if _illegal(v)}
+        assert not problems, "%s: %s" % (
+            csv_path.name, "; ".join("%r %s" % (v, why) for v, why in problems.items()))

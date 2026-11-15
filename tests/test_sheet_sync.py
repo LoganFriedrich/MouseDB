@@ -94,6 +94,9 @@ class TestStatus:
 
     def test_unconfigured_is_a_stated_problem(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
+        # The import history's location is configuration too; with none, the
+        # listing still has to say what is missing rather than stop.
+        monkeypatch.setattr(ss, "LEDGER", tmp_path / "ledger.jsonl")
         monkeypatch.delenv(cs.ENV_VAR, raising=False)
         st = ss.status()
         assert not st["configured"] and st["problem"]

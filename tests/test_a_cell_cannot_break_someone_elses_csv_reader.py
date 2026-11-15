@@ -102,28 +102,24 @@ def test_a_changed_column_says_so_in_its_own_dictionary_entry():
 
 # -------------------------------------------------------- the files we actually ship
 
-def _exports():
-    from mousedb.config import export_path
-    out = export_path()
-    if out is None or not (Path(out) / "current").exists():
-        return None
-    return Path(out) / "current"
+@pytest.fixture(scope="module")
+def shipped(tmp_path_factory):
+    """Export files written by the real exporters from synthetic inputs that
+    carry every hazard (tests/synthetic_exports.py). These checks used to read
+    this computer's live exports folder -- which no test may touch, and which
+    meant they checked nothing on any other machine."""
+    from tests.synthetic_exports import build, csv_files
+    files = csv_files(build(tmp_path_factory.mktemp("exports") / "current"))
+    assert files
+    return files
 
 
-def _datasets():
-    current = _exports()
-    if current is None:
-        return []
-    files = sorted(current.glob("*.csv")) + sorted((current / "Example").glob("*.csv"))
+def _datasets(files):
     return [f for f in files if not f.name.endswith("DATA_DICTIONARY.csv")]
 
 
-def _dictionaries():
-    current = _exports()
-    if current is None:
-        return []
-    return (sorted(current.glob("*DATA_DICTIONARY.csv"))
-            + sorted((current / "Example").glob("*DATA_DICTIONARY.csv")))
+def _dictionaries(files):
+    return [f for f in files if f.name.endswith("DATA_DICTIONARY.csv")]
 
 
 # The hazards a dataset must not contain, as raw bytes.
@@ -182,33 +178,35 @@ def _hazardous_bytes(path):
             offset += len(block)
 
 
-@pytest.mark.parametrize("path", _datasets(), ids=lambda p: p.name)
-def test_no_dataset_contains_a_byte_that_can_break_a_reader(path):
-    hazard = _hazardous_bytes(path)
-    assert hazard is None, "%s: byte 0x%02X at offset %d -- %s" % (
-        path.name, hazard[0], hazard[2], hazard[1])
+def test_no_dataset_contains_a_byte_that_can_break_a_reader(shipped):
+    assert _datasets(shipped)
+    for path in _datasets(shipped):
+        hazard = _hazardous_bytes(path)
+        assert hazard is None, "%s: byte 0x%02X at offset %d -- %s" % (
+            path.name, hazard[0], hazard[2], hazard[1])
 
 
-@pytest.mark.parametrize("path", _dictionaries(), ids=lambda p: p.name)
-def test_no_dictionary_cell_can_break_a_reader(path):
+def test_no_dictionary_cell_can_break_a_reader(shipped):
     """The dictionaries are small and they are allowed their prose commas, so
     these are checked value by value with a strict CSV reader."""
-    bad = {}
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        for row in csv.DictReader(handle, strict=True):
-            for column, value in row.items():
-                problems = cs.unsafe(value, allow_comma=True)
-                if problems:
-                    bad.setdefault(column, (str(value)[:60], problems))
-    assert not bad, "%s: %s" % (path.name, "; ".join(
-        "%s (%s) e.g. %r" % (c, "/".join(w), eg) for c, (eg, w) in bad.items()))
+    assert _dictionaries(shipped)
+    for path in _dictionaries(shipped):
+        bad = {}
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle, strict=True):
+                for column, value in row.items():
+                    problems = cs.unsafe(value, allow_comma=True)
+                    if problems:
+                        bad.setdefault(column, (str(value)[:60], problems))
+        assert not bad, "%s: %s" % (path.name, "; ".join(
+            "%s (%s) e.g. %r" % (c, "/".join(w), eg) for c, (eg, w) in bad.items()))
 
 
-@pytest.mark.parametrize("path", _datasets() + _dictionaries(), ids=lambda p: p.name)
-def test_no_file_starts_with_a_byte_order_mark(path):
+def test_no_file_starts_with_a_byte_order_mark(shipped):
     """A BOM attaches itself to the first column's name and hides there."""
-    with path.open("rb") as handle:
-        assert handle.read(3) != codecs.BOM_UTF8, path.name
+    for path in shipped:
+        with path.open("rb") as handle:
+            assert handle.read(3) != codecs.BOM_UTF8, path.name
 
 
 def test_the_write_path_applies_the_rule():
