@@ -7,6 +7,12 @@
     <h1>Pipeline Status</h1>
 </div>
 
+{# Whose records these are. Re-fetched every 30 s like the cards, so the
+   "last written" time on it moves while the page stays open. #}
+<div id="watcher-scope" hx-get="/dashboard/scope" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "components/watcher_scope.html" %}
+</div>
+
 <div class="card-grid" hx-get="/dashboard/summary-cards" hx-trigger="every 30s" hx-swap="innerHTML">
     {% include "components/summary_cards.html" %}
 </div>

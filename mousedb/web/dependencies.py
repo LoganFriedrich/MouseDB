@@ -33,8 +33,16 @@ def get_db_session() -> Generator[Session, None, None]:
 
 
 def get_watcher() -> WatcherBridge:
-    """Get the WatcherBridge singleton (lazy-initialized)."""
+    """A WatcherBridge resolved afresh for this request.
+
+    WHY not a singleton: the bridge decides at creation which watcher
+    database to read (find_watcher_db) and when it was last written. A
+    server left running kept the answer from its start: a database that
+    appeared or moved later was never seen. The page's scope line (which
+    file, last written when) is re-fetched every 30 s from /dashboard/scope,
+    which calls this, so it follows the file. Resolving costs one small
+    config-file read.
+    """
     global _watcher_bridge
-    if _watcher_bridge is None:
-        _watcher_bridge = WatcherBridge()
+    _watcher_bridge = WatcherBridge()
     return _watcher_bridge

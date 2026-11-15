@@ -4,6 +4,11 @@ Read-only bridge to MouseReach watcher.db for video pipeline status rollup.
 This module reads the watcher's SQLite database to provide cross-database views:
 "For animal CNT_01_15, how many videos are processed vs pending vs failed?"
 
+SCOPE: the watcher database holds what THIS computer's watcher recorded; it
+is not the pipeline's state (other computers' work is not in it). Every view
+built on this module says so (watcher_scope_lines); the pipeline's state is
+the pipeline census, read from the folders (pipeline_census.py).
+
 RULES:
 - NEVER writes to watcher.db (read-only)
 - NEVER imports mousereach (reads config.json directly)
@@ -25,7 +30,20 @@ PIPELINE_STATES = [
     'processing', 'processed', 'archiving', 'archived',
 ]
 ERROR_STATES = ['quarantined', 'failed']
-ALL_STATES = PIPELINE_STATES + ERROR_STATES
+# A filed video whose results are older than the declared tool versions; the
+# watcher re-runs it (it re-enters the pipeline).
+RERUN_STATES = ['outdated']
+# A filed video locked for a publication: done, and stays as it is.
+LOCKED_STATES = ['crystallized']
+# Held for a person: the review queues. WHY their own bucket: until mousedb
+# knew these states they fell into 'in pipeline' / 'in progress', so a video
+# waiting for a reviewer looked like one the pipeline was working on.
+REVIEW_STATES = ['triage', 'deep_review']
+# This computer has no file for the video (another computer holds it). Not a
+# failure and not a hold -- and not work this computer is doing.
+NODE_ABSENT_STATES = ['unresolvable']
+ALL_STATES = (PIPELINE_STATES + RERUN_STATES + LOCKED_STATES + REVIEW_STATES
+              + NODE_ABSENT_STATES + ERROR_STATES)
 
 # State display names and colors for GUI
 STATE_DISPLAY = {
@@ -40,9 +58,22 @@ STATE_DISPLAY = {
     'archived':     {'label': 'Archived',      'color': '#607D8B'},
     'quarantined':  {'label': 'Quarantined',   'color': '#FF5722'},
     'failed':       {'label': 'Failed',        'color': '#F44336'},
+    'outdated':     {'label': 'Outdated',      'color': '#FF9800'},
+    'crystallized': {'label': 'Crystallized',  'color': '#2196F3'},
+    'triage':       {'label': 'In Review (triage)',      'color': '#AB47BC'},
+    'deep_review':  {'label': 'In Review (deep review)', 'color': '#7B1FA2'},
+    'unresolvable': {'label': 'Not on this computer',    'color': '#BDBDBD'},
 }
 
-DONE_STATES = frozenset(['processed', 'archiving', 'archived'])
+# 'crystallized' is a filed video locked for a publication: its analysis is
+# finished, so it counts as done (it used to count as 'in progress').
+DONE_STATES = frozenset(['processed', 'archiving', 'archived', 'crystallized'])
+
+# Work the pipeline still has to do on this computer ('In Progress').
+ACTIVE_STATES = frozenset([
+    'discovered', 'validated', 'dlc_queued', 'dlc_running', 'dlc_complete',
+    'processing', 'outdated',
+])
 
 # Archive-relevant state groupings
 ARCHIVE_STATES = frozenset(['archived', 'outdated', 'crystallized'])
@@ -57,8 +88,78 @@ ARCHIVE_STATE_DISPLAY = {
     'outdated':      {'label': 'Outdated',       'color': '#FF9800'},
     'crystallized':  {'label': 'Crystallized',   'color': '#2196F3'},
     'in_pipeline':   {'label': 'In Pipeline',    'color': '#9E9E9E'},
+    'in_review':     {'label': 'In Review',      'color': '#AB47BC'},
+    'not_on_this_node': {'label': 'Not on this computer', 'color': '#BDBDBD'},
+    'quarantined':   {'label': 'Quarantined',    'color': '#FF5722'},
     'failed':        {'label': 'Failed',         'color': '#F44336'},
+    'other':         {'label': 'Other',          'color': '#795548'},
 }
+
+
+def pipeline_bucket(state: str) -> str:
+    """Which count of the Video Pipeline view a watcher state belongs to:
+    'done', 'in_progress', 'in_review', 'not_on_this_node', 'failed',
+    'quarantined', or 'other' for a state mousedb does not know (shown under
+    its own name, never folded into a bucket that means something else)."""
+    if state in DONE_STATES:
+        return 'done'
+    if state in ACTIVE_STATES:
+        return 'in_progress'
+    if state in REVIEW_STATES:
+        return 'in_review'
+    if state in NODE_ABSENT_STATES:
+        return 'not_on_this_node'
+    if state == 'failed':
+        return 'failed'
+    if state == 'quarantined':
+        return 'quarantined'
+    return 'other'
+
+
+def archive_bucket(state: str) -> str:
+    """Which count of the Archive Status view a watcher state belongs to:
+    'archived', 'outdated', 'crystallized', 'in_pipeline', 'in_review',
+    'not_on_this_node', 'quarantined', 'failed', or 'other'.
+
+    WHY quarantined is not 'failed': a quarantined video is HELD until a
+    person deals with the recording (renames or fixes it); nothing went
+    wrong in the analysis. Counted as Failed, the hold was shown with the
+    wrong reason and the person who has to act was not told it waits for
+    them."""
+    if state in ('archived', 'outdated', 'crystallized'):
+        return state
+    if state in IN_PIPELINE_STATES:
+        return 'in_pipeline'
+    if state in REVIEW_STATES:
+        return 'in_review'
+    if state in NODE_ABSENT_STATES:
+        return 'not_on_this_node'
+    if state == 'quarantined':
+        return 'quarantined'
+    if state == 'failed':
+        return 'failed'
+    return 'other'
+
+
+def _add_archive_count(summary, state: str, count: int) -> None:
+    """Add ``count`` videos in ``state`` to an archive summary (overall,
+    cohort or animal): one rule for all three."""
+    bucket = archive_bucket(state)
+    if bucket == 'other':
+        summary.other[state] = summary.other.get(state, 0) + count
+    else:
+        setattr(summary, bucket, getattr(summary, bucket) + count)
+
+
+# Which rule of find_watcher_db found the file. Only the two read from this
+# computer's MouseReach config are known to be the file this computer's
+# watcher writes; the scope line says so only for those.
+FOUND_VIA_ENV = 'env'                      # MOUSEDB_WATCHER_DB
+FOUND_VIA_WATCHER_DB_PATH = 'watcher_db_path'
+FOUND_VIA_PROCESSING_ROOT = 'processing_root'
+FOUND_VIA_PIPELINE_ROOT = 'pipeline_root'  # mousedb's mousereach_pipeline_root
+FOUND_VIA_EXPLICIT = 'explicit'            # a path handed to WatcherBridge
+THIS_COMPUTERS_WATCHER = (FOUND_VIA_WATCHER_DB_PATH, FOUND_VIA_PROCESSING_ROOT)
 
 
 @dataclass
@@ -67,6 +168,7 @@ class WatcherStatus:
     available: bool
     db_path: Optional[Path]
     message: str
+    found_via: str = ''
 
 
 @dataclass
@@ -79,6 +181,10 @@ class PipelineSummary:
     quarantined_count: int = 0
     archived_count: int = 0
     fully_processed_pct: float = 0.0
+    in_progress_count: int = 0
+    in_review_count: int = 0
+    not_on_this_node_count: int = 0
+    other_states: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -89,7 +195,14 @@ class AnimalVideoSummary:
     total_videos: int = 0
     by_state: Dict[str, int] = field(default_factory=dict)
     failed_videos: int = 0
+    # Held until a person deals with the recording (e.g. renames it). Its
+    # own count so the per-animal columns add up to total_videos.
+    quarantined: int = 0
     latest_activity: Optional[str] = None
+    in_progress: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -101,6 +214,12 @@ class ArchiveSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     versions_path: Optional[Path] = None
     versions_info: Optional[dict] = None
 
@@ -115,6 +234,12 @@ class ArchiveCohortSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     crystallized_label: Optional[str] = None
 
     @property
@@ -139,39 +264,72 @@ class ArchiveAnimalSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     crystallized_label: Optional[str] = None
 
 
 def find_watcher_db() -> WatcherStatus:
     """
-    Locate watcher.db using discovery chain.
+    Locate the watcher database this computer's watcher WRITES.
 
-    Order:
+    Order (the same rule MouseReach's own commands use; mousedb reads the
+    config file directly and never imports mousereach):
     1. MOUSEDB_WATCHER_DB environment variable
-    2. ~/.mousereach/config.json -> processing_root/watcher.db
-    3. Hardcoded fallback path
+    2. ~/.mousereach/config.json -> watcher.db_path (the configured database)
+    3. ~/.mousereach/config.json -> processing_root/watcher.db (the default)
+    4. mousedb config: mousereach_pipeline_root/watcher.db
+
+    WHY step 2 comes before step 3: a node may point its watcher at another
+    file (``db_path`` in the ``watcher`` section, set because SQLite over a
+    network share loses writes). The watcher then writes ONLY that file, and
+    the default ``<processing_root>/watcher.db`` may still exist beside it
+    holding old rows. Reading the default showed that stale copy as the
+    pipeline's state. When the configured file is missing, nothing is shown:
+    falling back to the default would show the stale copy again.
     """
     # 1. Environment variable
     env_path = os.environ.get('MOUSEDB_WATCHER_DB')
     if env_path:
         p = Path(env_path)
         if p.exists():
-            return WatcherStatus(True, p, f"Found via MOUSEDB_WATCHER_DB: {p}")
+            return WatcherStatus(True, p, f"Found via MOUSEDB_WATCHER_DB: {p}",
+                                 FOUND_VIA_ENV)
         return WatcherStatus(False, None,
                              f"MOUSEDB_WATCHER_DB set but file not found: {p}")
 
-    # 2. Read MouseReach config.json (no mousereach import!)
+    # 2./3. Read MouseReach config.json (no mousereach import!)
     config_file = Path.home() / ".mousereach" / "config.json"
     if config_file.exists():
         try:
             with open(config_file, 'r') as f:
                 config = json.load(f)
+            watcher_cfg = config.get('watcher') or {}
+            configured = (watcher_cfg.get('db_path')
+                          if isinstance(watcher_cfg, dict) else None)
+            if configured:
+                p = Path(configured)
+                if p.exists():
+                    return WatcherStatus(
+                        True, p, f"Found via mousereach config watcher.db_path: {p}",
+                        FOUND_VIA_WATCHER_DB_PATH)
+                return WatcherStatus(
+                    False, None,
+                    f"The watcher is configured to write {p} (watcher.db_path in "
+                    f"~/.mousereach/config.json), but that file does not exist. "
+                    f"The watcher may not have been started yet."
+                )
             processing_root = config.get('processing_root')
             if processing_root:
                 p = Path(processing_root) / "watcher.db"
                 if p.exists():
                     return WatcherStatus(True, p,
-                                         f"Found via mousereach config: {p}")
+                                         f"Found via mousereach config: {p}",
+                                         FOUND_VIA_PROCESSING_ROOT)
                 return WatcherStatus(
                     False, None,
                     f"MouseReach configured but watcher.db not found at {p}. "
@@ -185,7 +343,9 @@ def find_watcher_db() -> WatcherStatus:
         from .config import mousereach_pipeline_root
         root = mousereach_pipeline_root()
         if root and (root / "watcher.db").exists():
-            return WatcherStatus(True, root / "watcher.db", f"Found at configured pipeline root: {root}")
+            return WatcherStatus(True, root / "watcher.db",
+                                 f"Found at configured pipeline root: {root}",
+                                 FOUND_VIA_PIPELINE_ROOT)
     except Exception:
         pass
 
@@ -193,6 +353,72 @@ def find_watcher_db() -> WatcherStatus:
         False, None,
         "watcher.db not found. Set MOUSEDB_WATCHER_DB or run mousereach-setup."
     )
+
+
+# Machine-readable name of what the watcher views cover (in --json output).
+WATCHER_SCOPE = "this_computer_watcher_records_only"
+# The file was named some other way (environment variable, mousedb's
+# pipeline folder, an explicit path): one watcher's records, but not known to
+# be this computer's.
+WATCHER_SCOPE_ONE_DATABASE = "one_watcher_database_records_only"
+
+
+def watcher_scope(status: WatcherStatus) -> str:
+    """WATCHER_SCOPE when the file is the one this computer's MouseReach
+    config says its watcher writes, else WATCHER_SCOPE_ONE_DATABASE."""
+    if status and status.found_via in THIS_COMPUTERS_WATCHER:
+        return WATCHER_SCOPE
+    return WATCHER_SCOPE_ONE_DATABASE
+
+
+def watcher_db_last_written(status: WatcherStatus) -> Optional[str]:
+    """When the watcher database was last written ('YYYY-MM-DD HH:MM', local
+    time), or None. The watcher keeps its database in rollback-journal mode,
+    so every committed change rewrites the file and its modified time is the
+    time of the last recorded change."""
+    if not status or not status.db_path:
+        return None
+    try:
+        import time
+        return time.strftime("%Y-%m-%d %H:%M",
+                             time.localtime(os.path.getmtime(status.db_path)))
+    except OSError:
+        return None
+
+
+def watcher_scope_lines(status: WatcherStatus) -> List[str]:
+    """The lines every watcher view (two GUI tabs, two commands, the web
+    dashboard) shows above its numbers. ASCII only: the commands print them.
+
+    WHY: the watcher database records what THIS computer's watcher did. Work
+    done by other computers, and anything moved by hand, is not in it, so its
+    counts are not the pipeline's state. The pipeline's state is its folders,
+    which the pipeline census reads (Where Is My Data tab). A person reading
+    these views must be told which of the two they are looking at."""
+    when = watcher_db_last_written(status) or "unknown"
+    # Say which rule found the file. WHY: only the file named by this
+    # computer's MouseReach config is known to be this computer's watcher's;
+    # MOUSEDB_WATCHER_DB or mousedb's pipeline folder can name any watcher's
+    # database (one on a shared drive, another computer's), and calling that
+    # 'this computer's' would mislead.
+    if status.found_via in THIS_COMPUTERS_WATCHER:
+        head = (f"Records of this computer's watcher only: {status.db_path} "
+                f"(last written {when}).")
+    else:
+        via = {
+            FOUND_VIA_ENV: "named by the MOUSEDB_WATCHER_DB setting",
+            FOUND_VIA_PIPELINE_ROOT: "found in mousedb's MouseReach pipeline "
+                                     "folder, because this computer's "
+                                     "MouseReach settings name none",
+        }.get(status.found_via, "named directly")
+        head = (f"Records of one watcher database only, {via}: "
+                f"{status.db_path} (last written {when}). It may not be this "
+                f"computer's watcher.")
+    return [
+        head,
+        "Work done by other watchers is not in these records. The whole "
+        "pipeline's state, read from its folders, is on the Where Is My Data tab.",
+    ]
 
 
 def find_versions_json() -> Optional[Path]:
@@ -282,7 +508,8 @@ class WatcherBridge:
         if db_path:
             self._status = WatcherStatus(
                 db_path.exists(), db_path,
-                f"Using explicit path: {db_path}"
+                f"Using explicit path: {db_path}",
+                FOUND_VIA_EXPLICIT,
             )
         else:
             self._status = find_watcher_db()
@@ -322,6 +549,17 @@ class WatcherBridge:
             summary.failed_count = summary.by_state.get('failed', 0)
             summary.quarantined_count = summary.by_state.get('quarantined', 0)
             summary.archived_count = summary.by_state.get('archived', 0)
+
+            for st, cnt in summary.by_state.items():
+                bucket = pipeline_bucket(st)
+                if bucket == 'in_progress':
+                    summary.in_progress_count += cnt
+                elif bucket == 'in_review':
+                    summary.in_review_count += cnt
+                elif bucket == 'not_on_this_node':
+                    summary.not_on_this_node_count += cnt
+                elif bucket == 'other':
+                    summary.other_states[st] = cnt
 
             done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
             if summary.total_videos > 0:
@@ -370,6 +608,18 @@ class WatcherBridge:
                 summary.total_videos += row['cnt']
                 if row['state'] == 'failed':
                     summary.failed_videos += row['cnt']
+                elif row['state'] == 'quarantined':
+                    summary.quarantined += row['cnt']
+                bucket = pipeline_bucket(row['state'])
+                if bucket == 'in_progress':
+                    summary.in_progress += row['cnt']
+                elif bucket == 'in_review':
+                    summary.in_review += row['cnt']
+                elif bucket == 'not_on_this_node':
+                    summary.not_on_this_node += row['cnt']
+                elif bucket == 'other':
+                    summary.other[row['state']] = (
+                        summary.other.get(row['state'], 0) + row['cnt'])
 
                 if row['latest']:
                     if (summary.latest_activity is None
@@ -394,12 +644,23 @@ class WatcherBridge:
                     'animals': 0,
                     'by_state': {},
                     'failed': 0,
+                    'quarantined': 0,
                     'fully_processed': 0,
+                    'in_progress': 0,
+                    'in_review': 0,
+                    'not_on_this_node': 0,
+                    'other': {},
                 }
             c = cohorts[cid]
             c['animals'] += 1
             c['total_videos'] += animal.total_videos
             c['failed'] += animal.failed_videos
+            c['quarantined'] += animal.quarantined
+            c['in_progress'] += animal.in_progress
+            c['in_review'] += animal.in_review
+            c['not_on_this_node'] += animal.not_on_this_node
+            for st, n in animal.other.items():
+                c['other'][st] = c['other'].get(st, 0) + n
             for state, count in animal.by_state.items():
                 c['by_state'][state] = c['by_state'].get(state, 0) + count
                 if state in DONE_STATES:
@@ -489,17 +750,7 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 summary.total_videos += count
-
-                if state == 'archived':
-                    summary.archived += count
-                elif state == 'outdated':
-                    summary.outdated += count
-                elif state == 'crystallized':
-                    summary.crystallized += count
-                elif state in ('failed', 'quarantined'):
-                    summary.failed += count
-                else:
-                    summary.in_pipeline += count
+                _add_archive_count(summary, state, count)
 
             return summary
         finally:
@@ -534,19 +785,9 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 c.total_videos += count
-
-                if state == 'archived':
-                    c.archived += count
-                elif state == 'outdated':
-                    c.outdated += count
-                elif state == 'crystallized':
-                    c.crystallized += count
-                    if row['labels']:
-                        c.crystallized_label = row['labels']
-                elif state in ('failed', 'quarantined'):
-                    c.failed += count
-                else:
-                    c.in_pipeline += count
+                _add_archive_count(c, state, count)
+                if state == 'crystallized' and row['labels']:
+                    c.crystallized_label = row['labels']
 
             return sorted(cohorts.values(), key=lambda c: c.cohort_id)
         finally:
@@ -593,19 +834,9 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 a.total_videos += count
-
-                if state == 'archived':
-                    a.archived += count
-                elif state == 'outdated':
-                    a.outdated += count
-                elif state == 'crystallized':
-                    a.crystallized += count
-                    if row['labels']:
-                        a.crystallized_label = row['labels']
-                elif state in ('failed', 'quarantined'):
-                    a.failed += count
-                else:
-                    a.in_pipeline += count
+                _add_archive_count(a, state, count)
+                if state == 'crystallized' and row['labels']:
+                    a.crystallized_label = row['labels']
 
             return sorted(animals.values(), key=lambda a: a.subject_id)
         finally:

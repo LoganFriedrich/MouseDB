@@ -16,6 +16,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QPainter, QPen
 
 from ..watcher_bridge import (
+    watcher_scope_lines,
     WatcherBridge, ARCHIVE_STATE_DISPLAY,
 )
 
@@ -24,7 +25,8 @@ class ArchiveProgressBar(QWidget):
     """Stacked horizontal bar showing archive state distribution.
 
     Segments: green=current, blue=crystallized, orange=outdated,
-    gray=in_pipeline, red=failed.
+    gray=in_pipeline, purple=in_review, light gray=not on this computer,
+    deep orange=quarantined, red=failed, brown=other.
     """
 
     def __init__(self, parent=None):
@@ -34,11 +36,20 @@ class ArchiveProgressBar(QWidget):
         self._crystallized = 0
         self._in_pipeline = 0
         self._failed = 0
+        self._in_review = 0
+        self._not_on_this_node = 0
+        self._other = 0
+        self._quarantined = 0
         self._total = 0
         self.setMinimumHeight(24)
         self.setMaximumHeight(24)
 
-    def set_data(self, archived, outdated, crystallized, in_pipeline, failed, total):
+    def set_data(self, archived, outdated, crystallized, in_pipeline, failed, total,
+                 in_review=0, not_on_this_node=0, other=0, quarantined=0):
+        self._quarantined = quarantined
+        self._in_review = in_review
+        self._not_on_this_node = not_on_this_node
+        self._other = other
         self._archived = archived
         self._outdated = outdated
         self._crystallized = crystallized
@@ -61,7 +72,11 @@ class ArchiveProgressBar(QWidget):
             (self._crystallized, ARCHIVE_STATE_DISPLAY['crystallized']['color']),
             (self._outdated,     ARCHIVE_STATE_DISPLAY['outdated']['color']),
             (self._in_pipeline,  ARCHIVE_STATE_DISPLAY['in_pipeline']['color']),
+            (self._in_review,    ARCHIVE_STATE_DISPLAY['in_review']['color']),
+            (self._not_on_this_node, ARCHIVE_STATE_DISPLAY['not_on_this_node']['color']),
+            (self._quarantined,  ARCHIVE_STATE_DISPLAY['quarantined']['color']),
             (self._failed,       ARCHIVE_STATE_DISPLAY['failed']['color']),
+            (self._other,        ARCHIVE_STATE_DISPLAY['other']['color']),
         ]
         for count, color in segments:
             if count == 0:
@@ -79,11 +94,37 @@ class ArchiveStatusTab(QWidget):
     """
     Archive status tab showing version compliance and processing progress.
 
+    Every video is in exactly one count column, so on every row of both
+    tables the columns from Archived to Other add up to Total. WHY: a video
+    in a state left out of every column (a quarantined one used to be shown
+    as Failed; a state added by a newer MouseReach was in no column at all)
+    made a row's Total larger than its parts with nothing on the row saying
+    why.
+
     Pattern follows VideoStatusTab:
     - __init__(db) -> _setup_ui() -> initial load
     - Refresh button to reload from watcher.db
     - Graceful empty state when watcher.db not found
     """
+
+    # (header, attribute of ArchiveCohortSummary / ArchiveAnimalSummary,
+    # highlight colour when non-zero). 'other' is the sum of the states
+    # mousedb does not know (named on the line under the cards, and in the
+    # cell's tooltip).
+    COUNT_COLUMNS = [
+        ('Archived', 'archived', None),
+        ('Outdated', 'outdated', '#FFF3E0'),
+        ('Crystallized', 'crystallized', '#E3F2FD'),
+        ('In Pipeline', 'in_pipeline', None),
+        ('In Review', 'in_review', None),
+        ('Not Here', 'not_on_this_node', None),
+        ('Quarantined', 'quarantined', '#FFE0B2'),
+        ('Failed', 'failed', '#FFCDD2'),
+        ('Other', 'other', '#D7CCC8'),
+    ]
+    COHORT_COLUMNS = (['Cohort', 'Total'] + [c[0] for c in COUNT_COLUMNS]
+                      + ['Progress'])
+    ANIMAL_COLUMNS = ['Subject', 'Total'] + [c[0] for c in COUNT_COLUMNS]
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -117,6 +158,18 @@ class ArchiveStatusTab(QWidget):
         self.refresh_btn.clicked.connect(self._refresh)
         header.addWidget(self.refresh_btn)
         main_layout.addLayout(header)
+
+        # Whose records these are. WHY: the watcher database holds only
+        # what THIS computer's watcher did; other computers' work is not in
+        # it, so its counts are not the pipeline's state (that is the
+        # pipeline census on the Where Is My Data tab). See
+        # watcher_bridge.watcher_scope_lines.
+        self.scope_label = QLabel("")
+        self.scope_label.setWordWrap(True)
+        self.scope_label.setStyleSheet(
+            "background: #FFF8E1; border: 1px solid #FFB300;"
+            " border-radius: 4px; padding: 6px; color: #5D4037;")
+        main_layout.addWidget(self.scope_label)
 
         # --- Unavailable placeholder ---
         self.unavailable_frame = QFrame()
@@ -155,7 +208,11 @@ class ArchiveStatusTab(QWidget):
             ('outdated', 'Outdated'),
             ('crystallized', 'Crystallized'),
             ('in_pipeline', 'In Pipeline'),
+            ('in_review', 'In Review'),
+            ('not_on_this_node', 'Not on this computer'),
+            ('quarantined', 'Quarantined'),
             ('failed', 'Failed'),
+            ('other', 'Other'),
         ]
         for col, (key, label) in enumerate(card_defs):
             card = QLabel(f"{label}\n--")
@@ -168,6 +225,12 @@ class ArchiveStatusTab(QWidget):
             summary_grid.addWidget(card, 0, col)
 
         content_layout.addWidget(summary_group)
+
+        # States mousedb does not know: named, never folded into a count
+        # that means something else.
+        self.other_label = QLabel("")
+        self.other_label.setStyleSheet("color: #795548; font-size: 9pt;")
+        content_layout.addWidget(self.other_label)
 
         # Version info label
         self.versions_label = QLabel("")
@@ -185,11 +248,8 @@ class ArchiveStatusTab(QWidget):
         cohort_group = QGroupBox("By Cohort")
         cohort_layout = QVBoxLayout(cohort_group)
         self.cohort_table = QTableWidget()
-        self.cohort_table.setColumnCount(8)
-        self.cohort_table.setHorizontalHeaderLabels([
-            'Cohort', 'Total', 'Archived', 'Outdated',
-            'Crystallized', 'In Pipeline', 'Failed', 'Progress'
-        ])
+        self.cohort_table.setColumnCount(len(self.COHORT_COLUMNS))
+        self.cohort_table.setHorizontalHeaderLabels(self.COHORT_COLUMNS)
         self.cohort_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.cohort_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -202,11 +262,8 @@ class ArchiveStatusTab(QWidget):
         animal_group = QGroupBox("By Animal")
         animal_layout = QVBoxLayout(animal_group)
         self.animal_table = QTableWidget()
-        self.animal_table.setColumnCount(7)
-        self.animal_table.setHorizontalHeaderLabels([
-            'Subject', 'Total', 'Archived', 'Outdated',
-            'Crystallized', 'In Pipeline', 'Failed'
-        ])
+        self.animal_table.setColumnCount(len(self.ANIMAL_COLUMNS))
+        self.animal_table.setHorizontalHeaderLabels(self.ANIMAL_COLUMNS)
         self.animal_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.animal_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -218,7 +275,9 @@ class ArchiveStatusTab(QWidget):
         # State legend
         legend = QHBoxLayout()
         legend.addWidget(QLabel("Legend:"))
-        for key in ['current', 'crystallized', 'outdated', 'in_pipeline', 'failed']:
+        for key in ['current', 'crystallized', 'outdated', 'in_pipeline',
+                    'in_review', 'not_on_this_node', 'quarantined', 'failed',
+                    'other']:
             info = ARCHIVE_STATE_DISPLAY[key]
             lbl = QLabel(f" {info['label']} ")
             lbl.setStyleSheet(
@@ -245,21 +304,22 @@ class ArchiveStatusTab(QWidget):
                 f"This tab will populate once the watcher starts processing videos."
             )
             self.status_label.setText("Watcher not available")
+            self.scope_label.hide()
             return
 
         self.unavailable_frame.hide()
         self.content_widget.show()
+        self.scope_label.setText("\n".join(watcher_scope_lines(self.bridge.status)))
+        self.scope_label.show()
 
         summary = self.bridge.get_archive_summary()
 
-        # Status line
-        parts = [f"Source: {self.bridge.status.db_path}"]
+        # Status line (which database: on the scope line above)
+        parts = []
         if summary.versions_path:
             parts.append(f"Versions: {summary.versions_path}")
-        self.status_label.setText(
-            '  |  '.join(parts)
-            + f"  |  Updated: {datetime.now().strftime('%H:%M:%S')}"
-        )
+        parts.append(f"Refreshed: {datetime.now().strftime('%H:%M:%S')}")
+        self.status_label.setText('  |  '.join(parts))
 
         # Version info
         if summary.versions_info and summary.versions_info.get('versions'):
@@ -284,6 +344,22 @@ class ArchiveStatusTab(QWidget):
             f"In Pipeline\n{summary.in_pipeline}")
         self.summary_labels['failed'].setText(
             f"Failed\n{summary.failed}")
+        # Held for a reviewer / no file on this computer: their own cards
+        # (they used to be counted as 'In Pipeline').
+        self.summary_labels['in_review'].setText(
+            f"In Review\n{summary.in_review}")
+        self.summary_labels['not_on_this_node'].setText(
+            f"Not on this computer\n{summary.not_on_this_node}")
+        # Quarantined: held until a person fixes the recording, so not
+        # Failed. Other: states mousedb does not know (named below).
+        self.summary_labels['quarantined'].setText(
+            f"Quarantined\n{summary.quarantined}")
+        self.summary_labels['other'].setText(
+            f"Other\n{sum(summary.other.values())}")
+        self.other_label.setText(
+            "States mousedb does not know: " + ", ".join(
+                f"{st} = {n}" for st, n in sorted(summary.other.items()))
+            if summary.other else "")
 
         # Highlight outdated card
         if summary.outdated > 0:
@@ -314,7 +390,11 @@ class ArchiveStatusTab(QWidget):
         # Overall progress bar
         self.overall_progress.set_data(
             summary.archived, summary.outdated, summary.crystallized,
-            summary.in_pipeline, summary.failed, summary.total_videos
+            summary.in_pipeline, summary.failed, summary.total_videos,
+            in_review=summary.in_review,
+            not_on_this_node=summary.not_on_this_node,
+            other=sum(summary.other.values()),
+            quarantined=summary.quarantined,
         )
 
         # Cohort table
@@ -325,29 +405,10 @@ class ArchiveStatusTab(QWidget):
             self.cohort_table.setItem(row, 0, QTableWidgetItem(c.cohort_id))
             self.cohort_table.setItem(row, 1,
                                       QTableWidgetItem(str(c.total_videos)))
-            self.cohort_table.setItem(row, 2,
-                                      QTableWidgetItem(str(c.archived)))
-
-            outdated_item = QTableWidgetItem(str(c.outdated))
-            if c.outdated > 0:
-                outdated_item.setBackground(QColor('#FFF3E0'))
-            self.cohort_table.setItem(row, 3, outdated_item)
-
-            crystal_item = QTableWidgetItem(str(c.crystallized))
-            if c.crystallized > 0:
-                crystal_item.setBackground(QColor('#E3F2FD'))
-            self.cohort_table.setItem(row, 4, crystal_item)
-
-            self.cohort_table.setItem(row, 5,
-                                      QTableWidgetItem(str(c.in_pipeline)))
-
-            failed_item = QTableWidgetItem(str(c.failed))
-            if c.failed > 0:
-                failed_item.setBackground(QColor('#FFCDD2'))
-            self.cohort_table.setItem(row, 6, failed_item)
-
-            self.cohort_table.setItem(row, 7,
-                                      QTableWidgetItem(f"{c.completion_pct:.1f}%"))
+            self._fill_counts(self.cohort_table, row, 2, c)
+            self.cohort_table.setItem(
+                row, len(self.COHORT_COLUMNS) - 1,
+                QTableWidgetItem(f"{c.completion_pct:.1f}%"))
 
         # Load all animals initially
         self._all_animals = self.bridge.get_archive_animal_rollup()
@@ -373,23 +434,19 @@ class ArchiveStatusTab(QWidget):
                                       QTableWidgetItem(a.subject_id))
             self.animal_table.setItem(row, 1,
                                       QTableWidgetItem(str(a.total_videos)))
-            self.animal_table.setItem(row, 2,
-                                      QTableWidgetItem(str(a.archived)))
+            self._fill_counts(self.animal_table, row, 2, a)
 
-            outdated_item = QTableWidgetItem(str(a.outdated))
-            if a.outdated > 0:
-                outdated_item.setBackground(QColor('#FFF3E0'))
-            self.animal_table.setItem(row, 3, outdated_item)
-
-            crystal_item = QTableWidgetItem(str(a.crystallized))
-            if a.crystallized > 0:
-                crystal_item.setBackground(QColor('#E3F2FD'))
-            self.animal_table.setItem(row, 4, crystal_item)
-
-            self.animal_table.setItem(row, 5,
-                                      QTableWidgetItem(str(a.in_pipeline)))
-
-            failed_item = QTableWidgetItem(str(a.failed))
-            if a.failed > 0:
-                failed_item.setBackground(QColor('#FFCDD2'))
-            self.animal_table.setItem(row, 6, failed_item)
+    def _fill_counts(self, table, row, first_col, summary):
+        """Write the COUNT_COLUMNS of one cohort/animal summary into a row,
+        starting at ``first_col``."""
+        for i, (_, attr, colour) in enumerate(self.COUNT_COLUMNS):
+            value = getattr(summary, attr)
+            if attr == 'other':
+                value = sum(value.values())
+            item = QTableWidgetItem(str(value))
+            if colour and value > 0:
+                item.setBackground(QColor(colour))
+            if attr == 'other' and value:
+                item.setToolTip(", ".join(
+                    f"{st} = {n}" for st, n in sorted(summary.other.items())))
+            table.setItem(row, first_col + i, item)

@@ -146,6 +146,51 @@ checked-in code, not what's planned.
   and a half per refresh, which reads it twice), not "about a minute and a
   half". The Where Is My Data quick guide now says what the exports button
   does when another refresh is writing or when a refresh did not finish.
+- Protocol Manager: Save on an existing protocol no longer throws phase
+  changes away while saying "updated". A name/description change is still
+  saved in place; a phase change (added, removed or edited, including
+  fields the table does not show) is offered as a new protocol, which keeps
+  the phases' hidden details, needs a name of its own, and leaves the original
+  untouched. Declining saves nothing and says so. The phases table can no
+  longer be typed into (a value typed into a cell used to be dropped on Save);
+  phases are changed with Edit Phase, and Save compares what the table shows.
+  Guide: docs/PROTOCOL_MANAGER.md.
+- Videos held for review (triage, deep review) and videos this computer has
+  no file for (unresolvable) are no longer counted as "In Pipeline" /
+  "In Progress" in the Video Pipeline and Archive Status tabs and in
+  `mousedb video-status` / `archive-status`. They have their own counts (In
+  Review, Not on this computer); crystallized videos count as completed; a
+  watcher state mousedb does not know is listed under its own name instead of
+  being folded into a count. `--json` gains `in_review`, `not_on_this_node`,
+  `other` (and `in_progress` for video-status). The Video Pipeline tab gains
+  Quarantined and Other cards, and its By Cohort and By Animal tables (and
+  the command's tables) gain In Progress, Not Here, Quarantined and Other
+  columns, so on every card row and table row the counts add up to the total:
+  a quarantined video was counted nowhere. The web dashboard gains In Review,
+  Quarantined and Not on this computer cards. `video-status --json` gains
+  `quarantined` (summary, cohorts, animals) and `failed` (summary). The
+  Archive Status tab and `mousedb archive-status` no longer show quarantined
+  videos as Failed (a quarantined video is held until a person fixes the
+  recording; nothing failed): they get their own Quarantined count, and tab 9
+  gains Quarantined and Other cards and columns and the command's per-animal
+  table Quarant and Other columns, so every row adds up to its Total.
+  `archive-status --json` gains `quarantined` (summary, cohorts, animals).
+  Guide: docs/WATCHER_VIEWS.md, "What each count means".
+- The Video Pipeline and Archive Status tabs, `mousedb video-status`,
+  `mousedb archive-status` and the web dashboard read the watcher database
+  the watcher actually writes: a `db_path` set in the `watcher` section of
+  `~/.mousereach/config.json` now comes before `<processing_root>/watcher.db`
+  (the same order MouseReach uses). They read the default file before, which
+  on a computer set up that way is an old copy. Each view now also says, above
+  its numbers, that these are this computer's watcher records only, names the
+  file and when it was last written, and points to the Where Is My Data tab for
+  the whole pipeline. When the file was found through MOUSEDB_WATCHER_DB or
+  mousedb's own pipeline folder instead of this computer's MouseReach
+  settings, the line says so and that it may be another watcher's, instead of
+  calling it this computer's. `--json` gains `scope` (which of the two) and
+  `watcher_db_last_written`. On the web dashboard that line is re-fetched
+  every 30 seconds with the counts, so its "last written" time stays current.
+  Guide: docs/WATCHER_VIEWS.md.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
   a large database, so the update could never finish and left the current
@@ -158,9 +203,17 @@ checked-in code, not what's planned.
   which then deleted the second one's lock. The lock
   (`logs/.update.task.lock`) is now taken in one step, kept while the update's
   program is running, and taken over at once only when that program is gone.
+  An update started on another computer cannot be looked up from the computer
+  where the button is pressed, so if it dies its place is taken over only
+  after 45 minutes without its once-a-minute touch; until then a press is
+  refused and names that computer.
   The old `update.lock` is still written, and touched every minute while the
   update runs, so a window running an earlier version (which takes over an
   `update.lock` older than 2 hours) refuses for the whole update.
+  An update started by an earlier version is respected while its program
+  runs on this computer, and otherwise for up to 2 hours from its start: its
+  `update.lock` does not name its computer, so a program missing here may be
+  running on another one.
 - The snapshot refresh's `--retry-minutes` window now starts at the first
   "database is locked", not when the job starts. Time spent waiting for an
   import to finish (up to `--lock-wait-minutes`) used to spend the window, so

@@ -636,14 +636,23 @@ names the update that is running (its process number, when it started, and
 its command). An update keeps that place for as long as its program is still
 running, however long that is; if the program that started it has gone (the
 window was closed or the computer restarted mid-update), the next press
-takes over at once. The marker is `<mousedb_root>/logs/.update.task.lock`
+takes over at once. That check works only for an update started on the same
+computer as the press: an update started on another computer cannot be looked
+up from here, so if it dies its place is taken over only once its marker
+(below) has gone 45 minutes untouched -- a running update touches it once a
+minute. Until then a press is refused, and the refusal names that other
+computer. The marker is `<mousedb_root>/logs/.update.task.lock`
 (the `logs` folder under the configured `mousedb_root`). While an update
 runs, an `update.lock` is written beside it too and touched every minute
 until the update ends, so a window still running an earlier version of this
 tool -- which treats an `update.lock` older than two hours as left over --
-also sees it and refuses, however long the update takes; and an update
-started by such a window is respected the same way (an `update.lock` whose
-program has gone is ignored). A
+also sees it and refuses, however long the update takes. An update
+started by such an earlier-version window is respected too: its
+`update.lock` does not say which computer wrote it, so it is respected while
+its program is still running on this computer, and otherwise for up to 2
+hours from its start (the earlier versions' own rule) -- it may be running
+on another computer. If that update crashed, a press is refused until those
+2 hours have passed. A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
 

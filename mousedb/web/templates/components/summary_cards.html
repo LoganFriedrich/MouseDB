@@ -14,3 +14,17 @@
     <div class="stat-value">{{ summary.archived_count }}</div>
     <div class="stat-label">Archived</div>
 </div>
+{# Videos held for a person, or not on this computer: shown so no hold is
+   invisible here. #}
+<div class="stat-card">
+    <div class="stat-value">{{ summary.in_review_count }}</div>
+    <div class="stat-label">In Review</div>
+</div>
+<div class="stat-card {% if summary.quarantined_count > 0 %}stat-card-error{% endif %}">
+    <div class="stat-value">{{ summary.quarantined_count }}</div>
+    <div class="stat-label">Quarantined</div>
+</div>
+<div class="stat-card">
+    <div class="stat-value">{{ summary.not_on_this_node_count }}</div>
+    <div class="stat-label">Not on this computer</div>
+</div>
