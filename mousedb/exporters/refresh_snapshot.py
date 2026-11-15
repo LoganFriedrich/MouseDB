@@ -152,8 +152,20 @@ def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
             time.sleep(1)
 
 
+def _refuse_while_watcher_runs(force: bool) -> None:
+    """Raise RuntimeError while a MouseReach watcher is active (unless force;
+    see refresh)."""
+    if not force and watcher_blocks_db():
+        raise RuntimeError(
+            "Refusing to read connectome.db: a MouseReach watcher is active. "
+            "The database is on a network share in rollback-journal mode, so "
+            "a writer blocks readers outright and a read that dies partway "
+            "through leaves a corrupt snapshot behind. Try again once the "
+            "watcher is idle.")
+
+
 def refresh(db_path: Path = None, snapshot_dir: Path = None,
-           tables=TABLES, force: bool = False) -> dict:
+           tables=TABLES, force: bool = False, hold_lock: bool = True) -> dict:
     """Export each table in ``tables`` from ``db_path`` to
     ``snapshot_dir/{table}.parquet`` as ONE new generation.
 
@@ -168,16 +180,13 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     main loop, which blocks on this subprocess and therefore cannot be
     writing connectome.db at the same time. Anything else passing force
     reintroduces the reader-under-writer risk this guard exists for.
+
+    ``hold_lock`` False: the caller already holds the cross-task mutex for
+    the whole job (``main`` does, across its retries -- see there).
     """
     db_path = db_path or require("db_path")
     snapshot_dir = snapshot_dir or require("snapshot_dir")
-    if not force and watcher_blocks_db():
-        raise RuntimeError(
-            "Refusing to read connectome.db: a MouseReach watcher is active. "
-            "The database is on a network share in rollback-journal mode, so "
-            "a writer blocks readers outright and a read that dies partway "
-            "through leaves a corrupt snapshot behind. Try again once the "
-            "watcher is idle.")
+    _refuse_while_watcher_runs(force)
 
     snapshot_dir = Path(snapshot_dir)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -187,9 +196,11 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     # SHARED locks that put a concurrently-committing import into PENDING
     # starvation (22 minutes of "database is locked" for every reader,
     # 2026-09-02). Serialized, this runs the moment the import finishes.
+    import contextlib
     from ..task_mutex import hold
     counts = {}
-    with hold(waiting_for="the reach/brain import"):
+    with (hold(waiting_for="the reach/brain import") if hold_lock
+          else contextlib.nullcontext()):
         # Staging is emptied under the mutex, so two refreshes never share it.
         # Leftover per-table ``.tmp`` files from versions that swapped one
         # table at a time are removed too: the data browser reads one as "a
@@ -356,19 +367,35 @@ def main(argv=None) -> int:
     # from the operating system's cache instead of 4 KB at a time over the
     # share (3 hours cold against minutes warm; see mousedb.prefetch).
     from ..prefetch import warmed
+    #
+    # The cross-task mutex is taken HERE, once, around every attempt -- not by
+    # each attempt. WHY: refresh() used to take it itself, so a retry queued
+    # for it all over again; an import that slipped in during the pause could
+    # make the retry wait the whole --lock-wait-minutes a second time, and the
+    # job overran its time limit part way through rewriting the exports. Held
+    # across the retries, the job's time is bounded by
+    #     lock wait + retry window + one successful run
+    # (INSTALL.md). Keeping it during a pause only makes this tool's own jobs
+    # wait a few minutes longer; the lock being waited out is someone else's.
+    from ..task_mutex import hold
+    # Refuse a running watcher BEFORE queueing for the mutex, which can take
+    # hours; refresh() checks again at every attempt.
+    _refuse_while_watcher_runs(args.force)
     with warmed(require("db_path"), log=lambda m: print(m, flush=True)):
         try:
-            counts = retry_while_locked(
-                lambda: refresh(force=args.force),
-                what="The analysis snapshot refresh",
-                window_minutes=args.retry_minutes,
-                gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
-                # The window opens at the first outside lock, not when this
-                # run started: refresh() may first wait up to
-                # --lock-wait-minutes for the import ahead of it, and that wait
-                # used to spend the whole window before a single retry.
-                from_first_lock=True,
-                announce=lambda m: print(m, flush=True))
+            with hold(waiting_for="the reach/brain import"):
+                counts = retry_while_locked(
+                    lambda: refresh(force=args.force, hold_lock=False),
+                    what="The analysis snapshot refresh",
+                    window_minutes=args.retry_minutes,
+                    gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
+                    # The window opens at the first outside lock, not when this
+                    # run started: the reads before it (an hour on a large
+                    # database) used to spend the window, and so -- when
+                    # refresh() still took the mutex inside the attempt -- did
+                    # the wait for the import ahead of it, before one retry.
+                    from_first_lock=True,
+                    announce=lambda m: print(m, flush=True))
         except DatabaseBusy as busy:
             print("  [FAIL] %s" % busy, flush=True)
             return 1

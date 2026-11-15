@@ -77,9 +77,10 @@ def test_force_still_vouches(configured, db_ok_seen, monkeypatch):
 
 
 def test_watcher_appearing_after_the_snapshot_withholds_the_vouch(configured, db_ok_seen, monkeypatch):
-    # first answer: the snapshot's own guard (idle); second: the re-check
-    # before the exports (a watcher has started since)
-    answers = iter([False, True])
+    # first answers: the job's check before it queues for the lock and the
+    # snapshot's own guard (idle); last: the re-check before the exports (a
+    # watcher has started since)
+    answers = iter([False, False, True])
     monkeypatch.setattr(rs, "watcher_blocks_db", lambda: next(answers))
     assert rs.main([]) == 0
     assert (configured / "subjects.parquet").is_file()
@@ -239,3 +240,31 @@ def test_a_long_wait_for_the_task_lock_does_not_use_up_the_retry_window(configur
     monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
     assert rs.main(["--skip-census", "--retry-minutes", "25"]) == 0
     assert len(calls) == 2
+
+
+def test_a_retry_does_not_queue_for_the_task_lock_again(configured, db_ok_seen, monkeypatch):
+    """The job takes the cross-task lock once and keeps it across its retries.
+    A retry that queued for it again could wait the whole --lock-wait-minutes a
+    second time and push the job past its time limit part way through
+    rewriting the exports."""
+    import contextlib
+    from mousedb import db_contention as dc, task_mutex
+    taken = []
+    monkeypatch.setattr(task_mutex, "hold",
+                        lambda *a, **k: taken.append(1) or contextlib.nullcontext())
+    real_retry = dc.retry_while_locked
+    monkeypatch.setattr(dc, "retry_while_locked",
+                        lambda work, **kw: real_retry(work, sleep=lambda s: None, **kw))
+    real_read_sql = rs.pd.read_sql
+    reads = []
+
+    def read_sql(*a, **kw):            # the first attempt meets an outside lock
+        reads.append(1)
+        if len(reads) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return real_read_sql(*a, **kw)
+
+    monkeypatch.setattr(rs.pd, "read_sql", read_sql)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main(["--skip-census"]) == 0
+    assert len(reads) > 1 and taken == [1]

@@ -91,7 +91,9 @@ checked-in code, not what's planned.
   "database is locked", not when the job starts. Time spent waiting for an
   import to finish (up to `--lock-wait-minutes`) used to spend the window, so
   the first outside lock afterwards failed the night's refresh at once while
-  the message said it had waited the whole window. Size the task's time limit
+  the message said it had waited the whole window. The refresh also takes the
+  lock between mousedb jobs once and keeps it through its retries, so a retry
+  no longer queues behind an import a second time. Size the task's time limit
   as lock wait + retry window + run (INSTALL.md).
 - The database-task lock no longer lands in the working directory when
   `mousedb_root` is unset: with only `db_path` set it goes in the `logs`

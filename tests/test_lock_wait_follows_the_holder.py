@@ -168,9 +168,12 @@ def test_snapshot_job_fails_loudly_when_it_cannot_get_the_lock(tmp_path, monkeyp
     monkeypatch.setattr(prefetch, "warmed", lambda *a, **k: contextlib.nullcontext())
     monkeypatch.delenv(task_mutex.WAIT_ENV, raising=False)
 
-    def refuse(**_k):
+    def refuse(*_a, **_k):
         raise LockWaitTimeout("could not acquire the database-task lock: test holder")
+    # The job takes the lock itself, once, around every attempt.
+    monkeypatch.setattr(task_mutex, "hold", refuse)
     monkeypatch.setattr(rs, "refresh", refuse)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
     assert rs.main(["--skip-census", "--lock-wait-minutes", "5"]) == 1
     out = capsys.readouterr().out
     assert "[FAIL] snapshot not refreshed" in out

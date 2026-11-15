@@ -443,7 +443,10 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   the database locked by another program -- NOT when the job starts -- because
   the refresh may first wait up to `--lock-wait-minutes` for an import ahead of
   it, and counting that wait used up the whole window before a single retry.
-  So size the snapshot task's time limit as: lock wait (`--lock-wait-minutes`,
+  The refresh takes the lock between jobs once and keeps it through its
+  retries, so a retry never queues behind another import a second time (other
+  mousedb jobs wait those few extra minutes). It also refuses a running
+  MouseReach watcher before it starts waiting for that lock, not after. So size the snapshot task's time limit as: lock wait (`--lock-wait-minutes`,
   default 180) + retry window (`--retry-minutes`, default 25) + how long a
   successful refresh, exports and census take. If that does not fit, lower
   `--lock-wait-minutes` or raise the limit.
