@@ -70,6 +70,17 @@ class VideoStatusTab(QWidget):
     - Graceful empty state when watcher.db not found
     """
 
+    # The count columns (Completed .. Other) of both tables hold every video
+    # exactly once, so on each row they add up to the row's total.
+    COHORT_COLUMNS = (
+        'Cohort', 'Animals', 'Videos', 'Completed', 'In Progress',
+        'In Review', 'Not Here', 'Failed', 'Quarantined', 'Other', 'Progress',
+    )
+    ANIMAL_COLUMNS = (
+        'Subject', 'Total', 'Completed', 'In Progress', 'In Review',
+        'Not Here', 'Failed', 'Quarantined', 'Other', 'Last Activity',
+    )
+
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
@@ -152,8 +163,13 @@ class VideoStatusTab(QWidget):
             ('in_review', 'In Review'),
             ('not_here', 'Not on this computer'),
             ('failed', 'Failed'),
+            ('quarantined', 'Quarantined'),
+            ('other', 'Other'),
             ('pct', 'Completion %'),
         ]
+        # Every video is in exactly one of the cards from Completed to
+        # Other, so they add up to Total Videos. WHY: a held video counted
+        # nowhere is a hold nobody sees (quarantined videos had no card).
         for col, (key, label) in enumerate(card_defs):
             card = QLabel(f"{label}\n--")
             card.setAlignment(Qt.AlignCenter)
@@ -183,11 +199,8 @@ class VideoStatusTab(QWidget):
         cohort_group = QGroupBox("By Cohort")
         cohort_layout = QVBoxLayout(cohort_group)
         self.cohort_table = QTableWidget()
-        self.cohort_table.setColumnCount(7)
-        self.cohort_table.setHorizontalHeaderLabels([
-            'Cohort', 'Animals', 'Videos', 'Completed', 'In Review', 'Failed',
-            'Progress'
-        ])
+        self.cohort_table.setColumnCount(len(self.COHORT_COLUMNS))
+        self.cohort_table.setHorizontalHeaderLabels(list(self.COHORT_COLUMNS))
         self.cohort_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.cohort_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -200,11 +213,8 @@ class VideoStatusTab(QWidget):
         animal_group = QGroupBox("By Animal")
         animal_layout = QVBoxLayout(animal_group)
         self.animal_table = QTableWidget()
-        self.animal_table.setColumnCount(7)
-        self.animal_table.setHorizontalHeaderLabels([
-            'Subject', 'Total', 'Completed', 'In Progress', 'In Review',
-            'Failed', 'Last Activity'
-        ])
+        self.animal_table.setColumnCount(len(self.ANIMAL_COLUMNS))
+        self.animal_table.setHorizontalHeaderLabels(list(self.ANIMAL_COLUMNS))
         self.animal_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
         self.animal_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -284,6 +294,10 @@ class VideoStatusTab(QWidget):
             if summary.other_states else "")
         self.summary_labels['failed'].setText(
             f"Failed\n{summary.failed_count}")
+        self.summary_labels['quarantined'].setText(
+            f"Quarantined\n{summary.quarantined_count}")
+        self.summary_labels['other'].setText(
+            f"Other\n{sum(summary.other_states.values())}")
         self.summary_labels['pct'].setText(
             f"Completion %\n{summary.fully_processed_pct:.1f}%")
 
@@ -308,26 +322,21 @@ class VideoStatusTab(QWidget):
         self._cohorts_data = cohorts
         self.cohort_table.setRowCount(len(cohorts))
         for row, (cid, data) in enumerate(sorted(cohorts.items())):
-            self.cohort_table.setItem(row, 0, QTableWidgetItem(cid))
-            self.cohort_table.setItem(row, 1,
-                                      QTableWidgetItem(str(data['animals'])))
-            self.cohort_table.setItem(row, 2,
-                                      QTableWidgetItem(str(data['total_videos'])))
-            self.cohort_table.setItem(row, 3,
-                                      QTableWidgetItem(str(data['fully_processed'])))
-
-            self.cohort_table.setItem(row, 4,
-                                      QTableWidgetItem(str(data['in_review'])))
-
-            failed_item = QTableWidgetItem(str(data['failed']))
-            if data['failed'] > 0:
-                failed_item.setBackground(QColor('#FFCDD2'))
-            self.cohort_table.setItem(row, 5, failed_item)
-
             pct = (data['fully_processed'] / data['total_videos'] * 100
                    if data['total_videos'] > 0 else 0)
-            self.cohort_table.setItem(row, 6,
-                                      QTableWidgetItem(f"{pct:.1f}%"))
+            values = [
+                cid, data['animals'], data['total_videos'],
+                data['fully_processed'], data['in_progress'],
+                data['in_review'], data['not_on_this_node'], data['failed'],
+                data['quarantined'], sum(data['other'].values()),
+                f"{pct:.1f}%",
+            ]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if (self.COHORT_COLUMNS[col] in ('Failed', 'Quarantined')
+                        and value):
+                    item.setBackground(QColor('#FFCDD2'))
+                self.cohort_table.setItem(row, col, item)
 
         # Load all animals initially
         self._all_animals = self.bridge.get_animal_rollup()
@@ -350,23 +359,17 @@ class VideoStatusTab(QWidget):
         self.animal_table.setRowCount(len(animals))
         for row, a in enumerate(animals):
             done = sum(a.by_state.get(s, 0) for s in DONE_STATES)
-            in_progress = a.in_progress
-
-            self.animal_table.setItem(row, 0,
-                                      QTableWidgetItem(a.subject_id))
-            self.animal_table.setItem(row, 1,
-                                      QTableWidgetItem(str(a.total_videos)))
-            self.animal_table.setItem(row, 2,
-                                      QTableWidgetItem(str(done)))
-            self.animal_table.setItem(row, 3,
-                                      QTableWidgetItem(str(in_progress)))
-            self.animal_table.setItem(row, 4,
-                                      QTableWidgetItem(str(a.in_review)))
-
-            failed_item = QTableWidgetItem(str(a.failed_videos))
-            if a.failed_videos > 0:
-                failed_item.setBackground(QColor('#FFCDD2'))
-            self.animal_table.setItem(row, 5, failed_item)
+            values = [
+                a.subject_id, a.total_videos, done, a.in_progress,
+                a.in_review, a.not_on_this_node, a.failed_videos,
+                a.quarantined, sum(a.other.values()),
+            ]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if (self.ANIMAL_COLUMNS[col] in ('Failed', 'Quarantined')
+                        and value):
+                    item.setBackground(QColor('#FFCDD2'))
+                self.animal_table.setItem(row, col, item)
 
             activity = a.latest_activity or '-'
             if activity != '-':
@@ -375,5 +378,6 @@ class VideoStatusTab(QWidget):
                     activity = dt.strftime('%Y-%m-%d %H:%M')
                 except Exception:
                     pass
-            self.animal_table.setItem(row, 6,
-                                      QTableWidgetItem(activity))
+            self.animal_table.setItem(
+                row, self.ANIMAL_COLUMNS.index('Last Activity'),
+                QTableWidgetItem(activity))

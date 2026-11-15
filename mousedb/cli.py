@@ -686,6 +686,8 @@ def cmd_video_status(args):
                 'in_progress': summary.in_progress_count,
                 'in_review': summary.in_review_count,
                 'not_on_this_node': summary.not_on_this_node_count,
+                'failed': summary.failed_count,
+                'quarantined': summary.quarantined_count,
                 'other': summary.other_states,
             },
             'cohorts': bridge.get_cohort_rollup(),
@@ -702,6 +704,7 @@ def cmd_video_status(args):
                     'total_videos': a.total_videos,
                     'by_state': a.by_state,
                     'failed_videos': a.failed_videos,
+                    'quarantined': a.quarantined,
                     'in_progress': a.in_progress,
                     'in_review': a.in_review,
                     'not_on_this_node': a.not_on_this_node,
@@ -746,19 +749,25 @@ def cmd_video_status(args):
                 print(f"  {label:24s} {count:>5d}")
 
     # Per-cohort rollup (default view)
+    # Every video is in exactly one of Done .. Other, so each row's columns
+    # add up to its Videos.
     cohorts = bridge.get_cohort_rollup()
     if cohorts:
         print(f"\nBy cohort:")
-        print(f"  {'Cohort':<12} {'Animals':>8} {'Videos':>8} "
-              f"{'Done':>8} {'Failed':>8} {'Pct':>6}")
-        print(f"  {'-' * 54}")
+        print(f"  {'Cohort':<12} {'Animals':>7} {'Videos':>7} "
+              f"{'Done':>6} {'In Progress':>12} {'In Review':>10} "
+              f"{'Not Here':>9} {'Failed':>7} {'Quarantined':>12} "
+              f"{'Other':>6} {'Pct':>6}")
+        print(f"  {'-' * 105}")
         for cid, data in sorted(cohorts.items()):
             pct = (data['fully_processed'] / data['total_videos'] * 100
                    if data['total_videos'] > 0 else 0)
-            print(f"  {cid:<12} {data['animals']:>8} "
-                  f"{data['total_videos']:>8} "
-                  f"{data['fully_processed']:>8} "
-                  f"{data['failed']:>8} {pct:>5.1f}%")
+            print(f"  {cid:<12} {data['animals']:>7} "
+                  f"{data['total_videos']:>7} "
+                  f"{data['fully_processed']:>6} {data['in_progress']:>12} "
+                  f"{data['in_review']:>10} {data['not_on_this_node']:>9} "
+                  f"{data['failed']:>7} {data['quarantined']:>12} "
+                  f"{sum(data['other'].values()):>6} {pct:>5.1f}%")
 
     # Per-animal breakdown (if requested)
     if getattr(args, 'by_animal', False):
@@ -771,13 +780,15 @@ def cmd_video_status(args):
             print(f"\nBy animal:")
             print(f"  {'Subject':<12} {'Total':>6} {'Done':>6} "
                   f"{'In Progress':>12} {'In Review':>10} "
-                  f"{'Not Here':>9} {'Failed':>8}")
-            print(f"  {'-' * 69}")
+                  f"{'Not Here':>9} {'Failed':>7} {'Quarantined':>12} "
+                  f"{'Other':>6}")
+            print(f"  {'-' * 89}")
             for a in animals:
                 a_done = sum(a.by_state.get(s, 0) for s in DONE_STATES)
                 print(f"  {a.subject_id:<12} {a.total_videos:>6} "
                       f"{a_done:>6} {a.in_progress:>12} {a.in_review:>10} "
-                      f"{a.not_on_this_node:>9} {a.failed_videos:>8}")
+                      f"{a.not_on_this_node:>9} {a.failed_videos:>7} "
+                      f"{a.quarantined:>12} {sum(a.other.values()):>6}")
 
     # Failed/quarantined details (if requested)
     if getattr(args, 'show_errors', False):

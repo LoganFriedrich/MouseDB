@@ -92,8 +92,14 @@ checked-in code, not what's planned.
   Review, Not on this computer); crystallized videos count as completed; a
   watcher state mousedb does not know is listed under its own name instead of
   being folded into a count. `--json` gains `in_review`, `not_on_this_node`,
-  `other` (and `in_progress` for video-status). Guide: docs/WATCHER_VIEWS.md,
-  "What each count means".
+  `other` (and `in_progress` for video-status). The Video Pipeline tab gains
+  Quarantined and Other cards, and its By Cohort and By Animal tables (and
+  the command's tables) gain In Progress, Not Here, Quarantined and Other
+  columns, so on every card row and table row the counts add up to the total:
+  a quarantined video was counted nowhere. The web dashboard gains In Review,
+  Quarantined and Not on this computer cards. `video-status --json` gains
+  `quarantined` (summary, cohorts, animals) and `failed` (summary). Guide:
+  docs/WATCHER_VIEWS.md, "What each count means".
 - The Video Pipeline and Archive Status tabs, `mousedb video-status`,
   `mousedb archive-status` and the web dashboard read the watcher database
   the watcher actually writes: a `db_path` set in the `watcher` section of

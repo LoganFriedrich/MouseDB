@@ -174,6 +174,9 @@ class AnimalVideoSummary:
     total_videos: int = 0
     by_state: Dict[str, int] = field(default_factory=dict)
     failed_videos: int = 0
+    # Held until a person deals with the recording (e.g. renames it). Its
+    # own count so the per-animal columns add up to total_videos.
+    quarantined: int = 0
     latest_activity: Optional[str] = None
     in_progress: int = 0
     in_review: int = 0
@@ -540,6 +543,8 @@ class WatcherBridge:
                 summary.total_videos += row['cnt']
                 if row['state'] == 'failed':
                     summary.failed_videos += row['cnt']
+                elif row['state'] == 'quarantined':
+                    summary.quarantined += row['cnt']
                 bucket = pipeline_bucket(row['state'])
                 if bucket == 'in_progress':
                     summary.in_progress += row['cnt']
@@ -574,6 +579,7 @@ class WatcherBridge:
                     'animals': 0,
                     'by_state': {},
                     'failed': 0,
+                    'quarantined': 0,
                     'fully_processed': 0,
                     'in_progress': 0,
                     'in_review': 0,
@@ -584,6 +590,7 @@ class WatcherBridge:
             c['animals'] += 1
             c['total_videos'] += animal.total_videos
             c['failed'] += animal.failed_videos
+            c['quarantined'] += animal.quarantined
             c['in_progress'] += animal.in_progress
             c['in_review'] += animal.in_review
             c['not_on_this_node'] += animal.not_on_this_node

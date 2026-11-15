@@ -146,3 +146,69 @@ def test_archive_status_tab_counts_held_videos_apart(_isolated_from_this_machine
     assert _card(tab, "in_review") == "5"
     assert _card(tab, "not_on_this_node") == "5"
     assert "some_future_state" in tab.other_label.text()
+
+
+ALL_HELD = STATES + ["quarantined"] * 3
+
+
+def _cell_ints(table, row, first, last):
+    return [int(table.item(row, c).text()) for c in range(first, last + 1)]
+
+
+def test_video_pipeline_tab_counts_add_up_with_quarantined(_isolated_from_this_machine,
+                                                           tmp_path, qapp):
+    """Every video is in exactly one card and one column: a quarantined
+    video (held until a person renames the recording) is never counted
+    nowhere."""
+    db = tmp_path / "watcher.db"
+    _watcher_db(db, ALL_HELD)
+    _cfg(_isolated_from_this_machine, db)
+    from mousedb.gui.video_pipeline_tab import VideoStatusTab
+    tab = VideoStatusTab(db=None)
+    assert _card(tab, "quarantined") == "3"
+    assert _card(tab, "other") == "2"
+    parts = sum(int(_card(tab, k)) for k in (
+        "done", "in_progress", "in_review", "not_here", "failed",
+        "quarantined", "other"))
+    assert parts == int(_card(tab, "total")) == len(ALL_HELD)
+
+    cols = tab.ANIMAL_COLUMNS
+    assert {"Quarantined", "Not Here", "Other"} <= set(cols)
+    t = tab.animal_table
+    counts = _cell_ints(t, 0, cols.index("Completed"), cols.index("Other"))
+    assert sum(counts) == int(t.item(0, cols.index("Total")).text()) == len(ALL_HELD)
+    assert int(t.item(0, cols.index("Quarantined")).text()) == 3
+
+    cols = tab.COHORT_COLUMNS
+    assert {"In Progress", "Quarantined", "Not Here", "Other"} <= set(cols)
+    t = tab.cohort_table
+    counts = _cell_ints(t, 0, cols.index("Completed"), cols.index("Other"))
+    assert sum(counts) == int(t.item(0, cols.index("Videos")).text()) == len(ALL_HELD)
+
+
+def test_rollups_count_quarantined_per_animal_and_cohort(tmp_path):
+    from mousedb.watcher_bridge import WatcherBridge
+    db = tmp_path / "w.db"
+    _watcher_db(db, ALL_HELD)
+    b = WatcherBridge(db_path=db)
+    (a,) = b.get_animal_rollup()
+    assert a.quarantined == 3
+    assert b.get_cohort_rollup()["PROJA_01"]["quarantined"] == 3
+
+
+def test_video_status_by_animal_shows_quarantined_and_other(_isolated_from_this_machine,
+                                                           tmp_path, capsys):
+    db = tmp_path / "watcher.db"
+    _watcher_db(db, ALL_HELD)
+    _cfg(_isolated_from_this_machine, db)
+    from mousedb import cli
+    cli.cmd_video_status(Namespace(json=False, by_animal=True, cohort=None,
+                                   show_errors=False))
+    out = capsys.readouterr().out
+    animal_part = out.split("By animal:")[1]
+    header, _, row = animal_part.strip().splitlines()[:3]
+    assert "Quarantined" in header and "Other" in header
+    # Total, Done, In Progress, In Review, Not Here, Failed, Quarantined, Other
+    nums = [int(x) for x in row.split()[1:]]
+    assert nums[0] == len(ALL_HELD) and sum(nums[1:]) == nums[0]
+    assert nums[6] == 3

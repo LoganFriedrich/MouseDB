@@ -12,7 +12,10 @@ MouseDB has four places that show what a MouseReach **watcher** has recorded:
 | `mousedb archive-status` | the same terminal (add `--cohort <id>`, `--verbose` or `--json`) |
 
 The web dashboard (`/dashboard/` of the MouseDB web server, if your lab runs
-it) shows the same records.
+it) shows the same records, with fewer counts: Total, Processed %, Failed,
+Archived, In Review, Quarantined and Not on this computer. Its counts do not
+add up to the total (Archived is one part of Processed); use tab 8 or
+`mousedb video-status` for the full split.
 
 ## What these views are -- and are not
 
@@ -47,10 +50,16 @@ In `--json` output the same facts are the keys `watcher_db` (the file),
 ## What each count means
 
 The watcher gives every video one state. Each view sorts the states into a
-few counts. Every video is in exactly one count, so the counts add up to the
-total.
+few counts. In tab 8, tab 9, `mousedb video-status` and `mousedb
+archive-status`, every video is in exactly one count, so the counts add up to
+the total -- on the summary cards, and on every row of the By Cohort and By
+Animal tables. A video held for a person (In Review, Quarantined) is always in
+a count of its own, never hidden in another.
 
-**Video Pipeline** (tab 8, `mousedb video-status`):
+**Video Pipeline** (tab 8, `mousedb video-status`). The summary cards, the By
+Cohort and By Animal tables of tab 8, and the by-cohort and `--by-animal`
+tables of the command all have these columns (`Not Here` is short for Not on
+this computer):
 
 | count | watcher states | meaning |
 |---|---|---|
@@ -58,7 +67,9 @@ total.
 | In Progress | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, outdated | work the pipeline still has to do on this computer. Outdated = filed with older tool versions; it will be run again. |
 | In Review | triage, deep_review | waiting for a **person** in a review queue (triage, or deep review). Nothing happens to it until someone reviews it. |
 | Not on this computer | unresolvable | this computer has no file for the video -- another computer holds it. Not a failure. |
-| Failed / Quarantined | failed / quarantined | a step failed, or the recording's name could not be read. |
+| Failed | failed | a step failed. |
+| Quarantined | quarantined | held until a person deals with the recording (for example, its name could not be read and it must be renamed). Nothing happens to it until then. |
+| Other | any state MouseDB does not know | see below. |
 
 **Archive Status** (tab 9, `mousedb archive-status`):
 
@@ -82,8 +93,11 @@ those videos were counted as In Progress / In Pipeline, and crystallized
 videos as In Progress.)
 
 In `--json` output: `summary`, each cohort and each animal carry
-`in_review`, `not_on_this_node` and `other` (a list of unknown states and
-their counts); `video-status` also carries `in_progress`.
+`in_review`, `not_on_this_node` and `other` (an object mapping each unknown
+state to its count, for example `{"some_state": 2}`); `video-status` also
+carries `in_progress`, and `quarantined` in its summary, each cohort and each
+animal (its summary also carries `failed`; each animal carries
+`failed_videos`, each cohort `failed`).
 
 ## Which file is read
 
