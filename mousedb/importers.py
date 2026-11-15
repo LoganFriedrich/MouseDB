@@ -136,6 +136,11 @@ class ExcelImporter:
 
         print(f"  Detected cohort: {cohort_id}")
 
+        # Phase refreshes the database runs when this import commits (its
+        # phase hook: Database.phase_refreshes) -- read back below.
+        refreshes = getattr(self.db, 'phase_refreshes', None)
+        refreshes_before = len(refreshes) if isinstance(refreshes, list) else None
+
         with self._import_session(dry_run) as session:
             # Ensure cohort exists
             cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
@@ -270,6 +275,15 @@ class ExcelImporter:
 
         if self.errors and not dry_run:
             self._report_not_committed(excel_path)
+        elif refreshes_before is not None and not dry_run:
+            # The commit re-derived the phases of every cohort whose scores
+            # were added or removed (the database's phase hook, which also
+            # relabels the cohort's reaches). Recorded in the result so the
+            # import's output and ledger say what was relabelled -- or that
+            # the re-derivation FAILED, which the hook itself only prints.
+            done = [r for r in refreshes[refreshes_before:] if r.get('cohort_id') == cohort_id]
+            if done:
+                self.__dict__['_phase_refresh'] = done[-1]
         return self._get_result()
 
     @contextmanager
@@ -2584,7 +2598,7 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync'):
+                     '_sheet_sync', '_phase_refresh'):
             self.__dict__.pop(name, None)
 
     def _warn_once(self, key, text: str):
@@ -2853,6 +2867,8 @@ class ExcelImporter:
             'warnings': self.warnings,
             'imported': self.imported_counts,
         }
+        if self.__dict__.get('_phase_refresh'):
+            result['phases_rederived'] = self.__dict__['_phase_refresh']
         if self.__dict__.get('_sheet_sync'):
             # What the sheet changed or removed in the database (or, refused,
             # why it did not): see _sync_pellet_rows. Kept whole in the result

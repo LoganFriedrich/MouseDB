@@ -475,6 +475,17 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
         # whole in the ledger line: it is the record of what was taken out.
         if r.get("sheet_sync"):
             entry["sheet_sync"] = r["sheet_sync"]
+        phases = r.get("phases_rederived")
+        if phases:
+            entry["phases_rederived"] = phases
+            if phases.get("error"):
+                # The rows are saved; their phase labels may now be stale.
+                entry["success"] = False
+                entry["error"] = "; ".join(filter(None, [
+                    entry.get("error"),
+                    "the sheet's rows were saved, but re-deriving %s's phases failed "
+                    "(%s): its test-phase labels may be out of date until it is run "
+                    "again -- run 'mousedb backfill-phases'" % (cohort_id, phases["error"])]))
     except Exception as e:
         entry.update(success=False,
                      error="%s: %s" % (type(e).__name__, e),
@@ -964,6 +975,11 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
             log(_ascii("       %s" % said))
         for refusal in sync_refused(c):
             log(_ascii("       [!] %s" % refusal))
+        ph = c.get("phases_rederived")
+        if ph and not ph.get("error"):
+            log(_ascii("       phases re-derived for %s: %d pellet and %d reach rows relabelled"
+                       % (ph.get("cohort_id"), ph.get("pellet_rows_relabelled", 0),
+                          ph.get("reach_rows_relabelled", 0))))
         # The refusals are warnings too, already printed above: not twice.
         refusals = sync_refused(c)
         shown = [w for w in (c.get("warnings") or []) if w not in refusals]

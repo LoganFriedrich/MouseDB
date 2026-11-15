@@ -166,6 +166,38 @@ def test_a_score_changed_in_the_sheet_is_changed_in_the_database(tmp_path):
 # a session no longer in the sheet
 # --------------------------------------------------------------------------
 
+def test_a_session_moved_out_of_the_sheet_is_removed_and_the_phases_rederived(tmp_path):
+    db = _db(tmp_path)
+    # The phantom session was imported once (typed into this cohort's sheet).
+    _import(db, _workbook(_sheet(tmp_path), days=sorted(DAYS + [PHANTOM])))
+    _add_reach(db, BASELINE_DAY)
+    from mousedb.backfill import backfill_phases
+    backfill_phases(db, cohort_id=COHORT)
+    assert _reach_phase(db, BASELINE_DAY) == "Pillar_Training"   # the damage
+
+    # ... then moved out of it.
+    r = _import(db, _workbook(_sheet(tmp_path)))
+
+    assert not _pellets(db, session_date=PHANTOM)
+    gone = r["sheet_sync"]["pellet_scores"]["removed_trays"]
+    assert [(g["subject_id"], g["date"], g["tray"], g["pellets"]) for g in gone] == [
+        (a, PHANTOM.isoformat(), "P1", 20) for a in ANIMALS]
+    assert r["sheet_sync"]["pellet_scores"]["dates_removed"] == [PHANTOM.isoformat()]
+    assert r["imported"]["pellet_scores_removed"] == 40
+    # The removal changed the cohort's dates, so its phases were re-derived in
+    # the same run -- reaches included -- and the result says so.
+    assert _reach_phase(db, BASELINE_DAY) == "Pillar"
+    with db.session() as s:
+        assert {p.test_phase for p in s.query(PelletScore).filter_by(session_date=BASELINE_DAY)} == {"Pillar"}
+    ph = r["phases_rederived"]
+    assert ph["cohort_id"] == COHORT and ph["reach_rows_relabelled"] == 1 and "error" not in ph
+    # Every removed row is in the audit log with its old values.
+    with db.session() as s:
+        dels = s.query(AuditLog).filter_by(table_name="pellet_scores", action="DELETE").all()
+        assert len(dels) == 40
+        assert json.loads(dels[0].old_values)["session_date"] == PHANTOM.isoformat()
+
+
 def test_an_emptied_cell_is_removed_but_an_unreadable_one_is_kept(tmp_path):
     db = _db(tmp_path)
     _import(db, _workbook(_sheet(tmp_path)))
@@ -279,3 +311,19 @@ def test_the_summary_line_names_what_the_sheet_removed():
     assert said.startswith("changed from the sheet")
     assert "40 rows removed in 2 trays no longer in the sheet" in said
     assert "2026-03-19" in said
+
+
+def test_the_export_signature_follows_the_phase_labels(tmp_path):
+    """A relabel changes no row count; the export's skip signature must still
+    change, or the files keep the old labels. It hashes the reach and
+    hand-score tables' whole content, test_phase included."""
+    import pandas as pd
+    from mousedb import snapshot_generation
+    from mousedb.exporters.current import ODC_INPUT_TABLES
+    assert {"reach_data", "pellet_scores"} <= set(ODC_INPUT_TABLES)
+    df = pd.DataFrame({"subject_id": ["A_01_01"] * 2, "session_date": ["2026-03-11"] * 2,
+                       "test_phase": ["Pillar_Training"] * 2, "phase_group": ["x"] * 2})
+    df.to_parquet(tmp_path / "reach_data.parquet")
+    one = snapshot_generation.table_hash(tmp_path, "reach_data")
+    df.assign(test_phase="Pillar").to_parquet(tmp_path / "reach_data.parquet")
+    assert one and snapshot_generation.table_hash(tmp_path, "reach_data") != one

@@ -92,7 +92,10 @@ class Database:
 
         # Auto-refresh phase_group / test_phase after any GUI/ORM write that
         # could invalidate them (cohort start_date, subject cohort_id,
-        # pellet_scores session_date / tray_type).
+        # pellet_scores session_date / tray_type). Each refresh's outcome is
+        # appended to phase_refreshes ({cohort_id, at, pellet_rows_relabelled,
+        # reach_rows_relabelled} or {..., error}) for the caller to report.
+        self.phase_refreshes: list = []
         self._register_phase_hooks()
 
         # Current user for audit logging
@@ -169,15 +172,25 @@ class Database:
                 return
             # Local import to avoid circular-import at module load.
             from .backfill import backfill_phases
-            for cid in dirty:
+            for cid in sorted(dirty):
+                # Each refresh is also recorded on the Database (phase_refreshes),
+                # so a caller that committed -- the sheet import -- can report
+                # what was relabelled, or that the refresh FAILED, in its own
+                # output and ledger instead of only on a console nobody reads.
+                record = {'cohort_id': cid,
+                          'at': datetime.now().isoformat(timespec='seconds')}
                 try:
-                    backfill_phases(db=self, cohort_id=cid)
+                    stats = backfill_phases(db=self, cohort_id=cid)
+                    record.update(pellet_rows_relabelled=stats.pellet_rows_updated,
+                                  reach_rows_relabelled=stats.reach_rows_updated)
                 except Exception as exc:
                     # Don't raise -- the user's commit already succeeded.
                     # Print so the GUI shell surfaces it.
+                    record['error'] = "%s: %s" % (type(exc).__name__, exc)
                     print(
                         f"[!] Phase auto-refresh failed for cohort {cid}: {exc}"
                     )
+                self.phase_refreshes.append(record)
 
         event.listen(self.SessionLocal, 'before_flush', _collect_dirty_cohorts)
         event.listen(self.SessionLocal, 'after_commit', _run_scoped_backfill)

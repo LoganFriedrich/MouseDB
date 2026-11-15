@@ -4748,8 +4748,16 @@ def replace_cohort_from_sheet(db, sheet_path, cohort_id, start_date=None,
             notices += _shortfall_notices(cleared['removed'],
                                           result.get('imported') or {})
             warnings = notices + warnings
+            refreshes = getattr(db, 'phase_refreshes', None)
+            before = len(refreshes) if isinstance(refreshes, list) else None
             session.commit()
             report['committed'] = True
+            if before is not None:
+                # The commit re-derived the cohort's phases (the database's
+                # phase hook); say what that relabelled, or that it failed.
+                done = [r for r in refreshes[before:] if r.get('cohort_id') == cohort_id]
+                if done:
+                    result['phases_rederived'] = done[-1]
             result.update(warnings=warnings, replace=report)
             return result
         except BaseException:
@@ -5505,9 +5513,9 @@ class CohortSetupTab(QWidget):
                       finished=_dt.now().isoformat(timespec="seconds"))
         if replacing:
             _entry["replace"] = result.get('replace')
-        # What the sheet changed or removed -- the same key the scheduled
-        # import's ledger lines carry.
-        for _k in ('sheet_sync',):
+        # What the sheet changed or removed, and the phase re-derivation it
+        # caused -- the same keys the scheduled import's ledger lines carry.
+        for _k in ('sheet_sync', 'phases_rederived'):
             if result.get(_k):
                 _entry[_k] = result[_k]
         self._append_sheet_ledger(_entry, path)
