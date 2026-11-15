@@ -1096,7 +1096,7 @@ From a terminal (MouseDB environment active):
 ```
 mousedb-sheets status                             # which file, edited when, imported when
 mousedb-sheets import [--cohort CNT_NN] [--dry-run] [--json]
-mousedb-sheets import --cohort CNT_NN --allow-large-removal   # after checking: see "The sheet wins"
+mousedb-sheets import --cohort <cohort> --allow-large-removal   # after checking: see "The sheet wins"
 mousedb-sheets pin CNT_NN "Connectome_NN_Animal_Tracking.xlsx"
 mousedb-sheets unpin CNT_NN
 mousedb-sheets set-dir "<folder>"
