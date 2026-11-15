@@ -63,7 +63,8 @@ Usage:
     mousedb import-reaches --all           # ignore the ledger, re-import everything
     mousedb import-reaches --include-processing
     mousedb import-reaches --verbose       # also name the filed videos held back by review
-    mousedb import-reaches --pellets-only  # (re)fill video_pellets from every file
+    mousedb import-reaches --pellets-only  # (re)fill video_pellets from every filed file
+                                           # (not a video whose newer run is in review)
 """
 from __future__ import annotations
 
@@ -612,13 +613,28 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
     file (outside the database lock -- it is all network reads), then writes the
     pellet rows in one transaction under the lock. reach_data, subjects and the
     ledger are not touched. Safe to re-run: each video's rows are replaced.
+
+    Filed videos whose NEWER run waits in a review queue are skipped, by the
+    same test the import itself applies (``videos_back_in_review``). WHY: such
+    a video is not done -- the import leaves its filed copy out and takes its
+    rows out of the database -- so writing its filed copy's pellets here put
+    back, for every pellet, the answers the newer run is being reviewed to
+    replace, and they stayed in the exports until the next import took them
+    out again. Skipped only: rows such a video already has are left for the
+    import's withdrawal step, which copies them aside before taking them out.
     """
     root = Path(root) if root else require("mousereach_pipeline_root")
     files = find_features_files(root, include_processing)
+    held = (set(videos_back_in_review(root, {f.name[:-len(FEATURES_SUFFIX)]: f for f in files}))
+            if files else set())
     now = datetime.now().isoformat()
     by_video: Dict[str, List[dict]] = {}
     unreadable: List[str] = []
+    skipped_held: List[str] = []
     for p in files:
+        if p.name[:-len(FEATURES_SUFFIX)] in held:
+            skipped_held.append(p.name[:-len(FEATURES_SUFFIX)])
+            continue
         subject_id = parse_subject_id(p.stem)
         if subject_id is None:
             unreadable.append(p.name)
@@ -631,7 +647,9 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         video_name = data.get('video_name', p.stem.replace('_features', ''))
         by_video[video_name] = pellet_rows(data, video_name, subject_id, now, p.name)
     log("backfill: %d features files read, %d videos, %d unreadable" % (
-        len(files), len(by_video), len(unreadable)))
+        len(files) - len(skipped_held), len(by_video), len(unreadable)))
+    if skipped_held:
+        log("backfill: %d filed videos skipped: a newer run is in review" % len(skipped_held))
     from .task_mutex import hold
     with hold(log=log, waiting_for="another database job"):
         conn = sqlite3.connect(str(require("db_path")), timeout=600)
@@ -647,7 +665,8 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         counts[len(rows)] = counts.get(len(rows), 0) + 1
     log("backfill: pellets per video -> %s" % ", ".join(
         "%d pellets: %d videos" % kv for kv in sorted(counts.items())))
-    return {"videos": len(by_video), "pellets_per_video": counts, "unreadable": unreadable}
+    return {"videos": len(by_video), "pellets_per_video": counts, "unreadable": unreadable,
+            "held": sorted(skipped_held)}
 
 
 # ---------------------------------------------------------------------------
@@ -1026,7 +1045,8 @@ def main(argv=None) -> int:
                     help="Also list each filed video skipped because a newer run is in review")
     ap.add_argument("--pellets-only", action="store_true",
                     help="Only (re)fill the per-pellet table (video_pellets) from every features "
-                         "file; reaches, animals and the ledger are not touched")
+                         "file, except a filed video whose newer run waits in review; reaches, "
+                         "animals and the ledger are not touched")
     args = ap.parse_args(argv)
     if args.pellets_only:
         try:

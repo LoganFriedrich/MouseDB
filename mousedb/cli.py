@@ -1701,7 +1701,8 @@ def main():
     ir.add_argument('--force', action='store_true', help='Write even if a MouseReach watcher is running')
     ir.add_argument('--limit', type=int, help='At most this many files')
     ir.add_argument('--pellets-only', action='store_true',
-                    help='Only (re)fill the per-pellet table from every features file')
+                    help='Only (re)fill the per-pellet table from every features file '
+                         '(a filed video whose newer run waits in review is skipped)')
     ir.add_argument('--verbose', action='store_true',
                     help='Also list each filed video skipped because a newer run is in review')
     ir.set_defaults(func=cmd_import_reaches)

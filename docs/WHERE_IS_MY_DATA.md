@@ -460,6 +460,12 @@ exactly:
   new run is filed, the next import brings the video in as usual. Nothing
   needs doing by hand: the video is waiting for its review, not for the
   import.
+- `mousedb import-reaches --pellets-only` (which refills only the per-pellet
+  table) applies the same test: it does not write the pellets of a filed
+  video whose newer run waits in review, and its output says how many it
+  skipped (`N filed videos skipped: a newer run is in review`). Before this it
+  wrote them, putting the pellet answers under review back into the exports
+  until the next import took them out again.
 
 ## How tissue analysis outputs get here
 
