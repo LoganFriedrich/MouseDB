@@ -2,18 +2,8 @@
 
 ## Subpackages
 
-`mousedb` ships two installable Python packages:
-
-- **`mousedb`** itself — the core package described in this document
-  (database, importers, exporters, GUI, web, validators, CLI).
-- **`mousedb/endpoint_ck_analysis/`** — a self-contained statistical
-  analysis pipeline (PCA, PLS, LMM, clustering) on the SCI cohort. It
-  ships its own `pyproject.toml`, notebooks, and a `QUICKSTART.md`. See
-  [`mousedb/endpoint_ck_analysis/QUICKSTART.md`](mousedb/endpoint_ck_analysis/QUICKSTART.md)
-  for that subpackage's setup; it can be installed and run independently
-  of the rest of `mousedb`.
-
-The instructions below cover the core `mousedb` package only.
+`mousedb` is one installable Python package: the database, importers,
+exporters, GUI, web, validators and CLI described in this document.
 
 ## Quick Setup
 
@@ -454,7 +444,7 @@ disk", where every unfinished video sits) come from a census of the MouseReach
 pipeline folders, cached in `logs/pipeline_census.json` under `mousedb_root`.
 After writing the exports, `refresh_snapshot` retakes it
 (`pipeline_census.refresh`, through the configured `mousereach_env`): a
-read-only folder scan of 5-25 minutes, holding no database lock. **Why:** it
+read-only folder scan that can take many minutes, holding no database lock. **Why:** it
 used to be retaken only by the tab's "Refresh pipeline view" button, and a
 census weeks old was shown as the current counts with nothing but a timestamp
 to say so. The tab and `mousedb-data-status` now print the census's age and

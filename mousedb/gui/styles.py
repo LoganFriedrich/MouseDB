@@ -1,5 +1,5 @@
 """
-Consistent styling for Connectome Data Entry GUI.
+Consistent styling for the mousedb GUI.
 
 Uses a clean, high-contrast design optimized for data entry.
 """

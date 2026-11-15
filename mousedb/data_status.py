@@ -51,9 +51,9 @@ STALE_SNAPSHOT_HOURS = 36
 
 # The pipeline census is retaken by the same nightly job, right after the
 # snapshot (refresh_snapshot), so the same allowance applies. WHY it is judged
-# at all: until 2026-10-22 the census was taken only when someone pressed the
-# button, and the tab showed a census from 2026-09-02 -- seven weeks old -- as
-# its pipeline counts, with only a timestamp to say so.
+# at all: when the census was taken only when someone pressed the button, the
+# tab could show a census weeks old as its pipeline counts, with only a
+# timestamp to say so.
 STALE_CENSUS_HOURS = 36
 
 
@@ -207,8 +207,8 @@ def session_list_lines(rows: List[dict]) -> List[str]:
 # mousedb reads them directly (it does not import mousereach), so the names are
 # restated here and must follow MouseReach's layout. The deep-review queue was
 # renamed from "flagged_for_review" to "deep_review" when the pipeline moved to
-# "the folder is the state" (2026-09-14); reading the old name after that
-# showed every cohort's deep-review count as a silent 0.
+# "the folder is the state"; reading the old name after that showed every
+# cohort's deep-review count as a silent 0.
 TRIAGE_QUEUE = "triage"
 DEEP_REVIEW_QUEUE = "deep_review"
 
@@ -330,7 +330,7 @@ def _failing_jobs_sentence(report: dict) -> str:
             counts[task] = counts.get(task, 0) + 1
     if not counts:
         return ("an overnight job is failing (checked %s); see "
-                "Databases\\logs\\tasks\\health_check.log" % report.get("checked_age"))
+                "<mousedb_root>\\logs\\tasks\\health_check.log" % report.get("checked_age"))
     parts = ["%s (%d run%s)" % (n, c, "" if c == 1 else "s")
              for n, c in sorted(counts.items())]
     return ("overnight jobs failing, checked %s: %s. Every figure below stops "
@@ -353,7 +353,7 @@ def scheduled_job_health(problems: List[str]) -> Optional[dict]:
     if not path.exists():
         problems.append(
             "nothing has checked whether the overnight jobs succeeded: no health "
-            "report at %s. The 'MouseDB nightly health check' task writes it." % path)
+            "report at %s. The scheduled health-check job writes it." % path)
         return None
     try:
         report = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -380,8 +380,8 @@ def scheduled_job_health(problems: List[str]) -> Optional[dict]:
         problems.append(_failing_jobs_sentence(report))
 
     # Any task whose own exit result says it was stopped at its time limit.
-    # The pre-deploy check whitelists that result as "stopped on purpose", which
-    # is how a job being killed every night stayed invisible for weeks.
+    # A deploy check may whitelist that result as "stopped on purpose", which
+    # would keep a job killed every night invisible.
     jobs = report.get("jobs") or []
     if isinstance(jobs, dict):
         # PowerShell writes a one-element list as a bare object.

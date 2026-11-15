@@ -1,7 +1,7 @@
 """Each project names its own tracking-sheet file pattern, and every lookup uses it.
 
-2026-10-29: a second project's cohort sheets sat in the sheets folder, named
-by their own pattern, and were never recognised -- so never imported, and
+WHY: a second project's cohort sheets could sit in the sheets folder, named
+by their own pattern, and never be recognised -- so never imported, and
 their hand scores never reached the reaching pipeline -- because one
 project's sheet name was written into the code.
 """
@@ -13,7 +13,7 @@ from mousedb import cohort_sheets, sheet_projects, sheet_sync
 from mousedb.importers import ExcelImporter
 
 A = "ProjectA_{NN}_Animal_Tracking.xlsx"
-AB = "Silencing_(PROJAB)_{NN}_Animal_Tracking.xlsx"     # parentheses, as real names have
+AB = "Variant_(PROJAB)_{NN}_Animal_Tracking.xlsx"       # parentheses, as real names can have
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def two_projects(tmp_path, monkeypatch):
     sheets = tmp_path / "sheets"
     sheets.mkdir()
     for name in ("ProjectA_01_Animal_Tracking.xlsx", "ProjectA_02_Animal_Tracking.xlsx",
-                 "Silencing_(PROJAB)_02_Animal_Tracking.xlsx"):
+                 "Variant_(PROJAB)_02_Animal_Tracking.xlsx"):
         (sheets / name).write_bytes(b"x")
     return sheets
 
@@ -38,7 +38,7 @@ def test_the_same_cohort_number_in_two_projects_is_two_cohorts(two_projects):
     a = cohort_sheets.find_cohort_sheet("PROJA_02", sheets_dir=two_projects)
     ab = cohort_sheets.find_cohort_sheet("PROJAB_02", sheets_dir=two_projects)
     assert a.name == "ProjectA_02_Animal_Tracking.xlsx"
-    assert ab.name == "Silencing_(PROJAB)_02_Animal_Tracking.xlsx"
+    assert ab.name == "Variant_(PROJAB)_02_Animal_Tracking.xlsx"
     assert cohort_sheets.find_cohort_sheet("PROJAB_01", sheets_dir=two_projects) is None
 
 
@@ -55,7 +55,7 @@ def test_a_project_with_no_sheet_name_is_refused_by_name(two_projects):
 
 def test_the_importer_files_each_workbook_under_its_own_project(two_projects):
     pick = ExcelImporter.__dict__["_extract_cohort_from_filename"]
-    assert pick(None, "Silencing_(PROJAB)_02_Animal_Tracking.xlsx") == "PROJAB_02"
+    assert pick(None, "Variant_(PROJAB)_02_Animal_Tracking.xlsx") == "PROJAB_02"
     assert pick(None, "ProjectA_02_Animal_Tracking.xlsx") == "PROJA_02"
     assert pick(None, "PROJAB_02 notes.xlsx") == "PROJAB_02"        # longest code first
     assert pick(None, "PROJA_021.xlsx") is None                     # not cohort 02 of anything

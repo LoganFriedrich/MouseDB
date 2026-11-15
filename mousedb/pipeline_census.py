@@ -74,8 +74,8 @@ def mousereach_python() -> Optional[Path]:
 
 def refresh(days: int = 14, timeout: int = 3600,
             cache: Optional[Path] = None) -> dict:
-    """Run the census now (a 5-25 minute folder scan, network-load dependent;
-    the first live run measured 23.6 minutes under load), cache and return it.
+    """Run the census now (a folder scan that can take many minutes,
+    network-load dependent), cache and return it.
 
     Invoked as ``python -m mousereach.census`` rather than the console shim,
     so it works even when an environment's Scripts entry points are stale or

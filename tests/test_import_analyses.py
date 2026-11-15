@@ -302,8 +302,8 @@ class TestImportBrains:
 
     def test_a_real_import_waits_for_the_database_task_mutex(self, monkeypatch, tmp_path):
         """WHY: import-brains commits to connectome.db but did not take the
-        mutex the reach import and snapshot share; three hourly runs in a row
-        failed "database is locked" (2026-09-15). A dry run touches nothing and
+        mutex the reach import and snapshot share, so scheduled runs
+        failed "database is locked". A dry run touches nothing and
         must not wait."""
         import contextlib
         from mousedb import cli, task_mutex
@@ -327,18 +327,18 @@ class TestElifeFromSummaryCsv:
 
     def _csv(self, tmp_path):
         return _write(tmp_path / "elife_counts.csv", self.HEADER +
-                      "349_CNT_01_02/349_CNT_01_02_1p625x_z4,2026-02-21T18:47:20,349,CNT_01_02/349,CNT_01,"
+                      "001_CNT_01_01/001_CNT_01_01_1p625x_z4,2026-02-21T18:47:20,1,CNT_01_01/001,CNT_01,"
                       "9314,4812,4502,954,26,0,661,293,,\n"
-                      "357_CNT_02_08/357_CNT_02_08_1p625x_z4,2026-02-21T12:53:28,357,CNT_02_08/357,CNT_02,"
+                      "002_CNT_02_02/002_CNT_02_02_1p625x_z4,2026-02-21T12:53:28,2,CNT_02_02/002,CNT_02,"
                       "4208,1998,2210,273,74,16,144,129,16,0\n")
 
     def test_rows_match_the_brain_and_decode_group_names(self, tmp_path):
         from mousedb.importers import read_elife_summary_rows
-        rows = read_elife_summary_rows(self._csv(tmp_path), "357_CNT_02_08_1p625x_z4")
+        rows = read_elife_summary_rows(self._csv(tmp_path), "002_CNT_02_02_1p625x_z4")
         assert rows["Red Nucleus"] == {"both": 273, "left": 144, "right": 129}
         assert rows["Parabrachial / Pedunculopontine"] == {"both": 74}
         assert rows["[Unmapped]"] == {"both": 16, "left": 16, "right": 0}
-        rows = read_elife_summary_rows(self._csv(tmp_path), "349_CNT_01_02_1p625x_z4")
+        rows = read_elife_summary_rows(self._csv(tmp_path), "001_CNT_01_01_1p625x_z4")
         assert rows["Red Nucleus"] == {"both": 954, "left": 661, "right": 293}
         assert rows["[Unmapped]"] == {"both": 0}      # blank hemisphere cells are absent, not 0
 
@@ -362,14 +362,14 @@ class TestElifeFromSummaryCsv:
             if not s.query(Project).filter_by(project_code="CNT").first():
                 s.add(Project(project_code="CNT", project_name="test project"))
             s.add(Cohort(cohort_id="CNT_02", project_code="CNT", start_date=datetime.date(2026, 1, 1)))
-            s.add(Subject(subject_id="CNT_02_08", cohort_id="CNT_02"))
+            s.add(Subject(subject_id="CNT_02_02", cohort_id="CNT_02"))
         with db.session() as s:
-            s.add(BrainSample(subject_id="CNT_02_08", brain_id="357_CNT_02_08_1p625x_z4", brain_number=357))
+            s.add(BrainSample(subject_id="CNT_02_02", brain_id="002_CNT_02_02_1p625x_z4", brain_number=2))
         with db.session() as s:
             bs_id = s.query(BrainSample).one().id
         imp = BrainGlobeImporter(db)
         res = imp.import_elife_counts(brain_sample_id=bs_id, region_counts_dict={"RN": 273},
-                                      is_final=True, brain_id="357_CNT_02_08_1p625x_z4",
+                                      is_final=True, brain_id="002_CNT_02_02_1p625x_z4",
                                       elife_summary_csv=self._csv(tmp_path))
         assert res["success"], res["errors"]
         assert res["imported"]["elife_region_counts"] == 3 + 1 + 3     # RN both/l/r, Parabrachial both, Unmapped both/l/r
@@ -385,7 +385,7 @@ class TestElifeFromSummaryCsv:
         monkeypatch.setitem(sys.modules, "mousebrain.region_mapping", None)
         imp = BrainGlobeImporter(db=object())   # the error path never opens a session
         res = imp.import_elife_counts(brain_sample_id=1, region_counts_dict={"RN": 1},
-                                      brain_id="357_CNT_02_08_1p625x_z4",
+                                      brain_id="002_CNT_02_02_1p625x_z4",
                                       elife_summary_csv=tmp_path / "missing.csv")
         assert not res["success"]
         assert any("NOT imported" in e and "elife_counts.csv" in e for e in res["errors"])

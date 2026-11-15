@@ -2,7 +2,7 @@
 
 WHY: reach_data has one row per reach, so a pellet nobody reached for left no
 trace, and "pellets presented" counted from reach rows came out below 20 in
-over half the sessions (2026-10-16). How many pellets the video shows is a
+many sessions. How many pellets the video shows is a
 measurement -- 20 unless something went wrong -- and it needs a row per pellet.
 """
 import contextlib

@@ -7,7 +7,7 @@ own clocks (sheets, reaches, analyses, brains, then the snapshot). The
 database is a single SQLite file that every one of them opens, so two of them
 touching it at once meant one failed with "database is locked" -- and the
 failures were quiet: rows landed without phase labels, the snapshot went
-stale, and the scheduler still showed every job as succeeded (2026-09-01).
+stale, and the scheduler still showed every job as succeeded.
 The fix: a person presses ONE button, "Update the database", and the pulls
 run in a fixed order, one after another, under a lock, and the result is
 spelled out.

@@ -2,11 +2,11 @@
 
 WHY THIS EXISTS
 ---------------
-The lab fills the tracking spreadsheets "eventually" and the database is
+Tracking spreadsheets are filled in "eventually" and the database is
 only as current as the last import. Until 2026-08-28 nothing recorded when a
 sheet was last imported, nothing compared that to when the sheet was last
 edited, and an import that failed rolled back in silence (one cohort's, on
-every scheduled run, for weeks). This module is the one place that knows,
+every scheduled run). This module is the one place that knows,
 per cohort:
 
   * which file IS the sheet (all candidates listed; a person can pin one),
@@ -16,10 +16,10 @@ per cohort:
 
 Every import goes through ``import_cohorts`` (or, for one named workbook,
 ``import_sheet_file``) and is appended to the ledger
-(``Databases/logs/sheet_imports.jsonl``) -- success or failure, with the
-error text and the warnings -- so the GUI and the hourly job read the same
+(``<mousedb_root>/logs/sheet_imports.jsonl``) -- success or failure, with the
+error text and the warnings -- so the GUI and the scheduled job read the same
 history. These routes land here: this module's own command, the Tracking
-Sheets tab, the hourly snapshot refresh, ``mousedb import --all`` /
+Sheets tab, the scheduled snapshot refresh, ``mousedb import --all`` /
 ``--file`` and the "Update the database" button. Until 2026-10 the last
 three went straight to the importer, so their errors and warnings were
 thrown away, nothing was recorded, they did not wait for the cross-task
@@ -434,10 +434,10 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
             # Under the cross-task mutex, one cohort at a time. WHY:
             # this import commits to connectome.db like the reach and
             # brain imports, but did not take the mutex they share, so
-            # on 2026-09-15 it overlapped a long import and four of six
-            # cohorts failed "database is locked". Per cohort, not
+            # it could overlap a long import and cohorts failed
+            # "database is locked". Per cohort, not
             # around the whole loop: reading the workbooks is slow and
-            # must not keep the hourly imports waiting.
+            # must not keep the scheduled imports waiting.
             from .task_mutex import hold
             with hold(waiting_for="another database task"):
                 r = imp.import_cohort_file(sheet, dry_run=False)
@@ -531,8 +531,8 @@ def _import_aspa_one(text: str, dry_run: bool, triggered_by: str) -> dict:
 
     letter = aspa_letter(text)
     if letter is None:
-        # 'ASPA_J': the cohort named by its LETTER, which is how the lab names
-        # these cohorts and how status() labels a letter cohort whose status
+        # 'ASPA_J': the cohort named by its LETTER, which is how the ASPA sheets
+        # name these cohorts and how status() labels a letter cohort whose status
         # failed. aspa_letter does not read that form, so it is read here --
         # only a single trailing letter, never a digit (see below).
         m = re.fullmatch(r"ASPA_?([A-Z])", text.strip().upper())

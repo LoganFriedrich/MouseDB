@@ -82,8 +82,8 @@ ESTIMATES: pace is measured from output-file timestamps over the trailing
 14 days and projected over the backlog. It is an estimate from recent pace,
 never a promise.
 
-"Refresh pipeline view" re-walks the pipeline folders (5-25 minutes
-depending on network load; reads only). The other numbers refresh from the
+"Refresh pipeline view" re-walks the pipeline folders (minutes, depending
+on pipeline size and network load; reads only). The other numbers refresh from the
 snapshot instantly.
 
 THE FILES: the bottom panel names the current export folder. At its top:
@@ -215,12 +215,12 @@ class DataStatusTab(QWidget):
              "and the current exports. Takes a few minutes; the tab refreshes itself when done.",
              "background:#2e7d32; color:white; font-weight:bold;"),
             ("Refresh", self.refresh, "Re-read the snapshot, the queues and the export manifest.", ""),
-            ("Refresh pipeline view (~5-25 min)", self.refresh_pipeline,
+            ("Refresh pipeline view (takes minutes)", self.refresh_pipeline,
              "Walk the MouseReach pipeline folders (collages, queues, the Analyzed tree) "
              "through the MouseReach environment and rewrite the cached census that the "
              "'Should exist' / pipeline / 'Analyzed' columns read. Reads folders only -- "
-             "nothing is moved or modified. Takes 5-25 minutes depending on network "
-             "load; the table refreshes itself when done. The nightly snapshot job "
+             "nothing is moved or modified. Takes minutes, depending on pipeline size and "
+             "network load; the table refreshes itself when done. The nightly snapshot job "
              "retakes it too, so press this only for counts newer than last night; "
              "the line above the table says how old the census is, in red once it is "
              "over a day and a half.", ""),
@@ -316,8 +316,8 @@ class DataStatusTab(QWidget):
                                     "A refresh is still running -- try again in a moment.")
             return
         self.update_label.setText("Scanning the pipeline folders through the MouseReach "
-                                  "environment (5-25 minutes depending on network load; reads "
-                                  "only). The table refreshes itself when done.")
+                                  "environment (minutes, depending on pipeline size and network "
+                                  "load; reads only). The table refreshes itself when done.")
         from ..pipeline_census import refresh as census_refresh
         self._run(lambda: {"census": census_refresh()}, self._on_pipeline_done)
 
@@ -352,7 +352,7 @@ class DataStatusTab(QWidget):
         if t.get("session_only"):
             an_txt += "  (+%d E/F-only)" % t["session_only"]
         # Say how OLD, as for the snapshot below: a bare timestamp let a
-        # seven-week-old census pass for current (2026-10-22).
+        # weeks-old census pass for current.
         stale = pc.get("stale", False)
         lines = []
         if stale:

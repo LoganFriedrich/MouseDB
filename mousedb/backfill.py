@@ -1,7 +1,7 @@
 """
 One-shot migration and backfill for test_phase / phase_group columns.
 
-Run once after deploying the phases-detection feature; the nightly reach
+Run once after deploying the phases-detection feature; the scheduled reach
 import also runs it for every cohort a new video touches. Idempotent: safe to
 re-run. Every row ends up with the canonical label from :mod:`mousedb.phases`
 (legacy spellings such as `Rehab_1` or `Post-Injury Test 4` are replaced), but
@@ -109,20 +109,19 @@ def _apply_assignments(
     scored day by definition, since the schedule is derived from them.
 
     WHY ONLY THE ROWS THAT CHANGE: the first version cleared every row of the
-    cohort and rewrote it in three passes. Correct, but the database lives on
-    a network share that takes writes at a fraction of a megabyte per second,
-    so that was gigabytes of page writes to say what the rows already said.
-    The nightly reach import runs this for every cohort a new video touches;
-    on 2026-10-15 five reprocessed videos of the largest cohort made it rewrite
+    cohort and rewrote it in three passes. Correct, but the database may live on
+    a slow network share, so that was gigabytes of page writes to say what the
+    rows already said. The scheduled reach import runs this for every cohort a
+    new video touches; a few reprocessed videos of a large cohort made it rewrite
     every reach of that cohort, it ran for hours past its scheduler limit, and
-    it held the database through the brain import and the export refresh,
-    which failed night after night. With the guard below, a night on which the
-    labels did not change writes nothing.
+    it held the database through the jobs scheduled after it, which then
+    failed. With the guard below, a run on which the labels did not change
+    writes nothing.
 
     AND ONLY ONE PASS OVER EACH TABLE: reach_data has no index on session_date
     or subject_id (only on video and on the labels), so an UPDATE per test date
-    read the whole multi-gigabyte table once per date -- 42 GB of reads in 40
-    minutes on 2026-10-16, for one cohort. The date -> label map goes into a
+    read the whole multi-gigabyte table once per date -- tens of gigabytes of
+    reads for one cohort. The date -> label map goes into a
     temporary table and each row looks its own date up there, so a cohort costs
     one read of the table however many test dates it has.
 

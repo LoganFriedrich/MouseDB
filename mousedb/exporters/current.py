@@ -4,12 +4,12 @@ WHY THIS EXISTS
 ---------------
 The end of the lab's workflow is a person asking "where is my data?" and
 expecting a current CSV of everything the database holds, formatted to
-ODC-SCI, with a data dictionary beside it. Until 2026-08-28 the answer was:
-a 200 MB dump the sync overwrote, an ODC Excel export run by hand for one
-cohort in January, and no dictionary anywhere. This module writes, and the
+ODC-SCI, with a data dictionary beside it. Before this module the answer was:
+a raw dump the sync overwrote, an ODC Excel export run by hand for one
+cohort, and no dictionary anywhere. This module writes, and the
 nightly refresh keeps current, one folder:
 
-    Databases/exports/current/
+    <mousedb_root>/exports/current/
         reach_data.csv                    one row per detected reach
         reach_data_DATA_DICTIONARY.csv
         manual_scores.csv                 one row per hand-scored pellet
@@ -61,7 +61,7 @@ REACH_DATA_ORDER_FIRST = [
 REACH_DATA_ORDER_LAST = ["extended_features"]
 
 README = """CURRENT EXPORTS -- everything mousedb knows, as of the time in MANIFEST.json.
-These files are regenerated automatically (nightly on the processing server)
+These files are regenerated automatically (by the scheduled snapshot refresh)
 and by the "Where Is My Data" tab in mousedb. There is one data dictionary
 per kind of file, shared by every cohort's file of that kind. Do not edit them; edit the
 source (tracking sheets, review tools) and they will be regenerated.
@@ -98,7 +98,7 @@ reach_data_extended.parquet
                           The 161-value extended feature block per reach (per
                           paw-point kinematics) as JSON, keyed by subject_id,
                           video_name, segment_num, reach_id. Kept out of the CSV
-                          because it made the file 3 GB. Read with pandas /
+                          because it made the file too large to open. Read with pandas /
                           pyarrow and join on those four columns.
 manual_scores.csv         One row per pellet scored by hand from the tray
                           (0 untouched / 1 displaced / 2 retrieved), with the
@@ -137,18 +137,16 @@ MANIFEST.json             When these were written, from which snapshot, row
                           dictionary entry, which would fail an ODC upload).
 
 ODC-SCI submission = a dataset CSV + its DATA_DICTIONARY CSV, together.
-See Databases/docs/ODC-SCI_submission_standard.md.
 """
 
 
 def _staging_dir(snapshot_dir: Path) -> Path:
     """A scratch folder on the same (local) disk as the snapshot.
 
-    WHY: the exports folder is on a network share, and pandas writes a CSV
-    onto a share a few bytes at a time -- measured at a fraction of a megabyte
-    per second against tens of MB/s for copying a finished file. Writing every
-    file here first and copying it over turned a 2-3 hour nightly export into
-    minutes (2026-10-16). refresh_current() empties this folder at the start
+    WHY: the exports folder may be on a network share, and pandas writes a CSV
+    onto a share a few bytes at a time -- far slower than copying a finished
+    file. Writing every file here first and copying it over turned an
+    hours-long export into minutes. refresh_current() empties this folder at the start
     of each run so nothing stale is ever copied across."""
     d = Path(snapshot_dir) / "_export_staging"
     d.mkdir(parents=True, exist_ok=True)
@@ -174,9 +172,9 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     df = df.sort_values(sort_cols)
 
     # The extended block (161 per-paw-point values, stored as one JSON string
-    # per row) is NOT in the CSV: with it the file was 2.98 GB, which nothing
-    # opens. It goes to a parquet sidecar keyed by the same identity columns;
-    # the CSV stays the ~200 MB a person can actually load.
+    # per row) is NOT in the CSV: with it the file was several gigabytes, which
+    # nothing opens. It goes to a parquet sidecar keyed by the same identity
+    # columns; the CSV stays a size a person can actually load.
     cols = [c for c in REACH_DATA_ORDER_FIRST if c in df.columns]
     cols += [c for c in df.columns if c not in cols and c not in REACH_DATA_ORDER_LAST and c != "id"]
     # Easy and flat trays: the algorithm's pellet and reach outcome columns read
@@ -248,7 +246,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     # in a cell, or a different dictionary entry. Forgetting is not a small
     # mistake: the run silently skips the export, reuses the previous run's
     # record of what it wrote, and reports the state of files it did not look
-    # at -- which happened on 2026-10-14, where two freshly written dictionary
+    # at -- as once happened, when two freshly written dictionary
     # entries were reported missing because nothing had been rewritten.
     #   2 = letter cohorts carry their letter (ASPA_04_D)
     #   3 = two documents per cohort (complete record + shareable summary), the extended

@@ -2,11 +2,11 @@
 
 The problem
 -----------
-CNT_05's ``3c_Manual_Summary`` is in tidy/long form -- one row per animal per
-session (214 rows). That is fine for a machine and useless for a human: to follow
+A workbook's ``3c_Manual_Summary`` can be in tidy/long form -- one row per animal
+per session. That is fine for a machine and useless for a human: to follow
 one mouse you filter and scroll, and nothing is visible at a glance.
 
-CNT_01-03 used a matrix instead, and it worked because BOTH directions carry
+Older workbooks used a matrix instead, and it worked because BOTH directions carry
 meaning: read ACROSS a row to see one mouse's trajectory over the experiment, read
 DOWN a column to compare every mouse on a given day. A header row labels each
 session's phase (Ramp / Flat / Pillar), so you can see where the protocol changed
@@ -14,9 +14,9 @@ and how performance moved with it.
 
 This rebuilds that layout from the long data:
 
-    <metric>   | 2025-07-31 | 2025-08-01 | 2025-08-04 | ...
+    <metric>   | 2025-01-06 | 2025-01-07 | 2025-01-08 | ...
                | Flat       | Flat       | Flat       | ...
-    CNT_05_01  | 80.0       | 76.2       | 62.5       | ...
+    CNT_01_01  | 80.0       | 75.0       | 60.0       | ...
     ...
     AVG        | ...
     AVG w/o .. | ...        (optional exclusions, as the old sheets did)
@@ -189,7 +189,7 @@ def main(argv=None) -> int:
             "sessions as columns, phase header) instead of the long one-row-per-"
             "animal-per-session layout. Reads the tracking workbook; never modifies it."),
         epilog="Example:\n"
-               "  mousedb-summary-matrix --source Connectome_05_Animal_Tracking.xlsx --exclude 14,15\n",
+               "  mousedb-summary-matrix --source ProjectA_05_Animal_Tracking.xlsx --exclude 3,4\n",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", required=True, help="Cohort tracking .xlsx to read.")
     parser.add_argument("--out", default=None,

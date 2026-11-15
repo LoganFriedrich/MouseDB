@@ -191,8 +191,8 @@ def never_computed_names(rows=None) -> set:
     """Columns that no code computes, by their own dictionary entry.
 
     WHY this is asked of the dictionary rather than of the data: a column that happens
-    to be empty in one cohort is not the same as a column nothing computes. The frozen
-    ASPA workbooks record no species, so SpeciesTyp is empty in those files -- but
+    to be empty in one cohort is not the same as a column nothing computes. A workbook
+    that records no species leaves SpeciesTyp empty in its files -- but
     species is a fact a source failed to carry, not a measurement the code declines to
     take, and an export that calls it 'not measured' tells the reader the lab failed to
     look at a mouse. Emptiness is a symptom; this list is the diagnosis.
@@ -395,8 +395,8 @@ ODC_REACH_ANIMAL = [
     _row("Exclusion_in_origin_study", "Exclusion in origin study",
          "Whether the study this data came from excluded this animal, exactly as that "
          "study's own tracking sheet records it. Nothing here is inferred: no animal is "
-         "excluded by this export, for any reason. No cohort's sheet carries an exclusion "
-         "column at present, so the value is 'Not recorded' throughout -- which means no "
+         "excluded by this export, for any reason. Where a cohort's sheet carries no exclusion "
+         "column, the value is 'Not recorded' -- which means no "
          "exclusion has been DECLARED, not that every animal was deliberately included. "
          "If you are looking for animals that died during a surgery, that is "
          "Survived_All_Surgeries, and it is a fact about the animal rather than a "
@@ -404,9 +404,9 @@ ODC_REACH_ANIMAL = [
          "", "text", "", ""),
     _row("Exclusion_reason", "Exclusion reason",
          "Why, when Exclusion_in_origin_study names an exclusion. Copied from the same "
-         "sheet and, like it, not recorded in any cohort yet.", "", "text"),
+         "sheet and, like it, 'Not recorded' where the sheet has no such column.", "", "text"),
     _row("Cause_of_Death", "Cause of death",
-         "Why this animal's participation ended. Useful mainly for the exceptions: when everything goes to plan the animal is perfused, which is what ends it, and that is what this says. A named cause from the sheet wins; otherwise a surgery the animal did not survive, which the sheet records per surgery; otherwise the laboratory's standing end-of-study procedure from its study facts. EMPTY means the animal may still be on study -- it is never filled in for a cohort that has not finished, because saying a living animal died is worse than saying nothing.",
+         "Why this animal's participation ended. Useful mainly for the exceptions: when everything goes to plan the animal reaches the study's planned endpoint, and that is what this says. A named cause from the sheet wins; otherwise a surgery the animal did not survive, which the sheet records per surgery; otherwise the laboratory's standing end-of-study procedure from its study facts. EMPTY means the animal may still be on study -- it is never filled in for a cohort that has not finished, because saying a living animal died is worse than saying nothing.",
          "", "text"),
     _row("Injury_device", "Injury device", "Injury device from the sheet's ODC tab when it names one, else the study facts.", "", "text"),
     _row("Injury_level", "Injury level", "Spinal level of the injury from the tracking sheet.", "", "text"),

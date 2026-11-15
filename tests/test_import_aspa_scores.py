@@ -1,7 +1,7 @@
 """ASPA manual scores: the wide '1 - ENTER DATA HERE' layout is parsed right.
 
-WHY: no ASPA manual score had ever reached the database (2026-08-28), so
-every ASPA cohort was silently absent from the bench-vs-algorithm scan,
+WHY: without this parser no ASPA manual score reaches the database, so
+every ASPA cohort is silently absent from the bench-vs-algorithm scan,
 the accuracy figures and the ODC export. The parser must read the real
 layout -- four tray blocks side by side, 0/1/2 scores, Pillar/Easy/Flat --
 and skip what was never scored.

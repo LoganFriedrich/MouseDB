@@ -1,5 +1,5 @@
 """
-Export functions for Connectome Data Entry.
+Export functions for mousedb.
 
 Supports:
 - Excel export (for legacy tools)

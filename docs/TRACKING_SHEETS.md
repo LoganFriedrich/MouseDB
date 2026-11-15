@@ -252,16 +252,16 @@ that day's videos find no hand scores.
 
 The import catches the case it can line up:
 
-- a run of rows dated on a **Saturday or Sunday** (recording never happens at
-  weekends),
+- a run of rows dated on a **Saturday or Sunday** (the import assumes no
+  recording happens at weekends),
 - sitting between rows that all carry **one and the same weekday** date,
 - with none of its animal/tray pairs already on that weekday,
 
 is read as that weekday. As with a year typo, scores an earlier import filed
 under the weekend date are moved to it, and a warning starting `REPAIRED`
 names the rows, for example: `REPAIRED CNT_NN 3b_Manual_Tray: rows CNT_NN_02 P1,
-CNT_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
-2025-10-28, and are read as 2025-10-28.` It shows in the red panel and on the
+CNT_NN_03 P1 are dated 2025-03-08 (a Saturday, ...) but sit among rows dated
+2025-03-11, and are read as 2025-03-11.` It shows in the red panel and on the
 cohort's FIX THESE file until the sheet is fixed. **What you do:** type the
 date into those cells (a typed date never moves).
 
@@ -382,7 +382,7 @@ so for that cohort the two described different versions of the sheet.)
 You see it on the line under the cohort's `FAIL` line:
 
 ```
-FAIL CNT_NN Connectome_NN_Animal_Tracking.xlsx <the error>  [N warnings]
+FAIL CNT_NN ProjectA_NN_Animal_Tracking.xlsx <the error>  [N warnings]
        [!] animal details left as they were: nothing from this workbook was saved (see the error), ...
 ```
 
@@ -573,7 +573,7 @@ never read as a sheet. You then see three lines:
 ```
 REFUSED: <the file> was not imported.
   Why: <which folder, or what is wrong with the name>.
-  Instead: import CNT_NN's live sheet, Connectome_NN_Animal_Tracking.xlsx, from the sheets folder: mousedb-sheets import --cohort CNT_NN
+  Instead: import CNT_NN's live sheet, ProjectA_NN_Animal_Tracking.xlsx, from the sheets folder: mousedb-sheets import --cohort CNT_NN
 ```
 
 Run the command on the *Instead* line. If the refused copy really is the
@@ -960,7 +960,7 @@ From a terminal (MouseDB environment active):
 ```
 mousedb-sheets status                             # which file, edited when, imported when
 mousedb-sheets import [--cohort CNT_NN] [--dry-run] [--json]
-mousedb-sheets pin CNT_NN "Connectome_NN_Animal_Tracking.xlsx"
+mousedb-sheets pin CNT_NN "ProjectA_NN_Animal_Tracking.xlsx"
 mousedb-sheets unpin CNT_NN
 mousedb-sheets set-dir "<folder>"
 mousedb cohort-sheets                             # the folder, files not read, broken pins

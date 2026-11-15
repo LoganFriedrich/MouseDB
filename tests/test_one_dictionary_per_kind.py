@@ -1,8 +1,8 @@
 """One data dictionary per kind of document, never one per cohort.
 
-WHY: every cohort's file of a kind has the same columns, so fourteen copies of
-one dictionary were fourteen things to keep in step, and a folder a person had
-to sort through (2026-10-16). Where a cohort's tracking sheet adds columns
+WHY: every cohort's file of a kind has the same columns, so one copy of the
+dictionary per cohort was that many things to keep in step, and a folder a
+person had to sort through. Where a cohort's tracking sheet adds columns
 another's lacks, the shared dictionary must describe the union -- every column
 of every file still has its entry, which is what an ODC upload checks -- and
 the manifest must say which variables only some cohorts have, because that

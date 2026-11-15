@@ -1,12 +1,12 @@
 """The cross-task database mutex: one holder, dead locks break, live ones never do.
 
 The overlap it prevents: an import's commit going PENDING behind the
-snapshot's long reads refuses every new reader for the duration -- 22 minutes
-of "database is locked" on 2026-09-02 with neither task individually slow.
+snapshot's long reads refuses every new reader for the duration -- many
+minutes of "database is locked" with neither task individually slow.
 
-The rule it must never get wrong (2026-10-15): a holder that is still running
-keeps the lock however long it has held it. Breaking a live holder's lock by
-age put two writers on the database every night for a week.
+The rule it must never get wrong: a holder that is still running keeps the
+lock however long it has held it. Breaking a live holder's lock by age puts
+two writers on the database.
 """
 
 import os
@@ -35,9 +35,9 @@ def test_single_holder_and_release(tmp_path):
 
 
 def test_live_holder_is_never_broken_by_age(tmp_path):
-    """The reach import held the lock for 3 hours on 2026-10-15 while
-    rewriting phase labels; the brain import broke in at 45 minutes and the
-    two fought over the database. A running holder keeps its lock."""
+    """A reach import can hold the lock for hours while rewriting phase
+    labels; a job that broke in at 45 minutes made the two fight over the
+    database. A running holder keeps its lock."""
     a = TaskMutex(base_dir=tmp_path, stale_minutes=45)
     a.path.write_text("%d %s" % (os.getpid(), _own_stamp()))
     old = time.time() - 6 * 3600

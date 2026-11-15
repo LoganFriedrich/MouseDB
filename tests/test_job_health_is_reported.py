@@ -2,8 +2,8 @@
 
 WHY THIS TEST EXISTS
 --------------------
-The snapshot refresh failed five nights running and nothing said so. The
-status screen judged the snapshot's AGE, and a person running the refresh by
+A scheduled snapshot refresh can fail night after night with nothing saying
+so. The status screen judged the snapshot's AGE, and a person running the refresh by
 hand reset that clock -- so the artifact looked fresh while the job that makes
 it was broken. Age cannot tell you a job works, because anyone can make the
 artifact by hand.
@@ -39,9 +39,9 @@ LOCKED = ("[FAIL] The brain import did not run: another program kept the "
 def test_a_job_that_failed_three_nights_is_named_once_with_its_count():
     report = _report([
         "[FAIL] scheduled tasks with failing recent runs -- find out what each would do",
-        "  import_brains.log | === 2026-10-12 22:30 === | " + LOCKED,
-        "  import_brains.log | === 2026-10-13 22:30 === | " + LOCKED,
-        "  import_brains.log | === 2026-10-14 22:30 === | " + LOCKED,
+        "  import_brains.log | === 2026-01-12 22:30 === | " + LOCKED,
+        "  import_brains.log | === 2026-01-13 22:30 === | " + LOCKED,
+        "  import_brains.log | === 2026-01-14 22:30 === | " + LOCKED,
     ])
     sentence = data_status._failing_jobs_sentence(report)
     assert "import brains (3 runs)" in sentence
@@ -50,8 +50,8 @@ def test_a_job_that_failed_three_nights_is_named_once_with_its_count():
 
 def test_a_job_seen_in_its_log_and_its_exit_code_is_named_once():
     report = _report([
-        "  snapshot_refresh.log | === 2026-10-15 00:00 === | [FAIL] locked",
-        "  (task) MouseDB analysis snapshot refresh | 10/15/2026 | last result 1",
+        "  snapshot_refresh.log | === 2026-01-15 00:00 === | [FAIL] locked",
+        "  (task) MouseDB analysis snapshot refresh | 01/15/2026 | last result 1",
     ])
     sentence = data_status._failing_jobs_sentence(report)
     assert "snapshot refresh (1 run)" in sentence
@@ -66,9 +66,9 @@ def test_a_task_with_no_log_lines_is_still_named():
 def test_the_health_check_never_reports_itself():
     """The observer reporting itself as failing would never stop doing so."""
     report = _report([
-        "  health_check.log | === 2026-10-15 09:10 === | [FAIL] scheduled tasks",
+        "  health_check.log | === 2026-01-15 09:10 === | [FAIL] scheduled tasks",
         "  (task) MouseDB nightly health check | x | last result 1",
-        "  import_brains.log | === 2026-10-14 22:30 === | " + LOCKED,
+        "  import_brains.log | === 2026-01-14 22:30 === | " + LOCKED,
     ])
     sentence = data_status._failing_jobs_sentence(report)
     assert "health check" not in sentence
@@ -76,8 +76,9 @@ def test_the_health_check_never_reports_itself():
 
 
 def test_a_job_killed_at_its_time_limit_is_reported(tmp_path, monkeypatch):
-    """Result 267014 is whitelisted by the pre-deploy check as 'stopped on
-    purpose'; that whitelist is how a nightly kill stayed invisible for weeks."""
+    """Result 267014 (stopped at its time limit) can be whitelisted by a
+    deploy check as 'stopped on purpose'; that is how a nightly kill could
+    stay invisible."""
     path = tmp_path / "health.json"
     path.write_text(json.dumps(_report([], failing=False, jobs=[
         {"task": "MouseDB import reaches", "last_result": 267014},

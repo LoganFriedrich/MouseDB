@@ -1,6 +1,6 @@
-"""0_Injection_Calculations: the lab's batch-block layout, generated and read.
+"""0_Injection_Calculations: the batch-block layout, generated and read.
 
-The layout was settled 2026-08-28 (see cohort_tools.make_sheets
+The layout is defined in one place (see cohort_tools.make_sheets
 INJECTION_CALC_HEADERS). These tests pin it: the generator writes exactly
 that layout, and the importer reads a filled-in block back -- including the
 real-world quirks (a batch title with a trailing YYYYMMDD, template
@@ -58,11 +58,11 @@ def _sheet_df(rows):
 
 
 LAB_BLOCK = [
-    ["Batch that didn't qualify on performance metrics - 20260826"],
+    ["Batch test mix for the pilot animals - 20260826"],
     INJECTION_CALC_HEADERS,
-    ["AAV5-CAG-GFP (lot:v57830) from hearing lab", 100, 6, 3.0, 50.0, 5e12, 3],
-    ["AAV-Retro-CAGIG-H2B-V5-mSc (Validated AAV Box 3)", 60, 6, 2.5, 25.0, 2.5e12, None],
-    ["Malat BC 7 (Box 40)", 36.5, 6, 0.5, 18.25, 1.825e12, None],
+    ["Virus A (lot:0001) from a collaborator", 100, 6, 3.0, 50.0, 5e12, 3],
+    ["Virus B (freezer box 1)", 60, 6, 2.5, 25.0, 2.5e12, None],
+    ["Virus C (freezer box 2)", 36.5, 6, 0.5, 18.25, 1.825e12, None],
     ["Totals", None, None, 6.0, 78.04, 7.804e12],
 ]
 
@@ -83,7 +83,7 @@ class TestGenerator:
         assert ws.cell(6, 4).value == "=SUM(D3:D5)"
 
     def test_shorthand_conversion_matches_the_lab_convention(self):
-        # the lab writes "10" for 1x10^12
+        # the shorthand writes "10" for 1x10^12
         assert 10 * DISAMBIGUATION_FACTOR == 1e12
         assert 50 * DISAMBIGUATION_FACTOR == 5e12
 
@@ -106,12 +106,12 @@ class TestImporter:
         assert imp.imported_counts['virus_preps'] == 1
         vp = s.added[0]
         assert str(vp.prep_date) == "2026-08-26"
-        assert vp.preparation_notes == "that didn't qualify on performance metrics"
+        assert vp.preparation_notes == "test mix for the pilot animals"
         assert vp.num_animals == 3
         # summed from the per-virus rows, NOT read from the Totals cell (which
-        # is a derived value and, in the real CNT_05 sheet, was stale)
+        # is a derived value and can be stale in a real sheet)
         assert vp.final_titer == pytest.approx(5e12 + 2.5e12 + 1.825e12, rel=1e-6)
-        assert vp.virus_name.startswith("AAV5-CAG-GFP") and "Malat BC 7" in vp.virus_name
+        assert vp.virus_name.startswith("Virus A") and "Virus C" in vp.virus_name
         assert "parts 3.0/6.0" in vp.calculation_notes
 
     def test_empty_template_is_batch_layout_but_imports_nothing(self, tmp_path):
@@ -143,7 +143,7 @@ class TestImporter:
         assert imp._import_injection_batches(horizontal, 'CNT_01', FakeSession(), True) is False
 
     def test_the_block_beneath_a_legacy_template_still_wins(self):
-        # CNT_05's real sheet: an empty vertical calculator on top, the lab
+        # A sheet can hold an empty vertical calculator on top and the batch
         # block further down. The block must be found regardless of position.
         rows = [["Parameter", "Value", "Units"], ["Virus Name"], [], []] + LAB_BLOCK
         imp = _importer()

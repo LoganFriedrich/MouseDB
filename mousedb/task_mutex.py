@@ -2,12 +2,12 @@
 
 WHY THIS EXISTS
 ----------------
-connectome.db lives on a network share in rollback-journal mode, where a
+connectome.db may live on a network share in rollback-journal mode, where a
 writer that wants to commit while a long read is in flight goes PENDING --
-and while it is PENDING, every NEW reader is refused. On 2026-09-02 the
-hourly reach import (per-video commits, individually milliseconds) overlapped
+and while it is PENDING, every NEW reader is refused. When the scheduled
+reach import (per-video commits, individually milliseconds) overlapped
 the snapshot's long SELECT * reads, the import sat PENDING behind them, and
-the database answered "locked" to everyone for 22 minutes. Neither task held
+the database answered "locked" to everyone for many minutes. Neither task held
 a long transaction; the OVERLAP was the outage.
 
 The scheduled tasks are staggered by minutes, which is a hope, not a
@@ -25,10 +25,10 @@ holder's pid: if that process is gone, or the pid now belongs to a process
 started after the lock was taken, the lock is dead and is broken at once.
 A holder that is STILL RUNNING is never overruled, however long it has held
 the lock. Until 2026-10-15 a lock older than ``stale_minutes`` was broken
-regardless; the nightly reach import legitimately held it for hours while
-rewriting phase labels over the share, the brain import broke in at 22:30,
-and both then fought over the database -- "database is locked" for 45
-minutes, nightly. The age rule survives only as the last resort for a
+regardless; a reach import could legitimately hold it for hours while
+rewriting phase labels over the share, the next scheduled import broke in,
+and both then fought over the database -- "database is locked" every
+night. The age rule survives only as the last resort for a
 lockfile whose holder cannot be identified (no psutil, unreadable contents).
 """
 from __future__ import annotations

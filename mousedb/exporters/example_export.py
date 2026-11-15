@@ -18,7 +18,7 @@ Three things, in the order they mattered:
 
 * It reads the parquet snapshot on local disk, not the finished CSV on the share.
 * It asks the snapshot for one cohort's subjects instead of reading every cohort.
-* It writes a sample of sessions, not all 61,520 rows. An example does not need
+* It writes a sample of sessions, not every row. An example does not need
   every row; it needs every COLUMN to hold real values, which a few thousand
   rows do.
 
@@ -206,9 +206,9 @@ def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None
     # very thing being checked.
     frame = pd.read_csv(path, dtype=str, keep_default_na=False, low_memory=False)
 
-    # NEVER sample a row whose session has a problem nobody can fix now. The
-    # three "Unscheduled" dates in CNT_01 are days 6-8 after injury: filmed, but
-    # never hand-scored, because they are not protocol timepoints. Their rows are
+    # NEVER sample a row whose session has a problem nobody can fix now. An
+    # "Unscheduled" date (e.g. a day filmed after injury that is not a protocol
+    # timepoint) is never hand-scored. Their rows are
     # correct and they stay in the export -- but showing one as an EXAMPLE wastes
     # the reader's attention on a known dead end, because every hand-scored
     # column reads NA and none of that is about the format being checked.

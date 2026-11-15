@@ -23,7 +23,7 @@ Refuses to run while a watcher is active anywhere on this pipeline
 (``watcher_running()``, the same check every recipe in this package already
 uses) -- the risk this script is designed around is exactly the one a
 concurrent write would reintroduce. Reads with ``mode=ro`` and a generous
-timeout, same as ``manual_scoring_accuracy.shared.load_paired_pellets``.
+timeout.
 
 USAGE
 -----
@@ -170,8 +170,8 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
 
     # Under the cross-task mutex: these SELECT * reads are exactly the long
     # SHARED locks that put a concurrently-committing import into PENDING
-    # starvation (22 minutes of "database is locked" for every reader,
-    # 2026-09-02). Serialized, this runs the moment the import finishes.
+    # starvation (minutes of "database is locked" for every reader).
+    # Serialized, this runs the moment the import finishes.
     from ..task_mutex import hold
     counts = {}
     with hold(waiting_for="the reach/brain import"):
@@ -181,8 +181,8 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
                 # flush=True: the scheduled task sends this output to a log
                 # file, where Python buffers it until the process ends -- a
                 # run that took an hour on a busy share looked exactly like a
-                # hung one (only its header in the log), and one was stopped
-                # by hand for that reason (2026-09-14).
+                # hung one (only its header in the log), and could be stopped
+                # by hand for that reason.
                 # A table newer than this database (animal_records before the first
                 # sheet import that creates it) is skipped, not a failed snapshot.
                 if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -225,8 +225,8 @@ def import_sheets_first(force: bool = False) -> bool:
     try:
         # Through sheet_sync so every cohort's outcome -- success OR the exact
         # error -- lands in the ledger the Tracking Sheets tab reads. The
-        # previous 'mousedb import --all' subprocess rolled back CNT_05 every
-        # hour for weeks and nobody could see it.
+        # previous 'mousedb import --all' subprocess could roll back a cohort's
+        # import on every run and nobody could see it.
         from mousedb.sheet_sync import import_cohorts
         r = import_cohorts(triggered_by="hourly-refresh")
         ok = True
@@ -279,8 +279,8 @@ def main(argv=None) -> int:
     # The retry wrapper is for the OTHER kind of blockage: a program this tool
     # does not control holding a database lock (see db_contention). The
     # cross-task mutex above cannot help there, and without a retry one locked
-    # moment cost a whole day's refresh -- three days running, at which point
-    # every number anybody looked at was three days old and nothing said so.
+    # moment cost a whole day's refresh -- and several such days in a row left
+    # every number anybody looked at days old with nothing saying so.
     # Re-reading from the start is safe: a refresh that could not begin wrote
     # nothing, and each table is swapped into place whole.
     #
@@ -288,13 +288,12 @@ def main(argv=None) -> int:
     # measured rather than guessed:
     #
     #  * This job is the long one. A successful refresh of a multi-gigabyte
-    #    database over a network share took 67 minutes on the machine this was
-    #    written for. A retry restarts it from the first table, so each extra
+    #    database over a network share can take over an hour. A retry restarts it from the first table, so each extra
     #    attempt costs another full run, and a generous window here would leave
     #    the job still going when the next scheduled job starts -- the exact
     #    overlap the mutex exists to prevent.
-    #  * A retry only ever rescues a SHORT lock. The locks that actually broke
-    #    this job lasted over an hour, and no window anybody would accept would
+    #  * A retry only ever rescues a SHORT lock. The locks that break this
+    #    job can last over an hour, and no window anybody would accept would
     #    have outlived them. What catches those is the snapshot's age being
     #    reported and flagged (see data_status.STALE_SNAPSHOT_HOURS), not more
     #    waiting here.
@@ -307,7 +306,7 @@ def main(argv=None) -> int:
     # per-cohort session exports in refresh_current. Read the file once
     # sequentially first and keep it open until the end, so those scans run
     # from the operating system's cache instead of 4 KB at a time over the
-    # share (3 hours cold against minutes warm; see mousedb.prefetch).
+    # share (hours cold against minutes warm; see mousedb.prefetch).
     from ..prefetch import warmed
     with warmed(require("db_path"), log=lambda m: print(m, flush=True)):
         try:
@@ -330,16 +329,16 @@ def retake_census() -> bool:
     """Retake the pipeline census for the Where Is My Data tab, after the
     snapshot it is joined with. Never raises; True when it was retaken.
 
-    WHY here: the census was taken only when someone pressed 'Refresh pipeline
-    view', and the tab showed a census seven weeks old as its pipeline counts
-    (found 2026-10-22). This job already runs nightly and the census joins with
+    WHY here: when the census was taken only when someone pressed 'Refresh
+    pipeline view', the tab could show a census weeks old as its pipeline
+    counts. This job already runs nightly and the census joins with
     the snapshot just written, so it goes last. It reads pipeline folders only
     -- no database lock is held. A failure does NOT change this job's exit
     code: the scheduler would re-run the whole snapshot for it. It is printed
     as [FAIL] here, and the tab shows the census's age in red once it is over
     data_status.STALE_CENSUS_HOURS.
     """
-    print("Retaking the pipeline census (read-only folder scan, 5-25 minutes)...",
+    print("Retaking the pipeline census (read-only folder scan, may take minutes)...",
           flush=True)
     try:
         from mousedb.pipeline_census import refresh as census_refresh
@@ -366,10 +365,9 @@ def _finish(counts: dict, force: bool) -> int:
     # ODC_sessions_*.csv files are the one export that needs the live
     # database. refresh() has just read that database safely -- it refused to
     # start if a watcher was running -- so after a successful snapshot the
-    # database IS readable. The hourly scheduled task runs without --force,
+    # database IS readable. The scheduled task runs without --force,
     # and tying db_ok to --force meant those files were never refreshed and
-    # MANIFEST.json said odc_sessions_refreshed=False every hour (found
-    # 2026-08-28). The guard is asked once more because the snapshot can take
+    # MANIFEST.json said odc_sessions_refreshed=False on every run. The guard is asked once more because the snapshot can take
     # a while and a watcher may have started since; --force still overrides
     # (that caller vouches nothing else can be writing).
     db_ok = force or (snapshot_ok and not watcher_blocks_db())

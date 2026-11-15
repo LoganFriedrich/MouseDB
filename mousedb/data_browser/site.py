@@ -407,7 +407,7 @@ SETTINGS = {
     "allow_download": False,
     "truncate_cells_html": 200,
     # Off: Datasette would otherwise try every column of a table, on every page
-    # load, to suggest facets -- 4 to 9 seconds per click on the reach tables.
+    # load, to suggest facets -- several seconds per click on a large reach table.
     # The useful facets are set per table (FACETS) and any column can still be
     # faceted from its heading's menu ("Facet by this").
     "suggest_facets": False,

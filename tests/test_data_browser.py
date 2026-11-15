@@ -2,8 +2,8 @@
 and never holding a snapshot file open.
 
 WHY THESE TESTS: the browser exists for people who leave windows open. A
-viewer holding the live database blocks the imports ("database is locked",
-2026-10); a viewer holding a snapshot file stops the nightly job replacing it.
+viewer holding the live database blocks the imports ("database is locked");
+a viewer holding a snapshot file stops the nightly job replacing it.
 Each test pins one part of how that is prevented (mousedb/data_browser).
 """
 import os

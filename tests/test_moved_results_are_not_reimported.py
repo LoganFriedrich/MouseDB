@@ -1,10 +1,10 @@
 """A results file that only moved folder is not imported again.
 
-WHY (2026-10-30): the finished-work folders were regrouped (each project's
-folder put under its grant). The reach import's ledger is keyed by path, so
-without this every moved file would have been hashed and re-imported: every
-reach of every moved cohort rewritten over the share, the multi-hour import
-that held the database lock on 2026-10-11. A moved file keeps its ledger entry;
+WHY: finished-work folders can be regrouped (e.g. each project's folder put
+under its grant). The reach import's ledger is keyed by path, so without this
+every moved file would be hashed and re-imported: every reach of every moved
+cohort rewritten over the share, a multi-hour import that holds the database
+lock. A moved file keeps its ledger entry;
 a moved file whose content changed is still imported.
 """
 import json

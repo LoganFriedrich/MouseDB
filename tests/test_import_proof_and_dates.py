@@ -449,7 +449,7 @@ class TestNoInventedDates:
 
     def test_a_brain_of_an_unknown_cohort_waits_instead_of_inventing_one(self, db):
         imp = BrainGlobeImporter(db)
-        brain = '357_CNT_09_08_1p625x_z4'
+        brain = '002_CNT_09_08_1p625x_z4'
         with db.session() as s:
             assert imp._ensure_brain_sample(s, brain, imp.parse_brain_name(brain), False) is None
             assert s.query(Cohort).filter_by(cohort_id='CNT_09').first() is None
@@ -473,7 +473,7 @@ class TestNoInventedDates:
     def test_a_refused_brain_says_why_in_its_error(self, tmp_path, db):
         # `import-brains --all` prints each brain's errors but never its
         # warnings, so an error that only points at a warning hides the reason.
-        brain = '357_CNT_09_08_1p625x_z4'
+        brain = '002_CNT_09_08_1p625x_z4'
         csv_path = tmp_path / (brain + '_counts.csv')
         csv_path.write_text('region,count\nroot,1\n')
         result = BrainGlobeImporter(db).import_region_counts(csv_path, brain_id=brain)
@@ -485,7 +485,7 @@ class TestNoInventedDates:
         with db.session() as s:
             s.add(Cohort(cohort_id='CNT_02', project_code='CNT', start_date=DAY0))
         imp = BrainGlobeImporter(db)
-        brain = '357_CNT_02_08_1p625x_z4'
+        brain = '002_CNT_02_08_1p625x_z4'
         with db.session() as s:
             assert imp._ensure_brain_sample(s, brain, imp.parse_brain_name(brain), False) is not None
             assert s.query(Subject).filter_by(subject_id='CNT_02_08').one().cohort_id == 'CNT_02'

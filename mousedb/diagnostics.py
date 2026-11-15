@@ -1,5 +1,5 @@
 """
-Data completeness diagnostics for Connectome Data Entry.
+Data completeness diagnostics for mousedb.
 
 Checks all cohorts (or a specific cohort) for missing data and flags issues
 using severity levels: CRITICAL, WARNING, INFO.

@@ -1,9 +1,8 @@
 """The contact columns: Not applicable on easy/flat for the algorithm; pellet words.
 
-WHY (Logan, 2026-10-26): "the algo shouldn't be analyzing pellet outcomes on easy
-and flat trays ... The result there should be 'not applicable' for the algo
-pellet/reach outcome for flat and easy trays and should be whatever the manual
-says for the manual pellet outcome." And a pellet nobody touched is "untouched";
+WHY: the algorithm does not analyze pellet outcomes on easy and flat trays, so
+there the algorithm's pellet/reach outcome is 'not applicable', and the manual
+pellet outcome is whatever the hand score says. And a pellet nobody touched is "untouched";
 "missed" is a word for a reach. The database computed 'missed' on every easy/flat
 reach and on every undecided pellet, and used 'missed' for untouched pellets.
 """
@@ -23,7 +22,7 @@ OLD_PELLET = "CASE WHEN score = 0 THEN 'missed' ELSE 'contacted' END"
 
 
 def _old_database(path):
-    """The shape the live database had before 2026-10-26."""
+    """The shape a database had before the 2026-10-26 schema change."""
     conn = sqlite3.connect(str(path))
     conn.executescript(f"""
         CREATE TABLE reach_data (id INTEGER PRIMARY KEY, tray_type TEXT, interaction_frame INTEGER,

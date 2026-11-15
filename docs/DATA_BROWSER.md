@@ -110,7 +110,8 @@ that snapshot was written and how old it was when you opened the browser.
 
 Why a copy and not the database itself: people leave viewers open for hours or
 days. A viewer holding the live database open makes the importers wait, and
-that once stopped the nightly imports for days ("database is locked"). A viewer
+that can stop the nightly imports ("database is locked") for as long as it
+stays open. A viewer
 holding the snapshot files open would stop the nightly job from replacing them.
 So the data browser opens neither: it reads the snapshot for a few seconds,
 once per new snapshot, makes its own copy in your own local folder, and shows

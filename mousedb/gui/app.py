@@ -1,5 +1,5 @@
 """
-Main PyQt application for Connectome Data Entry.
+Main PyQt application for mousedb data entry.
 
 A bulletproof data entry system for undergrads:
 - Constrained inputs only (dropdowns, number spinners)
@@ -4794,7 +4794,7 @@ class CohortSetupTab(QWidget):
         self.project_combo = QComboBox()
         self.project_combo.addItems(['CNT', 'ENCR', 'SCI'])
         self.project_combo.setEditable(True)
-        self.project_combo.setToolTip("Project code prefix (e.g. CNT for Connectome)")
+        self.project_combo.setToolTip("Project code prefix (e.g. CNT)")
         create_layout.addRow("Project Code:", self.project_combo)
 
         # Cohort number
@@ -6559,7 +6559,7 @@ class DataEntryWindow(QMainWindow):
         self._setup_ui()
 
     def _setup_ui(self):
-        self.setWindowTitle("Connectome Data Entry")
+        self.setWindowTitle("MouseDB Data Entry")
         self.setMinimumSize(900, 750)
         self.setStyleSheet(STYLESHEET)
 
@@ -6570,7 +6570,7 @@ class DataEntryWindow(QMainWindow):
         main_layout.setContentsMargins(10, 10, 10, 10)
 
         # Header
-        header = QLabel("Connectome Data Entry")
+        header = QLabel("MouseDB Data Entry")
         header.setObjectName("header")
         main_layout.addWidget(header)
 

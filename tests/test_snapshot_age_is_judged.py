@@ -52,7 +52,7 @@ def _census_taken(cache, hours_old):
 
 
 def test_a_census_that_stopped_being_retaken_is_called_out(tmp_path, _no_live_census):
-    # WHY (2026-10-22): a census seven weeks old was shown as the pipeline counts.
+    # WHY: a weeks-old census was shown as the pipeline counts.
     pytest.importorskip("pandas")
     _census_taken(_no_live_census, hours_old=24 * 50)
     st = data_status.status(_snapshot(tmp_path, hours_old=4))

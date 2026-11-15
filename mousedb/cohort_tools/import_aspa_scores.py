@@ -3,16 +3,16 @@
 WHY
 ---
 ASPA is a project exactly like CNT and its videos run through the same
-pipeline -- but until 2026-08-28 no ASPA manual score had ever reached the
-database, because `mousedb import` reads only Connectome_NN workbooks. With
+pipeline -- but `mousedb import` reads only the project-pattern cohort
+workbooks, so without this no ASPA manual score reaches the database. With
 no bench scores, the bench-vs-algorithm disagreement scan, the manual-vs-
 automated accuracy figures and the ODC session export all silently excluded
 every ASPA cohort. This closes that.
 
 THE SHEET
 ---------
-Each ASPA workbook (one per cohort letter: I.xlsx, J.xlsx, "K - Contusion
-70kd.xlsx" ...) has a tab '1 - ENTER DATA HERE' in a WIDE layout: one row
+Each ASPA workbook (one per cohort letter: I.xlsx, J.xlsx, "K - <description>.xlsx"
+...) has a tab '1 - ENTER DATA HERE' in a WIDE layout: one row
 per animal-day, then four tray blocks side by side --
 
     Test Date | Test Type | Tray Type | Test Phase | Group | Animal # |

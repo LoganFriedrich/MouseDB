@@ -1,7 +1,7 @@
 """Suite-wide guards.
 
 A unit test must never contend for the PRODUCTION database-task lock: when a
-real hourly task held it, the suite silently hung for minutes (2026-09-04).
+real scheduled task held it, the suite silently hung for minutes.
 Constructing TaskMutex without an explicit base_dir resolves to the
 production logs dir -- make that an instant, loud failure instead.
 """

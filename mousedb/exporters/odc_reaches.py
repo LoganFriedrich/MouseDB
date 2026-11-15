@@ -133,11 +133,11 @@ def _date(v) -> Optional[date]:
 #
 # WHY the declaration has to win: a cohort can finish its behaviour and still be
 # weeks away from its endpoint, and it can finish long ago while its last videos
-# are still arriving. Recency cannot see either. In this lab's own records one
-# cohort's last session was ten days old while the owner knew the cohort was
-# finished -- so a tool deciding from dates alone would have called it live.
+# are still arriving. Recency cannot see either. A cohort's last session can be
+# days old while its owner knows the cohort is finished -- so a tool deciding
+# from dates alone would call it live.
 #
-# WHY A MONTH: sessions run on a near-daily cadence, so even a fortnight of
+# WHY A MONTH: where sessions run on a near-daily cadence, even a fortnight of
 # silence is longer than any gap inside a running study -- but a real study has
 # real interruptions: a break between stages, a holiday, equipment down, a person
 # away. A month clears all of those without having to enumerate them.
@@ -391,7 +391,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     cols["Video_Retrieved"] = video.map(retr).astype("Int64")
     cols["Video_Contacted"] = cols["Video_Displaced"] + cols["Video_Retrieved"]
     # Easy and Flat: pellets are presented but not tracked and no outcome is
-    # computed (lab decision, 2026-10-23), so their pellet and outcome counts
+    # computed, so their pellet and outcome counts
     # are unknown, not zero. Blank them; the reach count and attention stay.
     outcome_free = trays.outcome_free(rc)
     for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted"):

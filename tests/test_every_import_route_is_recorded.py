@@ -386,7 +386,7 @@ class TestARequestNamesOnlyItsOwnCohort:
     @pytest.mark.parametrize("asked", ["ASPA_J", "aspa_j", "ASPAJ"])
     def test_an_aspa_cohort_named_by_its_letter_still_imports(self, folder, importer,
                                                               monkeypatch, asked):
-        """The lab names these cohorts by letter, and the Tracking Sheets tab
+        """The ASPA sheets name these cohorts by letter, and the Tracking Sheets tab
         labels a letter cohort whose status lookup failed 'ASPA_J'. The old
         last-character fallback imported J for these; refusing a trailing DIGIT
         (ASPA_99 above) must not also refuse a trailing letter."""

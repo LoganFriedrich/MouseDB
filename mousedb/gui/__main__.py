@@ -6,8 +6,8 @@ with two differences that matter when it is started by a double-click:
 
 * It is started with ``pythonw`` (no console window), never through the
   ``Scripts\\mousedb-entry.exe`` shim: a shim held open by a running window
-  blocks ``pip install`` of the package, which is how a reviewer's open window
-  once stopped a deploy.
+  blocks ``pip install`` of the package, so an open window would stop a
+  deploy.
 * With no console, a failure would otherwise vanish without a word. So
   anything the window prints goes to a log file, and a failure to start is
   shown in a message box that says what went wrong and where the log is.

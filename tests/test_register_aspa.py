@@ -7,13 +7,14 @@ will not write reach data for an animal it has never heard of.
 Registering them from the frozen ASPA workbooks is not "read the sheet". Those
 workbooks are hand-kept and not uniform:
 
-  - `I.xlsx` carries 40 H-cohort animals in its *Weights* and *balance* tabs,
-    identical to `H.xlsx`, left over from copying that workbook. The real I
-    animals are in *"Ramp" Training Data*. Reading a fixed sheet by name would
-    have registered forty H animals as cohort I.
-  - `H.xlsx` likewise carries leftover G data in *Sheet1* and *Group
-    distribution*.
-  - The earlier cohorts write the animal id itself as `OptD12`, not `D12`.
+  - a workbook can carry an earlier cohort's animals in some tabs, left over
+    from copying that cohort's workbook, while its own animals are in another
+    tab. Reading a fixed sheet by name would register the earlier cohort's
+    animals under this cohort's letter.
+  - the earlier cohort's own workbook can likewise carry leftover data from
+    the cohort before it.
+  - some workbooks write the animal id itself with an `Opt` prefix
+    (`OptX12`, not `X12`).
 
 So the rule is: ids matching THIS cohort's own letter, anywhere in its workbook,
 cross-checked against the videos that exist. These tests pin that rule against
@@ -43,21 +44,21 @@ def _workbook(tmp_path, name, sheets):
 class TestOnlyThisCohortsAnimals:
 
     def test_leftover_animals_from_another_cohort_are_ignored(self, tmp_path):
-        """The I.xlsx case: 40 H animals sitting in the I workbook."""
-        p = _workbook(tmp_path, "I.xlsx", {
-            "Weights": ["An#"] + ["H%d" % n for n in range(1, 41)],
-            "Ramp Training Data": ["An#"] + ["I%d" % n for n in range(1, 19)],
+        """An earlier cohort's animals left over in this cohort's workbook."""
+        p = _workbook(tmp_path, "Y.xlsx", {
+            "Weights": ["An#"] + ["X%d" % n for n in range(1, 13)],
+            "Training Data": ["An#"] + ["Y%d" % n for n in range(1, 9)],
         })
-        found = animals_in_sheet(p, "I")
-        assert found == set(range(1, 19)), "must not pick up the H animals"
+        found = animals_in_sheet(p, "Y")
+        assert found == set(range(1, 9)), "must not pick up the X animals"
 
     def test_the_other_cohort_reads_its_own(self, tmp_path):
-        p = _workbook(tmp_path, "H.xlsx", {
-            "Weights": ["An#"] + ["H%d" % n for n in range(1, 41)],
-            "Sheet1": ["G%d" % n for n in range(1, 41)],     # leftover G data
+        p = _workbook(tmp_path, "X.xlsx", {
+            "Weights": ["An#"] + ["X%d" % n for n in range(1, 13)],
+            "Sheet1": ["W%d" % n for n in range(1, 13)],     # leftover W data
         })
-        assert animals_in_sheet(p, "H") == set(range(1, 41))
-        assert animals_in_sheet(p, "G") == set(range(1, 41))
+        assert animals_in_sheet(p, "X") == set(range(1, 13))
+        assert animals_in_sheet(p, "W") == set(range(1, 13))
 
 
 class TestIdShapes:
@@ -72,12 +73,12 @@ class TestIdShapes:
         assert animals_in_sheet(p, "J") == {6, 7}
 
     def test_the_opt_prefixed_form(self, tmp_path):
-        """D, E, F and G write the animal as OptD12. Without this they yield none."""
+        """Some workbooks write the animal as OptD12. Without this they yield none."""
         p = _workbook(tmp_path, "OptD.xlsx", {"Weights": ["OptD1", "OptD12"]})
         assert animals_in_sheet(p, "D") == {1, 12}
 
     def test_a_gap_in_the_numbering_survives(self, tmp_path):
-        """J really has no animal 12; the list must not be filled in."""
+        """A cohort with no animal 12 keeps the gap; the list must not be filled in."""
         p = _workbook(tmp_path, "J.xlsx",
                       {"Weights": ["J%d" % n for n in [1, 2, 3, 11, 13, 14]]})
         assert 12 not in animals_in_sheet(p, "J")
@@ -137,7 +138,7 @@ class TestThePlanIsReadOnly:
         entries = [{"letter": "J", "cohort_id": "ASPA_10", "sheet": "J.xlsx",
                     "in_sheet": [1, 2], "with_video": [1],
                     "video_only": [], "register": [1, 2],
-                    "start_date": "2022-08-11"}]
+                    "start_date": "2022-01-10"}]
         counts = ra.register(entries, apply=False)
 
         assert added == [], "a dry run must add nothing and commit nothing"
@@ -145,8 +146,8 @@ class TestThePlanIsReadOnly:
 
 
 class TestStartDate:
-    """cohorts.start_date is NOT NULL; the first real --apply crashed on it
-    (2026-08-28) because the tool never supplied one."""
+    """cohorts.start_date is NOT NULL; an --apply crashed on it because the
+    tool never supplied one."""
 
     def _fake_db(self, monkeypatch, added):
         class FakeSession:
@@ -181,11 +182,11 @@ class TestStartDate:
         self._fake_db(monkeypatch, added)
         entries = [{"letter": "J", "cohort_id": "ASPA_10", "sheet": "J.xlsx",
                     "in_sheet": [1], "with_video": [1], "video_only": [],
-                    "register": [1], "start_date": "2022-08-11"}]
+                    "register": [1], "start_date": "2022-01-10"}]
         ra.register(entries, apply=True)
         cohorts = [o for o in added if isinstance(o, Cohort)]
         assert len(cohorts) == 1
-        assert str(cohorts[0].start_date) == "2022-08-11"
+        assert str(cohorts[0].start_date) == "2022-01-10"
 
     def test_a_cohort_with_no_start_date_is_skipped_not_invented(self, monkeypatch):
         import mousedb.cohort_tools.register_aspa as ra

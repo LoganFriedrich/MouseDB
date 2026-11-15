@@ -110,9 +110,9 @@ def is_form_tab(records: List[dict]) -> bool:
 
     Some tabs are kept as templates: carried from an older sheet, pre-filled to
     show whoever enters the real data what shape it takes.
-    ``5_SC_Injection_Details`` is one -- every row reads Subject_ID +
-    2026-02-08 + "SC Injection" + the standard anesthetic/analgesic, six months
-    before that surgery is due, with every per-animal field blank.
+    ``5_SC_Injection_Details`` can be one -- every row reads Subject_ID +
+    a placeholder date + "SC Injection" + the standard anesthetic/analgesic,
+    months before that surgery is due, with every per-animal field blank.
 
     Ingesting those as records asserts things that never happened -- an injection
     date, in a data submission.
@@ -128,8 +128,8 @@ def is_form_tab(records: List[dict]) -> bool:
 
     NOTE -- this is a WARNING signal only, never an action. It cannot be trusted
     to decide anything, because a form and a genuinely-uniform record are
-    structurally identical: 0a_Metadata is uniform too (one litter, all male, one
-    cohort, nobody dead yet) and is entirely real. Nothing in the file
+    structurally identical: 0a_Metadata can be uniform too (one litter, one sex,
+    one cohort, nobody dead yet) and be entirely real. Nothing in the file
     distinguishes "uniform because template" from "uniform because true".
 
     Which tabs are forms is knowledge the lab has and the workbook does not, so it
@@ -396,7 +396,7 @@ def main(argv=None) -> int:
             "Populate a cohort's 2_ODC_Animal_Tracking tab by deriving it from the "
             "workbook's other tabs. Reads only; writes a new file for review. "
             "Fields whose phase has not happened yet are left EMPTY, not zero."),
-        epilog="Example:\n  mousedb-odc-build --source Connectome_05_Animal_Tracking.xlsx\n",
+        epilog="Example:\n  mousedb-odc-build --source ProjectA_05_Animal_Tracking.xlsx\n",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--source", required=True, help="Cohort tracking .xlsx.")
     parser.add_argument("--out", default=None, help="Output .xlsx (default: <name>_ODC.xlsx alongside).")

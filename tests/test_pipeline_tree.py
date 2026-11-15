@@ -24,15 +24,15 @@ def _touch(p: Path) -> Path:
 
 def _tree(root: Path) -> Path:
     """One live copy, plus the same name everywhere it must NOT be read."""
-    live = _touch(root / "Analyzed" / "Connectome" / "CNT01" / f"{STEM}_features.json")
+    live = _touch(root / "Analyzed" / "GrantA" / "CNT01" / f"{STEM}_features.json")
     for decoy in (
         "Analyzed/Archive/DLC Model 4.0/seg2.2.4_reach8.1.0_out6.1.0_asn2.1.0",
         "Analyzed/Archive/superseded_processing_root_3.1",
-        "Analyzed/Connectome/DLC Model 4/CNT01",
-        "Analyzed/Connectome/CNT01/Multi-Animal",
+        "Analyzed/GrantA/DLC Model 4/CNT01",
+        "Analyzed/GrantA/CNT01/Multi-Animal",
         "Analyzed/Folder Template",
         "Analyzed/UNKNOWN",
-        "Analyzed/Connectome/CNT01/_retired",
+        "Analyzed/GrantA/CNT01/_retired",
         "Analyzed/.inflight/host",
     ):
         _touch(root / decoy / f"{STEM}_features.json")
@@ -47,7 +47,7 @@ class TestTheRule:
             assert is_skipped_dir(name), name
 
     def test_real_folders_are_not_skipped(self):
-        for name in ("Connectome", "CNT01", "ASPA", "triage", "20250101_CNT0101_P1"):
+        for name in ("GrantA", "CNT01", "ASPA", "triage", "20250101_CNT0101_P1"):
             assert not is_skipped_dir(name), name
 
     def test_only_the_live_copy_is_found(self, tmp_path):
@@ -73,7 +73,7 @@ class TestTheReachImport:
         live = _tree(tmp_path)
         bundle = _touch(tmp_path / "Processing" / "Review" / "triage" / STEM / f"{STEM}_features.json")
         _touch(tmp_path / "Processing" / "Review" / "_Problematic" / STEM / f"{STEM}_features.json")
-        _touch(tmp_path / "Processing" / "_leftovers_2026-09-14" / "DLC_Complete" / f"{STEM}_features.json")
+        _touch(tmp_path / "Processing" / "_leftovers_2026-01-01" / "DLC_Complete" / f"{STEM}_features.json")
         assert find_features_files(tmp_path, include_processing=True) == sorted([live, bundle])
         assert find_features_files(tmp_path) == [live]
 
@@ -85,7 +85,7 @@ class TestTheFinishedCheck:
         not pass as finished."""
         import mousedb.analyzable as an
         live, held = STEM, "20250101_CNT0102_P1"
-        _touch(tmp_path / "Analyzed" / "Connectome" / "CNT01" / f"{live}_processing_manifest.json")
+        _touch(tmp_path / "Analyzed" / "GrantA" / "CNT01" / f"{live}_processing_manifest.json")
         _touch(tmp_path / "Analyzed" / "Archive" / "DLC Model 4.0" / "seg2.2.4_reach8.1.0_out6.1.0_asn2.1.0"
                / f"{held}_processing_manifest.json")
         row = {"pipeline_versions": {"segmenter": "2.0"}, "dlc_scorer": "NEW"}

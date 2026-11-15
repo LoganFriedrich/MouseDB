@@ -1,8 +1,7 @@
 """What needs a person is gathered and shown, and written beside each sheet.
 
-WHY (Logan, 2026-10-26): "There needs to be a way to alert a human to an
-issue of the kind you are hunting down." -- a date the import read as a
-typo, a failed import, a video whose hand-score check cannot run. (A session
+WHY: there needs to be a way to alert a human to an issue only a person
+can fix -- a date the import read as a typo, a failed import, a video whose hand-score check cannot run. (A session
 with no hand scores is not one: never scored, nothing to compare.) Shown in red on Where Is
 My Data, and written per cohort into "!! <cohort> - FIX THESE.xlsx" beside its
 sheet, where the sheet is fixed.
