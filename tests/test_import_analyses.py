@@ -489,3 +489,9 @@ class TestImportBrainsExitCode:
         monkeypatch.setattr(cli, "cmd_status", lambda args: None)
         monkeypatch.setattr(sys, "argv", ["mousedb", "status"])
         cli.main()          # no SystemExit: success stays success
+
+    def test_an_unreachable_summary_folder_fails_with_a_fail_line(self, tmp_path, monkeypatch, capsys):
+        cli = self._setup(tmp_path, monkeypatch)
+        rc = cli._import_brains_body(self._args(tmp_path), tmp_path / "missing")
+        last = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()][-1]
+        assert rc == 1 and last.startswith("[FAIL]")

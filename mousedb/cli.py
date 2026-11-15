@@ -1036,8 +1036,9 @@ def _import_brains_body(args, summary_dir):
         if not brain_id:
             brain_id = importer._extract_brain_from_path(csv_path)
         if not brain_id:
-            print("Error: Could not determine brain ID. Use --brain to specify.")
-            sys.exit(1)
+            print("[FAIL] Could not determine the brain ID from %s. Use --brain to specify."
+                  % csv_path.name)
+            return 1
 
         if args.update:
             _delete_brain_data(db, brain_id, dry_run)
@@ -1064,8 +1065,8 @@ def _import_brains_body(args, summary_dir):
     if args.all:
         # Import everything from summary directory
         if not summary_dir.exists():
-            print(f"Error: Summary directory not found: {summary_dir}")
-            sys.exit(1)
+            print(f"[FAIL] Summary directory not found: {summary_dir}")
+            return 1
 
         print(f"{prefix}Importing all brain data from: {summary_dir}")
         print("=" * 60)
@@ -1164,8 +1165,8 @@ def _import_brains_body(args, summary_dir):
         return 0
 
     # No action specified
-    print("Specify --all, --csv, or --calibration. Use --help for details.")
-    sys.exit(1)
+    print("[FAIL] Specify --all, --csv, or --calibration. Use --help for details.")
+    return 1
 
 
 def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run, elife_csv=None):
