@@ -79,3 +79,53 @@ def test_the_backfill_fills_pellets_and_touches_nothing_else(tmp_path, monkeypat
     assert conn.execute("SELECT COUNT(*) FROM video_pellets").fetchone()[0] == 20
     assert conn.execute("SELECT COUNT(*) FROM reach_data").fetchone()[0] == before
     assert any("20 pellets: 1 videos" in s for s in said)
+
+
+def test_the_backfill_skips_a_filed_video_whose_newer_run_is_in_review(tmp_path, monkeypatch):
+    """--pellets-only applies the import's own test: a filed video whose newer
+    run waits in review is not done, so its filed copy's pellets are not
+    written. Rows it already has are left as they are (the import's
+    withdrawal step takes them out, after copying them aside)."""
+    import os
+    conn = _db(tmp_path)
+    root = tmp_path / "pipe"
+    folder = root / "Analyzed" / "Project"
+    folder.mkdir(parents=True)
+    filed = _features(folder)
+    queue = root / "Processing" / "Review" / "triage" / "Pending" / VIDEO
+    queue.mkdir(parents=True)
+    newer = _features(queue, n_pellets=18)
+    t = filed.stat().st_mtime
+    os.utime(newer, (t + 3600, t + 3600))          # the run in review is the newer one
+    conn.execute("DELETE FROM video_pellets")
+    conn.commit()
+
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+    monkeypatch.setattr(ir, "require", lambda key: tmp_path / "t.db" if key == "db_path" else root)
+    said = []
+    out = ir.backfill_video_pellets(log=said.append)
+    assert conn.execute("SELECT COUNT(*) FROM video_pellets").fetchone()[0] == 0
+    assert out["videos"] == 0
+    assert any("1 filed videos skipped: a newer run is in review" in s for s in said)
+
+
+def test_the_backfill_still_fills_a_video_whose_queued_copy_is_older(tmp_path, monkeypatch):
+    """A leftover copy in a queue that is OLDER than the filed run changes nothing."""
+    import os
+    conn = _db(tmp_path)
+    root = tmp_path / "pipe"
+    folder = root / "Analyzed" / "Project"
+    folder.mkdir(parents=True)
+    filed = _features(folder)
+    queue = root / "Processing" / "Review" / "triage" / "Pending" / VIDEO
+    queue.mkdir(parents=True)
+    older = _features(queue, n_pellets=18)
+    t = filed.stat().st_mtime
+    os.utime(older, (t - 3600, t - 3600))
+    conn.execute("DELETE FROM video_pellets")
+    conn.commit()
+
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+    monkeypatch.setattr(ir, "require", lambda key: tmp_path / "t.db" if key == "db_path" else root)
+    ir.backfill_video_pellets(log=lambda *_: None)
+    assert conn.execute("SELECT COUNT(*) FROM video_pellets").fetchone()[0] == 20

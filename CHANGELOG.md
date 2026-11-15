@@ -76,6 +76,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb import-reaches --pellets-only` skips a filed video whose newer run
+  waits in a review queue, as the import itself does, and says how many it
+  skipped. It used to write that video's filed pellet answers -- the ones
+  being reviewed -- back into `video_pellets`, where they stayed in the
+  exports until the next import took them out. Rows such a video already
+  has are left for the import, which copies them aside before removing them.
 - A save whose automatic re-derivation of a cohort's test phases fails (in the
   MouseDB window, or a sheet import) no longer leaves the labels wrong with only
   a console line to show for it: the cohort goes on the reach import's list of
