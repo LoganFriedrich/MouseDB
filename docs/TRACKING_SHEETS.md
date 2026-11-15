@@ -152,7 +152,12 @@ imports of that cohort's sheet wrote:
   from the sheet; the hand-typed values stand ...`): correct it by hand if
   the sheet is right.
 - **Animals are never removed** by an import, even when the sheet no longer
-  lists them: an animal can exist because of its videos alone.
+  lists them: an animal can exist because of its videos alone. One thing
+  about an animal IS corrected: a contusion row saying the animal did not
+  survive marks it dead on that day, so when such a row is removed (a row
+  copied in from another cohort's workbook, say) and nothing left in the
+  sheet says the animal died, the death is undone and listed
+  (`N deaths undone`).
 - When an import removes a session date, or adds one, the cohort's **phases
   are worked out again in the same import**, for its pellet scores and its
   reaches, and the import says how many rows were relabelled. The hand-scores

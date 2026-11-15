@@ -11,7 +11,8 @@ checked-in code, not what's planned.
   days, surgeries) it corrects a value the sheet now gives differently and
   removes a row the sheet no longer holds -- a session moved to another
   cohort's workbook, or rows a copied workbook carried over from the previous
-  cohort. Rows typed in by hand are never touched (a warning names any that
+  cohort (and a death such a copied contusion row recorded is undone).
+  Rows typed in by hand are never touched (a warning names any that
   disagree with the sheet); animals are never removed. Every change and
   removal is in the import's output, in its ledger line (`sheet_sync`, kept
   whole) and in the audit log, with the old values. A sheet that reads as

@@ -1193,6 +1193,9 @@ class ExcelImporter:
             if pd.notna(survived):
                 survived_str = str(survived).strip().upper()
                 if survived_str in ('N', 'NO', 'FALSE', '0'):
+                    # Remembered, so removing an older contusion row cannot
+                    # undo a death this sheet still records (_undo_copied_death).
+                    self.__dict__.setdefault('_marked_dead', set()).add(subject_id)
                     # Mark subject as inactive (dead)
                     subject = session.query(Subject).filter_by(subject_id=subject_id).first()
                     if subject and not dry_run:
@@ -1587,12 +1590,40 @@ class ExcelImporter:
             if not dry_run:
                 self._audit(session, 'DELETE', table, r.id, old=old)
                 session.delete(r)
+            if table == 'surgeries' and r.surgery_type == 'contusion':
+                self._undo_copied_death(session, r, dry_run)
         if not dry_run:
             session.flush()
         if changed:
             self.imported_counts['%s_changed' % table] = len(changed)
         if gone:
             self.imported_counts['%s_removed' % table] = len(gone)
+
+    def _undo_copied_death(self, session, surgery, dry_run: bool):
+        """A contusion row being removed may be what marked its animal dead:
+        the contusion reader sets is_active = 0 and date_of_death = the
+        surgery's date when the row says the animal did not survive. A row
+        copied in from another cohort's workbook therefore also copied that
+        cohort's deaths onto living animals. When the removed row is the one
+        that did it -- the animal is marked inactive, its death is dated that
+        surgery's day, and nothing in this sheet marks it dead now -- the
+        death is undone, logged in the audit log and listed in sheet_sync."""
+        subject = session.query(Subject).filter_by(subject_id=surgery.subject_id).first()
+        if (subject is None or subject.is_active not in (0, False)
+                or subject.date_of_death != surgery.surgery_date
+                or subject.subject_id in self.__dict__.get('_marked_dead', set())):
+            return
+        report = self._sync_state().setdefault('subjects', {})
+        report.setdefault('death_undone', []).append({
+            'subject_id': subject.subject_id, 'date_of_death': _iso(subject.date_of_death),
+            'because': 'the contusion row of that day, which said the animal did not '
+                       'survive, is no longer in the sheet'})
+        if not dry_run:
+            self._audit(session, 'UPDATE', 'subjects', subject.subject_id,
+                        {'is_active': 0, 'date_of_death': _iso(subject.date_of_death)},
+                        {'is_active': 1, 'date_of_death': None})
+            subject.is_active = 1
+            subject.date_of_death = None
 
     def _refuse_unread_tray_tab(self, session, cohort_id: str, why: str):
         """The tray tab could not be read at all: if the database holds scores
@@ -2820,7 +2851,7 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_seen_rows', '_unread_tabs',
+                     '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead', '_seen_rows', '_unread_tabs',
                      '_notes_cleared'):
             self.__dict__.pop(name, None)
 

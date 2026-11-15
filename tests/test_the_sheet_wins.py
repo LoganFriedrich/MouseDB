@@ -459,3 +459,26 @@ def test_filling_in_values_typed_later_is_not_a_broken_read(tmp_path):
     r = _import(db, _workbook(_sheet(tmp_path),
                               ramp=[(a, d, 22.0, 9.0, 2.5) for a in ANIMALS for d in days]))
     assert any(x.startswith("NOT SYNCED ramp_entries") for x in r["sheet_sync"]["refused"])
+
+
+def test_a_death_copied_in_with_a_removed_contusion_is_undone(tmp_path):
+    """A copied workbook carried the previous cohort's contusion rows, some
+    saying the animal did not survive -- so living animals were marked dead
+    on that day. Removing the copied row undoes the death it recorded, and
+    only that one."""
+    db = _db(tmp_path)
+    p = _workbook(_sheet(tmp_path), surgeries=[(a, date(2026, 1, 20), 20.0, 70) for a in ANIMALS])
+    wb = openpyxl.load_workbook(p)
+    wb["4_Contusion_Injury_Details"]["F2"] = "N"      # first animal "did not survive"
+    wb.save(p)
+    _import(db, p)
+    with db.session() as s:
+        assert s.query(Subject).filter_by(subject_id=ANIMALS[0]).one().is_active == 0
+
+    r = _import(db, _workbook(_sheet(tmp_path)), allow=True)
+
+    with db.session() as s:
+        a = s.query(Subject).filter_by(subject_id=ANIMALS[0]).one()
+        assert a.is_active == 1 and a.date_of_death is None
+    assert r["sheet_sync"]["subjects"]["death_undone"][0]["subject_id"] == ANIMALS[0]
+    assert "1 death undone" in sheet_sync.sync_summary(r)
