@@ -385,6 +385,21 @@ def test_a_dry_run_reports_what_would_change_and_writes_nothing(tmp_path):
         assert not s.query(AuditLog).filter_by(action="DELETE").count()
 
 
+def test_an_animal_first_seen_in_a_video_loses_its_placeholder_note(tmp_path):
+    db = _db(tmp_path)
+    with db.session() as s:
+        s.query(Subject).filter_by(subject_id=ANIMALS[0]).update(
+            {"notes": "auto-created from video 20260302_PROJA0101_P1 by the reach import"})
+
+    r = _import(db, _workbook(_sheet(tmp_path)))
+
+    with db.session() as s:
+        note = s.query(Subject).filter_by(subject_id=ANIMALS[0]).one().notes
+    assert not note.lower().startswith("auto-created") and "20260302_PROJA0101_P1" in note
+    assert r["sheet_sync"]["subjects"]["notes_cleared"][0]["subject_id"] == ANIMALS[0]
+    assert r["imported"]["subject_notes_cleared"] == 1
+
+
 def test_ramp_rows_no_longer_in_the_sheet_are_removed(tmp_path):
     db = _db(tmp_path)
     ramp = [(a, date(2026, 2, 23) + timedelta(days=i), 22.0) for a in ANIMALS for i in range(3)]

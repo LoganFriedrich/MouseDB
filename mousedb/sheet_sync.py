@@ -938,6 +938,9 @@ def sync_summary(entry: dict) -> Optional[str]:
             bits.append("session date%s no longer in the sheet: %s" % (
                 "" if len(what["dates_removed"]) == 1 else "s",
                 ", ".join(what["dates_removed"])))
+        if what.get("notes_cleared"):
+            bits.append("%d placeholder note%s replaced" % (
+                len(what["notes_cleared"]), "" if len(what["notes_cleared"]) == 1 else "s"))
         if bits:
             parts.append("%s: %s" % (table, "; ".join(bits)))
     if not parts:

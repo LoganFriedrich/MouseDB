@@ -2793,7 +2793,8 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync', '_phase_refresh', '_seen_rows', '_unread_tabs'):
+                     '_sheet_sync', '_phase_refresh', '_seen_rows', '_unread_tabs',
+                     '_notes_cleared'):
             self.__dict__.pop(name, None)
 
     def _warn_once(self, key, text: str):
@@ -3011,7 +3012,34 @@ class ExcelImporter:
                 session.add(subject)
                 session.flush()
             self.imported_counts['subjects'] = self.imported_counts.get('subjects', 0) + 1
+        elif str(existing.notes or '').lower().startswith('auto-created'):
+            # The animal was first created from a video, before its sheet named
+            # it, with a placeholder note saying so (import_reaches). The sheet
+            # names it now, so the note is no longer true -- and it is how the
+            # data status counts "animals created from video only". Replaced
+            # once, the first time a sheet row names the animal (the same rule
+            # import_cohort_file applies to an auto-created cohort).
+            self._clear_auto_created_note(session, existing, dry_run)
         return True
+
+    def _clear_auto_created_note(self, session, subject, dry_run: bool):
+        """Replace a subject's "auto-created" placeholder note, keeping what it
+        said as history, logged in the audit log and listed in sheet_sync."""
+        done = self.__dict__.setdefault('_notes_cleared', set())
+        if subject.subject_id in done:
+            return
+        done.add(subject.subject_id)
+        old = subject.notes
+        new = "Named by its tracking sheet (before that: %s)" % old
+        report = self._sync_state().setdefault('subjects', {})
+        report.setdefault('notes_cleared', []).append(
+            {'subject_id': subject.subject_id, 'old': old, 'new': new})
+        self.imported_counts['subject_notes_cleared'] = (
+            self.imported_counts.get('subject_notes_cleared', 0) + 1)
+        if not dry_run:
+            self._audit(session, 'UPDATE', 'subjects', subject.subject_id,
+                        {'notes': old}, {'notes': new})
+            subject.notes = new
 
     def _subject_known(self, session, subject_id: str) -> bool:
         """True if the animal is in the database already -- or, in a dry run,
