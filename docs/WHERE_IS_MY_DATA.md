@@ -559,9 +559,13 @@ computer. The marker is `<mousedb_root>/logs/.update.task.lock`
 runs, an `update.lock` is written beside it too and touched every minute
 until the update ends, so a window still running an earlier version of this
 tool -- which treats an `update.lock` older than two hours as left over --
-also sees it and refuses, however long the update takes; and an update
-started by such a window is respected the same way (an `update.lock` whose
-program has gone is ignored). A
+also sees it and refuses, however long the update takes. An update
+started by such an earlier-version window is respected too: its
+`update.lock` does not say which computer wrote it, so it is respected while
+its program is still running on this computer, and otherwise for up to 2
+hours from its start (the earlier versions' own rule) -- it may be running
+on another computer. If that update crashed, a press is refused until those
+2 hours have passed. A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
 

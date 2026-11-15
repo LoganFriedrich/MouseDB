@@ -231,10 +231,30 @@ def test_a_running_update_of_an_earlier_version_is_respected(root):
     assert (root / "logs" / up.LEGACY_LOCK_NAME).exists()       # not ours to remove
 
 
-def test_a_dead_earlier_versions_marker_is_ignored(root):
+def _age(path, hours):
+    old = time.time() - hours * 3600
+    os.utime(path, (old, old))
+
+
+def test_an_earlier_versions_update_on_another_computer_is_respected(root):
+    """The earlier versions' marker names a pid but not the computer. A pid
+    that does not exist here may be an update running on another computer
+    that shares the logs folder, so it is not proof the update died: a marker
+    younger than two hours (the earlier versions' own rule) is refused."""
     _legacy_marker(root / "logs", 999999999, "2026-01-01T00:00:00")
+    _age(root / "logs" / up.LEGACY_LOCK_NAME, 5 / 60)       # started 5 minutes ago
+    r = _runner()
+    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    assert res.skipped and r.calls == [] and "earlier version" in res.message
+    assert (root / "logs" / up.LEGACY_LOCK_NAME).exists()       # not ours to remove
+
+
+def test_a_dead_earlier_versions_marker_is_taken_over_after_two_hours(root):
+    _legacy_marker(root / "logs", 999999999, "2026-01-01T00:00:00")
+    _age(root / "logs" / up.LEGACY_LOCK_NAME, 3)
     r = _runner()
     assert up.run_update(triggered_by="test", runner=r, log=lambda s: None).ok
+    assert r.calls
 
 
 def test_an_earlier_version_sees_this_update_running(root):

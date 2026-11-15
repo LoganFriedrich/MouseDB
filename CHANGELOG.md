@@ -140,6 +140,10 @@ checked-in code, not what's planned.
   The old `update.lock` is still written, and touched every minute while the
   update runs, so a window running an earlier version (which takes over an
   `update.lock` older than 2 hours) refuses for the whole update.
+  An update started by an earlier version is respected while its program
+  runs on this computer, and otherwise for up to 2 hours from its start: its
+  `update.lock` does not name its computer, so a program missing here may be
+  running on another one.
 - The snapshot refresh's `--retry-minutes` window now starts at the first
   "database is locked", not when the job starts. Time spent waiting for an
   import to finish (up to `--lock-wait-minutes`) used to spend the window, so

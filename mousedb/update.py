@@ -91,6 +91,9 @@ LOCK_MUTEX_NAME = "update"
 # update holds the lock (_start_legacy_heartbeat). Written once and left, it
 # would let an old window start a second update two hours in.
 LEGACY_LOCK_NAME = "update.lock"
+# The earlier versions' age rule, used here for an earlier-version marker whose
+# process this computer cannot find (see _legacy_holder).
+LEGACY_MARKER_HOURS = 2
 # Only for a holder this computer cannot look up (an update started on another
 # computer that shares the logs folder): its lockfile is touched every minute
 # while it runs, so one untouched this long belongs to an update that died.
@@ -219,28 +222,44 @@ def _acquire_lock(logs: Path, log: Callable[[str], None]):
 def _legacy_holder(logs: Path) -> Optional[str]:
     """When an earlier version's update is running: when it started, else None.
 
-    It is running if the marker names a process that is still alive. A marker
-    whose process is gone, or that cannot be read, is left over and ignored."""
+    The earlier versions' marker names a process (pid) but not the computer it
+    runs on, and the logs folder can be shared by several computers. So:
+
+    - a process with that pid, started before the marker was written, is
+      running HERE: the update is running, however old the marker is;
+    - otherwise this computer cannot tell. A pid missing here may belong to an
+      update running on another computer, so a missing pid is not proof that
+      the update died. The earlier versions' own rule decides: a marker
+      younger than two hours (LEGACY_MARKER_HOURS) is a running update, an
+      older one is left over and ignored. A crashed earlier-version update
+      therefore blocks presses for at most two hours from its start, which is
+      what the earlier versions themselves did.
+
+    A marker that cannot be read is ignored."""
+    marker = logs / LEGACY_LOCK_NAME
     try:
-        info = json.loads((logs / LEGACY_LOCK_NAME).read_text(encoding="utf-8"))
+        info = json.loads(marker.read_text(encoding="utf-8"))
         pid = int(info["pid"])
     except Exception:
         return None
     if info.get("token"):
         return None             # written by this version: the task lock decides
+    alive = False
     try:
         import psutil
-        alive = psutil.pid_exists(pid)
-        if alive:
+        if psutil.pid_exists(pid):
             # A pid reused by a process started after the marker was written
             # is not the update that wrote it.
             started = datetime.fromisoformat(str(info.get("started"))).timestamp()
             alive = psutil.Process(pid).create_time() <= started + 2
     except Exception:
-        # Cannot look the process up: the earlier versions' own rule -- a
-        # marker younger than two hours is a running update.
+        alive = False
+    if not alive:
+        # Not running on this computer (or not checkable): it may be running
+        # on another one. The earlier versions wrote the marker once at the
+        # start, so its age is the update's age.
         try:
-            alive = time.time() - (logs / LEGACY_LOCK_NAME).stat().st_mtime < 2 * 3600
+            alive = time.time() - marker.stat().st_mtime < LEGACY_MARKER_HOURS * 3600
         except OSError:
             alive = False
     return "%s, pid %d" % (info.get("started", "?"), pid) if alive else None
