@@ -27,6 +27,11 @@ WHAT IT DOES
      (``<mousedb_root>/logs/reach_imports.json``); ``--all`` re-imports everything.
      A file that only MOVED folder keeps its ledger entry (``_moved_entries``),
      so reorganising the Analyzed folders re-imports nothing.
+     The ledger is SAVED WHILE THE RUN GOES (every ``LEDGER_SAVE_SECONDS``),
+     each video only after its rows are committed, and always whole (written
+     beside and swapped in). So a run that is killed -- the scheduled task's
+     time limit -- and restarted carries on where it stopped instead of
+     importing every file again.
   4. For each file: the animal is CREATED from the video name if the tracking
      sheet has not named it yet (machine data never waits on hand data; the
      sheet import enriches the record later), old rows for that video are
@@ -37,7 +42,10 @@ WHAT IT DOES
      unless something went wrong); reach_data cannot say, because a pellet
      nobody reached for has no reach row.
   5. Re-derives test_phase / phase_group for every cohort touched
-     (``mousedb.backfill.backfill_phases``).
+     (``mousedb.backfill.backfill_phases``). The cohorts still to do are kept
+     in ``<mousedb_root>/logs/reach_imports_phases_pending.json`` until each
+     is done, so a run killed before or during this step has the restart do
+     them even though it imports nothing new for them.
   6. Takes out the rows of every video that has gone BACK TO REVIEW: its
      results file sits in a review queue (``Processing/Review``) and no longer
      in Analyzed, or a NEWER run of it waits there while the old one is still
@@ -56,9 +64,11 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -269,10 +279,75 @@ def load_ledger() -> Dict[str, str]:
     return {}
 
 
-def save_ledger(ledger: Dict[str, str]) -> None:
-    p = ledger_path()
+def _write_json_atomically(p: Path, obj: Any) -> None:
+    """Write ``obj`` to ``p`` so that ``p`` is always either the old file or the
+    whole new one, never half of either.
+
+    WHY: the ledger is now saved DURING the run (see ``LEDGER_SAVE_SECONDS``),
+    and the scheduler ends a run that reaches its time limit wherever it is. A
+    kill in the middle of a plain write_text left a truncated file, which
+    ``load_ledger`` cannot read -- so the next run started a NEW ledger and
+    re-imported every file. The new content goes to a temporary file beside
+    the ledger first and is swapped in whole with os.replace. On Windows the
+    swap fails while another program has the file open (the census and the
+    status tab read the ledger for a moment), so it is retried briefly."""
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(ledger, indent=1, sort_keys=True), encoding="utf-8")
+    tmp = p.with_name(".%s.%d.tmp" % (p.name, os.getpid()))
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(obj, indent=1, sort_keys=True))
+        f.flush()
+        os.fsync(f.fileno())
+    for attempt in range(20):
+        try:
+            os.replace(tmp, p)
+            return
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.5)
+
+
+def save_ledger(ledger: Dict[str, str]) -> None:
+    _write_json_atomically(ledger_path(), ledger)
+
+
+# How often the import saves its ledger while it runs. WHY: the scheduled run
+# has a time limit and is restarted when it is killed. With the ledger saved
+# only at the end, a run killed just before the limit had recorded nothing, so
+# the restart hashed and imported every file again -- and could be killed at
+# the same point again. Saving every few minutes means a restart redoes at most
+# that much. Time-based, not every video: the ledger is one JSON file on a
+# network share and rewriting it takes seconds.
+LEDGER_SAVE_SECONDS = 300
+
+# Cohorts whose test-phase labels still have to be re-derived. WHY a separate
+# file: the labels are re-derived after the import loop, for every cohort a
+# newly imported video belongs to. Once the ledger is saved during the run, a
+# run killed before that step leaves videos the restart will SKIP (the ledger
+# says they are done), so the restart would not know their cohorts need it and
+# their rows would keep no test phase. Every cohort is written here before the
+# ledger that marks its videos done, and removed only once its labels are
+# re-derived. Kept out of the ledger itself because other tools read the
+# ledger's keys as file paths.
+PENDING_PHASES_NAME = "reach_imports_phases_pending.json"
+
+
+def pending_phases_path() -> Path:
+    return require("mousedb_root") / "logs" / PENDING_PHASES_NAME
+
+
+def load_pending_phases() -> set:
+    p = pending_phases_path()
+    if p.is_file():
+        try:
+            return set(json.loads(p.read_text(encoding="utf-8")))
+        except Exception:
+            logger.warning("%s unreadable; treating as empty", p)
+    return set()
+
+
+def save_pending_phases(cohorts: Iterable[str]) -> None:
+    _write_json_atomically(pending_phases_path(), sorted(cohorts))
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +647,8 @@ def _copy_rows(conn: sqlite3.Connection, table: str, video_name: str, dest: Path
 
 def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: Dict[str, Path],
                                    ledger: Dict[str, Any], backup_root: Path,
-                                   dry_run: bool = False, log=print) -> Tuple[int, int, List[str]]:
+                                   dry_run: bool = False, log=print,
+                                   checkpoint=None) -> Tuple[int, int, List[str]]:
     """Take out the rows of every video that went back to review.
 
     WHY: filing means done. The database holds a video's reaches because the
@@ -587,16 +663,41 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     copied to ``<backup_root>/<video>_reach_data.csv`` and
     ``_video_pellets.csv``, then deleted, one transaction per video. Its ledger
     entries are dropped too, so when it is filed again its file is imported
-    even if nothing in it changed. Returns (videos, reach rows, messages)."""
+    even if nothing in it changed. Returns (videos, reach rows, messages).
+
+    ORDER (``checkpoint`` given: a callable that saves the ledger): the ledger
+    entries of every video to be taken out are dropped and the ledger SAVED
+    before any row is deleted. WHY:
+    a run killed between deleting a video's rows and saving the ledger left a
+    ledger still saying the video was imported; the restart found no rows to
+    take out, kept the entry, and when the video was filed again unchanged it
+    was skipped as already imported -- gone from the database for good. Saved
+    first, a kill in between leaves rows and no entry, which the next run
+    puts right on its own (it re-imports the filed copy, or takes the rows out
+    again). For the same reason a video in review and no longer filed loses a
+    leftover ledger entry even when it has no rows left."""
     videos = withdrawn = 0
     messages: List[str] = []
+    out: List[Tuple[str, Path, int]] = []
+    drop: List[str] = []
     for name, where in sorted(videos_back_in_review(root, filed).items()):
+        keys = [k for k in ledger if k.rsplit("/", 1)[-1] == name + FEATURES_SUFFIX]
         n = conn.execute("SELECT COUNT(*) FROM reach_data WHERE video_name = ?",
                          (name,)).fetchone()[0]
         p = conn.execute("SELECT COUNT(*) FROM video_pellets WHERE video_name = ?",
                          (name,)).fetchone()[0]
         if not n and not p:
+            if name not in filed:
+                drop.extend(keys)
             continue
+        drop.extend(keys)
+        out.append((name, where, n))
+    if not dry_run:
+        for key in drop:
+            ledger.pop(key, None)
+        if drop and checkpoint is not None:
+            checkpoint()
+    for name, where, n in out:
         queue = where.relative_to(root / "Processing" / "Review").parts[0]
         if not dry_run:
             with conn:
@@ -604,8 +705,6 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
                 _copy_rows(conn, "video_pellets", name, backup_root / (name + "_video_pellets.csv"))
                 conn.execute("DELETE FROM reach_data WHERE video_name = ?", (name,))
                 conn.execute("DELETE FROM video_pellets WHERE video_name = ?", (name,))
-            for key in [k for k in ledger if k.rsplit("/", 1)[-1] == name + FEATURES_SUFFIX]:
-                del ledger[key]
         videos += 1
         withdrawn += n
         line = ("%s: %s the %s queue, so not done -- %d reach rows taken out until it "
@@ -694,6 +793,25 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     log("import-reaches: %d features files under %s; %d to import, %d unchanged%s" %
         (len(files), root, len(todo), res.skipped,
          "" if not res.moved else " (%d of them moved folders since the last import)" % res.moved))
+    # Cohorts an earlier run imported into but stopped before re-labelling
+    # (see PENDING_PHASES_NAME). Their videos are in the ledger, so this run
+    # would not touch them again; they are re-labelled at the end regardless.
+    pending = load_pending_phases() if not dry_run else set()
+    if pending:
+        log("import-reaches: %d cohort(s) still to re-label from an earlier run that stopped: %s"
+            % (len(pending), ", ".join(sorted(pending))))
+
+    def checkpoint() -> None:
+        # Pending cohorts FIRST, then the ledger: a video must never be marked
+        # done in the ledger while nothing records that its cohort still needs
+        # re-labelling. Each video's ledger entry is set only after its
+        # transaction committed (below), so the ledger never runs ahead of the
+        # database; a kill loses at most the entries since the last save, and
+        # those videos are simply imported again by the restart.
+        save_pending_phases(pending | res.cohorts_touched)
+        save_ledger(ledger)
+
+    last_save = time.monotonic()
     # The db phase runs under the cross-task mutex (see task_mutex.py): this
     # import overlapping the snapshot's long reads put the db in PENDING
     # starvation for 22 minutes on 2026-09-02 -- neither task was slow at the
@@ -714,7 +832,17 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     res.subjects_created += int(created)
                     res.cohorts_touched.add("_".join(subject_id.split("_")[:2]))
                     if not dry_run:
-                        ledger[key] = h
+                        ledger[key] = h   # import_file returned: its rows are committed
+                        if time.monotonic() - last_save >= LEDGER_SAVE_SECONDS:
+                            try:
+                                checkpoint()
+                            except OSError as e:
+                                # Not fatal: the import goes on and the save at
+                                # the end tries again (and fails the run if it
+                                # still cannot write).
+                                res.messages.append("ledger save during the run failed: %s" % e)
+                                log("  [!] ledger save during the run failed: %s" % e)
+                            last_save = time.monotonic()
                 except FileNotFoundError:
                     # The file existed when we listed the tree and is gone now:
                     # the disagreement router (or review-return) moved its bundle
@@ -736,7 +864,8 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                           / datetime.now().strftime("%Y-%m-%d_%H%M%S"))
                 filed = {f.name[:-len(FEATURES_SUFFIX)]: f for f in files}
                 v, r, msgs = withdraw_videos_back_in_review(
-                    conn, root, filed, ledger, backup, dry_run=dry_run, log=log)
+                    conn, root, filed, ledger, backup, dry_run=dry_run, log=log,
+                    checkpoint=checkpoint)
                 res.withdrawn, res.withdrawn_reaches = v, r
                 res.messages.extend(msgs)
             else:
@@ -744,8 +873,10 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         finally:
             conn.close()
         if not dry_run:
-            save_ledger(ledger)  # also persists refreshed stamps for unchanged files
-            if res.cohorts_touched:
+            checkpoint()  # also persists refreshed stamps for unchanged files
+            relabel = pending | res.cohorts_touched
+            left = set(relabel)
+            if relabel:
                 try:
                     from .backfill import backfill_phases
                     from .prefetch import warmed
@@ -754,8 +885,12 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # the cohorts, so those scans run from memory: 3 hours cold
                     # against seconds warm on a network share (2026-10-16).
                     with warmed(db, log=log):
-                        for cohort in sorted(res.cohorts_touched):
+                        for cohort in sorted(relabel):
                             backfill_phases(cohort_id=cohort)
+                            # Done: a run killed after this point need not
+                            # re-label this cohort again.
+                            left.discard(cohort)
+                            save_pending_phases(left)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)
