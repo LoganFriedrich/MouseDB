@@ -37,7 +37,7 @@ def test_runs_every_step_in_order_and_records(root):
     assert last["ok"] is True and last["triggered_by"] == "test"
     ledger = (root / "logs" / up.LEDGER_NAME).read_text(encoding="utf-8").splitlines()
     assert len(ledger) == 1
-    assert not (root / "logs" / up.LOCK_NAME).exists()
+    assert not [p for p in (root / "logs").iterdir() if p.name.endswith(".task.lock")]
 
 
 def test_a_failed_step_does_not_stop_the_rest_and_fails_loudly(root):
@@ -58,28 +58,74 @@ def test_skip_leaves_a_step_out(root):
 
 
 def test_a_running_update_holds_the_lock(root):
+    from mousedb.task_mutex import TaskMutex
     logs = root / "logs"
     logs.mkdir()
-    (logs / up.LOCK_NAME).write_text(json.dumps({"started": "now", "triggered_by": "gui"}), encoding="utf-8")
-    r = _runner()
-    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    other = TaskMutex(name=up.LOCK_MUTEX_NAME, base_dir=logs)
+    assert other.try_acquire()          # a live holder: this very process
+    try:
+        r = _runner()
+        res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    finally:
+        other.release()
     assert res.skipped and not res.ok and r.calls == []
     assert "still running" in up.format_summary(res)
-
-
-def test_a_stale_lock_is_taken_over(root):
-    logs = root / "logs"
-    logs.mkdir()
-    lock = logs / up.LOCK_NAME
-    lock.write_text(json.dumps({"started": "long ago", "triggered_by": "gui"}), encoding="utf-8")
-    old = time.time() - up.STALE_LOCK_SECONDS - 60
-    os.utime(lock, (old, old))
-    r = _runner()
-    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
-    assert not res.skipped and res.ok and r.calls == up.STEP_KEYS
 
 
 def test_last_update_reads_back(root):
     assert up.last_update() is None
     up.run_update(triggered_by="test", runner=_runner(), log=lambda s: None)
     assert up.last_update()["ok"] is True
+
+
+# -- the update lock: judged by its holder, never by its age -----------------
+
+def _age_everything_in(folder, hours):
+    old = time.time() - hours * 3600
+    for p in folder.iterdir():
+        os.utime(p, (old, old))
+
+
+def test_a_second_press_while_an_update_runs_is_refused(root):
+    """Two presses must never both run: the second one is told who holds it."""
+    second = []
+
+    def runner(cmd):
+        if not second:
+            second.append(up.run_update(triggered_by="second", runner=lambda c: (0, "ok"),
+                                        log=lambda s: None))
+        return 0, "ok"
+
+    first = up.run_update(triggered_by="first", runner=runner, log=lambda s: None)
+    assert first.ok
+    assert second[0].skipped and "still running" in second[0].message
+
+
+def test_a_long_running_update_is_never_taken_over(root):
+    """An update whose steps take hours is still running: its lock used to be
+    taken over after 2 hours by age alone, and the first update then deleted
+    the second one's lock on its way out."""
+    second = []
+
+    def runner(cmd):
+        if not second:
+            _age_everything_in(root / "logs", hours=3)      # the first press, 3 hours in
+            second.append(up.run_update(triggered_by="second", runner=lambda c: (0, "ok"),
+                                        log=lambda s: None))
+        return 0, "ok"
+
+    up.run_update(triggered_by="first", runner=runner, log=lambda s: None)
+    assert second[0].skipped, "a live update's lock was taken over because it was old"
+
+
+def test_a_crashed_updates_lock_is_taken_over_at_once(root):
+    """A lock whose holder process is gone does not block the button."""
+    logs = root / "logs"
+    logs.mkdir()
+    from mousedb.task_mutex import TaskMutex
+    TaskMutex(name=up.LOCK_MUTEX_NAME, base_dir=logs).path.write_text(
+        "999999999 2026-01-01T00:00:00", encoding="utf-8")
+    r = _runner()
+    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    assert not res.skipped and res.ok and r.calls == up.STEP_KEYS
+    assert not [p for p in logs.iterdir() if p.name.endswith(".task.lock")]

@@ -76,6 +76,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- "Update the database now" / `mousedb update`: only one update can run. Its
+  lock was checked and then written, so two presses at once could both run;
+  and it was taken over after 2 hours whatever the first update was doing,
+  which then deleted the second one's lock. The lock
+  (`logs/.update.task.lock`) is now taken in one step, kept while the update's
+  program is running, and taken over at once only when that program is gone.
 - The snapshot refresh's `--retry-minutes` window now starts at the first
   "database is locked", not when the job starts. Time spent waiting for an
   import to finish (up to `--lock-wait-minutes`) used to spend the window, so

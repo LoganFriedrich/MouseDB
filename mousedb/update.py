@@ -69,10 +69,21 @@ STEPS: List[Tuple[str, str, List[str]]] = [
 ]
 STEP_KEYS = [k for k, _, _ in STEPS]
 
-LOCK_NAME = "update.lock"
+# The update lock is a task_mutex lock named "update": logs/.update.task.lock.
+# WHY not a hand-made file: the earlier one was checked with exists() and then
+# written, so two presses at the same moment could both take it; and it was
+# judged by AGE (taken over after 2 hours), so a long update was overruled
+# while still running and then, on its way out, deleted the second update's
+# lock. TaskMutex creates the file exclusively (exactly one press wins), judges
+# a holder by whether its process is still running (a crashed update's lock is
+# taken over at once, a live one never), and gives back only its own lock.
+LOCK_MUTEX_NAME = "update"
+# Only for a holder this computer cannot look up (an update started on another
+# computer that shares the logs folder): its lockfile is touched every minute
+# while it runs, so one untouched this long belongs to an update that died.
+UNKNOWN_HOLDER_STALE_MINUTES = 45
 LAST_NAME = "last_update.json"
 LEDGER_NAME = "updates.jsonl"
-STALE_LOCK_SECONDS = 2 * 3600   # an update older than this is presumed dead
 STEP_TIMEOUT_SECONDS = 3600     # no single step may run longer than an hour
 OUTPUT_TAIL_LINES = 15          # how much of each step's output the ledger keeps
 
@@ -132,30 +143,22 @@ def _default_runner(cmd: Sequence[str]) -> Tuple[int, str]:
         return 124, "step exceeded %d s and was stopped" % STEP_TIMEOUT_SECONDS
 
 
-def _acquire_lock(logs: Path, triggered_by: str) -> Optional[str]:
-    """Take the update lock. Returns None on success, else a sentence saying
-    who holds it. A lock older than STALE_LOCK_SECONDS is taken over -- an
-    update that old is a dead process, not a running one."""
-    lock = logs / LOCK_NAME
-    if lock.exists():
-        try:
-            info = json.loads(lock.read_text(encoding="utf-8"))
-        except Exception:
-            info = {}
-        age = time.time() - lock.stat().st_mtime
-        if age < STALE_LOCK_SECONDS:
-            return ("another update (started %s by %s) is still running -- "
-                    "wait for it to finish" % (info.get("started", "?"), info.get("triggered_by", "?")))
-    lock.write_text(json.dumps({"pid": os.getpid(), "started": datetime.now().isoformat(timespec="seconds"),
-                                "triggered_by": triggered_by}), encoding="utf-8")
-    return None
+def _acquire_lock(logs: Path, log: Callable[[str], None]):
+    """Take the update lock without waiting (see LOCK_MUTEX_NAME).
 
-
-def _release_lock(logs: Path) -> None:
-    try:
-        (logs / LOCK_NAME).unlink()
-    except FileNotFoundError:
-        pass
+    Returns (mutex, None) when taken, else (None, a sentence saying who holds
+    it). Never waits: a person pressed a button, and "another update is
+    running" is the answer they need, not a frozen window."""
+    from .task_mutex import TaskMutex
+    mutex = TaskMutex(name=LOCK_MUTEX_NAME, base_dir=logs,
+                      stale_minutes=UNKNOWN_HOLDER_STALE_MINUTES)
+    if mutex.try_acquire(log=log):
+        # Touch the lockfile every minute while the update runs, so an update
+        # started on another computer is judged alive by its lockfile's age.
+        mutex._start_heartbeat()
+        return mutex, None
+    state, who = mutex.holder()
+    return None, "another update is still running (%s) -- wait for it to finish" % who
 
 
 def _last_line(output: str) -> str:
@@ -170,7 +173,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
     runner = runner or _default_runner
     logs = _logs_dir()
     res = UpdateResult(started=datetime.now().isoformat(timespec="seconds"), triggered_by=triggered_by)
-    held = _acquire_lock(logs, triggered_by)
+    mutex, held = _acquire_lock(logs, log)
     if held:
         res.skipped = True
         res.message = held
@@ -194,7 +197,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
         res.message = ("Everything landed." if not failed
                        else "%d step(s) failed: %s" % (len(failed), "; ".join(failed)))
     finally:
-        _release_lock(logs)
+        mutex.release(log=log)
     # Record: the last result for the GUI label, and an append-only ledger.
     try:
         (logs / LAST_NAME).write_text(json.dumps(res.as_dict(), indent=1), encoding="utf-8")

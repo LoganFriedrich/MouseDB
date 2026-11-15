@@ -537,7 +537,14 @@ always shows when the last update ran, who started it, and whether
 everything landed.
 
 Only one update runs at a time -- if a scheduled run or someone
-else's button press is still going, yours says so and does nothing. A
+else's button press is still going, yours says so and does nothing. It
+names the update that is running (its process number, when it started, and
+its command). An update keeps that place for as long as its program is still
+running, however long that is; if the program that started it has gone (the
+window was closed or the computer restarted mid-update), the next press
+takes over at once. The marker is `logs/.update.task.lock` beside the
+database (an `update.lock` left by an older version is ignored and can be
+deleted). A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
 
