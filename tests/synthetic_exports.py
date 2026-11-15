@@ -75,7 +75,10 @@ def build(out: Path) -> Path:
     real = current._odc_reaches_csvs
     current._odc_reaches_csvs = lambda *a, **k: None
     try:
-        current.refresh_current(_snapshot(out.parent / "snapshot"), out, db_ok=False)
+        # lock_dir: this runs from a module-scoped fixture, outside the per-test
+        # fixture that moves the exports lock out of the production folder.
+        current.refresh_current(_snapshot(out.parent / "snapshot"), out, db_ok=False,
+                                lock_dir=out.parent / "exports_lock")
     finally:
         current._odc_reaches_csvs = real
     df, rows = _cohort_tables()
