@@ -122,11 +122,25 @@ SWAP_WAIT_SECONDS = 120
 # re-run a job that started and failed. Size it so the worst case fits the
 # task's time limit (INSTALL.md): lock wait + the prefetch + the refresh that
 # met an outside database lock + the retry window + the refresh that succeeds
-# + exports and census. That is: the time limit, minus the retry window, minus
-# the prefetch, minus TWO refreshes, minus exports and census. Sizing it as
-# "the limit minus one successful refresh" leaves no room for a retry, and the
-# scheduler then stops the job part way through rewriting the exports.
-DEFAULT_LOCK_WAIT_MINUTES = 180
+# + the wait for the exports lock (EXPORTS_LOCK_WAIT_MINUTES) + exports and
+# census. That is: the time limit, minus the retry window, minus the prefetch,
+# minus TWO refreshes, minus the exports-lock wait, minus exports and census.
+# Sizing it as "the limit minus one successful refresh" leaves no room for a
+# retry, and the scheduler then stops the job part way through rewriting the
+# exports. (It was 180 before the exports lock existed; the exports-lock wait
+# was taken out of it, so the worst case of the whole job did not grow.)
+DEFAULT_LOCK_WAIT_MINUTES = 165
+
+# How long this job waits for ANOTHER refresh of the current exports (a
+# "Refresh exports now" press, a terminal command) to finish before it writes
+# them itself. A bound of its own, deliberately short: without one it reused
+# the job's database-lock budget above, so a button press late in the evening
+# could add up to that many minutes again to a job sized without them -- and
+# the scheduler would stop the job part way through the exports, leaving one
+# night's cohort files beside another night's combined files and manifest.
+# Giving up costs little: the other refresh is writing the same exports from
+# the same snapshot, and this job says [FAIL] so the night is not silent.
+EXPORTS_LOCK_WAIT_MINUTES = 15
 
 
 def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
@@ -321,9 +335,11 @@ def main(argv=None) -> int:
                          "reading the database file once to warm the cache, "
                          "minus two refreshes (the one that met another "
                          "program's lock and the retry that succeeds), minus "
-                         "the exports and census (INSTALL.md). The environment "
+                         "the %d-minute wait for another refresh of the current "
+                         "exports, minus the exports and census (INSTALL.md). "
+                         "The environment "
                          "variable MOUSEDB_LOCK_WAIT_MINUTES overrides it."
-                         % DEFAULT_LOCK_WAIT_MINUTES)
+                         % (DEFAULT_LOCK_WAIT_MINUTES, EXPORTS_LOCK_WAIT_MINUTES))
     ap.add_argument("--retry-minutes", type=int, default=25,
                     help="How long to keep retrying if another program has the "
                          "database locked (default 25), counted from the first "
@@ -383,7 +399,8 @@ def main(argv=None) -> int:
     # make the retry wait the whole --lock-wait-minutes a second time, and the
     # job overran its time limit part way through rewriting the exports. Held
     # across the retries, the job's time is bounded by
-    #     lock wait + prefetch + up to two runs + retry window + exports
+    #     lock wait + prefetch + up to two runs + retry window
+    #     + exports-lock wait (EXPORTS_LOCK_WAIT_MINUTES) + exports
     # (the run that met the outside lock, then the retry that succeeds;
     # INSTALL.md). Keeping it during a pause makes this tool's other jobs wait
     # longer, and one waiting behind a pause of over STALL_MINUTES may give up
@@ -495,7 +512,9 @@ def _finish(counts: dict, force: bool) -> int:
               "exports are left from the previous refresh")
     try:
         from mousedb.exporters.current import refresh_current
-        m = refresh_current(db_ok=db_ok)
+        # Its own short bound, never the database-lock budget (see
+        # EXPORTS_LOCK_WAIT_MINUTES).
+        m = refresh_current(db_ok=db_ok, lock_wait_seconds=EXPORTS_LOCK_WAIT_MINUTES * 60)
     except Exception as e:
         print("  [FAIL] current exports not refreshed: %s: %s. The files in "
               "exports/current are still those of the last good refresh."

@@ -355,14 +355,19 @@ already writing:
   being written -- try again when it finishes. Nothing was changed." Usually
   the other one is the nightly job, which runs from midnight.
 - **The nightly job and the terminal commands wait** while the other refresh
-  is working: the nightly job up to 180 minutes, `mousedb-current-exports` and
-  `mousedb export-odc-reaches` up to 40 minutes (change either with
-  `MOUSEDB_LOCK_WAIT_MINUTES`, or the nightly job's `--lock-wait-minutes`). If
-  the other refresh is still writing when that time is up, or shows no sign of
-  progress for 30 minutes (it may be stuck), they stop without changing
-  anything, and the files stay those of the last refresh that finished. The
-  nightly job then prints `[FAIL] current exports not refreshed` and reports
-  itself as failed; a terminal command prints one line starting
+  is working: the nightly job up to 15 minutes (a fixed bound of its own, so a
+  button press cannot push the job past its time limit -- see INSTALL.md,
+  "size the snapshot task's time limit"), `mousedb-current-exports` and
+  `mousedb export-odc-reaches` up to 40 minutes (change those two with
+  `MOUSEDB_LOCK_WAIT_MINUTES`). `mousedb export-odc-reaches` waits whenever it
+  is about to write into the live exports folder -- also when `--out-dir`
+  names that folder; into a folder of your own it does not wait. If the other
+  refresh is still writing when that time is up, or shows no sign of progress
+  for 30 minutes (it may be stuck), they stop without changing anything, and
+  the files stay those of the last refresh that finished. The nightly job then
+  prints `[FAIL] current exports not refreshed` and reports itself as failed;
+  the other refresh is writing the same exports, so nothing is lost but the
+  night's green tick. A terminal command prints one line starting
   `[!] another export refresh is still writing the current exports` and exits
   with code 4. Run it again once the other one is done.
 - "No sign of progress" is judged by the other refresh's CPU time and
@@ -376,8 +381,10 @@ already writing:
 
 While the nightly job waits for a button-started export, it still holds the
 database-task lock it took for the snapshot, so the other scheduled database
-jobs wait behind it too. A button-started export of a large lab takes a while;
-pressing it shortly before midnight delays the whole night's jobs by that long.
+jobs wait behind it too -- for at most those 15 minutes. If a button-started
+export is still running 15 minutes after the nightly job has reached its
+exports (after the snapshot, which itself takes a while), the nightly job
+reports `[FAIL]` for its exports; the button's export finishes them.
 
 **When "Refresh exports now" shows a warning instead.** If the refresh ran but
 did not finish cleanly -- a cohort's file could not be written, the snapshot

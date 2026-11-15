@@ -362,7 +362,7 @@ from what they imported, then the bench check, which reads the snapshot):
 | reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
 | brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables. Exits 1, with a last line starting `[FAIL]` that names what was left out, when any brain (or the calibration runs) did not land, or when it gave up waiting for the database. A brain the database refuses keeps this job failing every night until the cause is fixed -- that is on purpose |
 | analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it). Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 180) is how long it waits behind another mousedb job |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it). Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
 | bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
@@ -424,7 +424,8 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
 
   | job | wait budget | set with |
   |---|---|---|
-  | snapshot refresh | 180 minutes | `--lock-wait-minutes` |
+  | snapshot refresh | 165 minutes | `--lock-wait-minutes` |
+  | snapshot refresh, waiting for another refresh of the current exports (the "Refresh exports now" button, a terminal command) | 15 minutes | fixed (`EXPORTS_LOCK_WAIT_MINUTES` in `mousedb/exporters/refresh_snapshot.py`) |
   | every other scheduled job | 40 minutes | `MOUSEDB_LOCK_WAIT_MINUTES` |
   | the GUI, and each step of "Update the database now" | 25 minutes | (a person is waiting) |
 
@@ -458,11 +459,15 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   MouseReach watcher before it starts waiting for that lock, not after.
 
   So size the snapshot task's time limit for the worst case: lock wait
-  (`--lock-wait-minutes`, default 180) + the prefetch (reading the database
+  (`--lock-wait-minutes`, default 165) + the prefetch (reading the database
   file once to warm the cache) + the refresh that met the lock + retry
   window (`--retry-minutes`, default 25) + the refresh that succeeds + the
+  wait for another refresh of the current exports (15 minutes, fixed) + the
   exports and the census. If that does not fit, lower `--lock-wait-minutes` or
-  raise the limit. While the refresh pauses between retries it keeps the lock,
+  raise the limit. (The default lock wait was 180 minutes before the
+  current-exports lock existed; the 15-minute exports wait was taken out of
+  it, so the worst case is the same as before. If you set
+  `--lock-wait-minutes` yourself, leave room for those 15 minutes.) While the refresh pauses between retries it keeps the lock,
   so another mousedb job waiting behind it may give up after 30 minutes with
   no sign of progress ("may be hung"); that only happens while another program
   keeps the database locked, which would refuse that job's own work anyway.
