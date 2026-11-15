@@ -4767,23 +4767,9 @@ def replace_cohort_from_sheet(db, sheet_path, cohort_id, start_date=None,
             session.close()
 
 
-def mark_failed_phase_refresh(entry: dict, cohort_id: str) -> None:
-    """Mark a sheet-import ledger entry failed when the phase re-derivation its
-    commit caused failed -- the rule the scheduled sheet import applies
-    (sheet_sync). WHY: the Tracking Sheets tab judges each cohort from this
-    ledger; an entry saying "success" while the cohort's phase labels are
-    stale would show the cohort as done."""
-    phases = entry.get('phases_rederived') or {}
-    if not phases.get('error'):
-        return
-    entry['success'] = False
-    entry['error'] = "; ".join(filter(None, [
-        entry.get('error'),
-        "the sheet's rows were saved, but re-deriving %s's phases failed (%s): its "
-        "test-phase labels may be out of date until it is run again -- %s" % (
-            cohort_id, phases['error'],
-            "the next reach import re-labels it" if phases.get('queued_for_reach_import')
-            else "run 'mousedb backfill-phases'")]))
+# The ledger rule for a failed phase refresh is shared with the scheduled
+# sheet import (sheet_sync), so both say the same thing about the same state.
+from ..sheet_sync import mark_failed_phase_refresh  # noqa: E402
 
 
 class CohortSetupTab(QWidget):

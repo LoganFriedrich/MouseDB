@@ -82,7 +82,9 @@ checked-in code, not what's planned.
   cohorts still to re-label (`logs/reach_imports_phases_pending.json`), so the
   next nightly import re-derives it; the window shows a warning box; and a
   sheet import made from the window records the failure in its ledger line, as
-  the scheduled one does. The reach import now adds to that list instead of
+  the scheduled one does. Both routes now end that line the same way: `the
+  next reach import re-labels it` when the cohort is on that list, and `run
+  'mousedb backfill-phases'` only when it could not be put there. The reach import now adds to that list instead of
   overwriting it, so a cohort put there while it runs is kept. Every change
   to that list (by the import, or by the window) is one locked read-and-write,
   so a cohort the window adds between the import's read and its write is no

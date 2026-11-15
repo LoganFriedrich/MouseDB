@@ -315,3 +315,44 @@ def test_a_writer_that_cannot_get_the_lists_lock_changes_nothing(tmp_path, monke
     finally:
         other.release()
     assert ir.load_pending_phases() == {"PROJA_01"}
+
+
+class _ImporterWhoseRefreshFailed:
+    """Stands in for the sheet importer: it saved the workbook, and the phase
+    refresh its commit caused failed (queued or not for the reach import)."""
+    db = None
+
+    def __init__(self, queued):
+        self.queued = queued
+
+    def import_cohort_file(self, sheet, dry_run=False):
+        return {"success": True, "errors": [], "warnings": [], "imported": {"subjects": 1},
+                "phases_rederived": {"cohort_id": COHORT, "error": "RuntimeError: locked",
+                                     "queued_for_reach_import": self.queued}}
+
+
+def _scheduled_import(tmp_path, monkeypatch, queued):
+    from mousedb import sheet_sync, task_mutex
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+    sheet = tmp_path / "PROJA_01_tracking.xlsx"
+    sheet.write_bytes(b"x")
+    return sheet_sync._import_one(COHORT, sheet, dry_run=False, triggered_by="test",
+                                  imp=_ImporterWhoseRefreshFailed(queued))
+
+
+def test_the_scheduled_sheet_import_says_the_reach_import_relabels_a_queued_cohort(
+        tmp_path, monkeypatch):
+    """The same state reads the same way whichever route imported the sheet:
+    a cohort the reach import will re-label is not sent to backfill-phases."""
+    entry = _scheduled_import(tmp_path, monkeypatch, queued=True)
+    assert entry["success"] is False
+    assert "re-deriving PROJA_01's phases failed" in entry["error"]
+    assert entry["error"].endswith("the next reach import re-labels it")
+    assert "backfill-phases" not in entry["error"]
+
+
+def test_the_scheduled_sheet_import_says_backfill_when_the_cohort_could_not_be_queued(
+        tmp_path, monkeypatch):
+    entry = _scheduled_import(tmp_path, monkeypatch, queued=False)
+    assert entry["success"] is False
+    assert entry["error"].endswith("run 'mousedb backfill-phases'")
