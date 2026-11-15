@@ -38,8 +38,10 @@ def get_watcher() -> WatcherBridge:
     WHY not a singleton: the bridge decides at creation which watcher
     database to read (find_watcher_db) and when it was last written. A
     server left running kept the answer from its start: a database that
-    appeared or moved later was never seen, and the "last written" time on
-    the page never moved. Resolving costs one small config-file read.
+    appeared or moved later was never seen. The page's scope line (which
+    file, last written when) is re-fetched every 30 s from /dashboard/scope,
+    which calls this, so it follows the file. Resolving costs one small
+    config-file read.
     """
     global _watcher_bridge
     _watcher_bridge = WatcherBridge()

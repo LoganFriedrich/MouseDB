@@ -186,3 +186,41 @@ def test_a_file_found_in_mousedbs_pipeline_folder_is_not_called_this_computers(
     text = " ".join(watcher_bridge.watcher_scope_lines(st))
     assert "this computer's watcher only" not in text
     assert "pipeline folder" in text
+
+
+# --- Web dashboard: the scope line is refreshed with the cards -------------
+
+def test_web_dashboard_refreshes_the_scope_line(tmp_path):
+    """The dashboard re-fetches its numbers every 30 s; the line saying
+    whose records they are (and when the file was last written) must be
+    re-fetched too, or it shows a stale time beside fresh numbers."""
+    import ast
+    import re
+    import jinja2
+    from mousedb.watcher_bridge import WatcherBridge, watcher_scope_lines
+
+    web = Path(__file__).resolve().parents[1] / "mousedb" / "web"
+    page = (web / "templates" / "dashboard.html").read_text(encoding="utf-8")
+    # The scope lines sit inside an element the page re-fetches from
+    # /dashboard/scope on a timer.
+    m = re.search(r'<div[^>]*hx-get="/dashboard/scope"[^>]*hx-trigger="every[^"]*"'
+                  r'[^>]*>(.*?)</div>', page, re.S)
+    assert m, "no periodically refreshed scope element on the dashboard"
+    assert 'include "components/watcher_scope.html"' in m.group(1)
+
+    # ... and the router serves that partial.
+    tree = ast.parse((web / "routers" / "dashboard.py").read_text(encoding="utf-8"))
+    routes = [d.args[0].value for f in ast.walk(tree)
+              if isinstance(f, ast.AsyncFunctionDef) for d in f.decorator_list
+              if isinstance(d, ast.Call) and d.args
+              and isinstance(d.args[0], ast.Constant)]
+    assert "/scope" in routes
+
+    # The partial renders the same lines the GUI tabs and commands show.
+    db = tmp_path / "w.db"
+    _watcher_db(db, ["archived"])
+    lines = watcher_scope_lines(WatcherBridge(db_path=db).status)
+    env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(web / "templates")))
+    html = env.get_template("components/watcher_scope.html").render(scope_lines=lines)
+    for line in lines:
+        assert line in html

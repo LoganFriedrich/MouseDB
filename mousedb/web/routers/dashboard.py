@@ -15,6 +15,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def scope_lines_for(watcher: WatcherBridge) -> list:
+    """The lines shown above the dashboard's numbers: whose records these
+    are (watcher_scope_lines) when a watcher database was found, otherwise
+    the message saying why none was (so the page never shows bare zeros
+    without a reason)."""
+    if watcher.is_available:
+        return watcher_scope_lines(watcher.status)
+    return [watcher.status.message]
+
+
 @router.get("/")
 async def dashboard_page(request: Request):
     """Pipeline dashboard main page."""
@@ -29,10 +39,9 @@ async def dashboard_page(request: Request):
         "summary": summary,
         "animals": animals,
         "state_display": STATE_DISPLAY,
-        # Whose records these are (this computer's watcher only); shown
-        # above the numbers. Empty when no watcher database was found.
-        "scope_lines": (watcher_scope_lines(watcher.status)
-                        if watcher.is_available else [watcher.status.message]),
+        # Whose records these are, shown above the numbers; when no
+        # watcher database was found, the reason instead.
+        "scope_lines": scope_lines_for(watcher),
     })
 
 
@@ -46,6 +55,18 @@ async def summary_cards(request: Request):
     return templates.TemplateResponse("components/summary_cards.html", {
         "request": request,
         "summary": summary,
+    })
+
+
+@router.get("/scope")
+async def watcher_scope_partial(request: Request):
+    """HTMX partial: the scope lines, re-fetched every 30 s with the
+    summary cards. WHY its own partial: drawn only with the full page, the
+    "last written" time stood still until the page was reloaded."""
+    templates = request.app.state.templates
+    return templates.TemplateResponse("components/watcher_scope.html", {
+        "request": request,
+        "scope_lines": scope_lines_for(get_watcher()),
     })
 
 

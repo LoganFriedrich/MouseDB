@@ -7,10 +7,10 @@
     <h1>Pipeline Status</h1>
 </div>
 
-{# Whose records these are: this computer's watcher only. The whole
-   pipeline's state is the pipeline census (Where Is My Data tab). #}
-<div class="card" style="background:#FFF8E1;border:1px solid #FFB300;">
-    {% for line in scope_lines %}<p style="margin:2px 0;">{{ line }}</p>{% endfor %}
+{# Whose records these are. Re-fetched every 30 s like the cards, so the
+   "last written" time on it moves while the page stays open. #}
+<div id="watcher-scope" hx-get="/dashboard/scope" hx-trigger="every 30s" hx-swap="innerHTML">
+    {% include "components/watcher_scope.html" %}
 </div>
 
 <div class="card-grid" hx-get="/dashboard/summary-cards" hx-trigger="every 30s" hx-swap="innerHTML">
