@@ -377,10 +377,19 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
             encoding="utf-8")
     else:
         # A previous signature must not survive a run that changed the files.
+        # A delete that is refused is said, never swallowed: a signature left
+        # behind can make a later night skip the rebuild and repeat an old
+        # run's file list and problems -- and a delete refused night after
+        # night (another program holding the file open) went unseen for weeks.
         try:
             sig_file.unlink()
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError as e:
+            manifest["problems"].append(
+                "the per-reach skip record %s could not be removed (%s: %s) -- another "
+                "program may have it open; close it, or delete the file by hand once no "
+                "refresh is running" % (sig_file.name, type(e).__name__, e))
 
 
 def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
