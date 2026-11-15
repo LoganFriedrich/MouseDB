@@ -5,6 +5,40 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Changed
+- **The sheet wins.** The tracking-sheet import no longer only adds: for the
+  rows earlier imports of a cohort's sheet wrote (pellet scores, weights, ramp
+  days, surgeries) it corrects a value the sheet now gives differently and
+  removes a row the sheet no longer holds -- a session moved to another
+  cohort's workbook, or rows a copied workbook carried over from the previous
+  cohort. Rows typed in by hand are never touched (a warning names any that
+  disagree with the sheet); animals are never removed. Every change and
+  removal is in the import's output, in its ledger line (`sheet_sync`, kept
+  whole) and in the audit log, with the old values. A sheet that reads as
+  broken (a tab missing or unreadable, nothing parsed, or more than a quarter
+  of the cohort's rows gone or changed) removes and changes nothing and says
+  so: a `NOT SYNCED <table>` warning, exit code 1, the cohort shown as NOT
+  SYNCED in the Tracking Sheets and Where Is My Data tabs, and an item in the
+  attention box and the FIX THESE file. `mousedb-sheets import --cohort <id>
+  --allow-large-removal` lets one checked cohort through. Cohort Setup's
+  **Import (add-only)** button is now **Import (sheet wins)**, and its preview
+  shows what would change. Docs: TRACKING_SHEETS.md "The sheet wins",
+  WHERE_IS_MY_DATA.md "The database follows the sheet".
+
+### Fixed
+- A session removed from a cohort's sheet left its date in the cohort's
+  schedule, so the cohort's phases were derived around a session that no
+  longer exists (baseline read as training, early post-injury tests as
+  baseline) in the database and every export. The import now re-derives a
+  cohort's phases in the same run when its dates change, reports how many
+  pellet and reach rows were relabelled (`phases_rederived`), and fails the
+  cohort loudly if that re-derivation fails. The current-exports signature now
+  includes a fingerprint of the phase labels, so relabelled rows are exported
+  even when no row count changed.
+- An animal first created from a video keeps its "auto-created" note no
+  longer: the first sheet import that names it replaces the note, so the data
+  status stops counting it as "created from video only".
+
 ### Added
 - `mousedb-make-shortcuts`: puts **MouseDB** (the window) and **MouseDB -
   Browse the data** on the Desktop and in a MouseDB folder of the Start menu,

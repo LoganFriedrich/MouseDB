@@ -292,8 +292,8 @@ Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
 
 | column | meaning |
 |---|---|
-| Animals | animals the database knows for the cohort. `[N from video only]` means N of them were created from a video before the tracking sheet named them -- import the sheet to fill in their details |
-| Sheet | the tracking sheet's import status (worked in the **Tracking Sheets** tab): Up to date / Sheet edited since last import / Never imported / LAST IMPORT FAILED |
+| Animals | animals the database knows for the cohort. `[N from video only]` means N of them were created from a video before the tracking sheet named them -- import the sheet to fill in their details. Once the sheet names such an animal, the next import replaces its "created from video" note and it stops being counted here |
+| Sheet | the tracking sheet's import status (worked in the **Tracking Sheets** tab): Up to date / Sheet edited since last import / Never imported / LAST IMPORT FAILED / NOT SYNCED (red: the last import found the sheet looking broken and removed and changed nothing -- see below) |
 | Sessions scored | hand-scored animal-days in the database |
 | Videos in DB | videos whose reaches are in the database (i.e. are in `reach_data.csv`) |
 | In review (triage / deep) | videos waiting for a person in MouseReach's review queues. **Their data is not final until they are reviewed and released.** They are worked in MouseReach (its Review Queues tab) |
@@ -519,7 +519,10 @@ pulls everything that is new into the database and rewrites what you see,
 in this fixed order:
 
 1. Tracking sheets -> database (the hand-entered data; the sheet is
-   authoritative but late)
+   authoritative but late). **The sheet wins:** a value corrected in the
+   sheet is corrected in the database, and a row removed from the sheet is
+   removed from the database at this step -- except rows typed in by hand in
+   mousedb, which an import never touches
 2. MouseReach results -> reach_data (every new or changed video)
 3. MouseBrain analysis registry -> exports
 4. Brain region counts -> database
@@ -672,3 +675,33 @@ mousedb import-analyses          # mirror MouseBrain's analysis registry (export
 mousedb-current-exports          # rewrite reach_data + manual_scores (+ dictionaries)
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
 ```
+
+## The database follows the sheet
+
+The tracking sheets are the record; the database is a copy of what they say.
+Every sheet import (the nightly job, the Tracking Sheets tab, the update
+button) therefore does three things for the rows earlier imports of that
+cohort's sheet wrote -- pellet scores, weights, ramp days and surgeries:
+
+- **a value corrected in the sheet is corrected in the database;**
+- **a row removed from the sheet** -- or moved into another cohort's
+  workbook -- **is removed from the database at the next import;**
+- **a row typed in by hand in mousedb is never changed or removed.**
+
+When a removal takes a session date out of a cohort's schedule (or an import
+adds one), the cohort's phases -- training, baseline, post-injury tests --
+are worked out again in the same import, for the hand scores and the reaches
+alike; the hand-scores file is rewritten at the end of that import and the
+exports at the next nightly refresh. Every change is listed, with the old
+value, in the import's output, in the import history
+(`logs/sheet_imports.jsonl`, under `sheet_sync`) and in the audit log.
+
+**If an import refuses.** A sheet that reads as broken -- a tab missing or
+unreadable, or holding far fewer rows than the database has from it --
+removes and changes nothing. You see it as **NOT SYNCED** in red in the
+Sheet column, as a line in the red **Needs your attention** box
+(`NOT SYNCED <table>: ...`), and in the cohort's FIX THESE file beside its
+sheet. Check the sheet: put a renamed tab or cut rows back and the next
+import syncs. If the sheet really did lose those rows on purpose, see
+docs/TRACKING_SHEETS.md, "The sheet wins", for how to let that one cohort's
+import go ahead.

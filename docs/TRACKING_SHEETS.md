@@ -16,19 +16,30 @@ The database only knows what has been **imported** from those workbooks.
 Importing reads a workbook and copies its contents into the database; it
 never changes the workbook. You can import as often as you like.
 
-**Importing only adds.** A row the database does not have yet lands. A row
-it already has (the same animal on the same date) is left as it is -- even
-if you have corrected that cell in the workbook since. Two exceptions:
+**The sheet wins.** Every import makes the database match the sheet for
+the rows the import itself wrote:
 
-- **Each animal's details** -- the `0a_Metadata` tab, the two surgery tabs,
-  and each animal's sex from the tray tab -- are also kept as a copy that the
-  exports read. That copy is thrown away and taken again from the sheet on
-  every import made from the Tracking Sheets tab, the update button, the
-  scheduled job or the commands on this page, so corrections there do show.
-  Only an import that SAVED the workbook replaces it: when an import fails,
-  the copy is left exactly as it was (see "When an import fails" below).
-- **Replace**, in the Cohort Setup tab, takes a cohort's weights, scores,
-  surgeries and the rest from the sheet again. See "Import or Replace" below.
+- a row the database does not have yet lands;
+- a value you corrected in the sheet (a pellet score, a weight, a ramp
+  weight, a surgery's readings) is corrected in the database;
+- a row you **removed** from the sheet -- or moved to another cohort's
+  workbook -- is **removed from the database at the next import**;
+- a row **typed in by hand** in this program (the entry tabs record who
+  saved it) is **never** changed or removed by an import;
+- a sheet that reads as broken -- a tab missing or unreadable, or far fewer
+  rows than the database holds -- removes and changes **nothing**, and says
+  so loudly. See "The sheet wins" below for exactly what is synced, how you
+  see what changed, and what to do when an import refuses.
+
+Each animal's details -- the `0a_Metadata` tab, the two surgery tabs, and
+each animal's sex from the tray tab -- are also kept as a copy that the
+exports read. That copy is thrown away and taken again from the sheet on
+every import made from the Tracking Sheets tab, the update button, the
+scheduled job or the commands on this page. Only an import that SAVED the
+workbook replaces it: when an import fails, the copy is left exactly as it
+was (see "When an import fails" below). **Replace**, in the Cohort Setup
+tab, still rebuilds a whole cohort from its sheet on purpose (see "Import or
+Replace" below).
 
 Animals do NOT have to be in the sheet before their videos are processed.
 `mousedb import-reaches` creates an animal the first time it sees a video
@@ -51,7 +62,7 @@ One row per cohort:
 | Column | Meaning |
 |---|---|
 | Cohort | e.g. CNT_NN |
-| Status | **Up to date** -- the database matches the sheet's last edit. **Sheet edited since last import** -- someone changed the workbook after it was last imported; import again. **Never imported** -- import it. **LAST IMPORT FAILED** -- the last attempt hit an error; select the row to read it. **N files match -- choose** -- see "Which file is read" below. |
+| Status | **Up to date** -- the database matches the sheet's last edit. **Sheet edited since last import** -- someone changed the workbook after it was last imported; import again. **Never imported** -- import it. **LAST IMPORT FAILED** -- the last attempt hit an error; select the row to read it. **NOT SYNCED** (red) -- the last import found the sheet looking broken and removed and changed nothing; select the row to read why, and see "The sheet wins". **N files match -- choose** -- see "Which file is read" below. |
 | Sheet file | The workbook being read as this cohort's sheet. `[pinned]` means a person chose it and that file is still there. `[PIN BROKEN -- see the red box]`, in red, means the file a person chose has gone (see "A broken pin"). |
 | Sheet edited | When that workbook was last saved. |
 | Last import | When it was last imported into the database (the log box shows whether that worked). |
@@ -104,6 +115,114 @@ one that happened. When something it left out needs a person, it says so in
 a **warning**: one line per problem, once per import.
 
 A warning is not a failure. Everything else in the workbook was imported.
+
+### The sheet wins: corrections and removals reach the database
+
+**Why.** Until this was added the import only ever ADDED rows. Two things
+went wrong because of it, and both stayed wrong for weeks:
+
+- a session typed into the wrong cohort's workbook, imported, and then moved
+  to the right workbook stayed in the database under the wrong cohort. Its
+  date became part of that cohort's schedule, and because each session's
+  phase (training, baseline, post-injury test ...) is worked out from the
+  cohort's whole set of session dates, one extra date moved the labels of
+  the real sessions: baseline read as training, the first post-injury tests
+  read as baseline -- in the database and in every export;
+- a new cohort's workbook, made by copying the previous cohort's, was
+  imported while it still held the previous cohort's weights and surgeries
+  under the new animals' ids. Clearing them from the sheet did nothing.
+
+**What every import now does,** for each cohort, for the rows earlier
+imports of that cohort's sheet wrote:
+
+| Table | A row is the same row when it has the same ... | Compared and corrected | Removed when |
+|---|---|---|---|
+| pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
+| weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams | that animal and date has no weight in the sheet any more |
+| ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, tray start and end | the row is gone |
+| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes; for a tracing injection virus, titre, volume, target, weight, survived) | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
+
+- A cell that holds something that is not a value (`x`, `?`, `n/a` where a
+  score belongs) is **not** an empty cell: the stored value is kept, and the
+  usual warning names the cell.
+- **Rows typed in by hand are never touched.** Only rows marked as written by
+  the sheet import (`entered_by = excel_import`) are compared or removed. If
+  the sheet says something different for a hand-typed row, the hand value
+  stands and a warning says so (`... typed in by hand (by <name>) and differs
+  from the sheet; the hand-typed values stand ...`): correct it by hand if
+  the sheet is right.
+- **Animals are never removed** by an import, even when the sheet no longer
+  lists them: an animal can exist because of its videos alone.
+- When an import removes a session date, or adds one, the cohort's **phases
+  are worked out again in the same import**, for its pellet scores and its
+  reaches, and the import says how many rows were relabelled. The hand-scores
+  file for the reaching pipeline is rewritten at the end of the import as
+  always, and the next night's export refresh rebuilds the exports with the
+  new labels (it notices relabelled rows even when no row was added).
+- **A dry run** (`--dry-run`, or the Cohort Setup preview) says what an
+  import WOULD change and remove, and writes nothing.
+
+**How you see what changed.** Every change and removal is recorded three
+times:
+
+1. in the import's output, under the cohort's `OK` line, for example
+
+   ```
+   OK   PROJA_NN <sheet> {...}  [2 warnings]
+          changed from the sheet -- pellet_scores: 40 rows removed in 2 trays no longer in the sheet; session date no longer in the sheet: 2026-03-19
+          phases re-derived for PROJA_NN: 120 pellet and 950 reach rows relabelled
+   ```
+
+2. in the import history (`<mousedb_root>/logs/sheet_imports.jsonl`), on that
+   cohort's line, under `sheet_sync`: every changed value with its old and
+   new value, every removed row (a removed tray with its 20 old scores), the
+   dates that left the cohort's schedule, and under `phases_rederived` how
+   many rows were relabelled. This list is kept whole, never cut short;
+3. in the database's own audit log (the `audit_log` table and
+   `<mousedb_root>/logs/<date>_changes.jsonl`), one entry per row, with the
+   row's old values. A removed row can be typed back from there if a removal
+   was ever wrong -- or simply put back in the sheet; the next import adds it.
+
+**When the import refuses (a sheet that reads as broken).** A tab renamed or
+missing, a file caught half-saved, a column moved: each of these would look
+to the import like rows deleted from the sheet. So an import removes and
+changes NOTHING in a table when:
+
+- a tab that feeds it could not be read, or has no usable heading;
+- the sheet reads as holding none of that table's rows for the cohort while
+  the database holds some;
+- it would remove more than a quarter of the rows (trays, for pellet scores)
+  earlier imports wrote for the cohort, or change more than a quarter of
+  their values -- unless that is 5 or fewer, which is always an ordinary edit.
+
+New rows are still added. The cohort's line then carries a warning that
+starts `NOT SYNCED <table>: ...`, printed under the cohort's line with
+`[!]`; the closing line says `N NOT SYNCED with the sheet -- it read as
+broken (<cohorts>)`; the scheduled job ends with exit code 1, so the
+scheduler shows a failure; the Tracking Sheets tab shows the cohort as
+**NOT SYNCED** in red; and the line is listed in the red **Needs your
+attention** box of the Where Is My Data tab and in the cohort's FIX THESE
+file beside the sheet.
+
+What to do:
+
+1. Open the sheet and look at the tab the line names. If a tab was renamed,
+   a heading changed or rows were cut by mistake, put it right and save. The
+   next import syncs normally and the warning goes away.
+2. If the sheet is right -- you really did take that many rows out (a
+   workbook copied from the previous cohort, say) -- import that cohort on
+   its own, saying so:
+
+   ```
+   mousedb-sheets import --cohort PROJA_NN --dry-run --allow-large-removal   # see what would go
+   mousedb-sheets import --cohort PROJA_NN --allow-large-removal             # do it
+   ```
+
+   The flag works only with `--cohort` (never for every sheet at once), is
+   recorded in the history line (`allow_large_removal`), and still removes
+   nothing from a tab that could not be read or reads as empty. Without a
+   terminal, **Replace** in the Cohort Setup tab does the same job: it
+   rebuilds the cohort from the sheet, keeping hand-typed rows.
 
 ### Surgery rows: done, planned, or waiting for a fix
 
@@ -591,8 +710,11 @@ warnings, and -- for a cohort already in the database -- what a Replace would
 remove and keep. If the preview shows ERRORS, only *Close* is offered.
 Otherwise choose:
 
-- **Import (add-only)** -- adds the rows the database does not have yet.
-  Nothing already in the database changes.
+- **Import (sheet wins)** -- adds the rows the database does not have yet,
+  corrects values the sheet now gives differently, and removes rows earlier
+  imports of this sheet wrote that the sheet no longer has (see "The sheet
+  wins"). Rows typed in by hand are never touched. The preview says what it
+  would change or remove (`If you choose Import: ...`).
 - **Replace (delete + re-import)** -- only for a cohort already in the
   database. It removes the rows that earlier imports of this sheet wrote and
   imports the sheet again, so corrected or deleted cells take effect.
@@ -684,6 +806,12 @@ animal-details copy, video data and tissue data are not touched.
 | `The sheets folder <folder> is not there any more ...` | Press **Refresh**; if the folder moved, press **Set sheets folder...** first. |
 | `REFUSED: ...` then `Nothing was written.` (`mousedb new-sheet` or `mousedb-make-sheets`, exit code 3) | The same refusals as the button; the line says which. |
 | `[!] <tab>!<cell>: ... left as written` (after a new sheet is created) | That formula could not be pointed at the new animal's row; it is as it was in the template. Check it in the new sheet, and fix the template if it should be different. |
+| `NOT SYNCED <table>: ...` | The sheet read as broken, so nothing in that table was removed or changed. Check the tab it names; if the sheet is right, import that cohort with `--allow-large-removal` or use Replace (see "The sheet wins"). |
+| `<table>: <animal> <date> ... was typed in by hand (by <name>) and differs from the sheet ...` / `3b_Manual_Tray: <animal> <date> <tray> has scores typed in by hand ...` | Nothing is wrong with the import. Decide which is right: correct the sheet, or correct the hand-typed row in the entry tab it came from. |
+| `3b_Manual_Tray: <animal> <date> <tray> pellet N is on two rows with different scores ...` | The same tray is typed twice. Delete the extra row in the sheet. |
+| `changed from the sheet -- ...` (under a cohort's `OK` line) | Nothing: it lists what the import corrected or removed because the sheet changed. Check it matches what you meant to change. |
+| `phases re-derived for <cohort>: ...` | Nothing: the cohort's session dates changed, so its phases were worked out again. |
+| `FAIL ... the sheet's rows were saved, but re-deriving <cohort>'s phases failed ...` | The rows landed, but phase labels may be stale. Run `mousedb backfill-phases` (MouseDB environment active); if it fails again, the message says why. |
 | `Replace kept N ... rows for <animal> ...` | If the sheet's value is the right one, correct the kept row by hand in the entry tab it came from. |
 | `Replace removed N ... rows ..., and the sheet gave back M ...` | Nothing, if you removed rows from the sheet; otherwise read the other warnings for why rows were skipped. |
 | `Replace of <cohort> undone -- nothing in the database was changed ...` | Fix the error listed under it and Replace again. |
@@ -960,6 +1088,7 @@ From a terminal (MouseDB environment active):
 ```
 mousedb-sheets status                             # which file, edited when, imported when
 mousedb-sheets import [--cohort CNT_NN] [--dry-run] [--json]
+mousedb-sheets import --cohort CNT_NN --allow-large-removal   # after checking: see "The sheet wins"
 mousedb-sheets pin CNT_NN "Connectome_NN_Animal_Tracking.xlsx"
 mousedb-sheets unpin CNT_NN
 mousedb-sheets set-dir "<folder>"
