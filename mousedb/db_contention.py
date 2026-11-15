@@ -116,6 +116,7 @@ def retry_while_locked(
     announce: Optional[Callable[[str], None]] = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    from_first_lock: bool = False,
 ) -> T:
     """Run ``work``, retrying only while the database is locked by someone else.
 
@@ -127,12 +128,23 @@ def retry_while_locked(
         what: the job's name, as it should appear in a message to a person
             ("The analysis snapshot refresh").
         window_minutes: stop trying after this long, counted from the first
-            attempt. A job will not run past its window even if a retry is due.
+            attempt (or, with ``from_first_lock``, from the first lock error).
+            A job will not run past its window even if a retry is due.
         gap_minutes: how long to wait between attempts.
         announce: where to put progress for a person -- usually print. Each
             wait is announced, because a silent job that takes 45 minutes looks
             exactly like a hung one, and someone will kill it.
         sleep, clock: injected so the behaviour can be tested without waiting.
+        from_first_lock: start the window at the first "database is locked",
+            not at the first attempt. For a job whose ``work`` may first wait
+            a long time for this tool's own cross-task lock (the snapshot
+            refresh waits up to hours behind an import): counted from the
+            first attempt, that wait used up the window, so the first outside
+            lock afterwards ended the job at once, without one retry, while
+            the message claimed it had waited the whole window. The job's time
+            limit must then allow for the lock wait + this window + the run.
+            The short jobs keep the default, so their whole run stays inside
+            the window.
 
     Returns:
         whatever ``work`` returned.
@@ -143,8 +155,7 @@ def retry_while_locked(
         fault that is not a lock is not something waiting can fix.
     """
     say = announce or (lambda _m: None)
-    started = clock()
-    deadline = started + window_minutes * 60
+    started: Optional[float] = None if from_first_lock else clock()
     attempt = 0
 
     while True:
@@ -154,6 +165,9 @@ def retry_while_locked(
         except BaseException as exc:
             if not is_locked_error(exc):
                 raise
+            if started is None:             # from_first_lock: the window opens now
+                started = clock()
+            deadline = started + window_minutes * 60
 
             waited = int((clock() - started) / 60)
             remaining = deadline - clock()

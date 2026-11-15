@@ -202,3 +202,40 @@ def test_swap_gives_up_loudly_on_a_reader_that_never_lets_go(tmp_path):
         with pytest.raises(PermissionError):
             rs.swap_in(tmp, out, wait_seconds=1)
     assert out.read_bytes() == b"old"
+
+
+def test_a_long_wait_for_the_task_lock_does_not_use_up_the_retry_window(configured, db_ok_seen,
+                                                                       monkeypatch):
+    """refresh() may wait up to --lock-wait-minutes for the cross-task lock
+    before it reads anything. That wait must not count against --retry-minutes:
+    a "database is locked" met right after it used to find the window spent
+    and fail the night's refresh without a single retry."""
+    from mousedb import db_contention as dc
+
+    class Clock:
+        now = 1000.0
+
+        def __call__(self):
+            return self.now
+
+        def sleep(self, seconds):
+            self.now += seconds
+
+    clock = Clock()
+    real_retry = dc.retry_while_locked
+    monkeypatch.setattr(dc, "retry_while_locked",
+                        lambda work, **kw: real_retry(work, sleep=clock.sleep, clock=clock, **kw))
+    real_refresh = rs.refresh
+    calls = []
+
+    def refresh(**kw):
+        calls.append(1)
+        if len(calls) == 1:
+            clock.now += 120 * 60             # two hours behind an import, then a lock
+            raise sqlite3.OperationalError("database is locked")
+        return real_refresh(**kw)
+
+    monkeypatch.setattr(rs, "refresh", refresh)
+    monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
+    assert rs.main(["--skip-census", "--retry-minutes", "25"]) == 0
+    assert len(calls) == 2

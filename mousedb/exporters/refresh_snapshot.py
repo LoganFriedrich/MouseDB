@@ -306,7 +306,8 @@ def main(argv=None) -> int:
                          % DEFAULT_LOCK_WAIT_MINUTES)
     ap.add_argument("--retry-minutes", type=int, default=25,
                     help="How long to keep retrying if another program has the "
-                         "database locked (default 25). A retry restarts this "
+                         "database locked (default 25), counted from the first "
+                         "time it is found locked. A retry restarts this "
                          "whole refresh, so set this to the gap between this job "
                          "and the next one on your schedule, minus how long a "
                          "successful refresh takes. 0 disables retrying.")
@@ -362,6 +363,11 @@ def main(argv=None) -> int:
                 what="The analysis snapshot refresh",
                 window_minutes=args.retry_minutes,
                 gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
+                # The window opens at the first outside lock, not when this
+                # run started: refresh() may first wait up to
+                # --lock-wait-minutes for the import ahead of it, and that wait
+                # used to spend the whole window before a single retry.
+                from_first_lock=True,
                 announce=lambda m: print(m, flush=True))
         except DatabaseBusy as busy:
             print("  [FAIL] %s" % busy, flush=True)

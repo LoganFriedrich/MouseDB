@@ -76,6 +76,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- The snapshot refresh's `--retry-minutes` window now starts at the first
+  "database is locked", not when the job starts. Time spent waiting for an
+  import to finish (up to `--lock-wait-minutes`) used to spend the window, so
+  the first outside lock afterwards failed the night's refresh at once while
+  the message said it had waited the whole window. Size the task's time limit
+  as lock wait + retry window + run (INSTALL.md).
 - The database-task lock no longer lands in the working directory when
   `mousedb_root` is unset: with only `db_path` set it goes in the `logs`
   folder beside the database, and with neither set the job stops with the

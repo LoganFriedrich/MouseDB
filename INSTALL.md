@@ -438,6 +438,16 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   `--retry-minutes` (default 25) because a full refresh of a multi-gigabyte
   database over a network share can take over an hour on its own.
 
+  **When the window starts.** For the short imports it starts when the job
+  starts. For the snapshot refresh it starts the first time the refresh finds
+  the database locked by another program -- NOT when the job starts -- because
+  the refresh may first wait up to `--lock-wait-minutes` for an import ahead of
+  it, and counting that wait used up the whole window before a single retry.
+  So size the snapshot task's time limit as: lock wait (`--lock-wait-minutes`,
+  default 180) + retry window (`--retry-minutes`, default 25) + how long a
+  successful refresh, exports and census take. If that does not fit, lower
+  `--lock-wait-minutes` or raise the limit.
+
   Retrying only ever rescues a lock that clears in minutes. A session left open
   for an hour will outlast any window worth having, and that is what the
   snapshot-age reporting below is for -- not more waiting.

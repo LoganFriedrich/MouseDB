@@ -201,3 +201,52 @@ def test_the_original_error_is_kept_as_the_cause_for_whoever_debugs_it():
                               what="The job", gap_minutes=1, window_minutes=2,
                               sleep=clock.sleep, clock=clock)
     assert isinstance(caught.value.__cause__, sqlite3.OperationalError)
+
+
+# -- when the window starts --------------------------------------------------
+
+def test_from_first_lock_the_window_starts_at_the_first_lock_not_the_first_attempt():
+    """The snapshot refresh may first wait hours for the cross-task lock INSIDE
+    its first attempt. Counted from that attempt, its retry window was already
+    spent when the first "database is locked" arrived, so it gave up at once
+    -- and said it had waited the whole window."""
+    clock = FakeClock()
+    attempts = []
+
+    def work():
+        attempts.append(1)
+        if len(attempts) == 1:
+            clock.now += 180 * 60          # waited for the task lock, then met a lock
+            raise locked_error()
+        return "refreshed"
+
+    assert dc.retry_while_locked(work, what="The job", window_minutes=25, gap_minutes=7,
+                                 from_first_lock=True,
+                                 sleep=clock.sleep, clock=clock) == "refreshed"
+    assert clock.slept == [7 * 60]
+
+
+def test_from_first_lock_still_gives_up_inside_its_window():
+    clock = FakeClock()
+
+    def work():
+        clock.now += 60 * 60                # every attempt takes an hour before it is refused
+        raise locked_error()
+
+    with pytest.raises(dc.DatabaseBusy):
+        dc.retry_while_locked(work, what="The job", window_minutes=25, gap_minutes=7,
+                              from_first_lock=True, sleep=clock.sleep, clock=clock)
+
+
+def test_by_default_the_window_still_starts_at_the_first_attempt():
+    """The short jobs keep the old rule: their whole run must stay inside it."""
+    clock = FakeClock()
+
+    def work():
+        clock.now += 50 * 60
+        raise locked_error()
+
+    with pytest.raises(dc.DatabaseBusy):
+        dc.retry_while_locked(work, what="The job", window_minutes=45, gap_minutes=7,
+                              sleep=clock.sleep, clock=clock)
+    assert clock.slept == []
