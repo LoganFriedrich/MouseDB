@@ -76,6 +76,13 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Current exports: the exporter's own version is no longer a number bumped by
+  hand. It is a SHA-256 of the installed package's code, so any code change
+  rebuilds the per-reach files on the next run (a change made without bumping
+  the number used to be skipped, and the old files kept looking current). The
+  first nightly run after each install rewrites every per-reach file. The
+  "Refresh exports now" button runs the exporter as a fresh program, so a
+  window opened before an install never exports with the old code.
 - Current exports: only one refresh writes `exports/current` at a time. The
   nightly job, the "Refresh exports now" button, `mousedb-current-exports` and
   `mousedb export-odc-reaches` (into the live folder) shared one staging folder

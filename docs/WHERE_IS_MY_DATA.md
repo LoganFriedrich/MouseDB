@@ -279,9 +279,10 @@ the last good night -- and the job says so.
 **When the big per-reach files are not rewritten.** They are kept from the
 previous night when nothing they are built from has changed: the reaches, the
 animals, the hand scores, the sheet records, the per-pellet table, the weights,
-the lab's settings, and everything the "left out" checks look at. A change to
-any one of those rebuilds them, so a corrected entry always comes back the
-next night. `MANIFEST.json` says when the files were kept
+the lab's settings, everything the "left out" checks look at, and mousedb's
+own code. A change to any one of those rebuilds them, so a corrected entry
+always comes back the next night -- and the first night after new mousedb code
+is installed rewrites every one of them, which takes hours. `MANIFEST.json` says when the files were kept
 (`odc_reaches_skipped`).
 
 ## The longer answer: the "Where Is My Data" tab

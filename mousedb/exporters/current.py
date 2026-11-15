@@ -231,6 +231,36 @@ ODC_INPUT_TABLES = ("reach_data", "subjects", "pellet_scores", "animal_records",
                     "video_pellets", "weights")
 
 
+def _package_root() -> Path:
+    """The mousedb package folder whose code writes these files."""
+    return Path(__file__).resolve().parent.parent
+
+
+def exporter_code_hash(root: Optional[Path] = None) -> str:
+    """SHA-256 of every .py file of the mousedb package, in sorted path order.
+
+    WHY the whole package and not a list of exporter modules: the files are
+    shaped by code all over it (phase labels, statistics, the sheet readers,
+    the dictionary), and a list kept by hand goes stale exactly like the
+    hand-bumped number this replaced. The price is one full rebuild after
+    every install of new code, which the nightly run has time for.
+
+    Line endings are normalised so the same code checked out on two computers
+    hashes the same. Read from disk at the time of the call: the Where Is My
+    Data button runs the exporter as a fresh program (gui.data_status_tab) so
+    the code that runs is the code on disk, never an older copy a window has
+    held in memory since it was opened."""
+    import hashlib
+    root = Path(root) if root else _package_root()
+    h = hashlib.sha256()
+    for f in sorted(root.rglob("*.py"), key=lambda q: q.relative_to(root).as_posix()):
+        if "__pycache__" in f.parts:
+            continue
+        h.update(f.relative_to(root).as_posix().encode("utf-8") + b"\0")
+        h.update(f.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    return h.hexdigest()
+
+
 def odc_reaches_signature(snapshot_dir: Path) -> dict:
     """Everything the per-reach ODC/analysis files and analysis_EXCLUSIONS.csv
     are built from, reduced to values that change whenever an input changes.
@@ -246,7 +276,8 @@ def odc_reaches_signature(snapshot_dir: Path) -> dict:
         workbook) -- export_exclusions.input_signature.
       * the ASPA workbook names -- the manifest names each letter cohort's
         workbook.
-      * output_format -- the exporter's own code (bumped by hand, below).
+      * output_format -- the exporter's own code: a hash of the package's
+        source (exporter_code_hash), so any change to it rebuilds the files.
     Anything that cannot be read is recorded as such ("absent", "unreadable"),
     so the day it can be read the signature changes and the files are rebuilt.
     """
@@ -266,43 +297,13 @@ def odc_reaches_signature(snapshot_dir: Path) -> dict:
         sig[name] = snapshot_generation.table_hash(snapshot_dir, name)
     sig["study_facts"] = text_of(study_facts.facts_path())
     sig["field_definitions"] = text_of(field_definitions.definitions_path())
-    # The signature covers the INPUTS. It cannot notice that the exporter itself now
-    # writes different columns or different words, so this number stands for the output
-    # format and is bumped by hand whenever that changes -- otherwise a node still
-    # holding the previous code skips the rewrite and the old files look current.
-    # BUMP THIS whenever the exporter writes a different column, a different word
-    # in a cell, or a different dictionary entry. Forgetting is not a small
-    # mistake: the run silently skips the export, reuses the previous run's
-    # record of what it wrote, and reports the state of files it did not look
-    # at -- which happened on 2026-10-14, where two freshly written dictionary
-    # entries were reported missing because nothing had been rewritten.
-    #   2 = letter cohorts carry their letter (ASPA_04_D)
-    #   3 = two documents per cohort (complete record + shareable summary), the extended
-    #       per-reach measurements included, and no empty cells in either
-    #   9 = the analysis document: numbers in numeric columns, NA for absent, an
-    #       entry index, the session totals on every reach row
-    #  10 = every measurement we hold is carried (the flat per-reach columns, the
-    #       whole-hand speeds, per-reach attention, the day's body weight), column
-    #       names obey ODC's naming rules, and no cell can break a CSV reader
-    #  11 = the body-weight percentage in one unit: cohorts stored as whole
-    #       percentages were being multiplied by 100 again (9,000%)
-    #  12 = entries with an identified problem are left out of the analysis
-    #       documents (export_exclusions), with an analysis_EXCLUSIONS.csv
-    #       report; survival counts only on a surgery proven by its weight
-    #  13 = one data dictionary per kind of document instead of one per cohort
-    #       (ODC_reaches_DATA_DICTIONARY.csv, reaches_summary_DATA_DICTIONARY.csv);
-    #       the manifest names every report file
-    #  14 = pellets_presented is the tray's 20 and every percentage is out of it
-    #       (retrieved, displaced, contacted, missed, from both streams); the
-    #       count of pellets with a reach is kept as pellets_reached_for
-    #  15 = pellets are measured: pellets_in_video (from the per-pellet table) and
-    #       pellets_hand_scored; video totals count every pellet; a count other
-    #       than 20 is an identified error (export_exclusions check 7)
-    #  16 = files grouped into <project>/<cohort>/ folders, plus a combined file
-    #       per kind per project (exporters.layout)
-    #  17 = a project listed under a grant sits in the grant's folder
-    #  18 = informational notes kept apart from problems in the manifest
-    sig["output_format"] = 18
+    # The signature covers the INPUTS; this part covers the exporter ITSELF.
+    # A change to the code that writes these files (a new column, a different
+    # word in a cell, a new dictionary entry) must rebuild them even when no
+    # data changed. Until this was derived from the code it was a number bumped
+    # by hand, and a change made without bumping it was silently skipped: the
+    # run reused the previous run's files and its record of what it wrote.
+    sig["output_format"] = exporter_code_hash()
     # Which grant holds which project decides where the files go, so a change
     # to it must re-export even when no data changed.
     sig["grants"] = _grants()

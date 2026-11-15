@@ -551,12 +551,17 @@ that are easy to be caught by:
   nothing failed; a check that could not run (listed in the manifest's
   problems) does not stop it being saved, because it follows from those same
   inputs, and it is carried over word for word when a later run is skipped. A
-  skipped run says so in `MANIFEST.json` (`odc_reaches_skipped`). The signature
-  cannot notice that the exporter itself now writes different columns or
-  different words: when the OUTPUT format changes, bump `sig["output_format"]`
-  in `exporters/current.py`, or a machine still holding the previous code will
-  skip the rewrite and leave superseded files looking current. A new input the
-  exporter starts reading must be added to the signature in the same change.
+  skipped run says so in `MANIFEST.json` (`odc_reaches_skipped`). The exporter's
+  own code is part of the signature too: `sig["output_format"]` is a SHA-256 of
+  every `.py` file of the installed mousedb package (`exporter_code_hash`), so
+  ANY change to the code rebuilds the files on the next run -- expect the first
+  nightly run after each install of new code to rewrite every per-reach file
+  (hours, within the job's limit). Nothing is bumped by hand any more; it used
+  to be a number, and a change made without bumping it was silently skipped.
+  The "Refresh exports now" button runs the exporter as a fresh program
+  (`python -m mousedb.exporters.current --no-wait`), so a window left open
+  since before an install still exports with the installed code. A new input
+  the exporter starts reading must be added to the signature in the same change.
 - **A failed or incomplete export fails the job.** If rewriting
   `exports/current/` raises, or any part of it failed (a cohort's file, a
   combined file, the exclusion checks), or `MANIFEST.json` comes out with

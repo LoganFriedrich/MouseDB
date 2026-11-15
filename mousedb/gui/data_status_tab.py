@@ -124,6 +124,39 @@ invalidated, and when the mirror was last taken.
 """
 
 
+def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
+    """Rewrite the current exports by starting the exporter as a program of its
+    own (``python -m mousedb.exporters.current --no-wait``) and waiting for it.
+
+    WHY a fresh program and not a call inside this window: the exports record
+    which version of the code wrote them (a hash of the code on disk, see
+    exporters.current.exporter_code_hash). A window opened before new code was
+    installed still holds the OLD code in memory; called in here, it would
+    write the old format under the new code's name -- or the new code's
+    files would be rebuilt in the old format. A fresh program runs exactly the
+    code that is installed.
+
+    --no-wait: if another refresh (usually the nightly job) is writing the
+    exports, the program stops at once with exit code EXIT_BUSY instead of
+    keeping the button busy for an hour; ``busy`` is then True.
+    Returns {"returncode", "busy", "output"}."""
+    import subprocess
+    import sys
+    from ..exporters.current import EXIT_BUSY
+    exe = Path(sys.executable)
+    # The window runs under pythonw (no console); its python.exe sits beside it.
+    if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
+        exe = exe.parent / "python.exe"
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    proc = subprocess.run([str(exe), "-m", "mousedb.exporters.current", "--no-wait"],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          stdin=subprocess.DEVNULL, creationflags=flags,
+                          timeout=timeout_seconds)
+    out = proc.stdout.decode("utf-8", errors="replace")
+    return {"returncode": proc.returncode, "busy": proc.returncode == EXIT_BUSY,
+            "output": out}
+
+
 class _Worker(QThread):
     done = pyqtSignal(dict)
 
@@ -558,16 +591,17 @@ class DataStatusTab(QWidget):
 
     def refresh_exports(self):
         self.exports.append("Rewriting current exports from the latest snapshot...")
-        from ..exporters.current import refresh_current
-        # lock_wait_seconds=0: if the nightly job (or another person's press)
-        # is writing the exports, say so now rather than sit behind it.
-        self._run(lambda: refresh_current(lock_wait_seconds=0), self._on_exports_done)
+        self._run(run_exports_program, self._on_exports_done)
 
     def _on_exports_done(self, r: dict):
-        problems = [p for p in r.get("problems", []) if p.startswith("ExportsBusy")]
-        if problems and "files" not in r:
+        if r.get("busy"):
             QMessageBox.information(
                 self, "Refresh exports now",
                 "The exports are already being written -- try again when it finishes. "
                 "Nothing was changed.")
+        elif r.get("returncode") not in (0, None) or r.get("problems"):
+            QMessageBox.warning(
+                self, "Refresh exports now",
+                "The exports were not fully rewritten:\n"
+                + "\n".join(r.get("problems") or [r.get("output", "")[-2000:]]))
         self.refresh()
