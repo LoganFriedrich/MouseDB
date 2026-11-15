@@ -550,8 +550,10 @@ its command). An update keeps that place for as long as its program is still
 running, however long that is; if the program that started it has gone (the
 window was closed or the computer restarted mid-update), the next press
 takes over at once. The marker is `logs/.update.task.lock` beside the
-database (an `update.lock` left by an older version is ignored and can be
-deleted). A
+database. While an update runs, an `update.lock` is written beside it too, so
+a window still running an earlier version of this tool also sees it and
+refuses; and an update started by such a window is respected the same way
+(an `update.lock` whose program has gone is ignored). A
 failed step never stops the later ones (sheets failing must not keep a day's
 reaches out), and the update as a whole is marked failed if any step failed.
 

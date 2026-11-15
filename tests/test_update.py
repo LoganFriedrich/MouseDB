@@ -208,3 +208,44 @@ def test_the_update_lock_shows_it_is_alive_while_held(root, monkeypatch):
 
     up.run_update(triggered_by="test", skip=up.STEP_KEYS[1:], runner=runner, log=lambda s: None)
     assert ages and ages[0] < 60
+
+
+# -- an update started by an earlier version of this tool --------------------
+
+def _legacy_marker(logs, pid, started):
+    logs.mkdir(exist_ok=True)
+    (logs / up.LEGACY_LOCK_NAME).write_text(
+        json.dumps({"pid": pid, "started": started, "triggered_by": "gui"}), encoding="utf-8")
+
+
+def test_a_running_update_of_an_earlier_version_is_respected(root):
+    """A window opened before an upgrade keeps the old code, which knows only
+    the old marker; the two must not run at once."""
+    import psutil
+    from datetime import datetime as dt
+    started = dt.fromtimestamp(psutil.Process().create_time() + 1).isoformat(timespec="seconds")
+    _legacy_marker(root / "logs", os.getpid(), started)
+    r = _runner()
+    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    assert res.skipped and r.calls == [] and "earlier version" in res.message
+    assert (root / "logs" / up.LEGACY_LOCK_NAME).exists()       # not ours to remove
+
+
+def test_a_dead_earlier_versions_marker_is_ignored(root):
+    _legacy_marker(root / "logs", 999999999, "2026-01-01T00:00:00")
+    r = _runner()
+    assert up.run_update(triggered_by="test", runner=r, log=lambda s: None).ok
+
+
+def test_an_earlier_version_sees_this_update_running(root):
+    """While this version runs, the old marker exists (so an old window
+    refuses), and it is removed afterwards."""
+    seen = []
+
+    def runner(cmd):
+        seen.append((root / "logs" / up.LEGACY_LOCK_NAME).exists())
+        return 0, "ok"
+
+    up.run_update(triggered_by="test", runner=runner, log=lambda s: None)
+    assert seen and all(seen)
+    assert not (root / "logs" / up.LEGACY_LOCK_NAME).exists()

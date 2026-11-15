@@ -78,6 +78,12 @@ STEP_KEYS = [k for k, _, _ in STEPS]
 # a holder by whether its process is still running (a crashed update's lock is
 # taken over at once, a live one never), and gives back only its own lock.
 LOCK_MUTEX_NAME = "update"
+# The marker earlier versions used. An update started by an earlier version
+# (a window opened before the new version was installed) knows only this file,
+# so while an update runs this version writes it too, and refuses to start
+# while a running earlier update holds it. Without this, an old window and a
+# new one would not see each other and both would run.
+LEGACY_LOCK_NAME = "update.lock"
 # Only for a holder this computer cannot look up (an update started on another
 # computer that shares the logs folder): its lockfile is touched every minute
 # while it runs, so one untouched this long belongs to an update that died.
@@ -187,11 +193,70 @@ def _acquire_lock(logs: Path, log: Callable[[str], None]):
     # taken, instead of refusing with "still running (no lockfile)".
     for _ in range(2):
         if mutex.try_acquire(log=log, heartbeat=True):
+            legacy = _legacy_holder(logs)
+            if legacy:
+                mutex.release(log=log)
+                return None, ("another update (started %s by an earlier version of this "
+                              "tool) is still running -- wait for it to finish" % legacy)
+            _write_legacy_marker(logs, mutex)
             return mutex, None
         state, who = mutex.holder()
         if state in ("alive", "unknown"):
-            break
-    return None, "another update is still running (%s) -- wait for it to finish" % who
+            return None, "another update is still running (%s) -- wait for it to finish" % who
+    # The lock kept changing hands (another press took it at the same moment):
+    # say what was seen, not that a dead process is "still running".
+    return None, ("could not take the update lock (%s) -- another update may have just "
+                  "started; press again in a moment" % who)
+
+
+def _legacy_holder(logs: Path) -> Optional[str]:
+    """When an earlier version's update is running: when it started, else None.
+
+    It is running if the marker names a process that is still alive. A marker
+    whose process is gone, or that cannot be read, is left over and ignored."""
+    try:
+        info = json.loads((logs / LEGACY_LOCK_NAME).read_text(encoding="utf-8"))
+        pid = int(info["pid"])
+    except Exception:
+        return None
+    if info.get("token"):
+        return None             # written by this version: the task lock decides
+    try:
+        import psutil
+        alive = psutil.pid_exists(pid)
+        if alive:
+            # A pid reused by a process started after the marker was written
+            # is not the update that wrote it.
+            started = datetime.fromisoformat(str(info.get("started"))).timestamp()
+            alive = psutil.Process(pid).create_time() <= started + 2
+    except Exception:
+        # Cannot look the process up: the earlier versions' own rule -- a
+        # marker younger than two hours is a running update.
+        try:
+            alive = time.time() - (logs / LEGACY_LOCK_NAME).stat().st_mtime < 2 * 3600
+        except OSError:
+            alive = False
+    return "%s, pid %d" % (info.get("started", "?"), pid) if alive else None
+
+
+def _write_legacy_marker(logs: Path, mutex) -> None:
+    """The earlier versions' marker, so their update refuses while this runs."""
+    try:
+        (logs / LEGACY_LOCK_NAME).write_text(json.dumps({
+            "pid": os.getpid(), "started": datetime.now().isoformat(timespec="seconds"),
+            "token": mutex._identity}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _remove_legacy_marker(logs: Path, mutex) -> None:
+    """Remove the marker only if this update wrote it."""
+    p = logs / LEGACY_LOCK_NAME
+    try:
+        if json.loads(p.read_text(encoding="utf-8")).get("token") == mutex._identity:
+            p.unlink()
+    except Exception:
+        pass
 
 
 def _last_line(output: str) -> str:
@@ -235,6 +300,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
         res.message = ("Everything landed." if not failed
                        else "%d step(s) failed: %s" % (len(failed), "; ".join(failed)))
     finally:
+        _remove_legacy_marker(logs, mutex)
         mutex.release(log=log)
     # Record: the last result for the GUI label, and an append-only ledger.
     try:
