@@ -449,7 +449,8 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   MouseReach watcher before it starts waiting for that lock, not after.
 
   So size the snapshot task's time limit for the worst case: lock wait
-  (`--lock-wait-minutes`, default 180) + the refresh that met the lock + retry
+  (`--lock-wait-minutes`, default 180) + the prefetch (reading the database
+  file once to warm the cache) + the refresh that met the lock + retry
   window (`--retry-minutes`, default 25) + the refresh that succeeds + the
   exports and the census. If that does not fit, lower `--lock-wait-minutes` or
   raise the limit. While the refresh pauses between retries it keeps the lock,

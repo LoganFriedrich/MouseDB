@@ -119,8 +119,13 @@ SWAP_WAIT_SECONDS = 120
 # other jobs' default because this is the job that runs after the imports, so
 # it is the one most often queued behind a long import; and a refresh that
 # gives up is a whole day without new exports, since the scheduler does not
-# re-run a job that started and failed. Size it as: the task's time limit,
-# minus how long a successful refresh (snapshot, exports and census) takes.
+# re-run a job that started and failed. Size it so the worst case fits the
+# task's time limit (INSTALL.md): lock wait + the prefetch + the refresh that
+# met an outside database lock + the retry window + the refresh that succeeds
+# + exports and census. That is: the time limit, minus the retry window, minus
+# the prefetch, minus TWO refreshes, minus exports and census. Sizing it as
+# "the limit minus one successful refresh" leaves no room for a retry, and the
+# scheduler then stops the job part way through rewriting the exports.
 DEFAULT_LOCK_WAIT_MINUTES = 180
 
 
@@ -311,8 +316,12 @@ def main(argv=None) -> int:
     ap.add_argument("--lock-wait-minutes", type=float, default=None,
                     help="How long to wait for another mousedb job (an import) "
                          "that holds the database-task lock and is still working "
-                         "(default %d). Set it to this task's time limit minus "
-                         "how long a successful refresh takes. The environment "
+                         "(default %d). Set it so the worst case fits this task's "
+                         "time limit: the limit, minus --retry-minutes, minus "
+                         "reading the database file once to warm the cache, "
+                         "minus two refreshes (the one that met another "
+                         "program's lock and the retry that succeeds), minus "
+                         "the exports and census (INSTALL.md). The environment "
                          "variable MOUSEDB_LOCK_WAIT_MINUTES overrides it."
                          % DEFAULT_LOCK_WAIT_MINUTES)
     ap.add_argument("--retry-minutes", type=int, default=25,

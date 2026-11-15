@@ -96,7 +96,8 @@ checked-in code, not what's planned.
   lock between mousedb jobs once and keeps it through its retries, so a retry
   no longer queues behind an import a second time; the per-cohort session
   exports are written under that lock too. Size the task's time limit as lock
-  wait + two refreshes + retry window + exports and census (INSTALL.md).
+  wait + the prefetch (reading the database file once to warm the cache) +
+  two refreshes + retry window + exports and census (INSTALL.md).
 - The database-task lock no longer lands in the working directory when
   `mousedb_root` is unset: with only `db_path` set it goes in the `logs`
   folder beside the database, and with neither set the job stops with the
