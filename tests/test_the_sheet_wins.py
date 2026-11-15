@@ -162,6 +162,26 @@ def test_a_score_changed_in_the_sheet_is_changed_in_the_database(tmp_path):
         assert len(audit) == 1 and json.loads(audit[0].new_values) == {"score": new}
 
 
+def test_a_weight_and_a_surgery_changed_in_the_sheet_are_changed(tmp_path):
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    p = _workbook(_sheet(tmp_path), surgeries=[(ANIMALS[0], date(2026, 3, 20), 21.0, 75),
+                                               (ANIMALS[1], date(2026, 3, 20), 21.0, 61)])
+    wb = openpyxl.load_workbook(p)
+    wb["3d_Weights"]["C2"] = 19.5          # first animal, first day
+    wb.save(p)
+
+    r = _import(db, p)
+
+    with db.session() as s:
+        assert s.query(Weight).filter_by(subject_id=ANIMALS[0], date=DAYS[0]).one().weight_grams == 19.5
+        assert s.query(Surgery).filter_by(subject_id=ANIMALS[0]).one().force_kdyn == 75
+    assert r["sheet_sync"]["weights"]["changed"][0]["values"] == {
+        "weight_grams": {"old": 20.0, "new": 19.5}}
+    assert r["sheet_sync"]["surgeries"]["changed"][0]["values"] == {
+        "force_kdyn": {"old": 60.0, "new": 75.0}}
+
+
 # --------------------------------------------------------------------------
 # a session no longer in the sheet
 # --------------------------------------------------------------------------
@@ -198,6 +218,29 @@ def test_a_session_moved_out_of_the_sheet_is_removed_and_the_phases_rederived(tm
         assert json.loads(dels[0].old_values)["session_date"] == PHANTOM.isoformat()
 
 
+def test_weights_and_surgeries_copied_from_another_workbook_are_removed(tmp_path):
+    """A workbook made by copying an earlier cohort's still held that cohort's
+    weights and surgery when it was first imported; once the sheet holds its
+    own, the copied rows go."""
+    db = _db(tmp_path)
+    copied_days = [date(2026, 1, 5), date(2026, 1, 6)]
+    first = _workbook(_sheet(tmp_path), surgeries=[(a, date(2026, 1, 20), 20.0, 70) for a in ANIMALS])
+    wb = openpyxl.load_workbook(first)
+    for d in copied_days:
+        for a in ANIMALS:
+            wb["3d_Weights"].append([d, a, 18.0])
+    wb.save(first)
+    _import(db, first)
+
+    r = _import(db, _workbook(_sheet(tmp_path)), allow=True)
+
+    with db.session() as s:
+        assert not s.query(Weight).filter(Weight.date.in_(copied_days)).count()
+        assert {x.surgery_date for x in s.query(Surgery)} == {date(2026, 3, 20)}
+    assert len(r["sheet_sync"]["weights"]["removed"]) == 4
+    assert len(r["sheet_sync"]["surgeries"]["removed"]) == 2
+
+
 def test_an_emptied_cell_is_removed_but_an_unreadable_one_is_kept(tmp_path):
     db = _db(tmp_path)
     _import(db, _workbook(_sheet(tmp_path)))
@@ -221,6 +264,35 @@ def test_an_emptied_cell_is_removed_but_an_unreadable_one_is_kept(tmp_path):
 # --------------------------------------------------------------------------
 # rows typed in by hand
 # --------------------------------------------------------------------------
+
+def test_rows_typed_in_by_hand_are_never_touched(tmp_path):
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    hand_day = date(2026, 3, 25)
+    with db.session() as s:
+        for p in range(1, 21):
+            s.add(PelletScore(subject_id=ANIMALS[0], session_date=hand_day, tray_type="P",
+                              tray_number=1, pellet_number=p, score=2, test_phase="x",
+                              entered_by="a_reviewer"))
+        s.add(Weight(subject_id=ANIMALS[0], date=hand_day, weight_grams=22.0, entered_by="a_reviewer"))
+        s.add(Surgery(subject_id=ANIMALS[0], surgery_date=hand_day, surgery_type="perfusion",
+                      entered_by="a_reviewer"))
+        # A hand-typed value on a day the sheet also has: the hand value stands.
+        hand_value = (_scores(DAYS[0], ANIMALS[1])[0] + 1) % 3
+        s.query(PelletScore).filter_by(subject_id=ANIMALS[1], session_date=DAYS[0],
+                                       pellet_number=1).update({"entered_by": "a_reviewer",
+                                                                "score": hand_value})
+
+    r = _import(db, _workbook(_sheet(tmp_path)))
+
+    with db.session() as s:
+        assert s.query(PelletScore).filter_by(session_date=hand_day).count() == 20
+        assert s.query(Weight).filter_by(date=hand_day).count() == 1
+        assert s.query(Surgery).filter_by(surgery_type="perfusion").count() == 1
+    assert _pellets(db)[(ANIMALS[1], DAYS[0], 1, 1)] == hand_value
+    assert "pellet_scores" not in (r.get("sheet_sync") or {})
+    assert any("typed in by hand (by a_reviewer)" in w for w in r["warnings"])
+
 
 # --------------------------------------------------------------------------
 # a broken read removes nothing
@@ -255,6 +327,15 @@ def test_a_sheet_that_lost_most_of_its_rows_removes_nothing(tmp_path):
     r = _import(db, _workbook(_sheet(tmp_path), days=DAYS[:3]), allow=True)
     assert {k[1] for k in _pellets(db)} == set(DAYS[:3])
     assert "refused" not in r["sheet_sync"]
+
+
+def test_an_empty_weights_tab_removes_no_weight(tmp_path):
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    r = _import(db, _workbook(_sheet(tmp_path), weights=False), allow=True)
+    with db.session() as s:
+        assert s.query(Weight).count() == 6
+    assert any(x.startswith("NOT SYNCED weights") for x in r["sheet_sync"]["refused"])
 
 
 def test_a_refusal_fails_the_scheduled_import_and_is_listed_for_a_person(tmp_path, monkeypatch):
@@ -302,6 +383,16 @@ def test_a_dry_run_reports_what_would_change_and_writes_nothing(tmp_path):
     assert len(r["sheet_sync"]["pellet_scores"]["removed_trays"]) == 2
     with db.session() as s:
         assert not s.query(AuditLog).filter_by(action="DELETE").count()
+
+
+def test_ramp_rows_no_longer_in_the_sheet_are_removed(tmp_path):
+    db = _db(tmp_path)
+    ramp = [(a, date(2026, 2, 23) + timedelta(days=i), 22.0) for a in ANIMALS for i in range(3)]
+    _import(db, _workbook(_sheet(tmp_path), ramp=ramp))
+    r = _import(db, _workbook(_sheet(tmp_path), ramp=ramp[:2] + ramp[3:5]))
+    with db.session() as s:
+        assert s.query(RampEntry).count() == 4
+    assert len(r["sheet_sync"]["ramp_entries"]["removed"]) == 2
 
 
 def test_the_summary_line_names_what_the_sheet_removed():

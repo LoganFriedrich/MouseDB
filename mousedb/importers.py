@@ -38,6 +38,20 @@ from .validators import (
 )
 
 
+def _jsonable(value):
+    """A stored or sheet value as plain JSON for the audit log and the ledger:
+    dates as YYYY-MM-DD, numpy numbers as Python numbers, NaN as None."""
+    if value is None:
+        return None
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    if hasattr(value, 'item'):
+        value = value.item()
+    if isinstance(value, float) and value != value:
+        return None
+    return value
+
+
 def _iso(value) -> Optional[str]:
     """A date as YYYY-MM-DD for reports and the ledger (None stays None)."""
     if value is None:
@@ -242,6 +256,11 @@ class ExcelImporter:
             # Stats (archived for validation)
             self._import_stats(xl, cohort_id, session, dry_run,
                                 source_file=str(excel_path))
+
+            # The sheet wins (see _sync_table): once every tab is read, the
+            # rows earlier imports wrote are brought in step with the sheet.
+            for table in ('weights', 'ramp_entries', 'surgeries'):
+                self._sync_table(session, cohort_id, table, dry_run)
 
             # Log skipped sheets
             TEMPLATE_SHEETS = {'2_OCD_Animal_Tracking', '2_ODC_Animal_Tracking',
@@ -504,6 +523,7 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name='1_Weight')
         except Exception as e:
             self.warnings.append(f"Failed to read 1_Weight: {e}")
+            self._tab_unread('weights', "the 1_Weight tab could not be read (%s)" % e)
             return
 
         for _, row in df.iterrows():
@@ -526,12 +546,15 @@ class ExcelImporter:
             try:
                 weight_val = float(weight_val)
             except (ValueError, TypeError):
+                self._seen('weights', (subject_id, date_val), None)
                 continue
 
             valid, msg = validate_weight(weight_val)
             if not valid:
                 self.warnings.append(f"Invalid weight for {subject_id} on {date_val}: {msg}")
+                self._seen('weights', (subject_id, date_val), None)
                 continue
+            self._seen('weights', (subject_id, date_val), {'weight_grams': weight_val})
 
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
@@ -571,6 +594,7 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name=sheet, header=None)
         except Exception as e:
             self.warnings.append(f"Failed to read {sheet}: {e}")
+            self._tab_unread('weights', "the %s tab could not be read (%s)" % (sheet, e))
             return
 
         if len(df) < 2:
@@ -649,12 +673,15 @@ class ExcelImporter:
                 try:
                     weight_val = float(weight_val)
                 except (ValueError, TypeError):
+                    self._seen('weights', (subject_id, date_val), None)
                     continue
 
                 valid, msg = validate_weight(weight_val)
                 if not valid:
                     self.warnings.append(f"Invalid weight for {subject_id} on {date_val}: {msg}")
+                    self._seen('weights', (subject_id, date_val), None)
                     continue
+                self._seen('weights', (subject_id, date_val), {'weight_grams': weight_val})
 
                 # Check for duplicate
                 existing = session.query(Weight).filter_by(
@@ -789,12 +816,15 @@ class ExcelImporter:
             try:
                 weight_val = float(weight_val)
             except (ValueError, TypeError):
+                self._seen('weights', (subject_id, date_val), None)
                 continue
 
             valid, msg = validate_weight(weight_val)
             if not valid:
                 self.warnings.append(f"Invalid weight for {subject_id} on {date_val}: {msg}")
+                self._seen('weights', (subject_id, date_val), None)
                 continue
+            self._seen('weights', (subject_id, date_val), {'weight_grams': weight_val})
 
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
@@ -837,6 +867,8 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name='3a_Manual_Ramp')
         except Exception as e:
             self.warnings.append(f"Failed to read 3a_Manual_Ramp: {e}")
+            self._tab_unread('weights', "the 3a_Manual_Ramp tab could not be read (%s)" % e)
+            self._tab_unread('ramp_entries', "the 3a_Manual_Ramp tab could not be read (%s)" % e)
             return
 
         # Number ramp days anchored to Day 0 = the cohort start date (the earliest
@@ -888,6 +920,8 @@ class ExcelImporter:
                 try:
                     weight_val = float(weight_val)
                     valid, _ = validate_weight(weight_val)
+                    self._seen('weights', (subject_id, date_val),
+                               {'weight_grams': weight_val} if valid else None)
                     if valid:
                         # Also save to weights table for compatibility
                         existing_weight = session.query(Weight).filter_by(
@@ -908,9 +942,16 @@ class ExcelImporter:
                     else:
                         weight_val = None
                 except (ValueError, TypeError):
+                    self._seen('weights', (subject_id, date_val), None)
                     weight_val = None
             else:
                 weight_val = None
+
+            if weight_val:
+                # What the sheet says for this ramp day (see _sync_table).
+                self._seen('ramp_entries', (subject_id, date_val), {
+                    'body_weight_grams': weight_val, 'weight_percent_baseline': weight_pct,
+                    'tray_start_grams': tray_start, 'tray_end_grams': tray_end})
 
             # Create RampEntry record with full data
             existing_ramp = session.query(RampEntry).filter_by(
@@ -1101,8 +1142,13 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name='4_Contusion_Injury_Details')
         except Exception as e:
             self.warnings.append(f"Failed to read 4_Contusion_Injury_Details: {e}")
+            self._tab_unread('surgeries', "the 4_Contusion_Injury_Details tab could "
+                                          "not be read (%s)" % e)
             return
         if not self._surgery_tab_has_weight_column(df, '4_Contusion_Injury_Details'):
+            if (df.notna().sum(axis=1) >= 2).any():
+                self._tab_unread('surgeries', "the 4_Contusion_Injury_Details tab has no "
+                                              "weight column, so no row on it could be read")
             return
         # The gate judges the cells as typed; the stored values come from df.
         as_typed = self._surgery_rows_as_typed(xl, '4_Contusion_Injury_Details')
@@ -1145,6 +1191,20 @@ class ExcelImporter:
                         if not subject.date_of_death:
                             subject.date_of_death = date_val
 
+            # Map actual column names to our schema. Built before the
+            # duplicate check: the sheet's values are also what an earlier
+            # import's row is compared with (_sync_table).
+            values = dict(
+                force_kdyn=self._parse_float(row.get('Actual_kd') or row.get('Force_kDyn')),
+                displacement_um=self._parse_float(row.get('Actual_displacement') or row.get('Displacement_um')),
+                velocity_mm_s=self._parse_float(row.get('Actual_Velocity') or row.get('Velocity_mm_s')),
+                dwell_time_s=self._parse_float(row.get('Actual_Dwell') or row.get('Dwell_time_s')),
+                surgeon=row.get('Surgeon') if pd.notna(row.get('Surgeon')) else None,
+                anesthesia=row.get('Anesthetic') if pd.notna(row.get('Anesthetic')) else None,
+                notes=self._build_surgery_notes(row),
+            )
+            self._seen('surgeries', (subject_id, date_val, 'contusion'), values)
+
             # Check for duplicate
             existing = session.query(Surgery).filter_by(
                 subject_id=subject_id,
@@ -1158,15 +1218,8 @@ class ExcelImporter:
                 subject_id=subject_id,
                 surgery_date=date_val,
                 surgery_type='contusion',
-                # Map actual column names to our schema
-                force_kdyn=self._parse_float(row.get('Actual_kd') or row.get('Force_kDyn')),
-                displacement_um=self._parse_float(row.get('Actual_displacement') or row.get('Displacement_um')),
-                velocity_mm_s=self._parse_float(row.get('Actual_Velocity') or row.get('Velocity_mm_s')),
-                dwell_time_s=self._parse_float(row.get('Actual_Dwell') or row.get('Dwell_time_s')),
-                surgeon=row.get('Surgeon') if pd.notna(row.get('Surgeon')) else None,
-                anesthesia=row.get('Anesthetic') if pd.notna(row.get('Anesthetic')) else None,
-                notes=self._build_surgery_notes(row),
                 entered_by='excel_import',
+                **values,
             )
 
             if not dry_run:
@@ -1342,6 +1395,27 @@ class ExcelImporter:
     # Set by the caller for ONE cohort a person has checked (see above).
     allow_large_removal = False
 
+    # What a surgery row stores from its tab, per type: the values compared
+    # with the sheet when the import syncs (_sync_table).
+    _SURGERY_FIELDS = {
+        'contusion': ('force_kdyn', 'displacement_um', 'velocity_mm_s', 'dwell_time_s',
+                      'surgeon', 'anesthesia', 'notes'),
+        'tracing': ('virus_name', 'virus_lot', 'volume_nl', 'injection_site',
+                    'pre_surgery_weight_grams', 'anesthesia', 'notes', 'survived'),
+    }
+
+    def _seen(self, table: str, key, values: Optional[Dict]):
+        """Record that the sheet holds a row with this key, and what it says
+        (None: the cell holds something, but nothing that can be stored -- the
+        stored row is then neither changed nor removed). The first reading of a
+        key wins, as it does for the row the import inserts."""
+        self.__dict__.setdefault('_seen_rows', {}).setdefault(table, {}).setdefault(key, values)
+
+    def _tab_unread(self, table: str, why: str):
+        """A tab feeding ``table`` could not be read: nothing may be removed
+        from that table on the strength of this read."""
+        self.__dict__.setdefault('_unread_tabs', {}).setdefault(table, why)
+
     def _sync_guard(self, table: str, unit: str, n_units: int, n_gone: int,
                     n_rows: int, n_changed: int, sheet_empty: bool) -> Optional[str]:
         """Why this table must NOT be brought in step with the sheet on this
@@ -1391,6 +1465,117 @@ class ExcelImporter:
         log = getattr(self.db, 'log_change', None)
         if callable(log):
             log(session, action, table, str(record_id), old_values=old, new_values=new)
+
+    @classmethod
+    def _same_value(cls, a, b) -> bool:
+        """Whether a stored value and the sheet's say the same thing: both
+        blank, the same number (to rounding), or the same text."""
+        if cls._blank(a) or cls._blank(b):
+            return cls._blank(a) and cls._blank(b)
+        try:
+            return abs(float(a) - float(b)) < 1e-9
+        except (TypeError, ValueError):
+            return str(a).strip() == str(b).strip()
+
+    # table -> (model, date column, key of a stored row, description of a key)
+    _SYNCED_TABLES = {
+        'weights': (Weight, 'date',
+                    lambda w: (w.subject_id, w.date),
+                    lambda k: {'subject_id': k[0], 'date': _iso(k[1])}),
+        'ramp_entries': (RampEntry, 'date',
+                         lambda r: (r.subject_id, r.date),
+                         lambda k: {'subject_id': k[0], 'date': _iso(k[1])}),
+        'surgeries': (Surgery, 'surgery_date',
+                      lambda s: (s.subject_id, s.surgery_date, s.surgery_type),
+                      lambda k: {'subject_id': k[0], 'date': _iso(k[1]), 'type': k[2]}),
+    }
+
+    def _sync_table(self, session, cohort_id: str, table: str, dry_run: bool):
+        """Bring one table's sheet-imported rows for this cohort in step with
+        what this import read from the sheet (recorded by _seen): a stored
+        value the sheet now gives differently is changed, a row the sheet no
+        longer holds is removed -- under the same rules and guard as the pellet
+        scores (see "The sheet wins" above). Rows typed in by hand are never
+        touched; when the sheet says otherwise for one, a warning says which
+        value stands. Every change and removal goes to the audit log with its
+        old and new values and is listed in the result's sheet_sync."""
+        model, _date_col, key_of, describe = self._SYNCED_TABLES[table]
+        seen = self.__dict__.get('_seen_rows', {}).get(table, {})
+        stored = session.query(model).filter(model.subject_id.in_(
+            session.query(Subject.subject_id).filter_by(cohort_id=cohort_id))).all()
+        ours = [r for r in stored if r.entered_by == self.SHEET_IMPORT_MARK]
+        if not ours:
+            return
+
+        def fields_of(r):
+            if table == 'weights':
+                return ('weight_grams',)
+            if table == 'ramp_entries':
+                return ('body_weight_grams', 'weight_percent_baseline',
+                        'tray_start_grams', 'tray_end_grams')
+            return self._SURGERY_FIELDS.get(r.surgery_type, ())
+
+        for r in stored:
+            if r.entered_by == self.SHEET_IMPORT_MARK:
+                continue
+            said = seen.get(key_of(r))
+            if said and any(f in said and not self._same_value(getattr(r, f), said[f])
+                            for f in fields_of(r)):
+                self._warn_once(
+                    ('hand-kept', table, key_of(r)),
+                    "%s: %s was typed in by hand (by %s) and differs from the sheet; the "
+                    "hand-typed values stand -- correct them by hand if the sheet is right"
+                    % (table, ' '.join(str(v) for v in describe(key_of(r)).values()),
+                       r.entered_by or 'no record of who'))
+
+        gone, changed = [], []
+        for r in ours:
+            k = key_of(r)
+            if k not in seen:
+                gone.append(r)
+                continue
+            said = seen[k]
+            if said is None:
+                continue  # present, but unreadable: left as it is
+            diff = {f: (getattr(r, f), said[f]) for f in fields_of(r)
+                    if f in said and not self._same_value(getattr(r, f), said[f])}
+            if diff:
+                changed.append((r, diff))
+
+        why = self._sync_guard(table, 'rows', len(ours), len(gone), len(ours),
+                               len(changed), not seen)
+        if why:
+            self._sync_refuse(table, why)
+            return
+        if not gone and not changed:
+            return
+
+        report = self._sync_state().setdefault(table, {})
+        for r, diff in changed:
+            report.setdefault('changed', []).append(dict(
+                describe(key_of(r)),
+                values={f: {'old': _jsonable(o), 'new': _jsonable(n)}
+                        for f, (o, n) in diff.items()}))
+            if not dry_run:
+                self._audit(session, 'UPDATE', table, r.id,
+                            {f: _jsonable(o) for f, (o, n) in diff.items()},
+                            {f: _jsonable(n) for f, (o, n) in diff.items()})
+                for f, (_o, n) in diff.items():
+                    setattr(r, f, n)
+        for r in gone:
+            old = {c.name: _jsonable(getattr(r, c.name)) for c in model.__table__.columns}
+            report.setdefault('removed', []).append(dict(
+                describe(key_of(r)),
+                values={f: _jsonable(getattr(r, f)) for f in fields_of(r)}))
+            if not dry_run:
+                self._audit(session, 'DELETE', table, r.id, old=old)
+                session.delete(r)
+        if not dry_run:
+            session.flush()
+        if changed:
+            self.imported_counts['%s_changed' % table] = len(changed)
+        if gone:
+            self.imported_counts['%s_removed' % table] = len(gone)
 
     def _refuse_unread_tray_tab(self, session, cohort_id: str, why: str):
         """The tray tab could not be read at all: if the database holds scores
@@ -1736,8 +1921,12 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name=sheet_name)
         except Exception as e:
             self.warnings.append(f"Failed to read {sheet_name}: {e}")
+            self._tab_unread('surgeries', "the %s tab could not be read (%s)" % (sheet_name, e))
             return
         if not self._surgery_tab_has_weight_column(df, sheet_name):
+            if (df.notna().sum(axis=1) >= 2).any():
+                self._tab_unread('surgeries', "the %s tab has no weight column, so no row "
+                                              "on it could be read" % sheet_name)
             return
         # The gate judges the cells as typed; the stored values come from df.
         as_typed = self._surgery_rows_as_typed(xl, sheet_name)
@@ -1762,15 +1951,6 @@ class ExcelImporter:
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
                                         first_seen=date_val):
-                continue
-
-            # Check for duplicate
-            existing = session.query(Surgery).filter_by(
-                subject_id=subject_id,
-                surgery_date=date_val,
-                surgery_type=surgery_type
-            ).first()
-            if existing:
                 continue
 
             surgery = Surgery(
@@ -1826,6 +2006,21 @@ class ExcelImporter:
             survived_val = row.get('Survived')
             if pd.notna(survived_val):
                 surgery.survived = 1 if str(survived_val).strip().upper() in ('Y', 'YES', '1', 'TRUE') else 0
+
+            # What the sheet says for this surgery, which an earlier import's
+            # row is also compared with (_sync_table). Read off the object
+            # built above, so the two can never disagree.
+            self._seen('surgeries', (subject_id, date_val, surgery_type),
+                       {f: getattr(surgery, f) for f in self._SURGERY_FIELDS[surgery_type]})
+
+            # Check for duplicate
+            existing = session.query(Surgery).filter_by(
+                subject_id=subject_id,
+                surgery_date=date_val,
+                surgery_type=surgery_type
+            ).first()
+            if existing:
+                continue
 
             if not dry_run:
                 session.add(surgery)
@@ -2598,7 +2793,7 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync', '_phase_refresh'):
+                     '_sheet_sync', '_phase_refresh', '_seen_rows', '_unread_tabs'):
             self.__dict__.pop(name, None)
 
     def _warn_once(self, key, text: str):
