@@ -32,7 +32,11 @@ WHAT IT DOES
      beside and swapped in). So a run that is killed -- the scheduled task's
      time limit -- and restarted carries on where it stopped instead of
      importing every file again.
-  4. For each file: the animal is CREATED from the video name if the tracking
+  4. Leaves out every filed video whose NEWER run waits in a review queue
+     (the test of step 6): not imported, not entered in the ledger, its
+     cohort not re-labelled. Importing it would only have its rows taken out
+     again by step 6, every night. ``--verbose`` lists them.
+  5. For each file: the animal is CREATED from the video name if the tracking
      sheet has not named it yet (machine data never waits on hand data; the
      sheet import enriches the record later), old rows for that video are
      deleted, new rows inserted -- one transaction per video.
@@ -41,12 +45,12 @@ WHAT IT DOES
      outcome. That is where "how many pellets were presented" is MEASURED (20
      unless something went wrong); reach_data cannot say, because a pellet
      nobody reached for has no reach row.
-  5. Re-derives test_phase / phase_group for every cohort touched
+  6. Re-derives test_phase / phase_group for every cohort touched
      (``mousedb.backfill.backfill_phases``). The cohorts still to do are kept
      in ``<mousedb_root>/logs/reach_imports_phases_pending.json`` until each
      is done, so a run killed before or during this step has the restart do
      them even though it imports nothing new for them.
-  6. Takes out the rows of every video that has gone BACK TO REVIEW: its
+  7. Takes out the rows of every video that has gone BACK TO REVIEW: its
      results file sits in a review queue (``Processing/Review``) and no longer
      in Analyzed, or a NEWER run of it waits there while the old one is still
      filed. See ``videos_back_in_review`` and ``withdraw_videos_back_in_review``.
@@ -56,6 +60,7 @@ Usage:
     mousedb import-reaches --dry-run       # count only
     mousedb import-reaches --all           # ignore the ledger, re-import everything
     mousedb import-reaches --include-processing
+    mousedb import-reaches --verbose       # also name the filed videos held back by review
     mousedb import-reaches --pellets-only  # (re)fill video_pellets from every file
 """
 from __future__ import annotations
@@ -161,6 +166,7 @@ class ImportResult:
     withdrawn: int = 0            # videos taken out because they went back to review
     moved: int = 0                # results files found under a new folder, not re-imported
     withdrawn_reaches: int = 0
+    held: int = 0                 # filed results not imported: a newer run waits in review
     cohorts_touched: set = field(default_factory=set)
     messages: List[str] = field(default_factory=list)
 
@@ -674,8 +680,8 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     was skipped as already imported -- gone from the database for good. Saved
     first, a kill in between leaves rows and no entry, which the next run
     puts right on its own (it re-imports the filed copy, or takes the rows out
-    again). For the same reason a video in review and no longer filed loses a
-    leftover ledger entry even when it has no rows left."""
+    again). For the same reason a video in review loses a leftover ledger
+    entry even when it has no rows left."""
     videos = withdrawn = 0
     messages: List[str] = []
     out: List[Tuple[str, Path, int]] = []
@@ -686,11 +692,13 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
                          (name,)).fetchone()[0]
         p = conn.execute("SELECT COUNT(*) FROM video_pellets WHERE video_name = ?",
                          (name,)).fetchone()[0]
-        if not n and not p:
-            if name not in filed:
-                drop.extend(keys)
-            continue
+        # Every video in review loses its entries, rows or not: one with no
+        # rows left may still have an entry (a stopped run, or an older
+        # importer), and since the import loop no longer imports a filed
+        # video whose newer run is in review, nothing else would clear it.
         drop.extend(keys)
+        if not n and not p:
+            continue
         out.append((name, where, n))
     if not dry_run:
         for key in drop:
@@ -734,7 +742,8 @@ def watcher_blocks_db() -> bool:
 
 
 def run(all_files: bool = False, dry_run: bool = False, include_processing: bool = False,
-        limit: Optional[int] = None, force: bool = False, log=print) -> ImportResult:
+        limit: Optional[int] = None, force: bool = False, log=print,
+        verbose: bool = False) -> ImportResult:
     res = ImportResult()
     root = require("mousereach_pipeline_root")
     db = require("db_path")
@@ -748,9 +757,26 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     ledger = load_ledger()
     moved_from = _moved_entries(ledger, root, files) if not all_files else {}
     res.moved = len(moved_from)
+    # Filed videos whose NEWER run waits in a review queue: their filed results
+    # are not imported at all, and not entered in the ledger. WHY: the step
+    # after the loop takes such a video's rows out (it is not done while the
+    # new run waits for a person). Importing the old filed file first meant
+    # that every night the same videos were imported, withdrawn again, and
+    # their cohorts re-labelled for nothing. Skipped here, they add no rows
+    # and touch no cohort; with no ledger entry, the new run is imported as
+    # usual once it is filed. Rows such a video already has are still taken
+    # out by the withdrawal step. The same test as that step
+    # (videos_back_in_review), worked out once here before the loop.
+    held = (set(videos_back_in_review(root, {f.name[:-len(FEATURES_SUFFIX)]: f for f in files}))
+            if files else set())
+    held_names: List[str] = []
     todo = []
     for p in files:
         key = str(p.relative_to(root)).replace("\\", "/")
+        if p.name[:-len(FEATURES_SUFFIX)] in held:
+            res.held += 1
+            held_names.append(p.name[:-len(FEATURES_SUFFIX)])
+            continue
         # A file can be gone between the listing and this read: the watcher
         # refiles a video by replacing its results, and a re-run moves a bundle
         # into a queue. Skipped here like the vanished-file case further down,
@@ -793,6 +819,12 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     log("import-reaches: %d features files under %s; %d to import, %d unchanged%s" %
         (len(files), root, len(todo), res.skipped,
          "" if not res.moved else " (%d of them moved folders since the last import)" % res.moved))
+    if held_names:
+        log("import-reaches: %d filed videos skipped: a newer run is in review" % len(held_names))
+        res.messages.append("%d filed videos skipped: a newer run is in review" % len(held_names))
+        if verbose:
+            for name in sorted(held_names):
+                log("  [held] %s" % name)
     # Cohorts an earlier run imported into but stopped before re-labelling
     # (see PENDING_PHASES_NAME). Their videos are in the ledger, so this run
     # would not touch them again; they are re-labelled at the end regardless.
@@ -915,6 +947,8 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, help="Import at most this many files (testing)")
     ap.add_argument("--force", action="store_true", help="Write even if a MouseReach watcher is running")
     ap.add_argument("--json", action="store_true", help="Machine-readable summary")
+    ap.add_argument("--verbose", action="store_true",
+                    help="Also list each filed video skipped because a newer run is in review")
     ap.add_argument("--pellets-only", action="store_true",
                     help="Only (re)fill the per-pellet table (video_pellets) from every features "
                          "file; reaches, animals and the ledger are not touched")
@@ -930,7 +964,8 @@ def main(argv=None) -> int:
         return 0
     try:
         res = run(all_files=args.all, dry_run=args.dry_run, include_processing=args.include_processing,
-                  limit=args.limit, force=args.force, log=(lambda *_: None) if args.json else print)
+                  limit=args.limit, force=args.force, log=(lambda *_: None) if args.json else print,
+                  verbose=args.verbose)
     except Exception as e:
         print("[FAIL] %s" % e)
         return 1

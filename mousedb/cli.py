@@ -1241,6 +1241,7 @@ def cmd_import_reaches(args):
     if args.force: argv.append("--force")
     if args.limit: argv += ["--limit", str(args.limit)]
     if getattr(args, "pellets_only", False): argv.append("--pellets-only")
+    if getattr(args, "verbose", False): argv.append("--verbose")
     raise SystemExit(_main(argv))
 
 
@@ -1581,6 +1582,8 @@ def main():
     ir.add_argument('--limit', type=int, help='At most this many files')
     ir.add_argument('--pellets-only', action='store_true',
                     help='Only (re)fill the per-pellet table from every features file')
+    ir.add_argument('--verbose', action='store_true',
+                    help='Also list each filed video skipped because a newer run is in review')
     ir.set_defaults(func=cmd_import_reaches)
 
     # mousedb update -- the "Update the database" button as a command: sheets,

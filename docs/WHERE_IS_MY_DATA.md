@@ -406,6 +406,17 @@ exactly:
   `[withdrawn] <video>: back in the triage queue, so not done -- N reach rows taken out until it is filed again`
   (or `a newer run is in the triage queue`),
   and its summary line counts them ("N taken out").
+- While a newer run of a filed video waits in a review queue, the import does
+  not import the filed copy at all. It does not put it in the database, does
+  not record it as imported, and does not re-derive its cohort's phases
+  because of it. Why: the step above would only take those rows out again,
+  so before this the same videos were imported and taken out again every
+  night, and their cohorts re-labelled for nothing. The import's first lines
+  say how many it left out (`N filed videos skipped: a newer run is in
+  review`); `mousedb import-reaches --verbose` also names each one. Once the
+  new run is filed, the next import brings the video in as usual. Nothing
+  needs doing by hand: the video is waiting for its review, not for the
+  import.
 
 ## How tissue analysis outputs get here
 

@@ -34,6 +34,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb import-reaches` no longer imports a filed video whose newer run
+  waits in a review queue. It used to import the old filed results and then
+  take them out again in the same run, every night, re-labelling the cohort
+  each time. Such a video is now left out and not recorded as imported (one
+  summary line; `--verbose` names them), and its new run is imported once it
+  is filed.
 - `mousedb import-reaches` saves its ledger every few minutes during a run,
   not only at the end, so a run stopped by the scheduled task's time limit and
   restarted carries on where it stopped instead of importing every file again.
