@@ -170,3 +170,43 @@ def test_the_per_reach_command_says_when_its_wait_ran_out(tmp_path, capsys, monk
     assert code not in (0, 1), code
     assert "still writing" in out and "current-exports lock" in out, out
     assert not (root / "exports" / "current").exists()
+
+
+def test_the_per_reach_command_locks_the_live_folder_however_it_is_named(tmp_path, capsys,
+                                                                          monkeypatch):
+    """--out-dir naming the live exports folder (here through a '..' detour)
+    is the live folder: the command must take the exports lock, not write
+    beside a running refresh."""
+    from mousedb import config
+    from mousedb.exporters import odc_reaches
+    monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")
+    snap = _snapshot(tmp_path)
+    root = tmp_path / "root"
+    (root / "exports" / "current").mkdir(parents=True)
+    monkeypatch.setattr(config, "require", lambda key: root)
+    spelled = root / "exports" / "other" / ".." / "current"
+    holder = current.hold_exports_lock(lock_wait_seconds=0)
+    try:
+        code = odc_reaches.main(["--snapshot-dir", str(snap), "--out-dir", str(spelled)])
+    finally:
+        holder.release()
+    out = capsys.readouterr().out
+    assert code == current.EXIT_LOCK_TIMEOUT, (code, out)
+    assert "current-exports lock" in out, out
+    assert not any((root / "exports" / "current").iterdir()), "it wrote without the lock"
+
+
+def test_the_per_reach_command_into_a_private_folder_does_not_wait(tmp_path, monkeypatch):
+    """A folder of one's own is not the live folder: no lock, no wait."""
+    from mousedb import config
+    from mousedb.exporters import odc_reaches
+    monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")
+    snap = _snapshot(tmp_path)
+    root = tmp_path / "root"
+    monkeypatch.setattr(config, "require", lambda key: root)
+    holder = current.hold_exports_lock(lock_wait_seconds=0)
+    try:
+        code = odc_reaches.main(["--snapshot-dir", str(snap), "--out-dir", str(tmp_path / "mine")])
+    finally:
+        holder.release()
+    assert code != current.EXIT_LOCK_TIMEOUT

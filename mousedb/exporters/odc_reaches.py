@@ -1064,6 +1064,30 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     return manifest
 
 
+def _is_live_exports_folder(folder: Path) -> bool:
+    """True when ``folder`` is the live current-exports folder (the configured
+    ``<mousedb_root>/exports/current``, or the exporter's own default), however
+    it was spelled. Unconfigured: only the exporter's default can be it."""
+    from ..config import require
+    from .current import CURRENT_DIR
+    live = []
+    try:
+        live.append(require("mousedb_root") / "exports" / "current")
+    except Exception:
+        pass
+    if CURRENT_DIR is not None:
+        live.append(Path(CURRENT_DIR))
+
+    def same(a: Path, b: Path) -> bool:
+        try:
+            return Path(a).resolve() == Path(b).resolve()
+        except OSError:
+            import os
+            return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+    return any(same(folder, f) for f in live)
+
+
 def main(argv=None) -> int:
     import argparse
     import json
@@ -1076,10 +1100,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     snap = args.snapshot_dir or require("snapshot_dir")
     out = args.out_dir or (require("mousedb_root") / "exports" / "current")
-    if args.out_dir is None:
+    if args.out_dir is None or _is_live_exports_folder(args.out_dir):
         # Writing into the live exports folder: wait for any other refresh of
         # it to finish first, and keep it out while this runs (the reasons are
-        # at exporters.current.EXPORTS_LOCK).
+        # at exporters.current.EXPORTS_LOCK). Decided by WHERE the files go,
+        # not by whether --out-dir was typed: an --out-dir that names the live
+        # folder used to skip the lock and write beside a running refresh.
         from .current import EXIT_LOCK_TIMEOUT, hold_exports_lock, lock_timeout_message
         from ..task_mutex import LockWaitTimeout
         try:
