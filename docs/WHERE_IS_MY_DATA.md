@@ -24,7 +24,7 @@ each with a data dictionary beside it:
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
 | `sessions_<cohort>_analysis.csv` | animal per session, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator | `sessions_analysis_DATA_DICTIONARY.csv` |
 | `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
-| `MANIFEST.json` | -- | when the files were written, from which snapshot, row counts, and any problems |
+| `MANIFEST.json` | -- | when the files were written, from which snapshot (`snapshot_generation`), row counts, any problems, notes that need no action, and whether the per-reach files were kept from an earlier run because nothing they are built from changed (`odc_reaches_skipped`) |
 | `README.txt` | -- | the same explanation as this table |
 
 ### How the folder is arranged
@@ -265,8 +265,24 @@ to `<mousedb_root>/_archived/exports_current/`.
 
 An ODC-SCI submission is a dataset file **plus** its data dictionary; both
 are here. `MANIFEST.json` says `"complete": true` when every column in every
-file has a dictionary entry -- if it says false, the problems list names the
-undocumented columns, and an upload would be rejected until they are added.
+file has a dictionary entry and every file was written -- if it says false, the
+problems list names the undocumented columns (an upload would be rejected until
+they are added) or the file that failed (listed again under `failures`). The
+nightly job then reports itself as failed, so it shows up as a failing job too.
+
+**Every file here comes from one snapshot.** The snapshot is replaced in one
+piece each night, and `MANIFEST.json` names the generation the files were built
+from. If the snapshot was left half-replaced (a refresh stopped in the middle
+of the swap), the exports are not rewritten at all -- the files stay those of
+the last good night -- and the job says so.
+
+**When the big per-reach files are not rewritten.** They are kept from the
+previous night when nothing they are built from has changed: the reaches, the
+animals, the hand scores, the sheet records, the per-pellet table, the weights,
+the lab's settings, and everything the "left out" checks look at. A change to
+any one of those rebuilds them, so a corrected entry always comes back the
+next night. `MANIFEST.json` says when the files were kept
+(`odc_reaches_skipped`).
 
 ## The longer answer: the "Where Is My Data" tab
 
@@ -539,6 +555,12 @@ database. The live file may sit on a network share, and reading it while
 something writes to it can corrupt the read -- so everything human-facing
 works from the last safe copy.
 
+The snapshot is replaced in one piece, so everything on the tab comes from the
+same night. If a refresh was stopped in the middle of replacing it, the tab
+says the snapshot is not consistent and shows no counts until the next
+successful refresh (or **Update the database now**) -- counts mixed from two
+nights would describe neither.
+
 So the numbers are as old as the last scheduled refresh. **The line at the top
 of the tab says exactly how old**, in words: "taken 2026-01-02T00:14 -- 7 hours
 old". If the refresh has not succeeded for longer than a day and a half, that
@@ -579,7 +601,13 @@ What it means for you:
   that is in flight is how a database file gets corrupted.
 
 The scheduled jobs also take turns with each other through a lockfile, so they
-are never the cause.
+are never the cause. A job that finds another mousedb job working waits for it
+to finish -- the snapshot refresh for up to three hours, the others for up to
+forty minutes -- and writes a line every ten minutes while it waits. If it
+still cannot start, or the job ahead of it seems stuck (no progress for half an
+hour), it writes a `[FAIL]` line naming that job and does not run that night.
+**Nothing runs it again automatically**: press **Update the database now**, or
+run the job by hand, once the other job has finished.
 
 ## The bench check (a nightly report)
 

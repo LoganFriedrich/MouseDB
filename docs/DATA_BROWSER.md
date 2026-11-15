@@ -136,7 +136,9 @@ Every problem is reported in a message box saying what to do. The common ones:
 |---|---|
 | *The data browser is not installed in this Python environment* | Whoever looks after mousedb installs it once (see INSTALL.md, "Data browser"). |
 | *There is no snapshot to browse yet* | The snapshot job has not run on this computer yet. After it runs (nightly, or **Update the database now** on the Where Is My Data tab), try again. |
-| *The snapshot is being rewritten right now ...* | The nightly job is mid-write. The window waits for it (up to 15 minutes) and carries on. |
+| *The snapshot is being rewritten right now ...* | The nightly job is putting a new snapshot in place (seconds). The window waits for it (up to 15 minutes) and carries on. |
+| *The snapshot cannot be browsed right now ...* | A refresh stopped while it was replacing the snapshot, so the snapshot holds tables from two nights, and a copy would mix them. Open the browser again after the next successful refresh, or press **Update the database now** on the Where Is My Data tab. |
+| *The snapshot was replaced by a newer one while your copy was being made ...* | Open the data browser again; it copies the new snapshot. |
 | *Open the data browser from MouseDB* (in the web browser) | You opened an old link or bookmark. Use the button or the desktop shortcut. |
 | The web browser did not open | Press **Open in my web browser** in the small window. |
 
@@ -181,6 +183,13 @@ Every problem is reported in a message box saying what to do. The common ones:
   any program has it open. The snapshot job therefore waits up to two minutes
   for a reader to let go before swapping a table in, and the data browser reads
   each file for only a second or two.
+- **One generation per copy:** the snapshot job writes every table aside and
+  then puts them all in place together, recording the generation in
+  `SNAPSHOT_GENERATION.json` (INSTALL.md, "The snapshot is replaced in one
+  piece"). The browser waits only while that swap is under way, refuses a
+  snapshot left half-replaced, discards a copy if a new generation landed while
+  it was being made, and records the generation in `about_this_copy`
+  (`snapshot_generation`).
 
 ## Why this tool
 

@@ -353,7 +353,7 @@ from what they imported, then the bench check, which reads the snapshot):
 | reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
 | brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables |
 | analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it) |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it). Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 180) is how long it waits behind another mousedb job |
 | bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
@@ -388,9 +388,37 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   straight after. They never lock each other out, however they are scheduled.
   The lock is never taken away from a job that is still running, however long
   it has held it (a long rewrite over a slow share is slow, not stuck); it is
-  taken only from a holder that no longer exists. A job that waited its full
-  allowance (25 minutes) logs who is still holding the lock and exits non-zero
-  without touching anything.
+  taken only from a holder that no longer exists, and only one waiter can take
+  it (the break is a single step under a short-lived token,
+  `.central-db.task.lock.breaking`). Every lock taken from a dead holder is
+  written to the job's log and to `logs/.central-db.task.lock.breaks.log`. A
+  job gives the lock back only if it is still its own.
+
+  **How long a job waits.** While the job holding the lock is running AND
+  getting somewhere (its CPU time and read/write count move), the waiting job
+  waits -- up to its **wait budget** -- and says so in its log every ten
+  minutes. So a slow import DELAYS the next job instead of cancelling it. It
+  stops waiting, loudly, in two cases: the budget runs out, or the holder has
+  shown no progress for 30 minutes (it may be hung; its lock is still never
+  broken while it runs -- a person has to look at it). Either way the log gets a
+  `[FAIL]` line or a `LockWaitTimeout` naming the holder, nothing was changed,
+  and the job exits 1. A job that takes the lock once per item (the sheet import:
+  once per cohort) does not wait again for a holder it already gave up on.
+
+  | job | wait budget | set with |
+  |---|---|---|
+  | snapshot refresh | 180 minutes | `--lock-wait-minutes` |
+  | every other scheduled job | 40 minutes | `MOUSEDB_LOCK_WAIT_MINUTES` |
+  | the GUI, and each step of "Update the database now" | 25 minutes | (a person is waiting) |
+
+  `MOUSEDB_LOCK_WAIT_MINUTES` overrides any of them for one task. A scheduled
+  task can set it in its own command, e.g.
+  `cmd /c "set MOUSEDB_LOCK_WAIT_MINUTES=150&& <MouseDB env>\python.exe -m mousedb.cli import-brains --all"`.
+  **Size every budget together with the task's time limit:** time limit >= wait
+  budget + how long a successful run of that job takes. A budget longer than
+  the time limit means the scheduler stops the job while it is still waiting,
+  which loses the run just the same (and shows as "terminated", not as a
+  `[FAIL]` line).
 - **Against everything else**: `mousedb/db_contention.py`. A job that meets an
   outside lock waits and retries across a bounded window, then gives up, logs
   one plain-English line, and exits non-zero.
@@ -411,14 +439,19 @@ to: a lock means a write is in flight, and taking it away corrupts the file. A
 job that keeps giving up means a session somewhere is holding the database
 open, and the fix is to close that session.
 
-**Let the scheduler retry a job that gave up.** Both mechanisms make the job
-exit non-zero when it could not run, and that is deliberate: it lets the
-operating system's scheduler run it again later. Set "restart on failure"
-(Task Scheduler: *If the task fails, restart every 30 minutes, up to 8
-times*; cron: a wrapper that re-queues on a non-zero exit) on every job, and
-above all on the snapshot, because the snapshot is what makes the exports. With
-that in place a slow night DELAYS the exports instead of losing them until the
-next night. Without it, one long-running import means no exports that day.
+**Nothing re-runs a job that gave up -- so the waiting is the retry.** Task
+Scheduler's "restart on failure" (*If the task fails, restart every ...*) only
+re-runs a task that could not be STARTED. A job that starts and then exits
+with an error is recorded as "completed with return code 1" and is never
+restarted; it waits for its next scheduled time (a whole day, for a daily job).
+That is why a job waits for the job ahead of it for as long as its budget
+allows (above), instead of giving up after a fixed short wait and hoping to be
+restarted. The setting does no harm and covers a task that cannot start at all
+(a missing interpreter, the mapped drive not there yet); it is not a substitute
+for the wait budget. With cron, a wrapper that re-queues on a non-zero exit is
+the equivalent. When a job does give up, its log says so with `[FAIL]`; run
+it by hand once the holder has finished (or press **Update the database now**
+on the Where Is My Data tab).
 
 Keep the scheduler's own "stop the task if it runs longer than" limit
 generous (hours, not minutes) for the jobs that write the database. That limit
@@ -460,8 +493,9 @@ census weeks old was shown as the current counts with nothing but a timestamp
 to say so. The tab and `mousedb-data-status` now print the census's age and
 flag it once it is older than `data_status.STALE_CENSUS_HOURS` (36). If the
 census cannot be taken, the job prints `[FAIL] pipeline census not retaken` and
-still exits 0 -- a failing exit would make the scheduler re-run the whole
-snapshot -- and the tab keeps the previous census with its age shown. Pass
+does not change the job's exit code for that alone -- the snapshot and the
+exports it is there to produce are fine -- and the tab keeps the previous census
+with its age shown. Pass
 `--skip-census` when running the job by hand and the census is not wanted.
 
 ### The snapshot job also rewrites the exports -- including the per-reach files
@@ -475,9 +509,56 @@ that are easy to be caught by:
   does not stick: the next scheduled snapshot rewrites those files using the
   INSTALLED copy. Deploy first, then regenerate.
 - **The per-reach files are skipped when their inputs are unchanged**
-  (`_odc_reaches_csvs`, signature in `exports/current/.odc_reaches_signature.json`).
-  The signature covers the inputs -- snapshot table sizes and row counts, and the
-  study-facts file -- so it cannot notice that the exporter now writes different
-  columns or different words. When the OUTPUT format changes, bump
-  `sig["output_format"]` in `exporters/current.py`, or a machine still holding the
-  previous code will skip the rewrite and leave superseded files looking current.
+  (`odc_reaches_signature` / `_odc_reaches_csvs` in `exporters/current.py`,
+  signature in `exports/current/.odc_reaches_signature.json`). The signature
+  covers EVERY input those files and `analysis_EXCLUSIONS.csv` are built from:
+  the content (SHA-256) of the snapshot tables `reach_data`, `subjects`,
+  `pellet_scores`, `animal_records`, `video_pellets` and `weights`; the
+  study-facts file, the lab's field definitions, grants, lab settings and lab
+  name; the exclusion checks' outside inputs (the collage names in the
+  MouseReach watcher databases, the name-audit record, which cohorts have a
+  tracking workbook -- or that the folder could not be reached); and the ASPA
+  workbook names. Anything unreadable is recorded as such, so the day it can be
+  read the files are rebuilt. The signature is saved only after a run in which
+  nothing failed; a check that could not run (listed in the manifest's
+  problems) does not stop it being saved, because it follows from those same
+  inputs, and it is carried over word for word when a later run is skipped. A
+  skipped run says so in `MANIFEST.json` (`odc_reaches_skipped`). The signature
+  cannot notice that the exporter itself now writes different columns or
+  different words: when the OUTPUT format changes, bump `sig["output_format"]`
+  in `exporters/current.py`, or a machine still holding the previous code will
+  skip the rewrite and leave superseded files looking current. A new input the
+  exporter starts reading must be added to the signature in the same change.
+- **A failed or incomplete export fails the job.** If rewriting
+  `exports/current/` raises, or any part of it failed (a cohort's file, a
+  combined file, the exclusion checks), or `MANIFEST.json` comes out with
+  `"complete": false`, the job prints `[FAIL]` and exits 1. Until this was
+  changed it printed `[warn]` and exited 0, so the task looked healthy while
+  people kept reading old files.
+
+### The snapshot is replaced in one piece
+
+The refresh reads every table into `<snapshot_dir>/_snapshot_staging/` first.
+Nothing a reader sees changes during that read, however long it takes. Only
+when every table is written does it put them all in place together (renames
+on the same disk: seconds) and write `<snapshot_dir>/SNAPSHOT_GENERATION.json`:
+the generation id, `"state": "complete"`, and for each table its rows, size,
+time and SHA-256. During the swap the stamp says `"swapping"`.
+
+**Why:** the refresh used to replace the tables one at a time as it read them,
+so a run stopped part way (a locked database, the time limit, a person) left
+some tables from tonight and the rest from an earlier night, and every reader
+joined them as one snapshot.
+
+What readers do (`mousedb/snapshot_generation.py`): the exports, the data
+browser, the Where Is My Data tab, the bench check and the example export check
+the stamp before and after they read. A new generation landing mid-read makes
+them read again; a snapshot that holds two generations (a refresh stopped
+during the swap, or a table replaced by something other than the refresh) is
+refused with a message saying it is whole again after the next successful
+refresh. `exports/current/MANIFEST.json` and the data browser's
+`about_this_copy` table record the generation they were built from. A script
+of your own should do the same: `snapshot_generation.read_consistent(folder,
+read_function)` returns what it read and the generation id, or raises rather
+than hand back a mix. Disk: the staging folder needs as much free space as the
+snapshot itself while a refresh runs.

@@ -29,11 +29,41 @@ checked-in code, not what's planned.
   optional extra `pip install -e ".[browse]"`. Guide: docs/DATA_BROWSER.md.
 
 ### Changed
+- Scheduled jobs wait for the database-task lock while the job holding it is
+  running and making progress, up to a wait budget (snapshot refresh 180
+  minutes, `--lock-wait-minutes`; other jobs 40; the GUI and the update
+  button's steps 25; `MOUSEDB_LOCK_WAIT_MINUTES` overrides), reporting every ten
+  minutes, then fail loudly with `LockWaitTimeout`. A holder with no progress
+  for 30 minutes is given up on early (never broken). The old fixed 25-minute
+  wait lost a whole night whenever the job ahead ran long: the scheduler's
+  "restart on failure" never re-runs a job that started and then failed.
+- The snapshot is replaced as one generation: every table is written to
+  `_snapshot_staging` first, then all are moved into place together and
+  `SNAPSHOT_GENERATION.json` records the generation (state, and each table's
+  rows, size, time and SHA-256). `mousedb.snapshot_generation.read_consistent`
+  lets a reader prove it read one generation; the exports, the data browser,
+  the Where Is My Data tab, the bench check and the example export use it, and
+  refuse a snapshot left half-replaced. `MANIFEST.json` and the data browser's
+  `about_this_copy` name the generation.
+- The current-exports skip signature covers every input of the per-reach files
+  and `analysis_EXCLUSIONS.csv`: snapshot tables by content (now including
+  `video_pellets` and `weights`), the lab's field definitions, settings and
+  name, the collage names, the name-audit record, the sheets folder and the
+  ASPA workbook names (`output_format` 18). The data-dictionary note is a
+  manifest `notes` entry, not a problem, so the signature can be saved again.
 - The snapshot also copies `projects`, `surgeries`, `brain_samples`,
   `region_counts` and `elife_region_counts` (small tables the data browser
   shows; no export reads them).
 
 ### Fixed
+- Task mutex: breaking a dead holder's lock is one step under an exclusive
+  break token, so two waiters can no longer both take the lock; `release()`
+  removes the lockfile only if it still carries this job's identity; every
+  break is logged (job log and `logs/.central-db.task.lock.breaks.log`). A lock
+  held on another computer is no longer judged dead by its pid.
+- The snapshot job exits 1 with `[FAIL]` when rewriting the exports failed or
+  came out incomplete (it printed `[warn]` and exited 0). A part of the export
+  that failed now makes `MANIFEST.json` `complete` false.
 - `mousedb import-reaches` no longer imports a filed video whose newer run
   waits in a review queue. It used to import the old filed results and then
   take them out again in the same run, every night, re-labelling the cohort
