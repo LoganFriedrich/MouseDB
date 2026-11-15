@@ -76,6 +76,11 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- "Update the database now" / `mousedb update`: the snapshot step is no
+  longer stopped after an hour. A full refresh can take longer than that on
+  a large database, so the update could never finish and left the current
+  exports half rewritten. The import steps keep their one-hour limit; the
+  window's text no longer says the update takes "a few minutes".
 - "Update the database now" / `mousedb update`: only one update can run. Its
   lock was checked and then written, so two presses at once could both run;
   and it was taken over after 2 hours whatever the first update was doing,

@@ -530,7 +530,11 @@ in this fixed order:
    just landed)
 
 Press it whenever you are about to look at the data and want it current
-instead of as old as the last scheduled run. It takes a few minutes; the tab refreshes
+instead of as old as the last scheduled run. On a large database it can take an
+hour or more -- the last step, rewriting the snapshot and the exports, is the long
+one. Each import step is stopped if it runs over an hour (it carries on from where
+it stopped next time); the snapshot step is never stopped part way, because a
+stopped one would leave the exports half rewritten. The tab refreshes
 itself when it finishes, and a dialog lists every step with **[OK]** or
 **[FAIL]** and the step's own last line. The line under the snapshot time
 always shows when the last update ran, who started it, and whether

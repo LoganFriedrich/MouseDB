@@ -84,7 +84,26 @@ LOCK_MUTEX_NAME = "update"
 UNKNOWN_HOLDER_STALE_MINUTES = 45
 LAST_NAME = "last_update.json"
 LEDGER_NAME = "updates.jsonl"
-STEP_TIMEOUT_SECONDS = 3600     # no single step may run longer than an hour
+# How long each step may run before it is stopped (None: no limit of its own).
+#
+# The imports: an hour each. They commit as they go and a stopped one carries
+# on from where it stopped on the next run, so a limit only costs a delay.
+#
+# The snapshot step: no limit. WHY: a full refresh of a large database over a
+# network share can take more than an hour by itself, and the one-hour limit
+# every step used to share stopped it every time -- part way through
+# rewriting the current exports, so the button could never finish and left
+# the exports half rewritten. The refresh bounds its own waiting (the
+# database-task lock wait, the retry window), so what is left is real work.
+# The cost: a refresh that hangs keeps the update -- and its lock -- busy until
+# its window is closed or its process ended.
+STEP_TIMEOUT_SECONDS = {
+    "sheets": 3600,
+    "reaches": 3600,
+    "analyses": 3600,
+    "brains": 3600,
+    "snapshot": None,
+}
 OUTPUT_TAIL_LINES = 15          # how much of each step's output the ledger keeps
 
 
@@ -124,23 +143,23 @@ def _logs_dir() -> Path:
     return d
 
 
-def _default_runner(cmd: Sequence[str]) -> Tuple[int, str]:
+def _default_runner(cmd: Sequence[str], timeout_seconds: Optional[float] = 3600) -> Tuple[int, str]:
     """Run one step in a child interpreter; return (returncode, combined output).
+    ``timeout_seconds`` None: no limit (see STEP_TIMEOUT_SECONDS).
     A child process keeps one step's crash from taking the others down, and
     keeps the GUI's own database connection out of the writers' way."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # no console pop-ups from the GUI
     # A step waits for the cross-task lock for the interactive budget, not a
-    # scheduled job's hours: a person is waiting, and each step is stopped at
-    # STEP_TIMEOUT_SECONDS anyway (task_mutex.INTERACTIVE_WAIT_MINUTES).
+    # scheduled job's hours: a person is waiting (task_mutex.INTERACTIVE_WAIT_MINUTES).
     from . import task_mutex
     env = dict(os.environ)
     env.setdefault(task_mutex.WAIT_ENV, str(task_mutex.INTERACTIVE_WAIT_MINUTES))
     try:
         p = subprocess.run(list(cmd), capture_output=True, text=True,
-                           timeout=STEP_TIMEOUT_SECONDS, creationflags=flags, env=env)
+                           timeout=timeout_seconds, creationflags=flags, env=env)
         return p.returncode, (p.stdout or "") + (p.stderr or "")
     except subprocess.TimeoutExpired:
-        return 124, "step exceeded %d s and was stopped" % STEP_TIMEOUT_SECONDS
+        return 124, "step exceeded its limit of %d s and was stopped" % timeout_seconds
 
 
 def _acquire_lock(logs: Path, log: Callable[[str], None]):
@@ -170,7 +189,12 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
                runner: Callable[[Sequence[str]], Tuple[int, str]] = None,
                log: Callable[[str], None] = print) -> UpdateResult:
     """Run every step in order under the update lock; record and return the result."""
-    runner = runner or _default_runner
+    if runner is None:
+        def run_step(key, cmd):
+            return _default_runner(cmd, STEP_TIMEOUT_SECONDS.get(key, 3600))
+    else:
+        def run_step(key, cmd):
+            return runner(cmd)
     logs = _logs_dir()
     res = UpdateResult(started=datetime.now().isoformat(timespec="seconds"), triggered_by=triggered_by)
     mutex, held = _acquire_lock(logs, log)
@@ -186,7 +210,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
                 continue
             log("[%s] %s ..." % (key, label))
             t0 = time.time()
-            rc, out = runner(cmd)
+            rc, out = run_step(key, cmd)
             step = StepResult(key=key, label=label, ok=(rc == 0), seconds=round(time.time() - t0, 1),
                               summary=_last_line(out), returncode=rc,
                               output_tail=[ln for ln in out.splitlines() if ln.strip()][-OUTPUT_TAIL_LINES:])

@@ -212,7 +212,8 @@ class DataStatusTab(QWidget):
             ("Update the database now", self.update_database,
              "Pull everything that is new -- tracking sheets, MouseReach results, MouseBrain "
              "analyses, brain counts -- into the database, in order, then rewrite the snapshot "
-             "and the current exports. Takes a few minutes; the tab refreshes itself when done.",
+             "and the current exports. Can take an hour or more on a large database (the "
+             "snapshot step is the long one); the tab refreshes itself when done.",
              "background:#2e7d32; color:white; font-weight:bold;"),
             ("Refresh", self.refresh, "Re-read the snapshot, the queues and the export manifest.", ""),
             ("Refresh pipeline view (~5-25 min)", self.refresh_pipeline,
@@ -291,8 +292,9 @@ class DataStatusTab(QWidget):
             return
         from ..update import run_update
         self.update_label.setText("Updating the database: tracking sheets, MouseReach results, "
-                                  "MouseBrain analyses, brain counts, then the snapshot. This takes "
-                                  "a few minutes; the tab refreshes itself when done.")
+                                  "MouseBrain analyses, brain counts, then the snapshot. This can take "
+                                  "an hour or more on a large database -- the snapshot step is the "
+                                  "long one. The tab refreshes itself when done.")
         self._run(lambda: {"update": run_update(triggered_by="gui", log=lambda s: None)},
                   self._on_update_done)
 

@@ -129,3 +129,42 @@ def test_a_crashed_updates_lock_is_taken_over_at_once(root):
     res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
     assert not res.skipped and res.ok and r.calls == up.STEP_KEYS
     assert not [p for p in logs.iterdir() if p.name.endswith(".task.lock")]
+
+
+# -- how long each step may run ----------------------------------------------
+
+def test_the_snapshot_step_is_not_cut_off_after_an_hour(root, monkeypatch):
+    """A full snapshot refresh can take more than an hour on a large database.
+    The button stopped every step at one hour, so its snapshot step could
+    never finish and was killed part way through rewriting the exports. The
+    imports keep their limit; the snapshot step has none of its own (its waits
+    are bounded inside the refresh)."""
+    import subprocess
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        key = [k for k, _, c in up.STEPS if c == list(cmd)][0]
+        seen[key] = kw.get("timeout")
+        return subprocess.CompletedProcess(cmd, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(up.subprocess, "run", fake_run)
+    res = up.run_update(triggered_by="test", log=lambda s: None)
+    assert res.ok and set(seen) == set(up.STEP_KEYS)
+    assert seen["snapshot"] is None or seen["snapshot"] > 6 * 3600
+    for key in ("sheets", "reaches", "analyses", "brains"):
+        assert seen[key] == up.STEP_TIMEOUT_SECONDS[key]
+
+
+def test_a_step_that_overruns_its_limit_says_so(root, monkeypatch):
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        if kw.get("timeout"):
+            raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+        return subprocess.CompletedProcess(cmd, 0, stdout="done", stderr="")
+
+    monkeypatch.setattr(up.subprocess, "run", fake_run)
+    res = up.run_update(triggered_by="test", log=lambda s: None)
+    failed = {s.key: s for s in res.steps if not s.ok}
+    assert set(failed) == {"sheets", "reaches", "analyses", "brains"}
+    assert "stopped" in failed["sheets"].summary
