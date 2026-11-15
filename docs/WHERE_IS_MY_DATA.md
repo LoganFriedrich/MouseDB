@@ -114,7 +114,14 @@ exports/current/
   a cohort whose files failed to build this time (the failure is reported and
   its old files stay), and a snapshot with no reaches at all (that is a broken
   snapshot, not a lab with no reaches). A one-cohort export (`--cohort`)
-  archives only a named cohort that came out empty.
+  archives only a named cohort that came out empty. If one of those files is
+  open in another program (Excel, for example) it cannot be moved: that cohort
+  is listed under `failures` in `MANIFEST.json` ("could not all be moved to the
+  archive -- close any program that has one open"), its files stay and are
+  still counted in the combined file, and the job reports itself as failed.
+  Everything else -- the other cohorts, every project's combined files, the
+  dictionaries -- is still written. Close the file; the next nightly run, or
+  **Refresh exports now**, moves it.
 
 **A tray presents 20 pellets; anything else is an error, and it is handled like one.** A video the pipeline cut into some other number of pellets has the wrong pellet number on its reaches, so that session is left out of the analysis files. A tray whose hand scores number other than 20 keeps its reaches but has its hand-score columns left empty. Both are listed in `analysis_EXCLUSIONS.csv` with the count that was found, and both come back on their own once the video is reprocessed or the sheet is corrected.
 

@@ -363,6 +363,10 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     manifest["files"].update(part["files"])
     manifest["problems"].extend(part["problems"])
     manifest.setdefault("notes", []).extend(part.get("notes", []))
+    # Notes about something this run DID (files it moved) are shown once and
+    # not saved with the signature below: saved notes are repeated on every
+    # skipped night, which would report a move that did not happen that night.
+    manifest["notes"].extend(part.get("run_notes", []))
     manifest.setdefault("failures", []).extend(part.get("failures", []))
     from_inputs = set(part.get("from_inputs", []))
     if not part.get("failures") and all(p in from_inputs for p in part["problems"]):

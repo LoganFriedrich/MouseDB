@@ -1006,15 +1006,39 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         if not cohorts:
             gone |= set(on_disk) - set(cohorts_in(t["reach"]))
         gone -= build_failed
-        stale = sorted(f for cid in gone for f in on_disk.get(cid, []))
-        if stale:
-            moved = archive_old_names(final_dir, stale, "cohorts_without_reaches")
-            manifest["archived_cohorts_without_reaches"] = stale
-            if moved:
-                manifest.setdefault("notes", []).append(
-                    "%d file(s) of cohort(s) that no longer have any reaches were moved to the "
-                    "archive: %s" % (len(moved), ", ".join(sorted(gone & set(on_disk)))))
-            combine_projects |= {layout.project_of(c) for c in gone}
+        # One cohort at a time, and a failure is a problem, never a crash: a
+        # file held open by another program (or a share refusing the move)
+        # used to raise out of export(), and the combined files of EVERY
+        # project, the dictionaries and the manifest entries were then not
+        # written that night. Now that cohort is reported as a failure (so the
+        # skip signature is not saved and the next run tries again) and
+        # everything else carries on. A cohort only partly moved still has its
+        # remaining files counted by the combined file until the retry.
+        archived, emptied = [], []
+        for cid in sorted(gone & set(on_disk)):
+            files = on_disk[cid]
+            try:
+                archive_old_names(final_dir, files, "cohorts_without_reaches")
+            except OSError as e:
+                msg = ("the reach files of %s, a cohort that no longer has any reaches, could "
+                       "not all be moved to the archive (%s: %s) -- close any program that has "
+                       "one open; the next export tries again" % (cid, type(e).__name__, e))
+                manifest["problems"].append(msg)
+                manifest.setdefault("failures", []).append(msg)
+            done = [f for f in files if not (final_dir / f).exists()]
+            archived.extend(done)
+            if len(done) == len(files):
+                emptied.append(cid)
+        if archived:
+            manifest["archived_cohorts_without_reaches"] = sorted(archived)
+        if emptied:
+            # "run_notes", not "notes": exporters.current saves "notes" with the
+            # skip signature and repeats them on every night the export is
+            # skipped, and this is something that happened ONCE.
+            manifest.setdefault("run_notes", []).append(
+                "%d file(s) of cohort(s) that no longer have any reaches were moved to the "
+                "archive: %s" % (len(archived), ", ".join(emptied)))
+        combine_projects |= {layout.project_of(c) for c in gone}
 
     # Each project's combined files, put together from the cohort files now on
     # disk -- so a one-cohort export still yields a combined file holding every

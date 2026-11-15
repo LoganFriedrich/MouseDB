@@ -233,3 +233,61 @@ def test_a_cohort_whose_build_failed_keeps_its_files(snapshot, tmp_path, monkeyp
     m = ox.export(snapshot, out)
     assert m.get("failures")
     assert (out / "PROJA" / "PROJA_02" / "ODC_reaches_PROJA_02.csv").is_file()
+
+
+def test_a_stale_cohort_file_held_open_does_not_stop_the_other_projects(snapshot, tmp_path,
+                                                                        monkeypatch):
+    """A file another program has open cannot be moved. WHY this test: the move
+    used to raise out of the export, and then no project's combined file, no
+    dictionary and no manifest entry was written that night."""
+    import pathlib
+    out = tmp_path / "exports" / "current"
+    ox.export(snapshot, out)
+    _drop_cohort(snapshot, "PROJA_02")
+    _drop_cohort(snapshot, "PROJAB_01")
+    held = out / "PROJA" / "PROJA_02" / "ODC_reaches_PROJA_02.csv"
+    real_replace = pathlib.Path.replace
+
+    def replace(self, target):
+        if pathlib.Path(self) == held:
+            raise PermissionError(32, "The process cannot access the file because it is "
+                                      "being used by another process", str(self))
+        return real_replace(self, target)
+    monkeypatch.setattr(pathlib.Path, "replace", replace)
+    m = ox.export(snapshot, out)
+    # Reported as a failure, naming the cohort, so the next run tries again.
+    assert any("PROJA_02" in f for f in m.get("failures", [])), m.get("failures")
+    # The cohort whose files could be moved was archived ...
+    assert not layout.combined_file(out, "ODC_reaches", "PROJAB").exists()
+    assert not (out / "PROJAB" / "PROJAB_01" / "ODC_reaches_PROJAB_01.csv").exists()
+    # ... and the combined files were still rebuilt, from what is on disk: the
+    # held cohort's files stay (and are counted) until the next run moves them.
+    for kind in layout.REACH_KINDS:
+        combined = m["files"][layout.key(out, layout.combined_file(out, kind, "PROJA"))]
+        assert combined["cohorts"] == ["PROJA_01", "PROJA_02"], kind
+    assert held.is_file()
+    assert layout.key(out, held) not in m["archived_cohorts_without_reaches"]
+
+
+def test_the_archive_note_is_not_repeated_on_nights_nothing_moved(snapshot, tmp_path,
+                                                                  monkeypatch):
+    """The per-reach files are skipped when nothing changed, and the skipped
+    night repeats the notes saved with the last full run. A note that files
+    were moved must not be one of them: on the skipped night nothing moved."""
+    from mousedb.exporters import current
+    out = tmp_path / "exports" / "current"
+    sig = {"inputs": 1}
+    monkeypatch.setattr(current, "odc_reaches_signature", lambda snap: dict(sig))
+
+    def run():
+        m = {"files": {}, "problems": [], "notes": []}
+        current._odc_reaches_csvs(snapshot, out, m)
+        return m
+    run()
+    _drop_cohort(snapshot, "PROJA_02")
+    sig["inputs"] = 2
+    moved_night = run()
+    assert any("moved to the archive" in n for n in moved_night["notes"])
+    skipped_night = run()
+    assert skipped_night.get("odc_reaches_skipped")
+    assert not any("moved to the archive" in n for n in skipped_night["notes"])
