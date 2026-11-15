@@ -104,3 +104,98 @@ def test_waiting_names_the_holder(tmp_path):
     else:
         raise AssertionError("acquire must give up after wait_seconds")
     assert said and "pid %d" % os.getpid() in said[0]
+
+
+# -- breaking is atomic, release is owner-checked, every break is recorded --
+
+DEAD = "999999999 2020-01-01T00:00:00"
+
+
+def test_two_waiters_judging_the_same_dead_lock_leave_one_holder(tmp_path):
+    """Waiter B judged the lock dead, then waiter A broke it and took a new
+    one before B acted. B's break must find different contents and leave A's
+    NEW lock alone -- otherwise both would hold the mutex."""
+    a = TaskMutex(base_dir=tmp_path)
+    b = TaskMutex(base_dir=tmp_path)
+    a.path.write_text(DEAD)
+    seen_by_b = b._read()
+    assert b._classify(seen_by_b)[0] == "dead"
+    assert a.try_acquire()                      # A breaks and takes
+    assert not b._break(seen_by_b, "dead")      # B acts on its stale judgement
+    assert a.path.read_text() == a._identity    # A's lock untouched
+    assert not b.try_acquire()                  # and B sees a live holder
+    a.release()
+
+
+def test_only_the_token_holder_can_break(tmp_path):
+    """While another process holds the break token, nobody else breaks."""
+    m = TaskMutex(base_dir=tmp_path)
+    m.path.write_text(DEAD)
+    m._token_path.write_text("12345 elsewhere")      # someone is breaking now
+    assert not m.try_acquire()
+    assert m.path.read_text() == DEAD
+    m._token_path.unlink()
+    assert m.try_acquire()
+    m.release()
+
+
+def test_an_orphaned_break_token_is_cleared(tmp_path):
+    """A process that died while holding the token must not block breaking
+    forever: an old token is removed and the next attempt goes through."""
+    from mousedb import task_mutex
+    m = TaskMutex(base_dir=tmp_path)
+    m.path.write_text(DEAD)
+    m._token_path.write_text("12345 elsewhere")
+    old = time.time() - task_mutex.BREAK_TOKEN_STALE_SECONDS - 5
+    os.utime(m._token_path, (old, old))
+    assert not m.try_acquire()          # this attempt clears the orphan ...
+    assert not m._token_path.exists()
+    assert m.try_acquire()              # ... and the next one breaks and takes
+    m.release()
+
+
+def test_release_never_removes_another_holders_lock(tmp_path):
+    """A holder whose lock was broken while it ran must not delete the lock
+    of the job that took over when it finally exits."""
+    a = TaskMutex(base_dir=tmp_path)
+    assert a.try_acquire()
+    other = "%d %s %s %s" % (os.getpid(), _own_stamp(), "thishost", "x" * 32)
+    a.path.write_text(other)            # broken and retaken by someone else
+    said = []
+    a.release(log=said.append)
+    assert a.path.read_text() == other
+    assert said and "left alone" in said[0]
+
+
+def test_every_break_is_recorded(tmp_path):
+    """A broken lock is written to the job's log and to the permanent record
+    beside the lock."""
+    m = TaskMutex(base_dir=tmp_path)
+    m.path.write_text(DEAD)
+    said = []
+    assert m.try_acquire(log=said.append)
+    m.release()
+    assert said and "broke the lock" in said[0] and "no longer running" in said[0]
+    record = m.breaks_log.read_text(encoding="utf-8")
+    assert "broke the lock" in record and "999999999" in record
+
+
+def test_a_lock_held_on_another_computer_is_not_judged_dead(tmp_path):
+    """A pid from another computer means nothing in this machine's process
+    table. Its lock is 'unknown' (respected while fresh), never 'dead'."""
+    m = TaskMutex(base_dir=tmp_path)
+    m.path.write_text("999999999 2020-01-01T00:00:00 some-other-computer abc")
+    state, who = m.holder()
+    assert state == "unknown" and "another computer" in who
+    assert not m.try_acquire()
+    assert m.path.exists()
+
+
+def test_own_lock_carries_this_computer_and_a_unique_token(tmp_path):
+    a = TaskMutex(base_dir=tmp_path)
+    assert a.try_acquire()
+    fields = a.path.read_text().split()
+    assert int(fields[0]) == os.getpid() and len(fields) == 4
+    assert a.holder()[0] == "alive"
+    a.release()
+    assert not a.path.exists()
