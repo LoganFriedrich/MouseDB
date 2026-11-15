@@ -87,8 +87,10 @@ checked-in code, not what's planned.
   project with no cohort file of a kind left has that combined file archived.
   The old files used to stay, looking current, and the combined file was
   built from whatever was on disk. Not done for a cohort whose build failed,
-  or when the snapshot's reach table is empty. The first refresh after this
-  change archives any such files already there.
+  or when the snapshot's reach table is empty. A file that cannot be moved
+  (open in another program) is a failure for that cohort only: everything
+  else is still written, and the next run tries again. The first refresh
+  after this change archives any such files already there.
 - Analysis exclusions fail closed. A watcher database that exists but cannot
   be read, a name-audit record that does not parse, or a tracking-sheet folder
   that is set but cannot be reached used to skip its check (a collage
@@ -97,6 +99,9 @@ checked-in code, not what's planned.
   per-reach cohort files are not rewritten (the previous ones stay), the export is
   incomplete and the job fails, naming the input. An input that does not
   exist is still a note; a missing central watcher database is now noted too.
+  A watcher database that is only busy is waited for and read again (three
+  tries) before it counts as unreadable; one without its table of recordings
+  counts as unreadable, and the message gives the database's own error.
 - Current exports: the exporter's own version is no longer a number bumped by
   hand. It is a SHA-256 of the installed package's code, so any code change
   rebuilds the per-reach files on the next run (a change made without bumping
