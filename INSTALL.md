@@ -300,7 +300,7 @@ mousedb config --set snapshot_dir <local folder for the parquet snapshot>
 mousedb config --set mousereach_pipeline_root <MouseReach's shared pipeline folder>   # optional if ~/.mousereach/config.json exists
 mousedb config --set mousebrain_pipeline_root <MouseBrain's pipeline folder>
 mousedb config --set lab_name "<your lab, as it should appear in exports>"
-mousedb config --set mousereach_env <MouseReach env's Scripts or bin dir>             # only for bench-scan routing
+mousedb config --set mousereach_env <MouseReach env's Scripts or bin dir>             # only for a by-hand bench-scan --route
 mousedb-sheets set-dir <folder holding the tracking workbooks>
 mousedb config --show
 ```
@@ -344,23 +344,26 @@ generated sheets and exports -- never guessed.
 
 mousedb is an integrator: it PULLS from the tools on a schedule. Register these
 with the operating system's scheduler (Task Scheduler / cron), all in the MouseDB
-environment:
+environment, in the order listed (the imports first, then the snapshot, which is built
+from what they imported, then the bench check, which reads the snapshot):
 
 | job | command | cadence | what it does |
 |---|---|---|---|
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | hourly | takes the parquet snapshot of the database and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it) |
-| sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | every 4 h | imports the tracking workbooks (they are filled in by hand, so hourly only adds load) |
+| sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | daily | imports the tracking workbooks (they are filled in by hand, so more often only adds load) |
 | reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
-| analysis import | `python -m mousedb.import_analyses` | hourly | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| bench-sheet check | `python -m mousedb.bench_scan --route` | every 2 h | finds never-reviewed pellets where the hand score and the pipeline disagree, writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere) and asks MouseReach (`mousereach-route-to-queue`) to hold those videos for a person |
+| brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables |
+| analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it) |
+| bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
 the design. Pick it from how long each job actually takes on YOUR corpus: they
 share one database lock, so a job scheduled more often than it takes to run will
 queue behind itself, starve the others, and eventually be refused outright while
 still reporting a failure. Measure first, then schedule. Run them in dependency
-order with the snapshot LAST, because the snapshot is built from the database the
-imports fill -- on independent clocks it will regularly rebuild pre-import data.
+order with the snapshot after every import, because the snapshot is built from the
+database the imports fill -- on independent clocks it will regularly rebuild
+pre-import data. The bench check reads the snapshot, so it goes after that.
 
 The cadences in the table are a starting suggestion, not a recommendation for
 every installation. Where a job takes tens of minutes, daily is the right

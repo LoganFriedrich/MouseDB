@@ -581,21 +581,28 @@ What it means for you:
 The scheduled jobs also take turns with each other through a lockfile, so they
 are never the cause.
 
-## Why videos appear in the review queue overnight (the bench check)
+## The bench check (a nightly report)
 
-Every night a scheduled job, `mousedb-bench-scan --route`, compares the hand
-scores from the tracking sheets (each pellet: missed, displaced or retrieved)
-with what the video pipeline decided for the same pellet. Where they disagree
-and no person has looked at that pellet yet, it asks MouseReach to put the
-video in its triage queue with exactly those pellets marked. The reviewer then
-watches those pellets in the review tool and decides.
+Every night a scheduled job, `mousedb-bench-scan`, compares the hand scores
+from the tracking sheets (each pellet: missed, displaced or retrieved) with
+what the video pipeline decided for the same pellet, and lists every pellet
+where they disagree and no person has looked at it yet. It only REPORTS: it
+sends nothing to review and changes nothing.
 
-What the reviewer sees (since 2026-10-23): the review tool's banner says the
-video was sent back for a bench disagreement, and beside each marked pellet what
-the two disagree about -- "the hand score says retrieved; the algorithm says
-untouched". The video may be one the reviewer finished long ago: the question is
-about a different pellet from the ones they answered. Before this, nothing on
-screen said why, and finished videos coming back looked like answers being lost.
+Disagreements reach a reviewer another way, earlier: MouseReach compares each
+video with its hand scores BEFORE filing it, so a video that disagrees goes to
+its triage queue instead of being filed. That is why the nightly job must not
+be scheduled with `--route`. With `--route` it hands its list to MouseReach's
+route command, which sends those videos -- finished and filed -- back to the
+triage queue, and a video sent back to review leaves the database until it is
+filed again (see "Only filed videos are in the database" above). `--route` is
+for a deliberate run by hand, when someone has decided those videos should be
+looked at again.
+
+What the reviewer sees when a video is in triage for a bench disagreement: the
+review tool's banner says so, and beside each marked pellet what the two
+disagree about -- "the hand score says retrieved; the algorithm says
+untouched".
 
 What it compares:
 
@@ -608,9 +615,9 @@ What it compares:
   pipeline saw no reach" is one of the most useful things to show a person;
   before that date those pellets were never compared.
 - Never a pellet a person has already answered. The scan skips pellets the
-  database records as decided by a person, and MouseReach's route command
-  checks the review itself before marking anything, so a pellet already
-  answered is never sent back.
+  database records as decided by a person; on a `--route` run by hand,
+  MouseReach's route command also checks the review itself before marking
+  anything, so a pellet already answered is never sent back.
 
 The list it made is written to `<mousedb_root>/logs/never_reviewed_worklist.json`,
 and the job's output (how many videos and pellets, and each video's result) is
