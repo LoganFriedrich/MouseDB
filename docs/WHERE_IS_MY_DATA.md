@@ -467,6 +467,43 @@ exactly:
   wrote them, putting the pellet answers under review back into the exports
   until the next import took them out again.
 
+**Reaches whose results file has gone are reported, never removed.** A video
+leaves the database only through a review queue (above). If a filed video's
+results file disappears from the pipeline any other way -- deleted, moved to a
+folder the import does not look in -- its reaches would otherwise
+stay in the database and in every export as if the video were still filed,
+with nothing saying so. So every import, after taking out the videos sent
+back to review, compares the videos that have rows
+in the database with the results files it found, and lists every video that
+has rows but no file and is not in a review queue:
+
+- in its output, before its summary line:
+  `[!] N videos have rows in the database but no results file in the pipeline and are not in review -- nothing was taken out; a person should look (<first 20 names>)`;
+- in `<mousedb_root>/logs/reach_rows_without_file.json` (every name, and when
+  it checked; rewritten by every import that is not a dry run and found
+  results files, so an empty list means the last such import found none. A
+  run that found no results files at all, a `--dry-run`, and a run stopped
+  before it got that far leave the previous list in place -- its `checked_at`
+  says which import it is from);
+- on the **Where Is My Data** tab, among the problems at the top.
+
+Nothing is deleted, and the import still succeeds: a listing that missed some
+files must never cost data. What to do: find out where the file went. If it
+was moved or renamed by mistake, put it back -- the next import clears the
+line. If the video really should no longer be in the database, that is a
+decision for a person, not for the import. A video that was being moved
+between folders while the import ran can show up for one night and then
+disappear from the list by itself.
+
+How the import decides a video's file is there: every row in the database
+records the name of the results file it was imported from. The import
+compares those file names with the names of the results files it finds. So a
+results file that was renamed (a typo in the name corrected, for example) is
+NOT listed, as long as the renamed file is in the pipeline -- even though the
+name written inside it is still the old one, and the rows still carry that
+old name. (Rows imported before that file name was recorded fall back to the
+video name written inside the file.)
+
 ## How tissue analysis outputs get here
 
 MouseBrain keeps its own record of every analysis output it produces -- the
@@ -721,6 +758,9 @@ in `<mousedb_root>/logs/tasks/bench_scan.log`.
   *In review* first -- held videos are not final yet. Then run
   `mousedb import-reaches --dry-run` to see whether files are waiting to be
   imported.
+- **"N video(s) have reaches in the database but no results file"** at the top
+  of the tab: see "Reaches whose results file has gone are reported, never
+  removed" above.
 - **"complete for ODC upload: False"**: a new column reached the exports
   without a dictionary entry. The problems list names it; the definition is
   added in `mousedb/exporters/data_dictionary.py`.
