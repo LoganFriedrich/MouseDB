@@ -76,6 +76,13 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Protocol Manager: Save on an existing protocol no longer throws phase
+  changes away while saying "updated". A name/description change is still
+  saved in place; a phase change (added, removed, moved or edited, including
+  fields the table does not show) is offered as a new protocol, which keeps
+  the phases' hidden details, needs a name of its own, and leaves the original
+  untouched. Declining saves nothing and says so. Guide:
+  docs/PROTOCOL_MANAGER.md.
 - Videos held for review (triage, deep review) and videos this computer has
   no file for (unresolvable) are no longer counted as "In Pipeline" /
   "In Progress" in the Video Pipeline and Archive Status tabs and in
