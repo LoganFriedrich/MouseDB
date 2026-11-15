@@ -1021,7 +1021,15 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     snap = args.snapshot_dir or require("snapshot_dir")
     out = args.out_dir or (require("mousedb_root") / "exports" / "current")
-    m = export(snap, out, args.cohort)
+    if args.out_dir is None:
+        # Writing into the live exports folder: wait for any other refresh of
+        # it to finish first, and keep it out while this runs (the reasons are
+        # at exporters.current.EXPORTS_LOCK).
+        from .current import hold_exports_lock
+        with hold_exports_lock():
+            m = export(snap, out, args.cohort)
+    else:
+        m = export(snap, out, args.cohort)
     for name, info in m["files"].items():
         print("  %-32s %9s rows  %s%s" % (name, info.get("rows", "-"),
                                            ("(%s) " % info["cohort"]) if info.get("cohort") else "",

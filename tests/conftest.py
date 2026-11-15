@@ -306,6 +306,16 @@ def _no_machine_settings(_isolated_from_this_machine, tmp_path_factory, monkeypa
 
 
 @pytest.fixture(autouse=True)
+def _exports_lock_in_tmp(tmp_path_factory, monkeypatch):
+    """The current-exports lock (exporters.current.EXPORTS_LOCK) goes in a
+    folder of the test's own: a test that rewrites an exports folder must
+    never take, or wait on, the lock the real refreshes use."""
+    from mousedb.exporters import current
+    d = tmp_path_factory.mktemp("exports_lock")
+    monkeypatch.setattr(current, "_lock_dir", lambda: d, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_production_lock(monkeypatch):
     def guarded(self, name="central-db", stale_minutes=45, base_dir=None):
         if base_dir is None:

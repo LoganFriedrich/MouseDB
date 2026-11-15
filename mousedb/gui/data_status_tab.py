@@ -559,4 +559,15 @@ class DataStatusTab(QWidget):
     def refresh_exports(self):
         self.exports.append("Rewriting current exports from the latest snapshot...")
         from ..exporters.current import refresh_current
-        self._run(lambda: refresh_current(), lambda _m: self.refresh())
+        # lock_wait_seconds=0: if the nightly job (or another person's press)
+        # is writing the exports, say so now rather than sit behind it.
+        self._run(lambda: refresh_current(lock_wait_seconds=0), self._on_exports_done)
+
+    def _on_exports_done(self, r: dict):
+        problems = [p for p in r.get("problems", []) if p.startswith("ExportsBusy")]
+        if problems and "files" not in r:
+            QMessageBox.information(
+                self, "Refresh exports now",
+                "The exports are already being written -- try again when it finishes. "
+                "Nothing was changed.")
+        self.refresh()

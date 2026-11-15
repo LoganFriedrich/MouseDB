@@ -76,6 +76,15 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Current exports: only one refresh writes `exports/current` at a time. The
+  nightly job, the "Refresh exports now" button, `mousedb-current-exports` and
+  `mousedb export-odc-reaches` (into the live folder) shared one staging folder
+  and fixed temporary names with no lock, so two at once could delete or
+  publish each other's half-written files. They now take a lock
+  (`logs/.current-exports.task.lock`): the nightly job and the commands wait
+  for the other refresh to finish; the button says "already being written --
+  try again when it finishes" and changes nothing; `mousedb-current-exports
+  --no-wait` stops at once with exit code 3.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
   a large database, so the update could never finish and left the current

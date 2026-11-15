@@ -312,6 +312,17 @@ whole lab. The per-cohort ODC session files, and their combined file, refresh
 only on the scheduled run, which is the only time the database may be read
 safely.
 
+**Only one refresh writes the exports at a time.** The nightly job, this
+button and the terminal commands all write the same folder, and two at once
+would spoil each other's half-written files. So each takes a lock first
+(`<mousedb_root>/logs/.current-exports.task.lock`). If you press **Refresh
+exports now** while another refresh is writing -- usually the nightly job,
+which runs from midnight -- a box says the exports are already being written:
+nothing was changed, press it again when that one has finished. The nightly
+job and the terminal commands do not give up; they wait for the other refresh
+to finish and then run (`mousedb-current-exports --no-wait` stops at once
+instead, with exit code 3).
+
 ## The weekly page: the answer already written down
 
 `mousedb-weekly-report` writes the answer to a page you open by double-clicking,
@@ -693,6 +704,7 @@ mousedb import-reaches           # pull new MouseReach results into reach_data
 mousedb import-analyses          # mirror MouseBrain's analysis registry (exports, figures, provenance)
 mousedb-current-exports          # rewrite reach_data + manual_scores (+ dictionaries)
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
+mousedb-current-exports --no-wait  # stop at once (exit 3) if another refresh is writing
 ```
 
 ## The database follows the sheet

@@ -430,17 +430,82 @@ def _mtime(p: Path) -> Optional[str]:
         return None
 
 
+# ONE WRITER AT A TIME. Three things rewrite this folder: the nightly snapshot
+# job, the "Refresh exports now" button and the command line (and the per-reach
+# exporter's own command, ``mousedb export-odc-reaches``). They share one
+# staging folder beside the snapshot, which each run empties when it starts,
+# and fixed ".tmp" names for the files they copy into place. Two runs at once
+# therefore delete each other's half-written files, or publish each other's
+# half-written files under the final name -- and nothing says so. A lockfile
+# with this name, in the same folder as every other mousedb task lock
+# (task_mutex.default_lock_dir), lets only one run write at a time.
+EXPORTS_LOCK = "current-exports"
+
+BUSY_MESSAGE = ("the current exports are already being written by another refresh "
+                "(the nightly job, the Where Is My Data button or a command) -- "
+                "try again when it finishes; nothing was changed")
+
+
+class ExportsBusy(RuntimeError):
+    """Another refresh holds the exports lock and this caller asked not to wait.
+    Nothing was changed."""
+
+
+def _lock_dir() -> Path:
+    """Where the exports lock lives: the folder every mousedb task lock uses, so
+    every process on every computer pointed at this database sees it."""
+    from ..task_mutex import default_lock_dir
+    return default_lock_dir()
+
+
+def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
+                      lock_dir: Optional[Path] = None):
+    """Take the exports lock and return the held TaskMutex (release it when done).
+
+    ``lock_wait_seconds`` None: wait as long as this process's wait budget
+    allows (task_mutex.default_wait_seconds) -- right for the nightly job and
+    the command line, where waiting turns an overlap into a short delay.
+    0: do not wait; raise ExportsBusy at once -- right for a button, where a
+    person is better told now than kept waiting behind an hour-long job.
+    A wait that runs out raises task_mutex.LockWaitTimeout (holder named)."""
+    from ..task_mutex import TaskMutex
+    mutex = TaskMutex(EXPORTS_LOCK, base_dir=Path(lock_dir) if lock_dir else _lock_dir())
+    if lock_wait_seconds is not None and lock_wait_seconds <= 0:
+        if not mutex.try_acquire(heartbeat=True):
+            raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
+        return mutex
+    return mutex.acquire(wait_seconds=lock_wait_seconds,
+                         waiting_for="another export refresh")
+
+
 def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
-                    db_ok: bool = False) -> dict:
+                    db_ok: bool = False, lock_wait_seconds: Optional[float] = None,
+                    lock_dir: Optional[Path] = None) -> dict:
     """Rewrite the current-exports folder. Returns the manifest.
 
     ``db_ok``: the caller vouches that reading connectome.db is safe right
     now (the watcher's own loop, or no watcher running). Without it the
     per-cohort ODC session files are left as they were and the manifest
-    says so."""
+    says so.
+
+    Only one refresh writes at a time (EXPORTS_LOCK): ``lock_wait_seconds``
+    says how long to wait for another one to finish (see hold_exports_lock;
+    0 raises ExportsBusy at once), ``lock_dir`` where the lock is (tests)."""
     snapshot_dir = snapshot_dir or require("snapshot_dir")
     out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
+    # Taken BEFORE anything is read or emptied: the snapshot generation is then
+    # judged after any run we waited for has finished, and the staging folder
+    # is emptied only when no other run can be writing into it.
+    mutex = hold_exports_lock(lock_wait_seconds, lock_dir)
+    try:
+        return _refresh_current_locked(snapshot_dir, out_dir, db_ok)
+    finally:
+        mutex.release()
+
+
+def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool) -> dict:
+    """refresh_current's work, run only while the exports lock is held."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Every export is built from ONE snapshot generation (see
     # mousedb.snapshot_generation). A snapshot holding tables from two
@@ -514,6 +579,11 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     return manifest
 
 
+# The exit code of ``--no-wait`` when another refresh is writing: distinct from
+# 1 (an export that ran and is incomplete) so a caller can say "busy" instead.
+EXIT_BUSY = 3
+
+
 def main(argv=None) -> int:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__,
@@ -523,9 +593,18 @@ def main(argv=None) -> int:
     ap.add_argument("--db-ok", action="store_true",
                     help="Also refresh the per-cohort ODC session files (reads "
                          "connectome.db -- only when no watcher is writing).")
+    ap.add_argument("--no-wait", action="store_true",
+                    help="If another refresh is writing the exports right now, stop at "
+                         "once (exit code %d) instead of waiting for it to finish."
+                         % EXIT_BUSY)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
-    m = refresh_current(args.snapshot_dir, args.out_dir, db_ok=args.db_ok)
+    try:
+        m = refresh_current(args.snapshot_dir, args.out_dir, db_ok=args.db_ok,
+                            lock_wait_seconds=0 if args.no_wait else None)
+    except ExportsBusy as e:
+        print("[!] %s" % e, flush=True)
+        return EXIT_BUSY
     if args.json:
         print(json.dumps(m, indent=1, default=str))
     else:
