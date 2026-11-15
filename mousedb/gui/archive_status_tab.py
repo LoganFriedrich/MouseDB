@@ -35,11 +35,18 @@ class ArchiveProgressBar(QWidget):
         self._crystallized = 0
         self._in_pipeline = 0
         self._failed = 0
+        self._in_review = 0
+        self._not_on_this_node = 0
+        self._other = 0
         self._total = 0
         self.setMinimumHeight(24)
         self.setMaximumHeight(24)
 
-    def set_data(self, archived, outdated, crystallized, in_pipeline, failed, total):
+    def set_data(self, archived, outdated, crystallized, in_pipeline, failed, total,
+                 in_review=0, not_on_this_node=0, other=0):
+        self._in_review = in_review
+        self._not_on_this_node = not_on_this_node
+        self._other = other
         self._archived = archived
         self._outdated = outdated
         self._crystallized = crystallized
@@ -62,7 +69,10 @@ class ArchiveProgressBar(QWidget):
             (self._crystallized, ARCHIVE_STATE_DISPLAY['crystallized']['color']),
             (self._outdated,     ARCHIVE_STATE_DISPLAY['outdated']['color']),
             (self._in_pipeline,  ARCHIVE_STATE_DISPLAY['in_pipeline']['color']),
+            (self._in_review,    ARCHIVE_STATE_DISPLAY['in_review']['color']),
+            (self._not_on_this_node, ARCHIVE_STATE_DISPLAY['not_on_this_node']['color']),
             (self._failed,       ARCHIVE_STATE_DISPLAY['failed']['color']),
+            (self._other,        ARCHIVE_STATE_DISPLAY['other']['color']),
         ]
         for count, color in segments:
             if count == 0:
@@ -168,6 +178,8 @@ class ArchiveStatusTab(QWidget):
             ('outdated', 'Outdated'),
             ('crystallized', 'Crystallized'),
             ('in_pipeline', 'In Pipeline'),
+            ('in_review', 'In Review'),
+            ('not_on_this_node', 'Not on this computer'),
             ('failed', 'Failed'),
         ]
         for col, (key, label) in enumerate(card_defs):
@@ -181,6 +193,12 @@ class ArchiveStatusTab(QWidget):
             summary_grid.addWidget(card, 0, col)
 
         content_layout.addWidget(summary_group)
+
+        # States mousedb does not know: named, never folded into a count
+        # that means something else.
+        self.other_label = QLabel("")
+        self.other_label.setStyleSheet("color: #795548; font-size: 9pt;")
+        content_layout.addWidget(self.other_label)
 
         # Version info label
         self.versions_label = QLabel("")
@@ -198,10 +216,11 @@ class ArchiveStatusTab(QWidget):
         cohort_group = QGroupBox("By Cohort")
         cohort_layout = QVBoxLayout(cohort_group)
         self.cohort_table = QTableWidget()
-        self.cohort_table.setColumnCount(8)
+        self.cohort_table.setColumnCount(10)
         self.cohort_table.setHorizontalHeaderLabels([
             'Cohort', 'Total', 'Archived', 'Outdated',
-            'Crystallized', 'In Pipeline', 'Failed', 'Progress'
+            'Crystallized', 'In Pipeline', 'In Review', 'Not Here', 'Failed',
+            'Progress'
         ])
         self.cohort_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
@@ -215,10 +234,10 @@ class ArchiveStatusTab(QWidget):
         animal_group = QGroupBox("By Animal")
         animal_layout = QVBoxLayout(animal_group)
         self.animal_table = QTableWidget()
-        self.animal_table.setColumnCount(7)
+        self.animal_table.setColumnCount(9)
         self.animal_table.setHorizontalHeaderLabels([
             'Subject', 'Total', 'Archived', 'Outdated',
-            'Crystallized', 'In Pipeline', 'Failed'
+            'Crystallized', 'In Pipeline', 'In Review', 'Not Here', 'Failed'
         ])
         self.animal_table.horizontalHeader().setSectionResizeMode(
             QHeaderView.Stretch)
@@ -231,7 +250,8 @@ class ArchiveStatusTab(QWidget):
         # State legend
         legend = QHBoxLayout()
         legend.addWidget(QLabel("Legend:"))
-        for key in ['current', 'crystallized', 'outdated', 'in_pipeline', 'failed']:
+        for key in ['current', 'crystallized', 'outdated', 'in_pipeline',
+                    'in_review', 'not_on_this_node', 'failed', 'other']:
             info = ARCHIVE_STATE_DISPLAY[key]
             lbl = QLabel(f" {info['label']} ")
             lbl.setStyleSheet(
@@ -298,6 +318,16 @@ class ArchiveStatusTab(QWidget):
             f"In Pipeline\n{summary.in_pipeline}")
         self.summary_labels['failed'].setText(
             f"Failed\n{summary.failed}")
+        # Held for a reviewer / no file on this computer: their own cards
+        # (they used to be counted as 'In Pipeline').
+        self.summary_labels['in_review'].setText(
+            f"In Review\n{summary.in_review}")
+        self.summary_labels['not_on_this_node'].setText(
+            f"Not on this computer\n{summary.not_on_this_node}")
+        self.other_label.setText(
+            "States mousedb does not know: " + ", ".join(
+                f"{st} = {n}" for st, n in sorted(summary.other.items()))
+            if summary.other else "")
 
         # Highlight outdated card
         if summary.outdated > 0:
@@ -328,7 +358,10 @@ class ArchiveStatusTab(QWidget):
         # Overall progress bar
         self.overall_progress.set_data(
             summary.archived, summary.outdated, summary.crystallized,
-            summary.in_pipeline, summary.failed, summary.total_videos
+            summary.in_pipeline, summary.failed, summary.total_videos,
+            in_review=summary.in_review,
+            not_on_this_node=summary.not_on_this_node,
+            other=sum(summary.other.values()),
         )
 
         # Cohort table
@@ -354,13 +387,17 @@ class ArchiveStatusTab(QWidget):
 
             self.cohort_table.setItem(row, 5,
                                       QTableWidgetItem(str(c.in_pipeline)))
+            self.cohort_table.setItem(row, 6,
+                                      QTableWidgetItem(str(c.in_review)))
+            self.cohort_table.setItem(row, 7,
+                                      QTableWidgetItem(str(c.not_on_this_node)))
 
             failed_item = QTableWidgetItem(str(c.failed))
             if c.failed > 0:
                 failed_item.setBackground(QColor('#FFCDD2'))
-            self.cohort_table.setItem(row, 6, failed_item)
+            self.cohort_table.setItem(row, 8, failed_item)
 
-            self.cohort_table.setItem(row, 7,
+            self.cohort_table.setItem(row, 9,
                                       QTableWidgetItem(f"{c.completion_pct:.1f}%"))
 
         # Load all animals initially
@@ -402,8 +439,12 @@ class ArchiveStatusTab(QWidget):
 
             self.animal_table.setItem(row, 5,
                                       QTableWidgetItem(str(a.in_pipeline)))
+            self.animal_table.setItem(row, 6,
+                                      QTableWidgetItem(str(a.in_review)))
+            self.animal_table.setItem(row, 7,
+                                      QTableWidgetItem(str(a.not_on_this_node)))
 
             failed_item = QTableWidgetItem(str(a.failed))
             if a.failed > 0:
                 failed_item.setBackground(QColor('#FFCDD2'))
-            self.animal_table.setItem(row, 6, failed_item)
+            self.animal_table.setItem(row, 8, failed_item)

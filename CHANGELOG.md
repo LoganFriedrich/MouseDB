@@ -76,6 +76,15 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Videos held for review (triage, deep review) and videos this computer has
+  no file for (unresolvable) are no longer counted as "In Pipeline" /
+  "In Progress" in the Video Pipeline and Archive Status tabs and in
+  `mousedb video-status` / `archive-status`. They have their own counts (In
+  Review, Not on this computer); crystallized videos count as completed; a
+  watcher state mousedb does not know is listed under its own name instead of
+  being folded into a count. `--json` gains `in_review`, `not_on_this_node`,
+  `other` (and `in_progress` for video-status). Guide: docs/WATCHER_VIEWS.md,
+  "What each count means".
 - The Video Pipeline and Archive Status tabs, `mousedb video-status`,
   `mousedb archive-status` and the web dashboard read the watcher database
   the watcher actually writes: a `db_path` set in the `watcher` section of

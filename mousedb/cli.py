@@ -654,7 +654,7 @@ def cmd_dump(args):
 def cmd_video_status(args):
     """Show video pipeline status from watcher.db."""
     from .watcher_bridge import (
-        WatcherBridge, STATE_DISPLAY, PIPELINE_STATES, ERROR_STATES, DONE_STATES,
+        WatcherBridge, STATE_DISPLAY, ALL_STATES, DONE_STATES,
         WATCHER_SCOPE, watcher_db_last_written, watcher_scope_lines,
     )
 
@@ -683,6 +683,10 @@ def cmd_video_status(args):
                 'total_collages': summary.total_collages,
                 'by_state': summary.by_state,
                 'fully_processed_pct': round(summary.fully_processed_pct, 1),
+                'in_progress': summary.in_progress_count,
+                'in_review': summary.in_review_count,
+                'not_on_this_node': summary.not_on_this_node_count,
+                'other': summary.other_states,
             },
             'cohorts': bridge.get_cohort_rollup(),
         }
@@ -698,6 +702,10 @@ def cmd_video_status(args):
                     'total_videos': a.total_videos,
                     'by_state': a.by_state,
                     'failed_videos': a.failed_videos,
+                    'in_progress': a.in_progress,
+                    'in_review': a.in_review,
+                    'not_on_this_node': a.not_on_this_node,
+                    'other': a.other,
                     'latest_activity': a.latest_activity,
                 } for a in animals
             ]
@@ -712,22 +720,30 @@ def cmd_video_status(args):
         print(line)
 
     done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
-    in_progress = (summary.total_videos - done
-                   - summary.failed_count - summary.quarantined_count)
+    # In progress = work the pipeline still has to do here. Videos waiting for
+    # a reviewer, and videos this computer has no file for, are counted on
+    # their own: they used to be folded into 'in progress'.
+    in_progress = summary.in_progress_count
 
     print(f"\nOverall: {summary.total_videos} videos, "
           f"{summary.total_collages} collages")
     print(f"Completed: {summary.fully_processed_pct:.1f}%  "
           f"({done} done, {in_progress} in progress, "
-          f"{summary.failed_count} failed)")
+          f"{summary.in_review_count} waiting for review, "
+          f"{summary.not_on_this_node_count} not on this computer, "
+          f"{summary.failed_count} failed, "
+          f"{summary.quarantined_count} quarantined)")
+    if summary.other_states:
+        print("States mousedb does not know (counted in none of the above): "
+              + ", ".join(f"{st}={n}" for st, n in sorted(summary.other_states.items())))
 
     if summary.by_state:
         print(f"\nBy state:")
-        for state in PIPELINE_STATES + ERROR_STATES:
+        for state in ALL_STATES + sorted(summary.other_states):
             count = summary.by_state.get(state, 0)
             if count > 0:
                 label = STATE_DISPLAY.get(state, {}).get('label', state)
-                print(f"  {label:15s} {count:>5d}")
+                print(f"  {label:24s} {count:>5d}")
 
     # Per-cohort rollup (default view)
     cohorts = bridge.get_cohort_rollup()
@@ -754,14 +770,14 @@ def cmd_video_status(args):
         if animals:
             print(f"\nBy animal:")
             print(f"  {'Subject':<12} {'Total':>6} {'Done':>6} "
-                  f"{'In Progress':>12} {'Failed':>8}")
-            print(f"  {'-' * 48}")
+                  f"{'In Progress':>12} {'In Review':>10} "
+                  f"{'Not Here':>9} {'Failed':>8}")
+            print(f"  {'-' * 69}")
             for a in animals:
                 a_done = sum(a.by_state.get(s, 0) for s in DONE_STATES)
-                a_in_progress = a.total_videos - a_done - a.failed_videos
                 print(f"  {a.subject_id:<12} {a.total_videos:>6} "
-                      f"{a_done:>6} {a_in_progress:>12} "
-                      f"{a.failed_videos:>8}")
+                      f"{a_done:>6} {a.in_progress:>12} {a.in_review:>10} "
+                      f"{a.not_on_this_node:>9} {a.failed_videos:>8}")
 
     # Failed/quarantined details (if requested)
     if getattr(args, 'show_errors', False):
@@ -818,6 +834,9 @@ def cmd_archive_status(args):
                 'crystallized': summary.crystallized,
                 'in_pipeline': summary.in_pipeline,
                 'failed': summary.failed,
+                'in_review': summary.in_review,
+                'not_on_this_node': summary.not_on_this_node,
+                'other': summary.other,
             },
             'cohorts': [
                 {
@@ -828,6 +847,9 @@ def cmd_archive_status(args):
                     'crystallized': c.crystallized,
                     'in_pipeline': c.in_pipeline,
                     'failed': c.failed,
+                    'in_review': c.in_review,
+                    'not_on_this_node': c.not_on_this_node,
+                    'other': c.other,
                     'completion_pct': round(c.completion_pct, 1),
                     'crystallized_label': c.crystallized_label,
                 }
@@ -849,6 +871,9 @@ def cmd_archive_status(args):
                     'crystallized': a.crystallized,
                     'in_pipeline': a.in_pipeline,
                     'failed': a.failed,
+                    'in_review': a.in_review,
+                    'not_on_this_node': a.not_on_this_node,
+                    'other': a.other,
                     'crystallized_label': a.crystallized_label,
                 }
                 for a in animal_rollup
@@ -893,6 +918,12 @@ def cmd_archive_status(args):
                 details.append(f"{c.outdated} outdated")
             if c.in_pipeline > 0:
                 details.append(f"{c.in_pipeline} in pipeline")
+            if c.in_review > 0:
+                details.append(f"{c.in_review} waiting for review")
+            if c.not_on_this_node > 0:
+                details.append(f"{c.not_on_this_node} not on this computer")
+            for st, n in sorted(c.other.items()):
+                details.append(f"{n} {st}")
             if c.failed > 0:
                 details.append(f"{c.failed} failed")
             if c.crystallized > 0 and c.crystallized_label:
@@ -920,6 +951,13 @@ def cmd_archive_status(args):
         print(f"Outdated (need reprocess): {summary.outdated}")
     if summary.crystallized > 0:
         print(f"Crystallized: {summary.crystallized}")
+    if summary.in_review > 0:
+        print(f"Waiting for review (triage / deep review): {summary.in_review}")
+    if summary.not_on_this_node > 0:
+        print(f"Not on this computer (no file here): {summary.not_on_this_node}")
+    if summary.other:
+        print("States mousedb does not know: "
+              + ", ".join(f"{st}={n}" for st, n in sorted(summary.other.items())))
 
     # Per-animal breakdown (verbose or specific cohort)
     if getattr(args, 'verbose', False) or getattr(args, 'cohort', None):
@@ -934,12 +972,14 @@ def cmd_archive_status(args):
                 header += f" ({cohort_filter})"
             print(f"\n{header}:")
             print(f"  {'Subject':<12} {'Total':>6} {'Archived':>9} "
-                  f"{'Outdated':>9} {'Crystal':>8} {'Pipeline':>9} {'Failed':>7}")
-            print(f"  {'-' * 62}")
+                  f"{'Outdated':>9} {'Crystal':>8} {'Pipeline':>9} "
+                  f"{'Review':>7} {'NotHere':>8} {'Failed':>7}")
+            print(f"  {'-' * 78}")
             for a in animal_rollup:
                 print(f"  {a.subject_id:<12} {a.total_videos:>6} "
                       f"{a.archived:>9} {a.outdated:>9} "
-                      f"{a.crystallized:>8} {a.in_pipeline:>9} {a.failed:>7}")
+                      f"{a.crystallized:>8} {a.in_pipeline:>9} "
+                      f"{a.in_review:>7} {a.not_on_this_node:>8} {a.failed:>7}")
 
 
 # =========================================================================

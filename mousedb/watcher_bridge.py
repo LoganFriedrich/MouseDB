@@ -30,7 +30,20 @@ PIPELINE_STATES = [
     'processing', 'processed', 'archiving', 'archived',
 ]
 ERROR_STATES = ['quarantined', 'failed']
-ALL_STATES = PIPELINE_STATES + ERROR_STATES
+# A filed video whose results are older than the declared tool versions; the
+# watcher re-runs it (it re-enters the pipeline).
+RERUN_STATES = ['outdated']
+# A filed video locked for a publication: done, and stays as it is.
+LOCKED_STATES = ['crystallized']
+# Held for a person: the review queues. WHY their own bucket: until mousedb
+# knew these states they fell into 'in pipeline' / 'in progress', so a video
+# waiting for a reviewer looked like one the pipeline was working on.
+REVIEW_STATES = ['triage', 'deep_review']
+# This computer has no file for the video (another computer holds it). Not a
+# failure and not a hold -- and not work this computer is doing.
+NODE_ABSENT_STATES = ['unresolvable']
+ALL_STATES = (PIPELINE_STATES + RERUN_STATES + LOCKED_STATES + REVIEW_STATES
+              + NODE_ABSENT_STATES + ERROR_STATES)
 
 # State display names and colors for GUI
 STATE_DISPLAY = {
@@ -45,9 +58,22 @@ STATE_DISPLAY = {
     'archived':     {'label': 'Archived',      'color': '#607D8B'},
     'quarantined':  {'label': 'Quarantined',   'color': '#FF5722'},
     'failed':       {'label': 'Failed',        'color': '#F44336'},
+    'outdated':     {'label': 'Outdated',      'color': '#FF9800'},
+    'crystallized': {'label': 'Crystallized',  'color': '#2196F3'},
+    'triage':       {'label': 'In Review (triage)',      'color': '#AB47BC'},
+    'deep_review':  {'label': 'In Review (deep review)', 'color': '#7B1FA2'},
+    'unresolvable': {'label': 'Not on this computer',    'color': '#BDBDBD'},
 }
 
-DONE_STATES = frozenset(['processed', 'archiving', 'archived'])
+# 'crystallized' is a filed video locked for a publication: its analysis is
+# finished, so it counts as done (it used to count as 'in progress').
+DONE_STATES = frozenset(['processed', 'archiving', 'archived', 'crystallized'])
+
+# Work the pipeline still has to do on this computer ('In Progress').
+ACTIVE_STATES = frozenset([
+    'discovered', 'validated', 'dlc_queued', 'dlc_running', 'dlc_complete',
+    'processing', 'outdated',
+])
 
 # Archive-relevant state groupings
 ARCHIVE_STATES = frozenset(['archived', 'outdated', 'crystallized'])
@@ -62,8 +88,58 @@ ARCHIVE_STATE_DISPLAY = {
     'outdated':      {'label': 'Outdated',       'color': '#FF9800'},
     'crystallized':  {'label': 'Crystallized',   'color': '#2196F3'},
     'in_pipeline':   {'label': 'In Pipeline',    'color': '#9E9E9E'},
+    'in_review':     {'label': 'In Review',      'color': '#AB47BC'},
+    'not_on_this_node': {'label': 'Not on this computer', 'color': '#BDBDBD'},
     'failed':        {'label': 'Failed',         'color': '#F44336'},
+    'other':         {'label': 'Other',          'color': '#795548'},
 }
+
+
+def pipeline_bucket(state: str) -> str:
+    """Which count of the Video Pipeline view a watcher state belongs to:
+    'done', 'in_progress', 'in_review', 'not_on_this_node', 'failed',
+    'quarantined', or 'other' for a state mousedb does not know (shown under
+    its own name, never folded into a bucket that means something else)."""
+    if state in DONE_STATES:
+        return 'done'
+    if state in ACTIVE_STATES:
+        return 'in_progress'
+    if state in REVIEW_STATES:
+        return 'in_review'
+    if state in NODE_ABSENT_STATES:
+        return 'not_on_this_node'
+    if state == 'failed':
+        return 'failed'
+    if state == 'quarantined':
+        return 'quarantined'
+    return 'other'
+
+
+def archive_bucket(state: str) -> str:
+    """Which count of the Archive Status view a watcher state belongs to:
+    'archived', 'outdated', 'crystallized', 'in_pipeline', 'in_review',
+    'not_on_this_node', 'failed' (failed or quarantined), or 'other'."""
+    if state in ('archived', 'outdated', 'crystallized'):
+        return state
+    if state in IN_PIPELINE_STATES:
+        return 'in_pipeline'
+    if state in REVIEW_STATES:
+        return 'in_review'
+    if state in NODE_ABSENT_STATES:
+        return 'not_on_this_node'
+    if state in ERROR_STATES:
+        return 'failed'
+    return 'other'
+
+
+def _add_archive_count(summary, state: str, count: int) -> None:
+    """Add ``count`` videos in ``state`` to an archive summary (overall,
+    cohort or animal): one rule for all three."""
+    bucket = archive_bucket(state)
+    if bucket == 'other':
+        summary.other[state] = summary.other.get(state, 0) + count
+    else:
+        setattr(summary, bucket, getattr(summary, bucket) + count)
 
 
 @dataclass
@@ -84,6 +160,10 @@ class PipelineSummary:
     quarantined_count: int = 0
     archived_count: int = 0
     fully_processed_pct: float = 0.0
+    in_progress_count: int = 0
+    in_review_count: int = 0
+    not_on_this_node_count: int = 0
+    other_states: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -95,6 +175,10 @@ class AnimalVideoSummary:
     by_state: Dict[str, int] = field(default_factory=dict)
     failed_videos: int = 0
     latest_activity: Optional[str] = None
+    in_progress: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,6 +190,9 @@ class ArchiveSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     versions_path: Optional[Path] = None
     versions_info: Optional[dict] = None
 
@@ -120,6 +207,9 @@ class ArchiveCohortSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     crystallized_label: Optional[str] = None
 
     @property
@@ -144,6 +234,9 @@ class ArchiveAnimalSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    in_review: int = 0
+    not_on_this_node: int = 0
+    other: Dict[str, int] = field(default_factory=dict)
     crystallized_label: Optional[str] = None
 
 
@@ -389,6 +482,17 @@ class WatcherBridge:
             summary.quarantined_count = summary.by_state.get('quarantined', 0)
             summary.archived_count = summary.by_state.get('archived', 0)
 
+            for st, cnt in summary.by_state.items():
+                bucket = pipeline_bucket(st)
+                if bucket == 'in_progress':
+                    summary.in_progress_count += cnt
+                elif bucket == 'in_review':
+                    summary.in_review_count += cnt
+                elif bucket == 'not_on_this_node':
+                    summary.not_on_this_node_count += cnt
+                elif bucket == 'other':
+                    summary.other_states[st] = cnt
+
             done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
             if summary.total_videos > 0:
                 summary.fully_processed_pct = done / summary.total_videos * 100
@@ -436,6 +540,16 @@ class WatcherBridge:
                 summary.total_videos += row['cnt']
                 if row['state'] == 'failed':
                     summary.failed_videos += row['cnt']
+                bucket = pipeline_bucket(row['state'])
+                if bucket == 'in_progress':
+                    summary.in_progress += row['cnt']
+                elif bucket == 'in_review':
+                    summary.in_review += row['cnt']
+                elif bucket == 'not_on_this_node':
+                    summary.not_on_this_node += row['cnt']
+                elif bucket == 'other':
+                    summary.other[row['state']] = (
+                        summary.other.get(row['state'], 0) + row['cnt'])
 
                 if row['latest']:
                     if (summary.latest_activity is None
@@ -461,11 +575,20 @@ class WatcherBridge:
                     'by_state': {},
                     'failed': 0,
                     'fully_processed': 0,
+                    'in_progress': 0,
+                    'in_review': 0,
+                    'not_on_this_node': 0,
+                    'other': {},
                 }
             c = cohorts[cid]
             c['animals'] += 1
             c['total_videos'] += animal.total_videos
             c['failed'] += animal.failed_videos
+            c['in_progress'] += animal.in_progress
+            c['in_review'] += animal.in_review
+            c['not_on_this_node'] += animal.not_on_this_node
+            for st, n in animal.other.items():
+                c['other'][st] = c['other'].get(st, 0) + n
             for state, count in animal.by_state.items():
                 c['by_state'][state] = c['by_state'].get(state, 0) + count
                 if state in DONE_STATES:
@@ -555,17 +678,7 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 summary.total_videos += count
-
-                if state == 'archived':
-                    summary.archived += count
-                elif state == 'outdated':
-                    summary.outdated += count
-                elif state == 'crystallized':
-                    summary.crystallized += count
-                elif state in ('failed', 'quarantined'):
-                    summary.failed += count
-                else:
-                    summary.in_pipeline += count
+                _add_archive_count(summary, state, count)
 
             return summary
         finally:
@@ -600,19 +713,9 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 c.total_videos += count
-
-                if state == 'archived':
-                    c.archived += count
-                elif state == 'outdated':
-                    c.outdated += count
-                elif state == 'crystallized':
-                    c.crystallized += count
-                    if row['labels']:
-                        c.crystallized_label = row['labels']
-                elif state in ('failed', 'quarantined'):
-                    c.failed += count
-                else:
-                    c.in_pipeline += count
+                _add_archive_count(c, state, count)
+                if state == 'crystallized' and row['labels']:
+                    c.crystallized_label = row['labels']
 
             return sorted(cohorts.values(), key=lambda c: c.cohort_id)
         finally:
@@ -659,19 +762,9 @@ class WatcherBridge:
                 state = row['state']
                 count = row['cnt']
                 a.total_videos += count
-
-                if state == 'archived':
-                    a.archived += count
-                elif state == 'outdated':
-                    a.outdated += count
-                elif state == 'crystallized':
-                    a.crystallized += count
-                    if row['labels']:
-                        a.crystallized_label = row['labels']
-                elif state in ('failed', 'quarantined'):
-                    a.failed += count
-                else:
-                    a.in_pipeline += count
+                _add_archive_count(a, state, count)
+                if state == 'crystallized' and row['labels']:
+                    a.crystallized_label = row['labels']
 
             return sorted(animals.values(), key=lambda a: a.subject_id)
         finally:

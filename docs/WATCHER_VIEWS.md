@@ -44,6 +44,47 @@ In `--json` output the same facts are the keys `watcher_db` (the file),
 `watcher_db_last_written` and `scope` (always
 `this_computer_watcher_records_only`).
 
+## What each count means
+
+The watcher gives every video one state. Each view sorts the states into a
+few counts. Every video is in exactly one count, so the counts add up to the
+total.
+
+**Video Pipeline** (tab 8, `mousedb video-status`):
+
+| count | watcher states | meaning |
+|---|---|---|
+| Completed | processed, archiving, archived, crystallized | analyzed (and filed, or being filed). Crystallized = filed and locked for a publication. |
+| In Progress | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, outdated | work the pipeline still has to do on this computer. Outdated = filed with older tool versions; it will be run again. |
+| In Review | triage, deep_review | waiting for a **person** in a review queue (triage, or deep review). Nothing happens to it until someone reviews it. |
+| Not on this computer | unresolvable | this computer has no file for the video -- another computer holds it. Not a failure. |
+| Failed / Quarantined | failed / quarantined | a step failed, or the recording's name could not be read. |
+
+**Archive Status** (tab 9, `mousedb archive-status`):
+
+| count | watcher states |
+|---|---|
+| Current (Archived) | archived |
+| Outdated | outdated |
+| Crystallized | crystallized |
+| In Pipeline | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, processed, archiving |
+| In Review | triage, deep_review |
+| Not on this computer | unresolvable |
+| Failed | failed, quarantined |
+
+**A state MouseDB does not know** (a newer MouseReach may add one) is never
+folded into one of the counts above. The views list it by its own name, for
+example `States mousedb does not know: some_state = 2`. If you see that line,
+MouseDB needs updating to describe the new state.
+
+(Before this was fixed, In Review and Not on this computer did not exist:
+those videos were counted as In Progress / In Pipeline, and crystallized
+videos as In Progress.)
+
+In `--json` output: `summary`, each cohort and each animal carry
+`in_review`, `not_on_this_node` and `other` (a list of unknown states and
+their counts); `video-status` also carries `in_progress`.
+
 ## Which file is read
 
 MouseDB reads the file this computer's watcher **writes**, found in this order:
@@ -62,5 +103,6 @@ MouseDB reads the file this computer's watcher **writes**, found in this order:
 (Before this was fixed, step 2 did not exist, so on a computer set up as in
 step 2 these views showed the old file's numbers.)
 
-The views only read. Each refresh runs a few short queries; nothing is kept
-open, and nothing is ever written to the watcher's database.
+The views only read. Each refresh runs a few short queries (each well under a
+second on a database of the usual size); nothing is kept open between them,
+and nothing is ever written to the watcher's database.
