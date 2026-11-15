@@ -688,6 +688,11 @@ cohort's sheet wrote -- pellet scores, weights, ramp days and surgeries:
   workbook -- **is removed from the database at the next import;**
 - **a row typed in by hand in mousedb is never changed or removed.**
 
+An animal's date of birth, date of death and sex are filled in from the
+sheet's metadata tab only where the database has nothing for them; a value
+already there is kept, and a difference from the sheet is listed in the red
+attention box for a person to settle.
+
 When a removal takes a session date out of a cohort's schedule (or an import
 adds one), the cohort's phases -- training, baseline, post-injury tests --
 are worked out again in the same import, for the hand scores and the reaches

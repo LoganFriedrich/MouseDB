@@ -158,6 +158,17 @@ imports of that cohort's sheet wrote:
   copied in from another cohort's workbook, say) and nothing left in the
   sheet says the animal died, the death is undone and listed
   (`N deaths undone`).
+- **An animal's date of birth, date of death and sex** come from
+  `0a_Metadata` into the database where the database has NOTHING for them
+  (an animal first created from a video, or from another tab, before its
+  metadata row was filled in). A value the database already holds is never
+  overwritten -- nothing records whether a person typed it in on purpose --
+  so where the sheet says something else, the import warns
+  (`0a_Metadata: <animal>'s date of death is <date> in the database but
+  <date> in the sheet ...`) and the line also goes into the red attention box
+  and the cohort's FIX THESE file. Decide which is right and correct the
+  sheet, or the animal in the GUI. A date of death later than today is a
+  plan, and is not taken. Every fill is in the audit log.
 - When an import removes a session date, or adds one, the cohort's **phases
   are worked out again in the same import**, for its pellet scores and its
   reaches, and the import says how many rows were relabelled. The hand-scores
@@ -816,6 +827,7 @@ animal-details copy, video data and tissue data are not touched.
 | `[!] <tab>!<cell>: ... left as written` (after a new sheet is created) | That formula could not be pointed at the new animal's row; it is as it was in the template. Check it in the new sheet, and fix the template if it should be different. |
 | `NOT SYNCED <table>: ...` | The sheet read as broken, so nothing in that table was removed or changed. Check the tab it names; if the sheet is right, import that cohort with `--allow-large-removal` or use Replace (see "The sheet wins"). |
 | `<table>: <animal> <date> ... was typed in by hand (by <name>) and differs from the sheet ...` / `3b_Manual_Tray: <animal> <date> <tray> has scores typed in by hand ...` | Nothing is wrong with the import. Decide which is right: correct the sheet, or correct the hand-typed row in the entry tab it came from. |
+| `0a_Metadata: <animal>'s <date of birth / date of death / sex> is <value> in the database but <value> in the sheet ...` | Decide which is right. If the sheet is wrong, correct it there; if the database is wrong, correct the animal in the GUI. The import never overwrites the database's value itself. |
 | `3b_Manual_Tray: <animal> <date> <tray> pellet N is on two rows with different scores ...` | The same tray is typed twice. Delete the extra row in the sheet. |
 | `changed from the sheet -- ...` (under a cohort's `OK` line) | Nothing: it lists what the import corrected or removed because the sheet changed. Check it matches what you meant to change. |
 | `phases re-derived for <cohort>: ...` | Nothing: the cohort's session dates changed, so its phases were worked out again. |

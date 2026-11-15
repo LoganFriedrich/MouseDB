@@ -938,6 +938,12 @@ def sync_summary(entry: dict) -> Optional[str]:
             bits.append("session date%s no longer in the sheet: %s" % (
                 "" if len(what["dates_removed"]) == 1 else "s",
                 ", ".join(what["dates_removed"])))
+        if what.get("filled"):
+            bits.append("%d empty fact%s filled from the sheet" % (
+                len(what["filled"]), "" if len(what["filled"]) == 1 else "s"))
+        if what.get("differs"):
+            bits.append("%d fact%s differ from the sheet (database kept; see warnings)" % (
+                len(what["differs"]), "" if len(what["differs"]) == 1 else "s"))
         if what.get("death_undone"):
             bits.append("%d death%s undone (recorded only by a removed contusion row)" % (
                 len(what["death_undone"]), "" if len(what["death_undone"]) == 1 else "s"))

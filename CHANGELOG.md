@@ -84,6 +84,13 @@ checked-in code, not what's planned.
   pellet and reach rows were relabelled (`phases_rederived`), and fails the
   cohort loudly if that re-derivation fails. The exports pick the new labels up
   at the next refresh (the skip signature hashes the tables' content).
+- An existing animal's date of birth, date of death and sex on the sheet's
+  `0a_Metadata` tab never reached the database (the tab was read only for
+  animals being created). Each import now fills those fields where the
+  database holds nothing, logs every fill in the audit log, and never
+  overwrites a value already there: a difference is a warning, an item in the
+  attention box and in the FIX THESE file, for a person to settle. A date of
+  death later than today is not taken.
 - An animal first created from a video keeps its "auto-created" note no
   longer: the first sheet import that names it replaces the note, so the data
   status stops counting it as "created from video only".

@@ -493,6 +493,7 @@ class ExcelImporter:
             # Check if subject already exists
             existing = session.query(Subject).filter_by(subject_id=subject_id).first()
             if existing:
+                self._fill_subject_facts(session, existing, row, dry_run)
                 continue
 
             # The cohort row must exist before an animal is filed under it:
@@ -522,6 +523,65 @@ class ExcelImporter:
             self.imported_counts['subjects'] += 1
 
         session.flush()
+
+    # The animal facts on 0a_Metadata, as (subject column, sheet heading, reader).
+    _SUBJECT_FACTS = (
+        ('date_of_birth', 'Date_of_Birth', '_parse_date'),
+        ('date_of_death', 'Date_of_Death', '_parse_date'),
+        ('sex', 'Sex', '_parse_sex'),
+    )
+
+    def _fill_subject_facts(self, session, subject, row, dry_run: bool):
+        """Bring an existing animal's date of birth, date of death and sex in
+        from 0a_Metadata -- filling only what the database holds EMPTY.
+
+        WHY: an animal is often created before its metadata row is filled in
+        (from a video, or from an earlier tab), and the import used to read
+        0a_Metadata only for animals it was creating, so these facts never
+        reached animals that already existed. Unlike the rows synced above,
+        a subject records no origin: a value already present may have been
+        typed in the GUI on purpose. So a present value is never overwritten;
+        when the sheet says something else, a warning (and an item in the
+        FIX THESE file) asks a person to settle it in the sheet or the GUI.
+        Every fill goes to the audit log. A date of death later than today is
+        not taken: it is a plan, not an event."""
+        today = getattr(self, 'today', None) or date.today()
+        for column, heading, reader in self._SUBJECT_FACTS:
+            value = getattr(self, reader)(row.get(heading))
+            if value is None:
+                continue
+            if column == 'date_of_death' and value > today:
+                continue
+            stored = getattr(subject, column)
+            if isinstance(stored, datetime):
+                stored = stored.date()
+            if stored is not None and stored == value:
+                continue
+            # One verdict per animal and fact per import, however many rows
+            # name the animal.
+            done = self.__dict__.setdefault('_facts_seen', set())
+            if (subject.subject_id, column) in done:
+                continue
+            done.add((subject.subject_id, column))
+            report = self._sync_state().setdefault('subjects', {})
+            item = {'subject_id': subject.subject_id, 'field': column,
+                    'database': _jsonable(stored), 'sheet': _jsonable(value)}
+            if self._blank(stored):
+                report.setdefault('filled', []).append(item)
+                self.imported_counts['subject_facts_filled'] = (
+                    self.imported_counts.get('subject_facts_filled', 0) + 1)
+                if not dry_run:
+                    self._audit(session, 'UPDATE', 'subjects', subject.subject_id,
+                                {column: None}, {column: _jsonable(value)})
+                    setattr(subject, column, value)
+                continue
+            report.setdefault('differs', []).append(item)
+            self.warnings.append(self._ascii(
+                "0a_Metadata: %s's %s is %s in the database but %s in the sheet; the "
+                "database value was kept (where it came from is not recorded). Correct "
+                "whichever is wrong -- the sheet, or the animal in the GUI"
+                % (subject.subject_id, column.replace('_', ' '), item['database'],
+                   item['sheet'])))
 
     def _import_weights(self, xl: pd.ExcelFile, cohort_id: str,
                         session, dry_run: bool):
@@ -2851,7 +2911,8 @@ class ExcelImporter:
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
-                     '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead', '_seen_rows', '_unread_tabs',
+                     '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead',
+                     '_facts_seen', '_seen_rows', '_unread_tabs',
                      '_notes_cleared'):
             self.__dict__.pop(name, None)
 

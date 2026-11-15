@@ -19,8 +19,9 @@ WHAT IS GATHERED
 2. The tracking-sheet imports (the import ledger): for each cohort in the
    sheets folder, its last import if it failed, every date that import
    had to repair (its REPAIRED warnings) -- correct those in the sheet --
-   and every table it refused to bring in step with the sheet because the
-   sheet read as broken (its NOT SYNCED lines).
+   every table it refused to bring in step with the sheet because the
+   sheet read as broken (its NOT SYNCED lines), and every animal fact
+   (birth, death, sex) the sheet gives differently from the database.
 Frozen workbooks (the letter cohorts) are not listed: nobody corrects them.
 
 THE FIX THESE FILE
@@ -91,6 +92,14 @@ def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
         # because the sheet read as broken (importers: "The sheet wins").
         for refusal in ((e.get("sheet_sync") or {}).get("refused") or []):
             out.append({"cohort_id": cid, "source": "sheet import", "says": str(refusal)})
+        # An animal fact (birth, death, sex) the sheet gives differently from
+        # the database, which kept its own: a person decides which is right.
+        for d in (((e.get("sheet_sync") or {}).get("subjects") or {}).get("differs") or []):
+            out.append({"cohort_id": cid, "source": "sheet import", "says": (
+                "%s's %s is %s in the database but %s in the sheet (0a_Metadata); the "
+                "database value was kept. Correct whichever is wrong -- the sheet, or the "
+                "animal in the GUI" % (d.get("subject_id"), str(d.get("field")).replace("_", " "),
+                                       d.get("database"), d.get("sheet")))})
         for w in e.get("warnings") or []:
             if str(w).startswith("REPAIRED"):
                 out.append({"cohort_id": cid, "source": "sheet import", "says": str(w)})
