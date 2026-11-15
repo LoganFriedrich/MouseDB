@@ -275,3 +275,28 @@ def test_an_earlier_version_still_sees_this_update_after_two_hours(root, monkeyp
     up.run_update(triggered_by="test", skip=up.STEP_KEYS[1:], runner=runner, log=lambda s: None)
     assert refused_by_old_rule == [True]
 
+
+def test_two_presses_at_the_same_moment_never_both_run(root, monkeypatch):
+    """The update lock used to be taken by checking that a file did not exist
+    and then writing it, so a second press landing between the first press's
+    check and its write found no lock and ran too. Here the second press is
+    made at exactly that moment: just before the first press writes any lock
+    file. Exactly one of the two may run its steps."""
+    import pathlib
+    real_write_text = pathlib.Path.write_text
+    presses = []
+
+    def second_press_right_now(self, *a, **kw):
+        if self.name.endswith("lock") and not presses:
+            presses.append(None)
+            r = _runner()
+            presses[0] = (up.run_update(triggered_by="second", runner=r, log=lambda s: None), r)
+        return real_write_text(self, *a, **kw)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", second_press_right_now)
+    r1 = _runner()
+    first = up.run_update(triggered_by="first", runner=r1, log=lambda s: None)
+    second, r2 = presses[0]
+    ran = [res for res, r in ((first, r1), (second, r2)) if r.calls]
+    assert len(ran) == 1, "both presses ran their steps at the same time"
+    assert first.ok and second.skipped and r2.calls == []
