@@ -406,11 +406,13 @@ class TaskMutex:
         """
         sig = [text]
         if state == "alive":
+            counted = False
             try:
                 import psutil
                 proc = psutil.Process(int(text.split()[0]))
                 cpu = proc.cpu_times()
                 sig.append(round(cpu.user + cpu.system, 1))
+                counted = True
                 try:
                     io = proc.io_counters()
                     sig.append((io.read_count, io.write_count))
@@ -418,6 +420,17 @@ class TaskMutex:
                     pass
             except Exception:
                 pass
+            if not counted:
+                # The holder is running here but its counters are refused --
+                # typically a holder started in another person's login (the
+                # exports button), looked at from a scheduled job running as
+                # someone else. Without this, nothing in the signature ever
+                # moved, and a healthy holder was given up on as "may be hung"
+                # after STALL_MINUTES. Its lockfile heartbeat says it is alive.
+                try:
+                    sig.append(self.path.stat().st_mtime)
+                except OSError:
+                    pass
         else:
             try:
                 sig.append(self.path.stat().st_mtime)

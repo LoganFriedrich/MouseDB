@@ -365,6 +365,12 @@ already writing:
   itself as failed; a terminal command prints one line starting
   `[!] another export refresh is still writing the current exports` and exits
   with code 4. Run it again once the other one is done.
+- "No sign of progress" is judged by the other refresh's CPU time and
+  read/write count when it runs on the same computer, and otherwise by its
+  lockfile, which a running refresh touches once a minute. A refresh started in
+  another person's login may refuse its counters to a job running as someone
+  else; then its lockfile is used too, so a healthy refresh is not mistaken
+  for a stuck one.
 - `mousedb-current-exports --no-wait` does not wait either: it stops at once
   with exit code 3.
 

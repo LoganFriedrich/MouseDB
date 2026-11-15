@@ -68,3 +68,55 @@ def test_a_lockfile_whose_delete_is_pending_is_waited_for_not_raised(tmp_path, m
         assert m._held and refused["n"] == 3
     finally:
         m.release()
+
+
+class _FakeTime:
+    def __init__(self, on_sleep):
+        self.now = 0.0
+        self.on_sleep = on_sleep
+
+    def clock(self):
+        return self.now
+
+    def sleep(self, s):
+        self.now += s
+        self.on_sleep(self.now)
+
+
+def test_a_holder_whose_counters_are_refused_is_judged_by_its_heartbeat(tmp_path, monkeypatch):
+    """A live holder (this process) whose CPU and read/write counters are
+    refused, but whose lockfile is touched by its heartbeat, is still working:
+    the waiter keeps waiting past the stall time and takes the lock when it is
+    released."""
+    holder = TaskMutex(current.EXPORTS_LOCK, base_dir=tmp_path)
+    stamp = datetime.fromtimestamp(psutil.Process().create_time() + 1).isoformat()
+    holder.path.write_text("%d %s" % (os.getpid(), stamp))
+
+    def refused(self, *a, **kw):
+        raise psutil.AccessDenied(os.getpid())
+
+    monkeypatch.setattr(psutil.Process, "cpu_times", refused)
+    monkeypatch.setattr(psutil.Process, "io_counters", refused)
+    stall = 30 * 60
+    release_at = 3 * stall
+
+    def beat(now):
+        if not holder.path.exists():
+            return
+        if now >= release_at:
+            holder.path.unlink()
+            return
+        # The holder's heartbeat touches the lockfile once a minute.
+        if int(now) % 60 == 0:
+            st = holder.path.stat()
+            os.utime(holder.path, (st.st_atime, st.st_mtime + 60))
+
+    fake = _FakeTime(beat)
+    m = TaskMutex(current.EXPORTS_LOCK, base_dir=tmp_path)
+    m._clock, m._sleep = fake.clock, fake.sleep
+    m.acquire(wait_seconds=4 * stall, stall_seconds=stall, log=lambda *_: None,
+              waiting_for="another export refresh")
+    try:
+        assert m._held and fake.now >= release_at
+    finally:
+        m.release()
