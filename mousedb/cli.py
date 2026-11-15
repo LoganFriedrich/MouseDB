@@ -655,7 +655,7 @@ def cmd_video_status(args):
     """Show video pipeline status from watcher.db."""
     from .watcher_bridge import (
         WatcherBridge, STATE_DISPLAY, ALL_STATES, DONE_STATES,
-        WATCHER_SCOPE, watcher_db_last_written, watcher_scope_lines,
+        watcher_scope, watcher_db_last_written, watcher_scope_lines,
     )
 
     bridge = WatcherBridge()
@@ -676,7 +676,7 @@ def cmd_video_status(args):
             'watcher_db': str(bridge.status.db_path),
             # Whose records these are: this computer's watcher only (see
             # watcher_scope_lines). The pipeline census has the whole state.
-            'scope': WATCHER_SCOPE,
+            'scope': watcher_scope(bridge.status),
             'watcher_db_last_written': watcher_db_last_written(bridge.status),
             'summary': {
                 'total_videos': summary.total_videos,
@@ -811,7 +811,7 @@ def cmd_archive_status(args):
     """Show archive processing and version compliance status."""
     from .watcher_bridge import (
         WatcherBridge, ARCHIVE_STATE_DISPLAY,
-        WATCHER_SCOPE, watcher_db_last_written, watcher_scope_lines,
+        watcher_scope, watcher_db_last_written, watcher_scope_lines,
     )
 
     bridge = WatcherBridge()
@@ -833,7 +833,7 @@ def cmd_archive_status(args):
             'watcher_db': str(bridge.status.db_path),
             # Whose records these are: this computer's watcher only (see
             # watcher_scope_lines). The pipeline census has the whole state.
-            'scope': WATCHER_SCOPE,
+            'scope': watcher_scope(bridge.status),
             'watcher_db_last_written': watcher_db_last_written(bridge.status),
             'versions_json': str(summary.versions_path) if summary.versions_path else None,
             'versions': (summary.versions_info.get('versions', {})

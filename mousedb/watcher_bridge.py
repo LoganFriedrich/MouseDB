@@ -142,12 +142,24 @@ def _add_archive_count(summary, state: str, count: int) -> None:
         setattr(summary, bucket, getattr(summary, bucket) + count)
 
 
+# Which rule of find_watcher_db found the file. Only the two read from this
+# computer's MouseReach config are known to be the file this computer's
+# watcher writes; the scope line says so only for those.
+FOUND_VIA_ENV = 'env'                      # MOUSEDB_WATCHER_DB
+FOUND_VIA_WATCHER_DB_PATH = 'watcher_db_path'
+FOUND_VIA_PROCESSING_ROOT = 'processing_root'
+FOUND_VIA_PIPELINE_ROOT = 'pipeline_root'  # mousedb's mousereach_pipeline_root
+FOUND_VIA_EXPLICIT = 'explicit'            # a path handed to WatcherBridge
+THIS_COMPUTERS_WATCHER = (FOUND_VIA_WATCHER_DB_PATH, FOUND_VIA_PROCESSING_ROOT)
+
+
 @dataclass
 class WatcherStatus:
     """Watcher connection status."""
     available: bool
     db_path: Optional[Path]
     message: str
+    found_via: str = ''
 
 
 @dataclass
@@ -267,7 +279,8 @@ def find_watcher_db() -> WatcherStatus:
     if env_path:
         p = Path(env_path)
         if p.exists():
-            return WatcherStatus(True, p, f"Found via MOUSEDB_WATCHER_DB: {p}")
+            return WatcherStatus(True, p, f"Found via MOUSEDB_WATCHER_DB: {p}",
+                                 FOUND_VIA_ENV)
         return WatcherStatus(False, None,
                              f"MOUSEDB_WATCHER_DB set but file not found: {p}")
 
@@ -284,7 +297,8 @@ def find_watcher_db() -> WatcherStatus:
                 p = Path(configured)
                 if p.exists():
                     return WatcherStatus(
-                        True, p, f"Found via mousereach config watcher.db_path: {p}")
+                        True, p, f"Found via mousereach config watcher.db_path: {p}",
+                        FOUND_VIA_WATCHER_DB_PATH)
                 return WatcherStatus(
                     False, None,
                     f"The watcher is configured to write {p} (watcher.db_path in "
@@ -296,7 +310,8 @@ def find_watcher_db() -> WatcherStatus:
                 p = Path(processing_root) / "watcher.db"
                 if p.exists():
                     return WatcherStatus(True, p,
-                                         f"Found via mousereach config: {p}")
+                                         f"Found via mousereach config: {p}",
+                                         FOUND_VIA_PROCESSING_ROOT)
                 return WatcherStatus(
                     False, None,
                     f"MouseReach configured but watcher.db not found at {p}. "
@@ -310,7 +325,9 @@ def find_watcher_db() -> WatcherStatus:
         from .config import mousereach_pipeline_root
         root = mousereach_pipeline_root()
         if root and (root / "watcher.db").exists():
-            return WatcherStatus(True, root / "watcher.db", f"Found at configured pipeline root: {root}")
+            return WatcherStatus(True, root / "watcher.db",
+                                 f"Found at configured pipeline root: {root}",
+                                 FOUND_VIA_PIPELINE_ROOT)
     except Exception:
         pass
 
@@ -322,6 +339,18 @@ def find_watcher_db() -> WatcherStatus:
 
 # Machine-readable name of what the watcher views cover (in --json output).
 WATCHER_SCOPE = "this_computer_watcher_records_only"
+# The file was named some other way (environment variable, mousedb's
+# pipeline folder, an explicit path): one watcher's records, but not known to
+# be this computer's.
+WATCHER_SCOPE_ONE_DATABASE = "one_watcher_database_records_only"
+
+
+def watcher_scope(status: WatcherStatus) -> str:
+    """WATCHER_SCOPE when the file is the one this computer's MouseReach
+    config says its watcher writes, else WATCHER_SCOPE_ONE_DATABASE."""
+    if status and status.found_via in THIS_COMPUTERS_WATCHER:
+        return WATCHER_SCOPE
+    return WATCHER_SCOPE_ONE_DATABASE
 
 
 def watcher_db_last_written(status: WatcherStatus) -> Optional[str]:
@@ -349,10 +378,27 @@ def watcher_scope_lines(status: WatcherStatus) -> List[str]:
     which the pipeline census reads (Where Is My Data tab). A person reading
     these views must be told which of the two they are looking at."""
     when = watcher_db_last_written(status) or "unknown"
+    # Say which rule found the file. WHY: only the file named by this
+    # computer's MouseReach config is known to be this computer's watcher's;
+    # MOUSEDB_WATCHER_DB or mousedb's pipeline folder can name any watcher's
+    # database (one on a shared drive, another computer's), and calling that
+    # 'this computer's' would mislead.
+    if status.found_via in THIS_COMPUTERS_WATCHER:
+        head = (f"Records of this computer's watcher only: {status.db_path} "
+                f"(last written {when}).")
+    else:
+        via = {
+            FOUND_VIA_ENV: "named by the MOUSEDB_WATCHER_DB setting",
+            FOUND_VIA_PIPELINE_ROOT: "found in mousedb's MouseReach pipeline "
+                                     "folder, because this computer's "
+                                     "MouseReach settings name none",
+        }.get(status.found_via, "named directly")
+        head = (f"Records of one watcher database only, {via}: "
+                f"{status.db_path} (last written {when}). It may not be this "
+                f"computer's watcher.")
     return [
-        f"Records of this computer's watcher only: {status.db_path} "
-        f"(last written {when}).",
-        "Work done on other computers is not in these records. The whole "
+        head,
+        "Work done by other watchers is not in these records. The whole "
         "pipeline's state, read from its folders, is on the Where Is My Data tab.",
     ]
 
@@ -444,7 +490,8 @@ class WatcherBridge:
         if db_path:
             self._status = WatcherStatus(
                 db_path.exists(), db_path,
-                f"Using explicit path: {db_path}"
+                f"Using explicit path: {db_path}",
+                FOUND_VIA_EXPLICIT,
             )
         else:
             self._status = find_watcher_db()

@@ -151,3 +151,38 @@ def test_both_tabs_say_these_are_one_computers_records(node, qapp, modname, cls)
     assert "Where Is My Data" in text
     assert tab.summary_labels["total"].text().endswith("3")
 
+
+
+def test_a_file_named_by_the_environment_variable_is_not_called_this_computers(
+        node, tmp_path, monkeypatch, capsys):
+    """MOUSEDB_WATCHER_DB (or mousedb's pipeline folder) can name any
+    watcher's database; the views say which rule found it instead of calling
+    it this computer's watcher."""
+    other = tmp_path / "elsewhere.db"
+    _watcher_db(other, ["failed"])
+    monkeypatch.setenv("MOUSEDB_WATCHER_DB", str(other))
+    from mousedb import cli
+    cli.cmd_video_status(Namespace(json=False, by_animal=False, cohort=None,
+                                   show_errors=False))
+    out = capsys.readouterr().out
+    assert "this computer's watcher only" not in out
+    assert "MOUSEDB_WATCHER_DB" in out
+    assert str(other) in out
+    cli.cmd_video_status(Namespace(json=True, by_animal=False, cohort=None,
+                                   show_errors=False))
+    assert json.loads(capsys.readouterr().out)["scope"] == \
+        "one_watcher_database_records_only"
+
+
+def test_a_file_found_in_mousedbs_pipeline_folder_is_not_called_this_computers(
+        _isolated_from_this_machine, tmp_path, monkeypatch):
+    from mousedb import watcher_bridge
+    import mousedb.config
+    root = tmp_path / "pipeline"
+    _watcher_db(root / "watcher.db", ["archived"])
+    monkeypatch.setattr(mousedb.config, "mousereach_pipeline_root", lambda: root)
+    st = watcher_bridge.find_watcher_db()
+    assert st.available
+    text = " ".join(watcher_bridge.watcher_scope_lines(st))
+    assert "this computer's watcher only" not in text
+    assert "pipeline folder" in text

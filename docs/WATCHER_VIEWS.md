@@ -31,21 +31,37 @@ computer you are sitting at. So:
   folders -- where every video really is. When the two disagree, the census
   is right. See [Where is my data?](WHERE_IS_MY_DATA.md).
 
-Every one of the four views says this above its numbers, in a line like:
+Every one of the views says this above its numbers, in a line like:
 
 ```
 Records of this computer's watcher only: <file> (last written 2099-01-31 14:05).
-Work done on other computers is not in these records. The whole pipeline's
+Work done by other watchers is not in these records. The whole pipeline's
 state, read from its folders, is on the Where Is My Data tab.
 ```
+
+That first line appears only when the file was found through this computer's
+own MouseReach settings (steps 2 and 3 under "Which file is read" below), the
+only way MouseDB knows it is the file this computer's watcher writes. When the
+file was found another way, the line says how, and that it may be another
+watcher's:
+
+```
+Records of one watcher database only, named by the MOUSEDB_WATCHER_DB setting:
+<file> (last written ...). It may not be this computer's watcher.
+```
+
+(or "found in mousedb's MouseReach pipeline folder, because this computer's
+MouseReach settings name none" for step 4). Such a file may be another
+computer's watcher database, or one on a shared drive.
 
 **"last written"** is when the watcher last recorded anything. If that time is
 hours old while the watcher should be running, the watcher on this computer is
 stopped or stuck -- the counts below are from that time.
 
 In `--json` output the same facts are the keys `watcher_db` (the file),
-`watcher_db_last_written` and `scope` (always
-`this_computer_watcher_records_only`).
+`watcher_db_last_written` and `scope`: `this_computer_watcher_records_only`
+when the file was found through this computer's MouseReach settings,
+`one_watcher_database_records_only` when it was found another way.
 
 ## What each count means
 

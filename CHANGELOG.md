@@ -108,7 +108,11 @@ checked-in code, not what's planned.
   on a computer set up that way is an old copy. Each view now also says, above
   its numbers, that these are this computer's watcher records only, names the
   file and when it was last written, and points to the Where Is My Data tab for
-  the whole pipeline. `--json` gains `scope` and `watcher_db_last_written`.
+  the whole pipeline. When the file was found through MOUSEDB_WATCHER_DB or
+  mousedb's own pipeline folder instead of this computer's MouseReach
+  settings, the line says so and that it may be another watcher's, instead of
+  calling it this computer's. `--json` gains `scope` (which of the two) and
+  `watcher_db_last_written`.
   Guide: docs/WATCHER_VIEWS.md.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
