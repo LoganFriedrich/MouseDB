@@ -78,7 +78,7 @@ checked-in code, not what's planned.
 ### Fixed
 - Protocol Manager: Save on an existing protocol no longer throws phase
   changes away while saying "updated". A name/description change is still
-  saved in place; a phase change (added, removed, moved or edited, including
+  saved in place; a phase change (added, removed or edited, including
   fields the table does not show) is offered as a new protocol, which keeps
   the phases' hidden details, needs a name of its own, and leaves the original
   untouched. Declining saves nothing and says so. The phases table can no
@@ -98,8 +98,14 @@ checked-in code, not what's planned.
   columns, so on every card row and table row the counts add up to the total:
   a quarantined video was counted nowhere. The web dashboard gains In Review,
   Quarantined and Not on this computer cards. `video-status --json` gains
-  `quarantined` (summary, cohorts, animals) and `failed` (summary). Guide:
-  docs/WATCHER_VIEWS.md, "What each count means".
+  `quarantined` (summary, cohorts, animals) and `failed` (summary). The
+  Archive Status tab and `mousedb archive-status` no longer show quarantined
+  videos as Failed (a quarantined video is held until a person fixes the
+  recording; nothing failed): they get their own Quarantined count, and tab 9
+  gains Quarantined and Other cards and columns and the command's per-animal
+  table Quarant and Other columns, so every row adds up to its Total.
+  `archive-status --json` gains `quarantined` (summary, cohorts, animals).
+  Guide: docs/WATCHER_VIEWS.md, "What each count means".
 - The Video Pipeline and Archive Status tabs, `mousedb video-status`,
   `mousedb archive-status` and the web dashboard read the watcher database
   the watcher actually writes: a `db_path` set in the `watcher` section of
@@ -112,7 +118,8 @@ checked-in code, not what's planned.
   mousedb's own pipeline folder instead of this computer's MouseReach
   settings, the line says so and that it may be another watcher's, instead of
   calling it this computer's. `--json` gains `scope` (which of the two) and
-  `watcher_db_last_written`.
+  `watcher_db_last_written`. On the web dashboard that line is re-fetched
+  every 30 seconds with the counts, so its "last written" time stays current.
   Guide: docs/WATCHER_VIEWS.md.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on

@@ -68,9 +68,15 @@ when the file was found through this computer's MouseReach settings,
 The watcher gives every video one state. Each view sorts the states into a
 few counts. In tab 8, tab 9, `mousedb video-status` and `mousedb
 archive-status`, every video is in exactly one count, so the counts add up to
-the total -- on the summary cards, and on every row of the By Cohort and By
-Animal tables. A video held for a person (In Review, Quarantined) is always in
-a count of its own, never hidden in another.
+the total -- on the summary cards, on every row of the By Cohort and By
+Animal tables of both tabs, and on every row of the commands' per-animal
+tables. A video held for a person (In Review, Quarantined) is always in a
+count of its own, never hidden in another; a video in a state MouseDB does
+not know is in the Other count (see below).
+
+(The commands' by-cohort lines of `mousedb archive-status` are a progress bar
+plus a list of the non-zero counts, not a table; the web dashboard's counts
+do not add up, see above.)
 
 **Video Pipeline** (tab 8, `mousedb video-status`). The summary cards, the By
 Cohort and By Animal tables of tab 8, and the by-cohort and `--by-animal`
@@ -79,7 +85,7 @@ this computer):
 
 | count | watcher states | meaning |
 |---|---|---|
-| Completed | processed, archiving, archived, crystallized | analyzed (and filed, or being filed). Crystallized = filed and locked for a publication. |
+| Completed | processed, archiving, archived, crystallized | analyzed (and filed, or being filed). Crystallized = filed and locked for a publication. On a computer that only poses videos and hands them on (a graphics-card computer set up not to analyze), Completed means **posed and handed on**, not analyzed: its watcher marks a video archived as soon as it has passed the pose on. |
 | In Progress | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, outdated | work the pipeline still has to do on this computer. Outdated = filed with older tool versions; it will be run again. |
 | In Review | triage, deep_review | waiting for a **person** in a review queue (triage, or deep review). Nothing happens to it until someone reviews it. |
 | Not on this computer | unresolvable | this computer has no file for the video -- another computer holds it. Not a failure. |
@@ -87,17 +93,22 @@ this computer):
 | Quarantined | quarantined | held until a person deals with the recording (for example, its name could not be read and it must be renamed). Nothing happens to it until then. |
 | Other | any state MouseDB does not know | see below. |
 
-**Archive Status** (tab 9, `mousedb archive-status`):
+**Archive Status** (tab 9, `mousedb archive-status`). The summary cards, the
+By Cohort and By Animal tables of tab 9, and the `--verbose` / `--cohort`
+per-animal table of the command all have these counts (`Not Here` is short
+for Not on this computer, `Quarant` for Quarantined):
 
 | count | watcher states |
 |---|---|
-| Current (Archived) | archived |
+| Current (Archived) | archived -- on a computer that only poses and hands videos on, this means posed and handed on, not analyzed |
 | Outdated | outdated |
 | Crystallized | crystallized |
 | In Pipeline | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, processed, archiving |
 | In Review | triage, deep_review |
 | Not on this computer | unresolvable |
-| Failed | failed, quarantined |
+| Quarantined | quarantined -- held until a person deals with the recording; not a failure |
+| Failed | failed |
+| Other | any state MouseDB does not know (the Other cell's tooltip in tab 9 names them) |
 
 **A state MouseDB does not know** (a newer MouseReach may add one) is never
 folded into one of the counts above. The views list it by its own name, for
@@ -106,14 +117,16 @@ MouseDB needs updating to describe the new state.
 
 (Before this was fixed, In Review and Not on this computer did not exist:
 those videos were counted as In Progress / In Pipeline, and crystallized
-videos as In Progress.)
+videos as In Progress. Archive Status also showed quarantined videos as
+Failed, and had no Other column, so a row with an unknown state did not add
+up to its Total.)
 
 In `--json` output: `summary`, each cohort and each animal carry
-`in_review`, `not_on_this_node` and `other` (an object mapping each unknown
-state to its count, for example `{"some_state": 2}`); `video-status` also
-carries `in_progress`, and `quarantined` in its summary, each cohort and each
-animal (its summary also carries `failed`; each animal carries
-`failed_videos`, each cohort `failed`).
+`in_review`, `not_on_this_node`, `quarantined` and `other` (an object mapping
+each unknown state to its count, for example `{"some_state": 2}`).
+`archive-status` also carries `failed` (failed only, quarantined is apart) in
+all three. `video-status` also carries `in_progress`; its summary carries
+`failed`, each animal `failed_videos`, each cohort `failed`.
 
 ## Which file is read
 
@@ -133,6 +146,11 @@ MouseDB reads the file this computer's watcher **writes**, found in this order:
 (Before this was fixed, step 2 did not exist, so on a computer set up as in
 step 2 these views showed the old file's numbers.)
 
-The views only read. Each refresh runs a few short queries (each well under a
-second on a database of the usual size); nothing is kept open between them,
-and nothing is ever written to the watcher's database.
+The views only read. Each refresh opens the file read-only, runs a few
+counting queries over its videos table, and closes it again; nothing is kept
+open between refreshes, and nothing is ever written to the watcher's
+database. The web dashboard repeats this every 30 seconds while it is open.
+
+**The web dashboard's scope line is refreshed too.** Every 30 seconds the
+page re-fetches both the counts and the line above them, so the file named
+and its "last written" time stay current without reloading the page.
