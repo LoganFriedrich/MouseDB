@@ -391,3 +391,101 @@ class TestElifeFromSummaryCsv:
         assert any("NOT imported" in e and "elife_counts.csv" in e for e in res["errors"])
         res = imp.import_elife_counts(brain_sample_id=1, region_counts_dict={"RN": 1})
         assert not res["success"] and any("NOT imported" in e for e in res["errors"])
+
+
+class TestImportBrainsExitCode:
+    """A brain import that did not land must exit non-zero and END its output
+    with a [FAIL] line. WHY: the scheduler judges a job by its exit code and the
+    task check reads lines that START with [FAIL]; a refused brain used to print
+    "[FAIL]" mid-line and the job exited 0, so the scheduler showed success
+    over brains that never reached the database."""
+
+    class _Importer:
+        """Brain "B1" imports, "B2" is refused, "junk" has no parsable id."""
+        def __init__(self, db, calibration_ok=True):
+            self.calibration_ok = calibration_ok
+
+        def import_calibration_runs(self, csv_path, dry_run=False):
+            ok = self.calibration_ok
+            return {"success": ok, "imported": {}, "errors": [] if ok else ["bad calibration"],
+                    "warnings": []}
+
+        def _extract_brain_from_path(self, p):
+            name = Path(p).name
+            return None if name.startswith("junk") else name.split("_counts")[0]
+
+        def import_region_counts(self, csv_path, brain_id=None, is_final=True, dry_run=False):
+            ok = brain_id != "B2"
+            return {"success": ok, "imported": {"region_counts": 3 if ok else 0},
+                    "errors": [] if ok else ["cohort not in the database"], "warnings": []}
+
+    def _setup(self, tmp_path, monkeypatch, calibration_ok=True):
+        import sqlalchemy
+        from mousedb import cli
+        import mousedb.database as dbmod
+        import mousedb.importers as imod
+
+        class _Db:
+            engine = sqlalchemy.create_engine("sqlite://")
+        monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: _Db())
+        monkeypatch.setattr(imod, "BrainGlobeImporter",
+                            lambda db: self._Importer(db, calibration_ok))
+        monkeypatch.setattr(cli, "_import_elife_from_csv", lambda *a, **k: (0, []))
+        for name in ("B1_counts.csv", "B2_counts.csv", "junk_counts.csv", "calibration_runs.csv"):
+            _write(tmp_path / name, "region,count\nroot,1\n")
+        return cli
+
+    def _args(self, tmp_path, **kw):
+        base = dict(summary_dir=str(tmp_path), all=True, csv=None, calibration=None,
+                    brain=None, update=False, dry_run=True)
+        base.update(kw)
+        return argparse.Namespace(**base)
+
+    def test_a_refused_brain_fails_the_run_with_a_last_line_fail(self, tmp_path, monkeypatch, capsys):
+        cli = self._setup(tmp_path, monkeypatch)
+        rc = cli._import_brains_body(self._args(tmp_path), tmp_path)
+        lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+        assert rc == 1
+        assert lines[-1].startswith("[FAIL]")
+        assert "B2" in lines[-1] and "junk_counts.csv" in lines[-1]
+        assert "B1" not in lines[-1].replace("B1_", "")
+
+    def test_a_failed_calibration_import_fails_the_run(self, tmp_path, monkeypatch, capsys):
+        cli = self._setup(tmp_path, monkeypatch, calibration_ok=False)
+        for name in ("B2_counts.csv", "junk_counts.csv"):
+            (tmp_path / name).unlink()
+        rc = cli._import_brains_body(self._args(tmp_path), tmp_path)
+        last = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()][-1]
+        assert rc == 1 and last.startswith("[FAIL]") and "calibration" in last
+
+    def test_a_clean_run_exits_zero(self, tmp_path, monkeypatch, capsys):
+        cli = self._setup(tmp_path, monkeypatch)
+        for name in ("B2_counts.csv", "junk_counts.csv"):
+            (tmp_path / name).unlink()
+        assert not cli._import_brains_body(self._args(tmp_path), tmp_path)
+
+    def test_calibration_only_and_single_csv_fail_loudly(self, tmp_path, monkeypatch):
+        cli = self._setup(tmp_path, monkeypatch, calibration_ok=False)
+        rc = cli._import_brains_body(
+            self._args(tmp_path, all=False, calibration=str(tmp_path / "calibration_runs.csv")),
+            tmp_path)
+        assert rc == 1
+        rc = cli._import_brains_body(
+            self._args(tmp_path, all=False, csv=str(tmp_path / "B2_counts.csv")), tmp_path)
+        assert rc == 1
+
+    def test_the_command_line_exits_with_what_the_command_returned(self, monkeypatch):
+        """cli.main used to drop a command's return value, so every
+        ``return 1`` in a command still exited 0."""
+        from mousedb import cli
+        monkeypatch.setattr(cli, "cmd_status", lambda args: 1)
+        monkeypatch.setattr(sys, "argv", ["mousedb", "status"])
+        with pytest.raises(SystemExit) as e:
+            cli.main()
+        assert e.value.code == 1
+
+    def test_a_command_that_returns_nothing_still_exits_zero(self, monkeypatch):
+        from mousedb import cli
+        monkeypatch.setattr(cli, "cmd_status", lambda args: None)
+        monkeypatch.setattr(sys, "argv", ["mousedb", "status"])
+        cli.main()          # no SystemExit: success stays success

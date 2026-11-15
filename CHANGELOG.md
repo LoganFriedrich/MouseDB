@@ -76,6 +76,15 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `mousedb <command>` now exits with the code the command returns. It used to
+  drop it, so `import-brains` exited 0 after giving up on a locked database,
+  and the scheduler and the "Update the database now" button showed success.
+  `export-example` with nothing written now exits 1 too.
+- `import-brains` exits 1 when a brain, the calibration runs, or a brain's
+  eLife counts did not land, or a counts file's name holds no brain ID, and
+  ends with one line starting `[FAIL]` that names each of them. Before, a
+  refused brain was marked `[FAIL]` only in the middle of its own line and the
+  job exited 0.
 - A session removed from a cohort's sheet left its date in the cohort's
   schedule, so the cohort's phases were derived around a session that no
   longer exists (baseline read as training, early post-injury tests as

@@ -944,8 +944,7 @@ def cmd_backfill_phases(args):
 def cmd_hand_scores(args):
     """Write the hand pellet scores file the reaching pipeline reads."""
     from .hand_scores_file import main
-    # Its own exit status: the CLI ignores what a command returns, and a
-    # failed write must not exit 0.
+    # Its own exit status: a failed write must not exit 0.
     raise SystemExit(main([]))
 
 
@@ -997,7 +996,15 @@ def cmd_import_brains(args):
 
 
 def _import_brains_body(args, summary_dir):
-    """The database part of cmd_import_brains (see there)."""
+    """The database part of cmd_import_brains (see there).
+
+    Returns 1 when anything it was asked to import did not land, else 0; in
+    that case its LAST line starts with ``[FAIL]`` and names what was left out.
+    WHY both: the operating system's scheduler judges the job by its exit code,
+    and a check that reads the job's log looks for lines that START with
+    ``[FAIL]``. A refused brain used to be reported only as "[FAIL]" in the
+    middle of its own line while the job exited 0, so the scheduler showed
+    success over brains that never reached the database."""
     import csv as csv_mod
     from .database import init_database
     from .importers import BrainGlobeImporter
@@ -1016,7 +1023,11 @@ def _import_brains_body(args, summary_dir):
         cal_csv = Path(args.calibration)
         result = importer.import_calibration_runs(cal_csv, dry_run=dry_run)
         _print_import_result("Calibration runs", result)
-        return
+        if not result['success']:
+            print("[FAIL] calibration runs NOT imported from %s -- see the lines above"
+                  % cal_csv.name)
+            return 1
+        return 0
 
     if args.csv:
         # Import single per-brain CSV
@@ -1034,6 +1045,9 @@ def _import_brains_body(args, summary_dir):
         result = importer.import_region_counts(
             csv_path, brain_id=brain_id, is_final=True, dry_run=dry_run)
         _print_import_result(f"Region counts ({brain_id})", result)
+        if not result['success']:
+            print(f"[FAIL] brain {brain_id} NOT imported -- see the lines above")
+            return 1
 
         # Also import eLife counts. MouseBrain's aggregate (elife_counts.csv)
         # normally sits beside the per-brain CSV in 2_Data_Summary.
@@ -1042,8 +1056,10 @@ def _import_brains_body(args, summary_dir):
             _, elife_errors = _import_elife_from_csv(
                 importer, db, csv_path, brain_id, dry_run, elife_csv)
             if elife_errors:
-                sys.exit(1)
-        return
+                print(f"[FAIL] eLife group counts NOT imported for brain {brain_id} "
+                      f"-- see the lines above")
+                return 1
+        return 0
 
     if args.all:
         # Import everything from summary directory
@@ -1054,12 +1070,18 @@ def _import_brains_body(args, summary_dir):
         print(f"{prefix}Importing all brain data from: {summary_dir}")
         print("=" * 60)
 
+        # Everything that did not land, whatever the reason, is collected here
+        # and named in ONE line at the very end (see the docstring).
+        not_imported = []
+
         # Step 1: Import calibration runs
         cal_csv = summary_dir / 'calibration_runs.csv'
         if cal_csv.exists():
             print(f"\n--- Calibration Runs ---")
             result = importer.import_calibration_runs(cal_csv, dry_run=dry_run)
             _print_import_result("Calibration runs", result)
+            if not result['success']:
+                not_imported.append("calibration runs (%s)" % cal_csv.name)
 
         # Step 2: Import per-brain CSVs (long format)
         brain_csvs = sorted([
@@ -1070,7 +1092,10 @@ def _import_brains_body(args, summary_dir):
 
         if not brain_csvs:
             print("\nNo per-brain CSV files found")
-            return
+            if not_imported:
+                print("[FAIL] NOT imported: %s -- see the lines above" % "; ".join(not_imported))
+                return 1
+            return 0
 
         print(f"\n--- Region Counts ({len(brain_csvs)} brains) ---")
         total_regions = 0
@@ -1084,7 +1109,10 @@ def _import_brains_body(args, summary_dir):
         for csv_path in brain_csvs:
             brain_id = importer._extract_brain_from_path(csv_path)
             if not brain_id:
+                # A file the tool cannot name is data left out, not a quiet
+                # skip: it goes into the final [FAIL] line too.
                 print(f"  Skipping {csv_path.name}: could not parse brain ID")
+                not_imported.append("%s (no brain ID in the file name)" % csv_path.name)
                 continue
 
             if args.update:
@@ -1098,6 +1126,8 @@ def _import_brains_body(args, summary_dir):
             status = "[OK]" if result['success'] else "[FAIL]"
             errs = f" ({', '.join(result['errors'])})" if result['errors'] else ""
             print(f"  {brain_id}: {rc} region counts {status}{errs}")
+            if not result['success']:
+                not_imported.append(brain_id)
 
             # Import eLife counts
             if result['success']:
@@ -1125,9 +1155,13 @@ def _import_brains_body(args, summary_dir):
                 print(f"  elife_region_counts: {session.query(ElifeRegionCount).count()}")
                 from .schema import CalibrationRun
                 print(f"  calibration_runs: {session.query(CalibrationRun).count()}")
-        if elife_failed:
-            sys.exit(1)
-        return
+        not_imported += ["eLife group counts of %s" % b for b in elife_failed]
+        if not_imported:
+            # The LAST line, starting with [FAIL] (see the docstring).
+            print("[FAIL] %d NOT imported: %s -- see the lines above"
+                  % (len(not_imported), "; ".join(not_imported)))
+            return 1
+        return 0
 
     # No action specified
     print("Specify --all, --csv, or --calibration. Use --help for details.")
@@ -1745,10 +1779,17 @@ def main():
         sys.exit(1)
 
     try:
-        args.func(args)
+        rc = args.func(args)
     except ConfigError as e:  # WHY: the message already names the exact fix; a traceback hides it
         print("[FAIL] %s" % e)
         raise SystemExit(1)
+    # A command that returns a non-zero number exits with it. WHY: this used to
+    # be dropped, so a command's "return 1" (a brain import that waited out the
+    # database lock, or refused a brain) still exited 0, and the scheduler and
+    # the "Update the database now" button -- both read the exit code --
+    # showed success.
+    if isinstance(rc, int) and not isinstance(rc, bool) and rc:
+        raise SystemExit(rc)
 
 
 # Entry points for pyproject.toml
