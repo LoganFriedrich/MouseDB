@@ -364,6 +364,18 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Every export is built from ONE snapshot generation (see
+    # mousedb.snapshot_generation). A snapshot holding tables from two
+    # refreshes is not exported at all -- the files already there stay, and
+    # the caller is told -- because files built from it would join one night's
+    # reaches with another night's animals and pellets.
+    from .. import snapshot_generation
+    gen_state, gen_stamp, gen_why = snapshot_generation.wait_while_swapping(snapshot_dir)
+    if gen_state in ("broken", "mixed"):
+        raise snapshot_generation.SnapshotNotConsistent(
+            "current exports not rewritten: %s. The files in %s are still those of "
+            "the last good refresh." % (gen_why, out_dir))
+    generation = (gen_stamp or {}).get("generation") if gen_state == "complete" else None
     # Start from an empty staging folder: every file copied onto the share
     # this run was written this run (see _staging_dir).
     import shutil
@@ -374,6 +386,9 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
         "snapshot_dir": str(snapshot_dir),
         "files": {}, "problems": [], "complete": True,
         "odc_sessions_refreshed": bool(db_ok),
+        # Which snapshot refresh every file here was built from (None: a
+        # snapshot written before refreshes were numbered).
+        "snapshot_generation": generation,
     }
     for fn in (_reach_data_csv, _manual_scores_csv, _odc_reaches_csvs):
         try:
@@ -389,6 +404,16 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
         manifest["problems"].append(
             "ODC_sessions_*.csv not refreshed this run (database not readable now); "
             "the files present are from the previous refresh")
+
+    # Did a new generation land while the files were being written? Then they
+    # mix two refreshes: say so, loudly, rather than present them as current.
+    after = snapshot_generation.state(snapshot_dir)
+    if generation is not None and (after[0] != "complete"
+                                   or (after[1] or {}).get("generation") != generation):
+        manifest["complete"] = False
+        manifest["problems"].append(
+            "the snapshot was replaced while these exports were being written, so some "
+            "files are from one refresh and some from the next -- write them again")
 
     for name, info in manifest["files"].items():
         if info.get("undocumented_columns"):

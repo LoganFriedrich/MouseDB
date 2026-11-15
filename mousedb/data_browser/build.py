@@ -154,9 +154,31 @@ REFRESH_WAIT_SECONDS = 15 * 60
 
 
 def refresh_in_progress(snapshot_dir: Path) -> bool:
-    """The snapshot job writes each table beside its final name (``*.tmp``)
-    and swaps it in; a ``.tmp`` present means a table is being written now."""
+    """True while the snapshot job is moving a new generation into place (its
+    generation stamp says "swapping" and the job is still running; see
+    mousedb.snapshot_generation). The job writes its tables in a staging
+    folder first, so the long read of the database does not count: the
+    snapshot itself only changes during the swap, which takes seconds. A
+    ``*.parquet.tmp`` beside the tables is still honoured, for a refresh by an
+    older version of this tool, which wrote and swapped one table at a time."""
+    from .. import snapshot_generation
+    if snapshot_generation.state(snapshot_dir)[0] == "swapping":
+        return True
     return any(Path(snapshot_dir).glob("*.parquet.tmp"))
+
+
+def check_one_generation(snapshot_dir: Path):
+    """The snapshot's generation state; raises BrowserError when the folder
+    holds tables from two refreshes -- a copy of it would mix them."""
+    from .. import snapshot_generation
+    st, stamp, why = snapshot_generation.state(snapshot_dir)
+    if st in ("broken", "mixed"):
+        raise BrowserError(
+            "The snapshot cannot be browsed right now: %s. A copy made from it would "
+            "show some tables from one night and some from another. Open the data "
+            "browser again after the next successful snapshot refresh (or run it "
+            "now: \"Update the database now\" on the Where Is My Data tab)." % why)
+    return st, stamp
 
 
 def wait_for_refresh(snapshot_dir: Path, progress, wait_seconds: float = None,
@@ -243,6 +265,8 @@ def build(snapshot_dir=None, root: Optional[Path] = None,
                 "    mousedb config --set snapshot_dir <folder>")
     snapshot_dir = Path(snapshot_dir)
     wait_for_refresh(snapshot_dir, progress)
+    _gen_state, gen_stamp = check_one_generation(snapshot_dir)
+    generation = (gen_stamp or {}).get("generation") if _gen_state == "complete" else None
     files = snapshot_files(snapshot_dir)
     if "reach_data" not in files:
         raise BrowserError(
@@ -299,9 +323,21 @@ def build(snapshot_dir=None, root: Optional[Path] = None,
             for c in cols:
                 if c in have:
                     con.execute('CREATE INDEX "ix_%s_%s" ON "%s"("%s")' % (name, c, name, c))
+        # Every table read must be from the generation checked above. If the
+        # nightly job swapped in a new one meanwhile, this copy is a mix:
+        # throw it away and let the person open the browser again (it then
+        # builds from the new generation in one go).
+        from .. import snapshot_generation
+        after = snapshot_generation.state(snapshot_dir)
+        if generation is not None and (after[0] != "complete"
+                                       or (after[1] or {}).get("generation") != generation):
+            raise BrowserError(
+                "The snapshot was replaced by a newer one while your copy was being "
+                "made, so the copy would have mixed the two. Open the data browser "
+                "again; it will make a copy of the new snapshot.")
         progress("  making the ready-made tables ...")
         views.create(con, set(tables))
-        _write_about(con, tables, snapshot_dir, snap_time)
+        _write_about(con, tables, snapshot_dir, snap_time, generation)
         con.commit()
     except Exception:
         con.close()
@@ -327,18 +363,24 @@ def build(snapshot_dir=None, root: Optional[Path] = None,
 ABOUT_TABLE = "about_this_copy"
 
 
-def _write_about(con, tables, snapshot_dir, snap_time) -> None:
+def _write_about(con, tables, snapshot_dir, snap_time, generation=None) -> None:
+    # snapshot_generation: which refresh every table of this copy came from
+    # (the same for all of them; empty for a snapshot written before
+    # generations were recorded).
     con.execute('CREATE TABLE "%s" (table_name TEXT, rows INTEGER, '
-                'snapshot_written TEXT, copy_made TEXT)' % ABOUT_TABLE)
+                'snapshot_written TEXT, copy_made TEXT, snapshot_generation TEXT)'
+                % ABOUT_TABLE)
     made = datetime.now().isoformat(sep=" ", timespec="minutes")
-    con.executemany('INSERT INTO "%s" VALUES (?,?,?,?)' % ABOUT_TABLE,
-                    [(n, t["rows"], t["written"], made) for n, t in sorted(tables.items())])
+    con.executemany('INSERT INTO "%s" VALUES (?,?,?,?,?)' % ABOUT_TABLE,
+                    [(n, t["rows"], t["written"], made, generation or "")
+                     for n, t in sorted(tables.items())])
 
 
 def _read_about(path: Path) -> Dict[str, dict]:
     con = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True)
     try:
-        return {r[0]: {"rows": r[1], "written": r[2], "copy_made": r[3]}
+        return {r[0]: {"rows": r[1], "written": r[2], "copy_made": r[3],
+                       "generation": r[4] if len(r) > 4 else ""}
                 for r in con.execute('SELECT * FROM "%s"' % ABOUT_TABLE)}
     finally:
         con.close()

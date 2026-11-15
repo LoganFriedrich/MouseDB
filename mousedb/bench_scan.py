@@ -204,12 +204,22 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
 
     if cache_dir and (Path(cache_dir) / "reach_data.parquet").exists():
         cache = Path(cache_dir)
-        rd = pd.read_parquet(cache / "reach_data.parquet")
-        ps = pd.read_parquet(cache / "pellet_scores.parquet")
-        stamp = datetime.fromtimestamp(
-            (cache / "reach_data.parquet").stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        print("  reading the snapshot taken %s" % stamp)
+        # Both tables from ONE snapshot generation: hand scores from one night
+        # compared with reaches from another would invent disagreements.
+        from mousedb import snapshot_generation
+        (rd, ps), generation = snapshot_generation.read_consistent(
+            cache, lambda: (pd.read_parquet(cache / "reach_data.parquet"),
+                            pd.read_parquet(cache / "pellet_scores.parquet")))
+        gen_stamp = snapshot_generation.read_stamp(cache) or {}
+        if generation and gen_stamp.get("published"):
+            stamp = gen_stamp["published"].replace("T", " ")[:16]
+        else:
+            stamp = datetime.fromtimestamp(
+                (cache / "reach_data.parquet").stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        print("  reading the snapshot taken %s (generation %s)"
+              % (stamp, generation or "not recorded"))
         load_paired_pellets.snapshot_taken = stamp
+        load_paired_pellets.snapshot_generation = generation
         # The snapshot predates the fix that put a segment number on every reach
         # row, so it ships with the map that repairs them. The two belong
         # together: reading the snapshot without it silently drops most of the
@@ -263,6 +273,13 @@ def load_video_pellets(db_path=None, cache_dir=None):
     if cache is not None:
         f = cache / "video_pellets.parquet"
         vp = pd.read_parquet(f) if f.exists() else None
+        # Must be the generation the reaches and hand scores were read from.
+        from mousedb import snapshot_generation
+        read_gen = getattr(load_paired_pellets, "snapshot_generation", None)
+        if read_gen and snapshot_generation.generation_of(cache) != read_gen:
+            raise snapshot_generation.SnapshotNotConsistent(
+                "the snapshot was replaced between reading the reaches and reading "
+                "the per-pellet table; run the check again")
     else:
         con = sqlite3.connect("file:%s?mode=ro" % (db_path or DEFAULT_DB or require("db_path")),
                               uri=True, timeout=600)

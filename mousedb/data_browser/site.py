@@ -190,6 +190,9 @@ OWN = {
         "rows": "How many rows it holds.",
         "snapshot_written": "When the nightly snapshot job wrote that table.",
         "copy_made": "When this private copy was made from the snapshot.",
+        "snapshot_generation": ("Which snapshot refresh every table of this copy came from "
+                                "(the same on every row: a copy never mixes two refreshes). "
+                                "Empty for a snapshot written before refreshes were numbered."),
     },
     "sessions": {
         "subject_id": _SUBJECT,

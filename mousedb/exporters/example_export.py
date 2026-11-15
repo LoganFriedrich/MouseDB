@@ -80,7 +80,10 @@ def cohort_slice(cohort: str, target_rows: int = DEFAULT_ROWS,
     """
     snapshot = Path(snapshot_dir())
     source = snapshot / "reach_data.parquet"
-    stamp = int(source.stat().st_mtime)
+    # Keyed to the snapshot generation when there is one (it names the whole
+    # set of tables), else to the file's time.
+    from .. import snapshot_generation
+    stamp = snapshot_generation.generation_of(snapshot) or int(source.stat().st_mtime)
     cache = _cache_dir() / (CACHE_NAME % (cohort, "%s_%s" % (stamp, target_rows)))
     if use_cache and cache.exists():
         return pd.read_parquet(cache)
@@ -129,6 +132,8 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
     out_dir = Path(out_dir) if out_dir else (
         Path(require("mousedb_root")) / "exports" / "current" / FOLDER_NAME)
 
+    from .. import snapshot_generation
+    reach_generation = snapshot_generation.generation_of(Path(snapshot_dir()))
     reach = cohort_slice(cohort, target_rows, use_cache)
     # The same weight join the real export does when it loads the snapshot. This
     # path reads the parquet files directly for speed, which means every join
@@ -141,10 +146,19 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
     loaded = time.time()
 
     snapshot = Path(snapshot_dir())
-    others = {}
-    for name in ("subjects", "animal_records", "pellet_scores"):
-        path = snapshot / ("%s.parquet" % name)
-        others[name] = pd.read_parquet(path) if path.exists() else None
+
+    def _others():
+        out = {}
+        for name in ("subjects", "animal_records", "pellet_scores"):
+            path = snapshot / ("%s.parquet" % name)
+            out[name] = pd.read_parquet(path) if path.exists() else None
+        return out
+    others, generation = snapshot_generation.read_consistent(snapshot, _others)
+    # The reach slice (read, or taken from its cache, before these tables)
+    # must be from the same generation: never join two refreshes.
+    if generation is not None and reach_generation != generation:
+        raise snapshot_generation.SnapshotNotConsistent(
+            "the snapshot was replaced while the example was being built; run it again")
 
     full, _rows = odc_reaches.build_cohort(
         cohort, reach, others["subjects"], others["animal_records"],

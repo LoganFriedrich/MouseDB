@@ -141,8 +141,9 @@ def test_running_watcher_aborts_the_whole_run(configured, db_ok_seen, monkeypatc
 def test_refresh_leaves_no_temporary_files(configured, monkeypatch):
     monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
     rs.refresh()
+    # The tables, and the stamp saying which refresh they all came from.
     assert sorted(p.name for p in configured.iterdir()) == sorted(
-        "%s.parquet" % t for t in rs.TABLES)
+        ["%s.parquet" % t for t in rs.TABLES] + ["SNAPSHOT_GENERATION.json"])
 
 
 def test_a_write_that_fails_keeps_the_previous_snapshot_intact(configured, monkeypatch):

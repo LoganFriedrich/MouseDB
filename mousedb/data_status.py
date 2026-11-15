@@ -402,30 +402,50 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
 
     out: Dict = {"snapshot_dir": str(snapshot_dir), "cohorts": [], "problems": [],
                  "exports": None, "analyses": [], "session_lists": []}
-    try:
+    # All four tables from ONE snapshot generation (mousedb.snapshot_generation):
+    # counts joined across two refreshes would describe neither.
+    from . import snapshot_generation
+
+    def _read():
         rd = pd.read_parquet(snapshot_dir / "reach_data.parquet",
                              columns=["subject_id", "video_name", "outcome_source", "segment_num"])
         ps = pd.read_parquet(snapshot_dir / "pellet_scores.parquet",
                              columns=["subject_id", "session_date"])
+        try:
+            subjects = pd.read_parquet(snapshot_dir / "subjects.parquet")
+            cohorts = pd.read_parquet(snapshot_dir / "cohorts.parquet")
+        except Exception:
+            subjects = cohorts = None
+        return rd, ps, subjects, cohorts
+
+    try:
+        (rd, ps, subjects, cohorts), generation = snapshot_generation.read_consistent(
+            snapshot_dir, _read)
+    except snapshot_generation.SnapshotNotConsistent as e:
+        out["problems"].append(
+            "nothing below is shown because %s" % e)
+        return out
     except Exception as e:
         out["problems"].append("snapshot unreadable: %s" % e)
         return out
-    try:
-        subjects = pd.read_parquet(snapshot_dir / "subjects.parquet")
-        cohorts = pd.read_parquet(snapshot_dir / "cohorts.parquet")
-    except Exception:
-        subjects = cohorts = None
+    out["snapshot_generation"] = generation
+    if subjects is None:
         out["problems"].append("subjects/cohorts not in snapshot yet (refresh once more)")
 
     snap_time = None
     snap_age_hours = None
     try:
         import datetime as _dt
-        taken = _dt.datetime.fromtimestamp(
-            (snapshot_dir / "reach_data.parquet").stat().st_mtime)
+        stamp = snapshot_generation.read_stamp(snapshot_dir) or {}
+        # The generation's own time when there is one: the moment the whole
+        # snapshot was put in place, not one table's file time.
+        taken = (_dt.datetime.fromisoformat(stamp["published"])
+                 if generation and stamp.get("published") else
+                 _dt.datetime.fromtimestamp(
+                     (snapshot_dir / "reach_data.parquet").stat().st_mtime))
         snap_time = taken.isoformat(timespec="seconds")
         snap_age_hours = (_dt.datetime.now() - taken).total_seconds() / 3600.0
-    except OSError:
+    except (OSError, ValueError):
         pass
     out["snapshot_time"] = snap_time
     out["snapshot_age_hours"] = snap_age_hours

@@ -155,7 +155,12 @@ def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
 def refresh(db_path: Path = None, snapshot_dir: Path = None,
            tables=TABLES, force: bool = False) -> dict:
     """Export each table in ``tables`` from ``db_path`` to
-    ``snapshot_dir/{table}.parquet``, overwriting in place.
+    ``snapshot_dir/{table}.parquet`` as ONE new generation.
+
+    Every table is written to a staging folder first; only when all of them
+    are written are they moved into place together and the generation stamp
+    written (mousedb.snapshot_generation). A run that stops while reading the
+    database leaves the previous generation untouched.
 
     Returns {table: row_count} for what was written. Raises RuntimeError
     without touching anything if a watcher is active, UNLESS ``force`` --
@@ -176,6 +181,7 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
 
     snapshot_dir = Path(snapshot_dir)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
+    from .. import snapshot_generation as generation
 
     # Under the cross-task mutex: these SELECT * reads are exactly the long
     # SHARED locks that put a concurrently-committing import into PENDING
@@ -184,6 +190,20 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
     from ..task_mutex import hold
     counts = {}
     with hold(waiting_for="the reach/brain import"):
+        # Staging is emptied under the mutex, so two refreshes never share it.
+        # Leftover per-table ``.tmp`` files from versions that swapped one
+        # table at a time are removed too: the data browser reads one as "a
+        # refresh is writing now" and would wait for it.
+        import shutil
+        staging = snapshot_dir / generation.STAGING_NAME
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True, exist_ok=True)
+        for orphan in snapshot_dir.glob("*.parquet.tmp"):
+            try:
+                orphan.unlink()
+            except OSError:
+                pass
+        read_started = datetime.now().isoformat(timespec="seconds")
         con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
         try:
             for table in tables:
@@ -200,20 +220,26 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
                     continue
                 print("  reading %s ..." % table, flush=True)
                 df = pd.read_sql("SELECT * FROM %s" % table, con)
-                out = snapshot_dir / ("%s.parquet" % table)
-                # Write beside, then swap in. WHY: readers (bench scan, recipes)
-                # open these files at any time, and the task's time limit or a
-                # person can stop this process mid-write. Writing straight onto
-                # the final name left a truncated parquet that every reader then
-                # failed on until the next refresh; os.replace swaps whole files,
-                # so a reader sees the old snapshot or the new one, never half.
-                tmp = out.with_name(out.name + ".tmp")
-                df.to_parquet(tmp, index=False)
-                swap_in(tmp, out)
+                # Into staging, not onto the final name. WHY: readers open
+                # these files at any time, and the task's time limit or a
+                # person can stop this process at any moment. Swapping each
+                # table in as it was read left a folder of some new tables and
+                # some old ones whenever a run stopped part way -- a mix no
+                # reader could detect. Now nothing a reader sees changes until
+                # every table is written.
+                staged = staging / ("%s.parquet" % table)
+                df.to_parquet(staged, index=False)
                 counts[table] = len(df)
-                print("  %s: %d rows -> %s" % (table, len(df), out), flush=True)
+                print("  %s: %d rows read" % (table, len(df)), flush=True)
+                del df
         finally:
             con.close()
+        # Still under the mutex, so two refreshes never interleave their
+        # swaps. The swap is renames on one disk: seconds, not the hour the
+        # reads above take.
+        generation.publish(snapshot_dir, staging, counts, swap=swap_in,
+                           read_started=read_started)
+        shutil.rmtree(staging, ignore_errors=True)
 
     return counts
 
