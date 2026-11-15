@@ -21,8 +21,14 @@ next to the protocol list.
 
 ## Changing an existing protocol
 
-Pick the protocol in the list on the left. What happens on **Save Protocol**
-depends on what you changed:
+Pick the protocol in the list on the left.
+
+**Change a phase with Edit Phase.** Select the phase's row and press **Edit
+Phase**; the dialog shows every value of the phase. The phases table itself
+cannot be typed into -- double-clicking a cell does nothing. (It could be typed
+into before, and a value typed there was thrown away on Save.)
+
+What happens on **Save Protocol** depends on what you changed:
 
 | you changed | what Save does |
 |---|---|

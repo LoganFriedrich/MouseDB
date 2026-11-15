@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QLineEdit, QTextEdit, QPlainTextEdit, QCheckBox, QGroupBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QTabWidget,
     QMessageBox, QSplitter, QFrame, QScrollArea, QSizePolicy,
-    QDialogButtonBox, QListWidget, QListWidgetItem
+    QDialogButtonBox, QListWidget, QListWidgetItem, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont
@@ -134,6 +134,12 @@ class ProtocolBuilderDialog(QDialog):
         self.phases_table.horizontalHeader().setStretchLastSection(True)
         self.phases_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.phases_table.setSelectionBehavior(QTableWidget.SelectRows)
+        # Read-only: every phase change goes through Edit Phase. WHY: a cell
+        # typed into directly (Qt's default: double-click, F2 or any key)
+        # changed only the text on screen, so Save could report 'updated'
+        # while the edit was thrown away. _collect_table_phases also reads the
+        # visible cells, so a cell change can never be lost silently.
+        self.phases_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         phases_layout.addWidget(self.phases_table)
 
         # Phase action buttons
@@ -385,15 +391,7 @@ class ProtocolBuilderDialog(QDialog):
         # the stored phase -- so fields the table does not show (surgery,
         # staggering) reach the dialog as they are, not as its defaults.
         phase_data = dict(self._row_base_phase(row))
-        phase_data.update({
-            'phase_name': self.phases_table.item(row, 1).text(),
-            'duration_days': int(self.phases_table.item(row, 2).text()),
-            'tray_type_code': self.phases_table.item(row, 3).text() if self.phases_table.item(row, 3).text() != "-" else None,
-            'sessions_per_day': int(self.phases_table.item(row, 4).text()),
-            'include_weekends': self.phases_table.item(row, 5).text() == "Yes",
-            'expects_pellets': self.phases_table.item(row, 6).text() == "Yes",
-            'expects_weights': self.phases_table.item(row, 7).text() == "Yes",
-        })
+        phase_data.update(self._row_cells(row))
 
         dialog = PhaseEditDialog(self.db, phase_data=phase_data, parent=self)
         if dialog.exec_():
@@ -450,27 +448,44 @@ class ProtocolBuilderDialog(QDialog):
         original = self._loaded_phases.get(first.data(Qt.UserRole))
         return dict(original) if original else {}
 
+    def _row_cells(self, row) -> Dict[str, Any]:
+        """The seven fields table row ``row`` shows, read from its cells.
+
+        A number cell that does not read as a whole number (a stored phase
+        with no sessions-per-day value shows 'None') is left out, so the
+        stored value stands instead of the text breaking Save."""
+        t = self.phases_table
+        tray = t.item(row, 3).text()
+        cells = {
+            'phase_name': t.item(row, 1).text(),
+            'tray_type_code': tray if tray != "-" else None,
+            'include_weekends': t.item(row, 5).text() == "Yes",
+            'expects_pellets': t.item(row, 6).text() == "Yes",
+            'expects_weights': t.item(row, 7).text() == "Yes",
+        }
+        for field, col in (('duration_days', 2), ('sessions_per_day', 4)):
+            try:
+                cells[field] = int(t.item(row, col).text())
+            except (TypeError, ValueError):
+                pass
+        return cells
+
     def _collect_table_phases(self):
         """[(original phase id or None, full phase dict)] in table order.
 
-        A row the person did not touch is its stored phase, complete. WHY not
-        rebuilt from the cells: the table shows seven fields; the others
+        Each row is its stored phase, complete, with the visible cells laid
+        over it. WHY not rebuilt from the cells alone: the table shows seven
+        fields; the others
         (phase type, notes, ladder, food deprivation, stagger interval ...)
         would be lost from any protocol saved from it."""
         rows = []
         for row in range(self.phases_table.rowCount()):
             first = self.phases_table.item(row, 0)
+            # The stored phase (or this dialog's edit of it) supplies the
+            # fields the table does not show; the seven visible cells are laid
+            # over it, so what is on screen is what gets compared and saved.
             phase = self._row_base_phase(row)
-            if not phase:
-                phase = {
-                    'phase_name': self.phases_table.item(row, 1).text(),
-                    'duration_days': int(self.phases_table.item(row, 2).text()),
-                    'tray_type_code': self.phases_table.item(row, 3).text() if self.phases_table.item(row, 3).text() != "-" else None,
-                    'sessions_per_day': int(self.phases_table.item(row, 4).text()),
-                    'include_weekends': self.phases_table.item(row, 5).text() == "Yes",
-                    'expects_pellets': self.phases_table.item(row, 6).text() == "Yes",
-                    'expects_weights': self.phases_table.item(row, 7).text() == "Yes",
-                }
+            phase.update(self._row_cells(row))
             phase['phase_order'] = row + 1
             rows.append((first.data(Qt.UserRole), phase))
         return rows
@@ -479,6 +494,8 @@ class ProtocolBuilderDialog(QDialog):
     def _norm(cls, field, value):
         if field in cls._BOOL_FIELDS:
             return bool(value)
+        if field == 'tray_type_code':
+            return value or None      # the table shows 'no tray' as '-'
         if field == 'stagger_group_size':
             return value or None      # the dialog writes 'no staggering' as None
         return value

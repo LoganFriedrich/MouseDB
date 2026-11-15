@@ -160,3 +160,26 @@ def test_a_new_protocol_cannot_take_the_name_of_an_existing_one(db, ui, monkeypa
     dlg._save_protocol()          # name left as "Protocol A"
     assert _all(db) == [(db.protocol_id, "Protocol A")]
     assert not any("updated" in text for _, _, text in ui.boxes)
+
+
+def test_the_phases_table_cannot_be_typed_into(db, ui, monkeypatch):
+    """Every phase change goes through Edit Phase, where it is kept whole."""
+    from PyQt5.QtWidgets import QAbstractItemView
+    dlg = _open(db, monkeypatch)
+    assert dlg.phases_table.editTriggers() == QAbstractItemView.NoEditTriggers
+
+
+def test_a_changed_cell_is_never_dropped_while_save_says_updated(db, ui, monkeypatch):
+    """A cell whose text changed (however it changed) is what Save compares
+    and saves -- never the stored value behind it."""
+    dlg = _open(db, monkeypatch)
+    dlg.phases_table.item(0, 2).setText("9")      # Days of the first phase
+    dlg.proto_name_edit.setText("Protocol A nine days")
+    dlg._save_protocol()
+    assert not any("updated" in text for _, _, text in ui.boxes)
+    assert any(kind == "question" for kind, _, _ in ui.boxes)
+    assert [p["duration_days"] for p in _phases(db, db.protocol_id)] == [5, 3]
+    new_id = [r for r in _all(db) if r[0] != db.protocol_id][0][0]
+    new = _phases(db, new_id)
+    assert [p["duration_days"] for p in new] == [9, 3]
+    assert new[0]["notes"] == "kept note"

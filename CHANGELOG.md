@@ -81,8 +81,10 @@ checked-in code, not what's planned.
   saved in place; a phase change (added, removed, moved or edited, including
   fields the table does not show) is offered as a new protocol, which keeps
   the phases' hidden details, needs a name of its own, and leaves the original
-  untouched. Declining saves nothing and says so. Guide:
-  docs/PROTOCOL_MANAGER.md.
+  untouched. Declining saves nothing and says so. The phases table can no
+  longer be typed into (a value typed into a cell used to be dropped on Save);
+  phases are changed with Edit Phase, and Save compares what the table shows.
+  Guide: docs/PROTOCOL_MANAGER.md.
 - Videos held for review (triage, deep review) and videos this computer has
   no file for (unresolvable) are no longer counted as "In Pipeline" /
   "In Progress" in the Video Pipeline and Archive Status tabs and in
