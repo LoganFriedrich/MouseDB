@@ -137,8 +137,8 @@ def test_the_snapshot_step_is_not_cut_off_after_an_hour(root, monkeypatch):
     """A full snapshot refresh can take more than an hour on a large database.
     The button stopped every step at one hour, so its snapshot step could
     never finish and was killed part way through rewriting the exports. The
-    imports keep their limit; the snapshot step has none of its own (its waits
-    are bounded inside the refresh)."""
+    imports keep their limit; the snapshot step's is only a backstop against
+    a hung refresh (its waits are bounded inside the refresh)."""
     import subprocess
     seen = {}
 
@@ -151,6 +151,7 @@ def test_the_snapshot_step_is_not_cut_off_after_an_hour(root, monkeypatch):
     res = up.run_update(triggered_by="test", log=lambda s: None)
     assert res.ok and set(seen) == set(up.STEP_KEYS)
     assert seen["snapshot"] is None or seen["snapshot"] > 6 * 3600
+    assert set(up.STEP_TIMEOUT_SECONDS) == set(up.STEP_KEYS)
     for key in ("sheets", "reaches", "analyses", "brains"):
         assert seen[key] == up.STEP_TIMEOUT_SECONDS[key]
 
@@ -166,5 +167,44 @@ def test_a_step_that_overruns_its_limit_says_so(root, monkeypatch):
     monkeypatch.setattr(up.subprocess, "run", fake_run)
     res = up.run_update(triggered_by="test", log=lambda s: None)
     failed = {s.key: s for s in res.steps if not s.ok}
-    assert set(failed) == {"sheets", "reaches", "analyses", "brains"}
+    assert set(failed) == set(up.STEP_KEYS)
     assert "stopped" in failed["sheets"].summary
+
+
+def test_a_lock_freed_between_looking_and_asking_is_taken_not_refused(root, monkeypatch):
+    """The other update can finish between this press's refused try and the
+    look at who holds the lock; the press then runs instead of being told
+    'still running (no lockfile)'."""
+    from mousedb.task_mutex import TaskMutex
+    real = TaskMutex._try_acquire
+    tries = []
+
+    def first_refused(self, log):
+        tries.append(1)
+        return False if len(tries) == 1 else real(self, log)
+
+    monkeypatch.setattr(TaskMutex, "_try_acquire", first_refused)
+    r = _runner()
+    res = up.run_update(triggered_by="test", runner=r, log=lambda s: None)
+    assert not res.skipped and res.ok and len(tries) == 2
+
+
+def test_the_update_lock_shows_it_is_alive_while_held(root, monkeypatch):
+    """An update started on another computer is judged by its lockfile's age,
+    so the lockfile is touched while the update runs."""
+    from mousedb import task_mutex
+    monkeypatch.setattr(task_mutex, "HEARTBEAT_SECONDS", 0.05)
+    ages = []
+
+    def runner(cmd):
+        lock = [p for p in (root / "logs").iterdir() if p.name.endswith(".task.lock")][0]
+        old = time.time() - 3600
+        os.utime(lock, (old, old))
+        deadline = time.time() + 5
+        while lock.stat().st_mtime < time.time() - 60 and time.time() < deadline:
+            time.sleep(0.05)
+        ages.append(time.time() - lock.stat().st_mtime)
+        return 0, "ok"
+
+    up.run_update(triggered_by="test", skip=up.STEP_KEYS[1:], runner=runner, log=lambda s: None)
+    assert ages and ages[0] < 60

@@ -89,20 +89,28 @@ LEDGER_NAME = "updates.jsonl"
 # The imports: an hour each. They commit as they go and a stopped one carries
 # on from where it stopped on the next run, so a limit only costs a delay.
 #
-# The snapshot step: no limit. WHY: a full refresh of a large database over a
+# The snapshot step: 12 hours. WHY: a full refresh of a large database over a
 # network share can take more than an hour by itself, and the one-hour limit
 # every step used to share stopped it every time -- part way through
 # rewriting the current exports, so the button could never finish and left
 # the exports half rewritten. The refresh bounds its own waiting (the
 # database-task lock wait, the retry window), so what is left is real work.
-# The cost: a refresh that hangs keeps the update -- and its lock -- busy until
-# its window is closed or its process ended.
+# The cost: a refresh that hangs keeps the update -- and its lock -- busy for
+# up to 12 hours, unless its window is closed or its process ended.
+#
+# Every step must be listed: run_update looks its limit up by key and fails on
+# a missing one, so a new long step cannot silently get the import limit.
+IMPORT_STEP_TIMEOUT_SECONDS = 3600
+# The snapshot's limit is only a backstop against a refresh that has hung (an
+# unreachable share): far above any working refresh, so one is never cut off,
+# but finite, so a hung one cannot hold the update lock for days.
+SNAPSHOT_STEP_TIMEOUT_SECONDS = 12 * 3600
 STEP_TIMEOUT_SECONDS = {
-    "sheets": 3600,
-    "reaches": 3600,
-    "analyses": 3600,
-    "brains": 3600,
-    "snapshot": None,
+    "sheets": IMPORT_STEP_TIMEOUT_SECONDS,
+    "reaches": IMPORT_STEP_TIMEOUT_SECONDS,
+    "analyses": IMPORT_STEP_TIMEOUT_SECONDS,
+    "brains": IMPORT_STEP_TIMEOUT_SECONDS,
+    "snapshot": SNAPSHOT_STEP_TIMEOUT_SECONDS,
 }
 OUTPUT_TAIL_LINES = 15          # how much of each step's output the ledger keeps
 
@@ -143,7 +151,8 @@ def _logs_dir() -> Path:
     return d
 
 
-def _default_runner(cmd: Sequence[str], timeout_seconds: Optional[float] = 3600) -> Tuple[int, str]:
+def _default_runner(cmd: Sequence[str],
+                    timeout_seconds: Optional[float] = IMPORT_STEP_TIMEOUT_SECONDS) -> Tuple[int, str]:
     """Run one step in a child interpreter; return (returncode, combined output).
     ``timeout_seconds`` None: no limit (see STEP_TIMEOUT_SECONDS).
     A child process keeps one step's crash from taking the others down, and
@@ -171,12 +180,17 @@ def _acquire_lock(logs: Path, log: Callable[[str], None]):
     from .task_mutex import TaskMutex
     mutex = TaskMutex(name=LOCK_MUTEX_NAME, base_dir=logs,
                       stale_minutes=UNKNOWN_HOLDER_STALE_MINUTES)
-    if mutex.try_acquire(log=log):
-        # Touch the lockfile every minute while the update runs, so an update
-        # started on another computer is judged alive by its lockfile's age.
-        mutex._start_heartbeat()
-        return mutex, None
-    state, who = mutex.holder()
+    # heartbeat: the lockfile is touched every minute while the update runs,
+    # so an update started on another computer is judged alive by its age.
+    # Two tries: between a refused try and reading who holds the lock, that
+    # update may have finished (or turned out dead); the lock is then simply
+    # taken, instead of refusing with "still running (no lockfile)".
+    for _ in range(2):
+        if mutex.try_acquire(log=log, heartbeat=True):
+            return mutex, None
+        state, who = mutex.holder()
+        if state in ("alive", "unknown"):
+            break
     return None, "another update is still running (%s) -- wait for it to finish" % who
 
 
@@ -191,7 +205,7 @@ def run_update(triggered_by: str = "cli", skip: Sequence[str] = (),
     """Run every step in order under the update lock; record and return the result."""
     if runner is None:
         def run_step(key, cmd):
-            return _default_runner(cmd, STEP_TIMEOUT_SECONDS.get(key, 3600))
+            return _default_runner(cmd, STEP_TIMEOUT_SECONDS[key])
     else:
         def run_step(key, cmd):
             return runner(cmd)

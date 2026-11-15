@@ -166,6 +166,8 @@ def default_lock_dir() -> Path:
         return logs
     db = db_path()
     if db is not None:
+        # Beside the database, as given: a relative db_path names a different
+        # database from each working directory, and its lock goes with it.
         return Path(db).parent / "logs"
     return require("mousedb_root") / "logs"     # raises ConfigError: says what to set
 
@@ -339,7 +341,19 @@ class TaskMutex:
         self._held = True
         return True
 
-    def try_acquire(self, log: Optional[Callable] = None) -> bool:
+    def try_acquire(self, log: Optional[Callable] = None, heartbeat: bool = False) -> bool:
+        """Take the lock if it is free now (or its holder is gone); never wait.
+
+        ``heartbeat`` True: on success, also start touching the lockfile while
+        it is held, as ``acquire`` does -- for a caller that holds the lock for
+        longer than ``stale_minutes`` and may be judged from another computer
+        (see ``_start_heartbeat``)."""
+        taken = self._try_acquire(log)
+        if taken and heartbeat:
+            self._start_heartbeat()
+        return taken
+
+    def _try_acquire(self, log: Optional[Callable]) -> bool:
         if self._create():
             return True
         seen = self._read()

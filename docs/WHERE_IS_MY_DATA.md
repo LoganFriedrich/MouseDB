@@ -533,8 +533,11 @@ Press it whenever you are about to look at the data and want it current
 instead of as old as the last scheduled run. On a large database it can take an
 hour or more -- the last step, rewriting the snapshot and the exports, is the long
 one. Each import step is stopped if it runs over an hour (it carries on from where
-it stopped next time); the snapshot step is never stopped part way, because a
-stopped one would leave the exports half rewritten. The tab refreshes
+it stopped next time). The snapshot step is stopped only after 12 hours --
+far longer than a working refresh takes -- because one stopped part way would
+leave the exports half rewritten; the 12-hour limit is only there so a refresh
+that has hung (for example on an unreachable network share) does not block
+the button for days. The tab refreshes
 itself when it finishes, and a dialog lists every step with **[OK]** or
 **[FAIL]** and the step's own last line. The line under the snapshot time
 always shows when the last update ran, who started it, and whether
