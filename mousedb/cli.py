@@ -845,6 +845,8 @@ def cmd_archive_status(args):
                 'crystallized': summary.crystallized,
                 'in_pipeline': summary.in_pipeline,
                 'failed': summary.failed,
+                # Held until a person fixes the recording; not a failure.
+                'quarantined': summary.quarantined,
                 'in_review': summary.in_review,
                 'not_on_this_node': summary.not_on_this_node,
                 'other': summary.other,
@@ -858,6 +860,7 @@ def cmd_archive_status(args):
                     'crystallized': c.crystallized,
                     'in_pipeline': c.in_pipeline,
                     'failed': c.failed,
+                    'quarantined': c.quarantined,
                     'in_review': c.in_review,
                     'not_on_this_node': c.not_on_this_node,
                     'other': c.other,
@@ -882,6 +885,7 @@ def cmd_archive_status(args):
                     'crystallized': a.crystallized,
                     'in_pipeline': a.in_pipeline,
                     'failed': a.failed,
+                    'quarantined': a.quarantined,
                     'in_review': a.in_review,
                     'not_on_this_node': a.not_on_this_node,
                     'other': a.other,
@@ -935,6 +939,8 @@ def cmd_archive_status(args):
                 details.append(f"{c.not_on_this_node} not on this computer")
             for st, n in sorted(c.other.items()):
                 details.append(f"{n} {st}")
+            if c.quarantined > 0:
+                details.append(f"{c.quarantined} quarantined")
             if c.failed > 0:
                 details.append(f"{c.failed} failed")
             if c.crystallized > 0 and c.crystallized_label:
@@ -966,6 +972,11 @@ def cmd_archive_status(args):
         print(f"Waiting for review (triage / deep review): {summary.in_review}")
     if summary.not_on_this_node > 0:
         print(f"Not on this computer (no file here): {summary.not_on_this_node}")
+    if summary.quarantined > 0:
+        print(f"Quarantined (held until a person fixes the recording): "
+              f"{summary.quarantined}")
+    if summary.failed > 0:
+        print(f"Failed: {summary.failed}")
     if summary.other:
         print("States mousedb does not know: "
               + ", ".join(f"{st}={n}" for st, n in sorted(summary.other.items())))
@@ -982,15 +993,22 @@ def cmd_archive_status(args):
             if cohort_filter:
                 header += f" ({cohort_filter})"
             print(f"\n{header}:")
+            # Every video is in exactly one column from Archived to Other,
+            # so each row adds up to Total. WHY: without Quarantined and
+            # Other columns a held video or one in a state mousedb does not
+            # know was in no column, and the row did not add up.
             print(f"  {'Subject':<12} {'Total':>6} {'Archived':>9} "
                   f"{'Outdated':>9} {'Crystal':>8} {'Pipeline':>9} "
-                  f"{'Review':>7} {'NotHere':>8} {'Failed':>7}")
-            print(f"  {'-' * 78}")
+                  f"{'Review':>7} {'NotHere':>8} {'Quarant':>8} "
+                  f"{'Failed':>7} {'Other':>6}")
+            print(f"  {'-' * 94}")
             for a in animal_rollup:
                 print(f"  {a.subject_id:<12} {a.total_videos:>6} "
                       f"{a.archived:>9} {a.outdated:>9} "
                       f"{a.crystallized:>8} {a.in_pipeline:>9} "
-                      f"{a.in_review:>7} {a.not_on_this_node:>8} {a.failed:>7}")
+                      f"{a.in_review:>7} {a.not_on_this_node:>8} "
+                      f"{a.quarantined:>8} {a.failed:>7} "
+                      f"{sum(a.other.values()):>6}")
 
 
 # =========================================================================

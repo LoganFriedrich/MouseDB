@@ -212,3 +212,79 @@ def test_video_status_by_animal_shows_quarantined_and_other(_isolated_from_this_
     nums = [int(x) for x in row.split()[1:]]
     assert nums[0] == len(ALL_HELD) and sum(nums[1:]) == nums[0]
     assert nums[6] == 3
+
+
+# --- Archive Status view: quarantined is a hold, not a failure ------------
+
+def test_archive_bucket_keeps_quarantined_out_of_failed(tmp_path):
+    """A quarantined video waits for a person to fix the recording; showing
+    it as Failed gave the hold the wrong reason."""
+    from mousedb.watcher_bridge import WatcherBridge
+    db = tmp_path / "w.db"
+    _watcher_db(db, ALL_HELD)
+    b = WatcherBridge(db_path=db)
+    s = b.get_archive_summary()
+    (c,) = b.get_archive_cohort_rollup()
+    (a,) = b.get_archive_animal_rollup()
+    for r in (s, c, a):
+        # Only the one 'failed' video is Failed (quarantined used to be
+        # folded in here, making it 4).
+        assert r.failed == 1
+        assert r.quarantined == 3
+        parts = (r.archived + r.outdated + r.crystallized + r.in_pipeline
+                 + r.in_review + r.not_on_this_node + r.quarantined
+                 + r.failed + sum(r.other.values()))
+        assert parts == r.total_videos == len(ALL_HELD)
+
+
+def test_archive_status_tab_counts_add_up_with_quarantined_and_other(
+        _isolated_from_this_machine, tmp_path, qapp):
+    """Every card and every row of both tables adds up to its Total: a
+    quarantined video has its own card and column, and a state mousedb does
+    not know is in the Other card and column."""
+    db = tmp_path / "watcher.db"
+    _watcher_db(db, ALL_HELD)
+    _cfg(_isolated_from_this_machine, db)
+    from mousedb.gui.archive_status_tab import ArchiveStatusTab
+    tab = ArchiveStatusTab(db=None)
+    assert _card(tab, "failed") == "1"
+    assert _card(tab, "quarantined") == "3"
+    assert _card(tab, "other") == "2"
+    parts = sum(int(_card(tab, k)) for k in (
+        "archived", "outdated", "crystallized", "in_pipeline", "in_review",
+        "not_on_this_node", "quarantined", "failed", "other"))
+    assert parts == int(_card(tab, "total")) == len(ALL_HELD)
+
+    for table, cols in ((tab.cohort_table, tab.COHORT_COLUMNS),
+                        (tab.animal_table, tab.ANIMAL_COLUMNS)):
+        assert {"Quarantined", "Failed", "Other"} <= set(cols)
+        counts = _cell_ints(table, 0, cols.index("Archived"), cols.index("Other"))
+        assert sum(counts) == int(table.item(0, cols.index("Total")).text()) \
+            == len(ALL_HELD)
+        assert int(table.item(0, cols.index("Quarantined")).text()) == 3
+        assert int(table.item(0, cols.index("Failed")).text()) == 1
+
+
+def test_archive_status_command_counts_add_up_with_quarantined(
+        _isolated_from_this_machine, tmp_path, capsys):
+    db = tmp_path / "watcher.db"
+    _watcher_db(db, ALL_HELD)
+    _cfg(_isolated_from_this_machine, db)
+    from mousedb import cli
+    cli.cmd_archive_status(Namespace(json=False, cohort=None, verbose=True))
+    out = capsys.readouterr().out
+    assert "Quarantined (held until a person fixes the recording): 3" in out
+    animal_part = out.split("Per-animal breakdown:")[1]
+    header, _, row = animal_part.strip().splitlines()[:3]
+    assert "Quarant" in header and "Other" in header
+    # Total, Archived, Outdated, Crystal, Pipeline, Review, NotHere,
+    # Quarant, Failed, Other
+    nums = [int(x) for x in row.split()[1:]]
+    assert nums[0] == len(ALL_HELD) and sum(nums[1:]) == nums[0]
+    assert nums[7] == 3 and nums[8] == 1 and nums[9] == 2
+
+    cli.cmd_archive_status(Namespace(json=True, cohort=None, verbose=True))
+    js = json.loads(capsys.readouterr().out)
+    for part in (js["summary"], js["cohorts"][0], js["animals"][0]):
+        assert part["quarantined"] == 3
+        assert part["failed"] == 1

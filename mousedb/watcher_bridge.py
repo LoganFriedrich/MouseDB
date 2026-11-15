@@ -90,6 +90,7 @@ ARCHIVE_STATE_DISPLAY = {
     'in_pipeline':   {'label': 'In Pipeline',    'color': '#9E9E9E'},
     'in_review':     {'label': 'In Review',      'color': '#AB47BC'},
     'not_on_this_node': {'label': 'Not on this computer', 'color': '#BDBDBD'},
+    'quarantined':   {'label': 'Quarantined',    'color': '#FF5722'},
     'failed':        {'label': 'Failed',         'color': '#F44336'},
     'other':         {'label': 'Other',          'color': '#795548'},
 }
@@ -118,7 +119,13 @@ def pipeline_bucket(state: str) -> str:
 def archive_bucket(state: str) -> str:
     """Which count of the Archive Status view a watcher state belongs to:
     'archived', 'outdated', 'crystallized', 'in_pipeline', 'in_review',
-    'not_on_this_node', 'failed' (failed or quarantined), or 'other'."""
+    'not_on_this_node', 'quarantined', 'failed', or 'other'.
+
+    WHY quarantined is not 'failed': a quarantined video is HELD until a
+    person deals with the recording (renames or fixes it); nothing went
+    wrong in the analysis. Counted as Failed, the hold was shown with the
+    wrong reason and the person who has to act was not told it waits for
+    them."""
     if state in ('archived', 'outdated', 'crystallized'):
         return state
     if state in IN_PIPELINE_STATES:
@@ -127,7 +134,9 @@ def archive_bucket(state: str) -> str:
         return 'in_review'
     if state in NODE_ABSENT_STATES:
         return 'not_on_this_node'
-    if state in ERROR_STATES:
+    if state == 'quarantined':
+        return 'quarantined'
+    if state == 'failed':
         return 'failed'
     return 'other'
 
@@ -205,6 +214,9 @@ class ArchiveSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
     in_review: int = 0
     not_on_this_node: int = 0
     other: Dict[str, int] = field(default_factory=dict)
@@ -222,6 +234,9 @@ class ArchiveCohortSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
     in_review: int = 0
     not_on_this_node: int = 0
     other: Dict[str, int] = field(default_factory=dict)
@@ -249,6 +264,9 @@ class ArchiveAnimalSummary:
     crystallized: int = 0
     in_pipeline: int = 0
     failed: int = 0
+    # Held until a person deals with the recording: its own count, never
+    # folded into Failed (see archive_bucket).
+    quarantined: int = 0
     in_review: int = 0
     not_on_this_node: int = 0
     other: Dict[str, int] = field(default_factory=dict)
