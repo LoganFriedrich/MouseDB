@@ -270,6 +270,10 @@ class TaskMutex:
         token = self._token_path
         try:
             fd = os.open(str(token), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except PermissionError:
+            # Windows: the token was just deleted and the delete is still
+            # pending; it is not free yet (see _create).
+            return False
         except FileExistsError:
             # Someone is breaking or releasing right now -- or died doing it.
             # The token lives for milliseconds, so an old one is an orphan.
@@ -332,6 +336,13 @@ class TaskMutex:
         try:
             fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
+            return False
+        except PermissionError:
+            # Windows refuses (access denied) to create a file whose delete is
+            # still pending -- the holder released a moment ago and something
+            # (an antivirus scan, a reader) still has the old file open. That
+            # is "not free yet", exactly like FileExistsError: the waiter polls
+            # again. Raising here used to end a wait that was about to succeed.
             return False
         try:
             os.write(fd, identity.encode())

@@ -88,8 +88,29 @@ def test_a_waiting_refresh_runs_after_the_other_finishes(tmp_path, monkeypatch):
     snap = _snapshot(tmp_path)
     out = tmp_path / "current"
     holder = current.hold_exports_lock(lock_wait_seconds=0)
-    threading.Timer(0.3, holder.release).start()
-    m = current.refresh_current(snap, out, db_ok=False, lock_wait_seconds=30)
+    # Release only once the second refresh is known to be WAITING (it has
+    # looked at the holder's progress at least once). A fixed timer raced the
+    # waiter: released too early, the test showed nothing about waiting.
+    waiting = threading.Event()
+    real_activity = task_mutex.TaskMutex._activity
+
+    def activity(self, text, state):
+        waiting.set()
+        return real_activity(self, text, state)
+
+    monkeypatch.setattr(task_mutex.TaskMutex, "_activity", activity)
+
+    def release_when_waited_for():
+        waiting.wait(30)
+        holder.release()
+
+    t = threading.Thread(target=release_when_waited_for)
+    t.start()
+    try:
+        m = current.refresh_current(snap, out, db_ok=False, lock_wait_seconds=30)
+    finally:
+        t.join(30)
+    assert waiting.is_set(), "the second refresh never waited"
     assert (out / "reach_data.csv").is_file() and "reach_data.csv" in m["files"]
 
 
