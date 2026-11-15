@@ -24,6 +24,12 @@ dependencies = [
     "scipy>=1.9",
     "PyQt5>=5.15",
     "qtpy>=2.0",
+    # The database-task lock tells a dead holder from a live one by looking
+    # its process up, and the watcher check before a snapshot finds running
+    # processes the same way. Without psutil a dead holder's lock is judged by
+    # age alone, and a wrapper that ends a stopped job's child processes has
+    # nothing to find them with -- so it is required, not optional.
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

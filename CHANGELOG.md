@@ -76,6 +76,10 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- `psutil` is now a declared dependency (it was only installed by chance).
+  The database-task lock, the watcher check before a snapshot and the bench
+  scan use it to see whether a process is still running; an environment built
+  without it judged every lock by age alone.
 - `mousedb <command>` now exits with the code the command returns. It used to
   drop it, so `import-brains` exited 0 after giving up on a locked database,
   and the scheduler and the "Update the database now" button showed success.

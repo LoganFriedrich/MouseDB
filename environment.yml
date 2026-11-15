@@ -18,5 +18,6 @@ dependencies:
   - pyarrow>=10.0
   - sqlalchemy>=2.0
   - pyqt>=5.15
+  - psutil>=5.9   # also in pyproject.toml; the database-task lock needs it
   - pip:
     - -e .   # this repo, editable (run `conda env create` from the repo root)

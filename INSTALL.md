@@ -393,6 +393,10 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   `.central-db.task.lock.breaking`). Every lock taken from a dead holder is
   written to the job's log and to `logs/.central-db.task.lock.breaks.log`. A
   job gives the lock back only if it is still its own.
+  Whether a holder is still running is looked up with the `psutil` package,
+  which installs with mousedb (`pip install -e .`). If it is ever missing,
+  every lock is judged by its age alone -- check with
+  `python -c "import psutil"` in the MouseDB environment.
 
   **How long a job waits.** While the job holding the lock is running AND
   getting somewhere (its CPU time and read/write count move), the waiting job
