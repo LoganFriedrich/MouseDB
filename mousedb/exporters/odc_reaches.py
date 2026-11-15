@@ -795,9 +795,11 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     manifest = manifest if manifest is not None else {"files": {}, "problems": []}
     t = load_snapshot(snapshot_dir)
     if t["records"] is None:
-        manifest["problems"].append(
-            "ODC_reaches: the snapshot has no animal_records table yet (it appears after the next "
-            "tracking-sheet import and snapshot); sheet columns are missing from these files")
+        msg = ("ODC_reaches: the snapshot has no animal_records table yet (it appears after the "
+               "next tracking-sheet import and snapshot); sheet columns are missing from these files")
+        manifest["problems"].append(msg)
+        # Follows from the snapshot alone: see "from_inputs" below.
+        manifest.setdefault("from_inputs", []).append(msg)
     wanted = [c.upper() for c in cohorts] if cohorts else cohorts_in(t["reach"])
     analysis_dict, sessions_dict = {}, {}
     # The two document kinds whose columns can follow a cohort's own sheet:
@@ -919,7 +921,11 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             "variables_not_in_every_cohort": partial,
         }
         if partial:
-            manifest["problems"].append(
+            # A NOTE, not a problem: nothing is missing or wrong -- the
+            # dictionary describes every column of every cohort's file. Listed
+            # as a problem it kept the exports' skip signature from ever being
+            # saved (exporters.current), so every refresh rewrote everything.
+            manifest.setdefault("notes", []).append(
                 "%s: %d variable(s) are columns in only some cohorts' files, because those "
                 "cohorts' tracking sheets differ; the dictionary describes all of them, and "
                 "this manifest entry lists which cohorts have each" % (name, len(partial)))
@@ -959,8 +965,15 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         "reach_rows_left_out": int(pd.to_numeric(
             report.loc[report["left_out"] == "reach rows", "rows"], errors="coerce").sum()),
         "note": "every entry left out of the analysis files, and why"}
+    # A check that could not run is shown as a problem -- whatever it would
+    # have left out is in the files. It follows entirely from inputs the
+    # exports' skip signature covers (the snapshot, the name-audit record, the
+    # sheets folder), so it is also listed under "from_inputs": it does not
+    # stop the signature being saved, and it is carried over, word for word,
+    # when an unchanged run is skipped (exporters.current).
     for note in exclusions.notes:
         manifest["problems"].append("analysis exclusions: " + note)
+        manifest.setdefault("from_inputs", []).append("analysis exclusions: " + note)
 
     if write_dir != final_dir:
         import shutil

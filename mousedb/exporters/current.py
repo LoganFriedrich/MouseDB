@@ -223,23 +223,49 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
     }
 
 
-def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
-    """Per-cohort per-reach ODC files (see exporters.odc_reaches).
+# The snapshot tables the per-reach export reads: odc_reaches.load_snapshot
+# (reaches, animals, hand scores, sheet records, per-pellet table, weights) and
+# the exclusion checks (export_exclusions.compute). A table read by either and
+# missing here is a change a skip would hide.
+ODC_INPUT_TABLES = ("reach_data", "subjects", "pellet_scores", "animal_records",
+                    "video_pellets", "weights")
 
-    Skipped when nothing they are built from has changed since the last write
-    (same snapshot table sizes and row counts, same study-facts file): they are
-    large, and every refresh would otherwise rewrite hundreds of MB on the
-    share for no change. The manifest then carries the previous entries."""
-    import pyarrow.parquet as pq
-    from . import odc_reaches
-    from .. import study_facts
-    sig = {}
-    for name in ("reach_data", "subjects", "pellet_scores", "animal_records"):
-        f = snapshot_dir / ("%s.parquet" % name)
-        if f.exists():
-            sig[name] = [f.stat().st_size, pq.ParquetFile(f).metadata.num_rows]
-    ff = study_facts.facts_path()
-    sig["study_facts"] = ff.read_text(encoding="utf-8") if ff.exists() else ""
+
+def odc_reaches_signature(snapshot_dir: Path) -> dict:
+    """Everything the per-reach ODC/analysis files and analysis_EXCLUSIONS.csv
+    are built from, reduced to values that change whenever an input changes.
+
+    WHY each part:
+      * snapshot tables -- by CONTENT (SHA-256, recorded by the snapshot refresh
+        in its generation stamp, so this costs no extra read), not by size and
+        row count: a corrected phase label or score changes neither.
+      * study facts, lab field definitions, grants, lab settings, lab name --
+        configuration that decides cell values, dictionary entries and folders.
+      * the exclusion checks' own inputs outside the snapshot (collage names
+        from the pipeline, the name-audit record, which cohorts have a tracking
+        workbook) -- export_exclusions.input_signature.
+      * the ASPA workbook names -- the manifest names each letter cohort's
+        workbook.
+      * output_format -- the exporter's own code (bumped by hand, below).
+    Anything that cannot be read is recorded as such ("absent", "unreadable"),
+    so the day it can be read the signature changes and the files are rebuilt.
+    """
+    from .. import snapshot_generation, study_facts
+    from ..config import get as _cfg, lab_name, mousereach_pipeline_root
+    from ..grants import grants as _grants
+    from . import export_exclusions, field_definitions
+
+    def text_of(path) -> str:
+        try:
+            return Path(path).read_text(encoding="utf-8") if path and Path(path).is_file() else ""
+        except OSError as e:
+            return "unreadable: %s" % type(e).__name__
+
+    sig: dict = {}
+    for name in ODC_INPUT_TABLES:
+        sig[name] = snapshot_generation.table_hash(snapshot_dir, name)
+    sig["study_facts"] = text_of(study_facts.facts_path())
+    sig["field_definitions"] = text_of(field_definitions.definitions_path())
     # The signature covers the INPUTS. It cannot notice that the exporter itself now
     # writes different columns or different words, so this number stands for the output
     # format and is bumped by hand whenever that changes -- otherwise a node still
@@ -275,11 +301,44 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     #  16 = files grouped into <project>/<cohort>/ folders, plus a combined file
     #       per kind per project (exporters.layout)
     #  17 = a project listed under a grant sits in the grant's folder
-    sig["output_format"] = 17
+    #  18 = informational notes kept apart from problems in the manifest
+    sig["output_format"] = 18
     # Which grant holds which project decides where the files go, so a change
     # to it must re-export even when no data changed.
-    from ..grants import grants as _grants
     sig["grants"] = _grants()
+    try:
+        sig["lab_name"] = lab_name()
+    except Exception as e:
+        sig["lab_name"] = "unreadable: %s" % type(e).__name__
+    try:
+        pipeline_root = mousereach_pipeline_root()
+    except Exception:
+        pipeline_root = None
+    sig["exclusion_inputs"] = export_exclusions.input_signature(
+        pipeline_root, _cfg("cohort_sheets_dir"))
+    try:
+        from ..cohort_sheets import available_aspa_cohorts, find_aspa_sheet
+        sig["aspa_workbooks"] = sorted(
+            (L, getattr(find_aspa_sheet(L), "name", None)) for L in available_aspa_cohorts())
+    except Exception as e:
+        sig["aspa_workbooks"] = "unreadable: %s" % type(e).__name__
+    return json.loads(json.dumps(sig, default=str))     # as it will read back
+
+
+def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
+    """Per-cohort per-reach ODC files (see exporters.odc_reaches).
+
+    Skipped when nothing they are built from has changed since the last write
+    (``odc_reaches_signature``): they are large, and every refresh would
+    otherwise rewrite hundreds of MB on the share for no change. The manifest
+    then carries the previous run's entries, problems and notes.
+
+    The signature is saved only after a run whose every problem follows from
+    the signed inputs alone (``from_inputs``: a check that could not run, a
+    table not yet in the snapshot). A problem that does not -- a cohort's file
+    that failed to write -- leaves no signature, so the next run rebuilds."""
+    from . import odc_reaches
+    sig = odc_reaches_signature(snapshot_dir)
     sig_file = out_dir / ".odc_reaches_signature.json"
     try:
         old = json.loads(sig_file.read_text(encoding="utf-8"))
@@ -288,18 +347,34 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
     if old.get("signature") == sig and old.get("files") and all(
             (out_dir / n).exists() for n in old["files"] if old["files"][n].get("rows")):
         manifest["files"].update(old["files"])
+        manifest["problems"].extend(old.get("problems", []))
+        manifest.setdefault("notes", []).extend(old.get("notes", []))
+        manifest["odc_reaches_skipped"] = (
+            "nothing the per-reach files are built from has changed since %s; the files "
+            "written then were kept" % old.get("saved_at", "the last full export"))
         return
-    part = {"files": {}, "problems": []}
+    part = {"files": {}, "problems": [], "notes": []}
     odc_reaches.export(snapshot_dir, out_dir, manifest=part, staging_dir=_staging_dir(snapshot_dir))
     for k in ("archived_flat_layout_files", "archived_per_cohort_dictionaries"):
         if k in part:
             manifest[k] = part[k]
     manifest["files"].update(part["files"])
     manifest["problems"].extend(part["problems"])
+    manifest.setdefault("notes", []).extend(part.get("notes", []))
     manifest.setdefault("failures", []).extend(part.get("failures", []))
-    if not part["problems"]:
-        sig_file.write_text(json.dumps({"signature": sig, "files": part["files"]}, indent=1),
-                            encoding="utf-8")
+    from_inputs = set(part.get("from_inputs", []))
+    if not part.get("failures") and all(p in from_inputs for p in part["problems"]):
+        sig_file.write_text(json.dumps({
+            "signature": sig, "files": part["files"], "problems": part["problems"],
+            "notes": part.get("notes", []),
+            "saved_at": datetime.now().isoformat(timespec="seconds")}, indent=1),
+            encoding="utf-8")
+    else:
+        # A previous signature must not survive a run that changed the files.
+        try:
+            sig_file.unlink()
+        except OSError:
+            pass
 
 
 def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
@@ -387,7 +462,7 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     manifest = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "snapshot_dir": str(snapshot_dir),
-        "files": {}, "problems": [], "complete": True,
+        "files": {}, "problems": [], "notes": [], "complete": True,
         "odc_sessions_refreshed": bool(db_ok),
         # Which snapshot refresh every file here was built from (None: a
         # snapshot written before refreshes were numbered).

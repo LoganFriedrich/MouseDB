@@ -147,19 +147,9 @@ def collage_members(pipeline_root: Optional[Path]) -> Tuple[Dict[str, Set[str]],
     """
     single_to_rec: Dict[str, Set[str]] = defaultdict(set)
     rec_to_singles: Dict[str, List[str]] = {}
-    if pipeline_root is None:
-        return single_to_rec, rec_to_singles
-    for db_name, table in (("watcher.db", "collages"),
-                           ("watcher_central.db", "pipeline_collages")):
-        path = Path(pipeline_root) / db_name
-        if not path.exists():
-            continue
-        try:
-            con = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True, timeout=5)
-            names = [r[0] for r in con.execute("SELECT filename FROM %s" % table)]
-            con.close()
-        except sqlite3.Error:
-            continue
+    for names in collage_listing(pipeline_root).values():
+        if not isinstance(names, list):
+            continue                    # that database is absent or unreadable
         for name in names:
             m = _COLLAGE.match(str(name).strip())
             if not m:
@@ -174,6 +164,88 @@ def collage_members(pipeline_root: Optional[Path]) -> Tuple[Dict[str, Set[str]],
             for s in singles:
                 single_to_rec[s].add(rec)
     return single_to_rec, rec_to_singles
+
+
+COLLAGE_SOURCES = (("watcher.db", "collages"),
+                   ("watcher_central.db", "pipeline_collages"))
+
+
+def collage_listing(pipeline_root: Optional[Path]) -> Dict[str, object]:
+    """{database name: sorted collage file names, or "absent" / "unreadable"}.
+
+    The one place the collage names are read, so the exclusion checks and the
+    current-exports skip signature (exporters.current) see the same thing."""
+    out: Dict[str, object] = {}
+    if pipeline_root is None:
+        return out
+    for db_name, table in COLLAGE_SOURCES:
+        path = Path(pipeline_root) / db_name
+        if not path.exists():
+            out[db_name] = "absent"
+            continue
+        try:
+            con = sqlite3.connect("file:%s?mode=ro" % path.as_posix(), uri=True, timeout=5)
+            try:
+                out[db_name] = sorted(str(r[0]) for r in
+                                      con.execute("SELECT filename FROM %s" % table))
+            finally:
+                con.close()
+        except sqlite3.Error:
+            out[db_name] = "unreadable"
+    return out
+
+
+def input_signature(pipeline_root=None, sheets_dir=None) -> Dict[str, object]:
+    """Everything outside the snapshot that compute() reads, reduced to values
+    that change whenever what it reads changes.
+
+    WHY: the current exports skip rebuilding when their inputs are unchanged
+    (exporters.current). Every input of these checks must be in that
+    signature, or a corrected entry (a resolved name, a new workbook, a new
+    recording) would stay left out -- or a newly wrong one stay in -- until
+    some unrelated input happened to change. A check that cannot read its
+    input says so here too ("absent", "unreadable", "unavailable"), so the
+    day it can read it again the signature changes and the export reruns.
+    """
+    import hashlib
+    from ..stats import PELLETS_PER_TRAY
+
+    def digest(obj) -> str:
+        return hashlib.sha256(repr(obj).encode("utf-8")).hexdigest()
+
+    sig: Dict[str, object] = {
+        "pipeline_root": str(pipeline_root) if pipeline_root else None,
+        "sheets_dir": str(sheets_dir) if sheets_dir else None,
+        "pellets_per_tray": PELLETS_PER_TRAY,
+    }
+    listing = collage_listing(Path(pipeline_root) if pipeline_root else None)
+    sig["collages"] = {db: (digest(v) if isinstance(v, list) else v)
+                       for db, v in listing.items()}
+    record = (Path(pipeline_root) / "pipeline_records" / "archive_name_conflicts.json"
+              if pipeline_root else None)
+    if record is None or not record.is_file():
+        sig["archive_record"] = "absent"
+    else:
+        try:
+            sig["archive_record"] = hashlib.sha256(record.read_bytes()).hexdigest()
+        except OSError:
+            sig["archive_record"] = "unreadable"
+    if sheets_dir and Path(sheets_dir).is_dir():
+        try:
+            from ..cohort_sheets import available_cohorts
+            sig["sheets"] = sorted(available_cohorts(sheets_dir))
+        except Exception as e:
+            sig["sheets"] = "unreadable: %s" % type(e).__name__
+    else:
+        sig["sheets"] = "unavailable"
+    try:
+        from .. import sheet_projects
+        p = sheet_projects.config_path()
+        sig["lab_settings"] = (hashlib.sha256(p.read_bytes()).hexdigest()
+                               if p and p.is_file() else "absent")
+    except Exception as e:
+        sig["lab_settings"] = "unreadable: %s" % type(e).__name__
+    return sig
 
 
 def _hand_vectors(snapshot: Path) -> Dict[Tuple[str, str, str, int], Dict[int, int]]:

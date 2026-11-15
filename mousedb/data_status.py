@@ -549,6 +549,9 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             m = json.loads(manifest.read_text(encoding="utf-8"))
             out["exports"] = {"folder": str(manifest.parent), "generated_at": m.get("generated_at"),
                               "complete": m.get("complete"), "problems": m.get("problems", []),
+                              "notes": m.get("notes", []),
+                              "snapshot_generation": m.get("snapshot_generation"),
+                              "skipped": m.get("odc_reaches_skipped"),
                               "files": {k: v.get("rows") for k, v in m.get("files", {}).items()}}
         except Exception as e:
             out["problems"].append("exports manifest unreadable: %s" % e)
@@ -615,6 +618,8 @@ def _print(st: dict) -> None:
         print(line)
     for line in old_storage_lines(st.get("old_storage") or []):
         print(line)
+    for n in ex.get("notes") or []:
+        print("  [note] %s" % n)
     for p in st.get("problems", []) + list(ex.get("problems", [])):
         print("  [!] %s" % p)
 

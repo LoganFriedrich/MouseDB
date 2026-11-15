@@ -79,7 +79,10 @@ def test_one_dictionary_per_kind_documents_every_column_of_every_cohort(snapshot
     only_some = entry["variables_not_in_every_cohort"]
     assert only_some["Contusion_Actual_kd"] == ["PROJA_01"]
     assert only_some["Injection_Injected_Virus"] == ["PROJA_02"]
-    assert any("only some cohorts" in p for p in m["problems"])
+    # Said, as a note: nothing is missing, so it is not a problem (a problem
+    # would stop the exports' skip signature being saved -- exporters.current).
+    assert any("only some cohorts" in n for n in m["notes"])
+    assert not any("only some cohorts" in p for p in m["problems"])
     assert m["files"]["reaches_summary_DATA_DICTIONARY.csv"]["variables_not_in_every_cohort"] == {}
     assert m["files"]["PROJA/PROJA_01/ODC_reaches_PROJA_01.csv"]["dictionary"] == "ODC_reaches_DATA_DICTIONARY.csv"
     assert m["files"]["PROJA/PROJA_02/reaches_PROJA_02_summary.csv"]["dictionary"] == "reaches_summary_DATA_DICTIONARY.csv"

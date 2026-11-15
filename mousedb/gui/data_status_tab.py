@@ -514,6 +514,10 @@ class DataStatusTab(QWidget):
             lines.append("  [!] %d collages could not be parsed into sessions (their "
                          "videos are invisible to the workload count until renamed)"
                          % len(d["collages_that_parsed_to_nothing"]))
+        if ex.get("skipped"):
+            lines.append("  per-reach files not rewritten: %s" % ex["skipped"])
+        for note in ex.get("notes") or []:
+            lines.append("  [note] %s" % note)
         for prob in list(st.get("problems", [])) + list(ex.get("problems", [])):
             lines.append("  [!] %s" % prob)
         self.exports.setPlainText("\n".join(lines))
