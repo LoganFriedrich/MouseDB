@@ -353,3 +353,71 @@ def test_dropping_then_blanking_raises_no_pandas_copy_warning():
         out, _ = ee.apply(frame, ex, cohort_id="CNT_01")
     assert list(out["entry_index"]) == [1, 2]
     assert list(out["manual_retrieved"]) == ["NA", "NA"]
+
+
+# ------------------------------------------- an input that cannot be read
+
+# WHY: a check whose input EXISTS but cannot be read tonight used to be
+# skipped (with a note, or for a collage database with nothing at all), so
+# the entries it would have left out went into the analysis files and the
+# nightly job stayed green. Such an input now stops the checks, so the
+# analysis files are not written (last night's stay) and the export says it
+# is incomplete. An input that does not exist is still only a note.
+
+def _one_video(tmp_path):
+    a = "PROJ_01_01"
+    return _snapshot(tmp_path, videos=[("20250310_PROJ0101_P1", a, DAY, "P", 1, _vector(1))],
+                     hand=[(a, DAY, "P", 1, _vector(1))])
+
+
+def test_a_collage_database_that_cannot_be_read_stops_the_checks(tmp_path):
+    snap = _one_video(tmp_path)
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    (pipeline / "watcher.db").write_bytes(b"this is not a database file at all" * 40)
+    with pytest.raises(ee.ExclusionInputUnreadable, match="watcher.db"):
+        ee.compute(snap, pipeline_root=pipeline)
+
+
+def test_a_name_audit_record_that_does_not_parse_stops_the_checks(tmp_path):
+    snap = _one_video(tmp_path)
+    pipeline = tmp_path / "pipe"
+    (pipeline / "pipeline_records").mkdir(parents=True)
+    (pipeline / "pipeline_records" / "archive_name_conflicts.json").write_text(
+        '{"conflicts": [{"recording": ', encoding="utf-8")   # cut off mid-write
+    with pytest.raises(ee.ExclusionInputUnreadable, match="name-audit record"):
+        ee.compute(snap, pipeline_root=pipeline)
+
+
+def test_a_sheet_folder_that_is_set_but_gone_stops_the_checks(tmp_path):
+    snap = _one_video(tmp_path)
+    with pytest.raises(ee.ExclusionInputUnreadable, match="tracking-sheet folder"):
+        ee.compute(snap, sheets_dir=tmp_path / "moved_away")
+
+
+def test_inputs_that_do_not_exist_are_notes_not_failures(tmp_path):
+    snap = _one_video(tmp_path)
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    ex = ee.compute(snap, pipeline_root=pipeline, sheets_dir=None)
+    assert any("archive-name check not run" in n for n in ex.notes)
+    assert any("no-sheet check not run" in n for n in ex.notes)
+    # The central watcher database is where most recordings are known: its
+    # absence is said, not silent.
+    assert any("watcher_central.db" in n for n in ex.notes)
+
+
+def test_the_export_writes_no_analysis_file_when_an_input_cannot_be_read(tmp_path, monkeypatch):
+    """End to end: the per-reach export takes the failure path (files not
+    written, a failure listed, so the export is incomplete)."""
+    from mousedb.exporters import odc_reaches
+    (tmp_path / "s").mkdir()
+    snap = _one_video(tmp_path / "s")
+    monkeypatch.setenv("MOUSEDB_COHORT_SHEETS", str(tmp_path / "moved_away"))
+    monkeypatch.setattr(odc_reaches, "load_snapshot", lambda d: {
+        "reach": pd.read_parquet(snap / "reach_data.parquet"), "subjects": None,
+        "pellets": None, "records": pd.DataFrame(), "video_pellets": None})
+    out = tmp_path / "out"
+    m = odc_reaches.export(snap, out)
+    assert m.get("failures") and "tracking-sheet folder" in m["failures"][0]
+    assert not list(out.rglob("reaches_*_analysis.csv"))

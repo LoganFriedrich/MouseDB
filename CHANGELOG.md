@@ -76,6 +76,14 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Analysis exclusions fail closed. A watcher database that exists but cannot
+  be read, a name-audit record that does not parse, or a tracking-sheet folder
+  that is set but cannot be reached used to skip its check (a collage
+  database with no message at all), so the entries it would have left out
+  went into the analysis files and the nightly job stayed green. Now the
+  per-reach cohort files are not rewritten (the previous ones stay), the export is
+  incomplete and the job fails, naming the input. An input that does not
+  exist is still a note; a missing central watcher database is now noted too.
 - Current exports: the exporter's own version is no longer a number bumped by
   hand. It is a SHA-256 of the installed package's code, so any code change
   rebuilds the per-reach files on the next run (a change made without bumping

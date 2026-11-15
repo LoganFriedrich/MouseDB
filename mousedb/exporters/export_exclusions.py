@@ -66,6 +66,23 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
 
 Low-information pellet patterns (all the same value, or nearly) are never used
 as evidence: they match everything.
+
+AN INPUT THAT EXISTS BUT CANNOT BE READ STOPS THE CHECKS (fail closed)
+--------------------------------------------------------------------
+Three inputs live outside the snapshot: the collage names in MouseReach's
+watcher databases (checks 1 and 3), the name-audit record (check 8) and the
+tracking-sheet folder (check 5). Two cases are kept apart:
+
+* the input does not exist (no name-audit record yet, no sheet folder set, no
+  central watcher database): the check cannot run, and says so in a note that
+  the manifest lists as a problem. Nothing is hidden: it is a standing fact.
+* the input EXISTS but cannot be read tonight (a locked or damaged database, a
+  record that does not parse, a sheet folder that is set but cannot be
+  reached): compute() raises ExclusionInputUnreadable. The analysis files are
+  then not written at all -- last night's stay -- and the export is incomplete,
+  so the nightly job fails loudly. WHY: before, the check was skipped with a
+  note (or, for a collage database, with nothing at all), the entries it would
+  have left out went into the analysis files, and the job stayed green.
 """
 from __future__ import annotations
 
@@ -106,6 +123,11 @@ PHASE_FIELDS = ["test_type", "test_type_grouped", "experiment_stage"]
 POST_INJURY_STAGES = {"After injury", "Rehabilitation", "After rehabilitation"}
 
 
+class ExclusionInputUnreadable(RuntimeError):
+    """An input the checks need exists but cannot be read right now. The
+    analysis files must not be written without it (see the module docstring)."""
+
+
 @dataclass
 class Exclusions:
     """What the analysis exporter must leave out, with a reason for each."""
@@ -137,17 +159,22 @@ def _single_name(date: str, animal: str, tray: str) -> str:
 _COLLAGE = re.compile(r"^(\d{8})_(.+)_([A-Za-z]+\d+)\.[A-Za-z0-9]+$")
 
 
-def collage_members(pipeline_root: Optional[Path]) -> Tuple[Dict[str, Set[str]], Dict[str, List[str]]]:
+def collage_members(pipeline_root: Optional[Path], listing: Optional[Dict[str, object]] = None
+                    ) -> Tuple[Dict[str, Set[str]], Dict[str, List[str]]]:
     """(single video -> recordings it was cut from, recording -> its singles).
 
     Read from the collage file names the MouseReach watcher databases record:
     a recording is named DATE_<animal list>_<tray>, and each single-animal video
-    is DATE_<animal>_<tray>. Opened read-only; a missing or locked database
-    means fewer recordings are known, never a crash.
+    is DATE_<animal>_<tray>. Opened read-only. A database that is absent or
+    unreadable contributes nothing HERE; compute() is what refuses to go on
+    when one exists but cannot be read (see the module docstring).
+    ``listing``: collage_listing's result, when the caller already has it.
     """
     single_to_rec: Dict[str, Set[str]] = defaultdict(set)
     rec_to_singles: Dict[str, List[str]] = {}
-    for names in collage_listing(pipeline_root).values():
+    if listing is None:
+        listing = collage_listing(pipeline_root)
+    for names in listing.values():
         if not isinstance(names, list):
             continue                    # that database is absent or unreadable
         for name in names:
@@ -333,10 +360,29 @@ def _surgery_rows(snapshot: Path) -> pd.DataFrame:
 # -------------------------------------------------------------------- checks
 
 def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
-    """Run every check against the snapshot. Read-only throughout."""
+    """Run every check against the snapshot. Read-only throughout.
+
+    Raises ExclusionInputUnreadable when an outside input exists but cannot be
+    read (module docstring: fail closed); a missing input is a note."""
     snapshot = Path(snapshot_dir)
     ex = Exclusions()
-    single_to_rec, rec_to_singles = collage_members(Path(pipeline_root) if pipeline_root else None)
+    pipeline = Path(pipeline_root) if pipeline_root else None
+    listing = collage_listing(pipeline)
+    unreadable = sorted(db for db, v in listing.items() if v == "unreadable")
+    if unreadable:
+        raise ExclusionInputUnreadable(
+            "the MouseReach watcher database(s) %s in %s exist but could not be read "
+            "(locked or damaged), so the recordings each video was cut from are not "
+            "known tonight" % (", ".join(unreadable), pipeline))
+    if listing.get("watcher_central.db", "absent") == "absent":
+        ex.notes.append(
+            "recording checks (identity, collision) ran without the central watcher "
+            "database (watcher_central.db %s): recordings known only to it are not known, "
+            "so a contested video may keep the other animals of its recording and a "
+            "video name made by two recordings may not be found"
+            % ("is not in the pipeline folder" if pipeline else
+               "-- no MouseReach pipeline folder is configured"))
+    single_to_rec, rec_to_singles = collage_members(pipeline, listing)
 
     def drop_recording(video: str, reason: str) -> None:
         recs = single_to_rec.get(video)
@@ -444,7 +490,7 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
 
     # 8: archive names -- a recording whose seats the archive's own cuts name
     # for animals its name does not list. Every video cut from it is left out.
-    conflicts = archive_conflicts(Path(pipeline_root) if pipeline_root else None)
+    conflicts = archive_conflicts(pipeline)
     if conflicts is None:
         ex.notes.append("archive-name check not run: no name-audit record in the pipeline "
                         "folder (pipeline_records/archive_name_conflicts.json, written by "
@@ -469,7 +515,14 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
     # is one with a sheet name in the lab settings (sheet_projects): only those
     # keep a workbook per cohort here. Matched by the project's exact code, not
     # by how a cohort id starts -- PROJAB_02 is not a PROJA cohort.
-    if sheets_dir and Path(sheets_dir).is_dir():
+    if sheets_dir and not Path(sheets_dir).is_dir():
+        # Set, but not there tonight (moved, renamed, or the drive not
+        # reachable): every animal would pass this check unchecked.
+        raise ExclusionInputUnreadable(
+            "the tracking-sheet folder is set (%s) but cannot be reached, so which "
+            "cohorts have a workbook is not known tonight -- set the right folder "
+            "(mousedb cohort-sheets --set <folder>) or reconnect the drive" % sheets_dir)
+    if sheets_dir:
         from .. import sheet_projects
         from ..cohort_sheets import available_cohorts
         have = set(available_cohorts(sheets_dir))
@@ -481,25 +534,36 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
                 ex.drop(str(video), "no sheet: cohort %s has no tracking workbook, so "
                                     "nothing about %s can be checked" % (cohort, sid))
     else:
-        ex.notes.append("no-sheet check not run: the tracking-sheet folder is not available")
+        ex.notes.append("no-sheet check not run: no tracking-sheet folder is set")
 
     return ex
 
 
 def archive_conflicts(pipeline_root: Optional[Path]) -> Optional[List[dict]]:
     """The contested recordings in MouseReach's name-audit record (check 8), or
-    None when there is no record to read. Read-only; an unreadable record is
-    treated as absent, never as "no conflicts"."""
+    None when there is no record. Read-only.
+
+    A record that exists but cannot be read or does not parse raises
+    ExclusionInputUnreadable -- never treated as "no conflicts", and no longer
+    as "no record" either: that let every contested video into the analysis
+    files on a night the record was being rewritten or was damaged."""
     if pipeline_root is None:
         return None
     path = Path(pipeline_root) / "pipeline_records" / "archive_name_conflicts.json"
     if not path.is_file():
         return None
+    import json
     try:
-        import json
-        return list(json.loads(path.read_text(encoding="utf-8")).get("conflicts", []))
-    except (OSError, ValueError):
-        return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        conflicts = data.get("conflicts", [])
+        if not isinstance(conflicts, list):
+            raise ValueError("'conflicts' is not a list")
+        return list(conflicts)
+    except (OSError, ValueError, AttributeError) as e:
+        raise ExclusionInputUnreadable(
+            "the name-audit record %s exists but could not be read (%s: %s), so the "
+            "recordings it contests are not known tonight -- rerun "
+            "mousereach-aspa-name-audit to rewrite it" % (path, type(e).__name__, e))
 
 
 # ----------------------------------------------------------------- applying
