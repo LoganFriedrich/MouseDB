@@ -331,6 +331,12 @@ whole lab. The per-cohort ODC session files, and their combined file, refresh
 only on the scheduled run, which is the only time the database may be read
 safely.
 
+**One job of the tab at a time.** Refresh, Update the database now, Refresh
+pipeline view and Refresh exports now each run in the background while the
+window stays usable. Pressing any of them while another is still running
+starts nothing and shows a box: "A refresh is still running -- try again in a
+moment". When a job finishes, the tab re-reads itself.
+
 **Only one refresh writes the exports at a time.** The nightly job, this
 button and the terminal commands all write the same folder, and two at once
 would spoil each other's half-written files. So each takes a lock first

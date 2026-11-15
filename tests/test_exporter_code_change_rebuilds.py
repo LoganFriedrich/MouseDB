@@ -61,7 +61,7 @@ def test_the_button_runs_the_installed_code_as_a_fresh_program(monkeypatch):
 
     jobs = []
     stub = SimpleNamespace(exports=SimpleNamespace(append=lambda s: None),
-                           _on_exports_done=lambda r: None,
+                           _on_exports_done=lambda r: None, _busy=lambda: False,
                            _run=lambda fn, on_done: jobs.append(fn) or True)
     tab_mod.DataStatusTab.refresh_exports(stub)
     assert jobs, "the button started nothing"

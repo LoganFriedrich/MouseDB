@@ -28,7 +28,7 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTableWidget,
     QTableWidgetItem, QHeaderView, QAbstractItemView, QTextEdit, QMessageBox,
@@ -158,18 +158,25 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
 
 
 class _Worker(QThread):
-    done = pyqtSignal(dict)
+    """Runs one job off the window's thread and keeps its result in ``result``.
+
+    WHY the result is read on QThread.finished and not sent from inside run():
+    a signal sent from run() reaches the window while the thread is still
+    running, so a handler that starts the next job (Update, then Refresh) found
+    the worker busy and was silently turned away. ``finished`` arrives once the
+    thread has stopped."""
 
     def __init__(self, fn: Callable[[], dict]):
         super().__init__()
         self._fn = fn
+        self.result: dict = {}
 
     def run(self):
         try:
             r = self._fn()
-            self.done.emit(r if isinstance(r, dict) else {"result": r})
+            self.result = r if isinstance(r, dict) else {"result": r}
         except Exception as e:
-            self.done.emit({"problems": ["%s: %s" % (type(e).__name__, e)]})
+            self.result = {"problems": ["%s: %s" % (type(e).__name__, e)]}
 
 
 class DataStatusTab(QWidget):
@@ -286,14 +293,30 @@ class DataStatusTab(QWidget):
         note.setWordWrap(True)
         root.addWidget(note)
 
-    def _run(self, fn: Callable[[], dict], on_done):
-        if self._worker is not None and self._worker.isRunning():
-            return
-        self._worker = _Worker(fn)
-        self._worker.done.connect(on_done)
-        self._worker.start()
+    BUSY_TEXT = "A refresh is still running -- try again in a moment."
+
+    def _busy(self) -> bool:
+        return self._worker is not None and self._worker.isRunning()
+
+    def _run(self, fn: Callable[[], dict], on_done) -> bool:
+        """Start ``fn`` off the window's thread; ``on_done(result)`` when it ends.
+
+        Returns False, and starts nothing, while another job of this tab is
+        still running. Every button checks that BEFORE it writes anything on
+        screen: a button that printed "Rewriting..." and then did nothing was
+        a press that looked accepted and was silently dropped."""
+        if self._busy():
+            return False
+        worker = _Worker(fn)
+        self._worker = worker
+        worker.finished.connect(lambda: on_done(worker.result))
+        worker.start()
+        return True
 
     def refresh(self):
+        if self._busy():
+            QMessageBox.information(self, "Refresh", self.BUSY_TEXT)
+            return
         self.snapshot_label.setText("Reading...")
         self._show_last_update()
         from ..data_status import status
@@ -319,9 +342,8 @@ class DataStatusTab(QWidget):
                                      last.get("triggered_by") or "?", verdict))
 
     def update_database(self):
-        if self._worker is not None and self._worker.isRunning():
-            QMessageBox.information(self, "Update the database",
-                                    "A refresh is still running -- try again in a moment.")
+        if self._busy():
+            QMessageBox.information(self, "Update the database", self.BUSY_TEXT)
             return
         from ..update import run_update
         self.update_label.setText("Updating the database: tracking sheets, MouseReach results, "
@@ -346,9 +368,8 @@ class DataStatusTab(QWidget):
 
     # --- the "Refresh pipeline view" button ----------------------------------
     def refresh_pipeline(self):
-        if self._worker is not None and self._worker.isRunning():
-            QMessageBox.information(self, "Refresh pipeline view",
-                                    "A refresh is still running -- try again in a moment.")
+        if self._busy():
+            QMessageBox.information(self, "Refresh pipeline view", self.BUSY_TEXT)
             return
         self.update_label.setText("Scanning the pipeline folders through the MouseReach "
                                   "environment (5-25 minutes depending on network load; reads "
@@ -590,6 +611,9 @@ class DataStatusTab(QWidget):
                             "web browser opens when your copy is ready (under a minute).")
 
     def refresh_exports(self):
+        if self._busy():
+            QMessageBox.information(self, "Refresh exports now", self.BUSY_TEXT)
+            return
         self.exports.append("Rewriting current exports from the latest snapshot...")
         self._run(run_exports_program, self._on_exports_done)
 

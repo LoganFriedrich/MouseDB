@@ -76,6 +76,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Where Is My Data tab: Refresh and "Refresh exports now" pressed while
+  another job of the tab is running now say "A refresh is still running" and
+  start nothing (they did nothing silently, and the exports button first
+  wrote that it was rewriting). A finished job's result now arrives after its
+  thread has stopped, so the refresh an Update starts when it ends is no
+  longer turned away.
 - Current exports: a cohort that no longer has any reaches has its reach
   files archived (never deleted) and leaves its project's combined files; a
   project with no cohort file of a kind left has that combined file archived.
