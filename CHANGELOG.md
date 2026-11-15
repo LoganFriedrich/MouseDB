@@ -114,10 +114,16 @@ checked-in code, not what's planned.
   `mousedb export-odc-reaches` (into the live folder) shared one staging folder
   and fixed temporary names with no lock, so two at once could delete or
   publish each other's half-written files. They now take a lock
-  (`.current-exports.task.lock` in mousedb's task-lock folder): the nightly
+  (`.current-exports.task.lock` in mousedb's task-lock folder;
+  `mousedb export-odc-reaches` takes it whenever it writes into the live
+  folder, also when `--out-dir` names that folder): the nightly
   job and the commands wait while the other refresh is working, up to their
-  wait budget (180 minutes nightly, 40 for the commands; 30 minutes with no
-  progress counts as stuck), then stop with nothing changed -- the nightly job
+  wait budget (15 minutes for the nightly job -- a bound of its own, taken out
+  of its database-lock wait, whose default is now 165 minutes instead of 180,
+  so the job's worst case still fits its time limit; 40 for the commands;
+  30 minutes with no progress counts as stuck, judged by the holder's
+  lockfile heartbeat when its CPU and read/write counters are refused), then
+  stop with nothing changed -- the nightly job
   with `[FAIL]`, a command with a one-line `[!]` message naming the exports
   lock and exit code 4 (it used to be a traceback that named the database-task
   lock). The button says "already being written -- try again when it
@@ -126,6 +132,20 @@ checked-in code, not what's planned.
   `mousedb-current-exports --no-wait` stops at once with exit code 3. Restart
   every open MouseDB window after installing: one opened before still runs
   the old unlocked export.
+- Task locks: a lockfile that Windows refuses to create because the previous
+  one's delete is still pending is "not free yet", and the waiter tries again
+  (it used to end the wait with an error). A broken or released lock is
+  logged under its own name (a broken current-exports lock was logged as the
+  database-task lock).
+- Current exports: when the per-reach skip record
+  (`.odc_reaches_signature.json`) has to be removed and cannot be (another
+  program has it open), `MANIFEST.json` lists it as a problem. The failure
+  used to be ignored silently, night after night.
+- Docs: a busy watcher database holds up the analysis exports for a little
+  over two minutes per database before it counts as unreadable (about four
+  and a half per refresh, which reads it twice), not "about a minute and a
+  half". The Where Is My Data quick guide now says what the exports button
+  does when another refresh is writing or when a refresh did not finish.
 - "Update the database now" / `mousedb update`: the snapshot step is no
   longer stopped after an hour. A full refresh can take longer than that on
   a large database, so the update could never finish and left the current
