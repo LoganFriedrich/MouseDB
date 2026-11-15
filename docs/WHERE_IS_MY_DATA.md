@@ -395,6 +395,11 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
   that run imports nothing new for those cohorts; its output then says
   `N cohort(s) still to re-label from an earlier run that stopped`. Do not
   delete this file: a cohort left out of it keeps reaches with no phase.
+  A save in the MouseDB window (or a sheet import) whose own re-derivation of
+  a cohort's phases failed also puts that cohort on this list, so the next
+  import puts its labels right; the window says so in a warning box. The
+  import adds to the list and takes off only the cohorts it has re-labelled,
+  so a cohort put there while it runs is kept.
 
 **An unreadable ledger stops the import; it is never started again from
 nothing by itself.** If the ledger, or the list of cohorts still to re-label,

@@ -1002,7 +1002,12 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         # transaction committed (below), so the ledger never runs ahead of the
         # database; a kill loses at most the entries since the last save, and
         # those videos are simply imported again by the restart.
-        save_pending_phases(pending | res.cohorts_touched)
+        # The file is RE-READ and added to, never overwritten from what this
+        # run read at its start: another program adds to it while the import
+        # runs (a save in the window whose phase refresh failed --
+        # Database._queue_for_reach_import), and writing only this run's set
+        # would drop that cohort, leaving its labels wrong for good.
+        save_pending_phases(load_pending_phases() | pending | res.cohorts_touched)
         save_ledger(ledger)
 
     last_save = time.monotonic()
@@ -1094,7 +1099,9 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             conn.close()
         if not dry_run:
             checkpoint()  # also persists refreshed stamps for unchanged files
-            relabel = pending | res.cohorts_touched
+            # Re-read: a cohort queued by another program during this run
+            # (see checkpoint) is re-labelled now rather than a night later.
+            relabel = load_pending_phases() | pending | res.cohorts_touched
             left = set(relabel)
             if relabel:
                 try:
@@ -1110,7 +1117,11 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                             # Done: a run killed after this point need not
                             # re-label this cohort again.
                             left.discard(cohort)
-                            save_pending_phases(left)
+                            # Re-read and add, as in checkpoint(); only the
+                            # cohort just re-labelled leaves the list. A cohort
+                            # done earlier in this loop and queued AGAIN since
+                            # (a later failure elsewhere) stays on it.
+                            save_pending_phases((load_pending_phases() - {cohort}) | left)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)

@@ -76,6 +76,16 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- A save whose automatic re-derivation of a cohort's test phases fails (in the
+  MouseDB window, or a sheet import) no longer leaves the labels wrong with only
+  a console line to show for it: the cohort goes on the reach import's list of
+  cohorts still to re-label (`logs/reach_imports_phases_pending.json`), so the
+  next nightly import re-derives it; the window shows a warning box; and a
+  sheet import made from the window records the failure in its ledger line, as
+  the scheduled one does. The reach import now adds to that list instead of
+  overwriting it, so a cohort put there while it runs is kept. Only the
+  configured database's list is used; a database opened on another file never
+  writes to it.
 - `mousedb import-reaches` reports every video that has rows in the database
   but no results file in the pipeline and is not in a review queue -- in its
   output (before the summary line), in `logs/reach_rows_without_file.json`
