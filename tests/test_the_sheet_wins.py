@@ -450,7 +450,8 @@ def test_filling_in_values_typed_later_is_not_a_broken_read(tmp_path):
     assert "refused" not in r.get("sheet_sync", {})
     assert len(r["sheet_sync"]["ramp_entries"]["changed"]) == 8
     with db.session() as s:
-        assert {(x.tray_start_grams, x.tray_end_grams) for x in s.query(RampEntry)} == {(3.0, 2.5)}
+        assert {(x.tray_start_grams, x.tray_end_grams, x.food_consumed_grams)
+                for x in s.query(RampEntry)} == {(3.0, 2.5, 0.5)}
 
     # Overwriting most of them, by contrast, is refused.
     r = _import(db, _workbook(_sheet(tmp_path),

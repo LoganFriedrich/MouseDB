@@ -139,7 +139,7 @@ imports of that cohort's sheet wrote:
 |---|---|---|---|
 | pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
 | weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams | that animal and date has no weight in the sheet any more |
-| ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, tray start and end | the row is gone |
+| ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, food put in and taken out, food eaten | the row is gone |
 | surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes; for a tracing injection virus, titre, volume, target, weight, survived) | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
 
 - A cell that holds something that is not a value (`x`, `?`, `n/a` where a

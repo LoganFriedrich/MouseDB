@@ -947,11 +947,15 @@ class ExcelImporter:
             else:
                 weight_val = None
 
+            # Food eaten: the sheet's own column, else start minus end.
+            eaten = food_consumed if food_consumed else (
+                tray_start - tray_end if tray_start and tray_end else None)
             if weight_val:
                 # What the sheet says for this ramp day (see _sync_table).
                 self._seen('ramp_entries', (subject_id, date_val), {
                     'body_weight_grams': weight_val, 'weight_percent_baseline': weight_pct,
-                    'tray_start_grams': tray_start, 'tray_end_grams': tray_end})
+                    'tray_start_grams': tray_start, 'tray_end_grams': tray_end,
+                    'food_consumed_grams': eaten})
 
             # Create RampEntry record with full data
             existing_ramp = session.query(RampEntry).filter_by(
@@ -970,9 +974,7 @@ class ExcelImporter:
                     weight_percent_baseline=weight_pct,
                     tray_start_grams=tray_start,
                     tray_end_grams=tray_end,
-                    food_consumed_grams=food_consumed if food_consumed else (
-                        tray_start - tray_end if tray_start and tray_end else None
-                    ),
+                    food_consumed_grams=eaten,
                     entered_by='excel_import',
                 )
                 if not dry_run:
@@ -1516,7 +1518,7 @@ class ExcelImporter:
                 return ('weight_grams',)
             if table == 'ramp_entries':
                 return ('body_weight_grams', 'weight_percent_baseline',
-                        'tray_start_grams', 'tray_end_grams')
+                        'tray_start_grams', 'tray_end_grams', 'food_consumed_grams')
             return self._SURGERY_FIELDS.get(r.surgery_type, ())
 
         for r in stored:
