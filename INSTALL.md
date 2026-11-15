@@ -384,7 +384,11 @@ rest are refused with "database is locked".
 Two separate mechanisms deal with that, and it is worth knowing which is which:
 
 - **Between these jobs**: a lockfile under `<mousedb_root>/logs`
-  (`mousedb/task_mutex.py`). Whoever gets it runs; the others wait and run
+  (`mousedb/task_mutex.py`). With only `db_path` set (no `mousedb_root`) it
+  goes in the `logs` folder beside the database file; with neither set a job
+  stops and names the `mousedb config --set` command to run. It is never put
+  in the folder a job was started from: jobs started from different folders
+  would each find their own lockfile free and run together. Whoever gets it runs; the others wait and run
   straight after. They never lock each other out, however they are scheduled.
   The lock is never taken away from a job that is still running, however long
   it has held it (a long rewrite over a slow share is slow, not stuck); it is

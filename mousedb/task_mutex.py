@@ -15,8 +15,10 @@ guarantee, the moment one of them runs long. This mutex is the guarantee:
 whoever gets the lockfile runs; the other waits and runs immediately after.
 Serialized, the same two tasks produce lock windows of seconds.
 
-MECHANICS: an O_CREAT|O_EXCL lockfile under <mousedb_root>/logs with the
-holder's identity inside. Release deletes the file; the context manager
+MECHANICS: an O_CREAT|O_EXCL lockfile under <mousedb_root>/logs (or, with
+only ``db_path`` configured, the ``logs`` folder beside the database; never
+the working directory -- see ``default_lock_dir``) with the holder's identity
+inside. Release deletes the file; the context manager
 releases on any exit.
 
 WHEN A LOCK IS BROKEN -- and when it never is. A crashed holder must not wedge
@@ -144,12 +146,35 @@ def _this_host() -> str:
     return socket.gethostname().strip().lower() or "unknown-host"
 
 
+def default_lock_dir() -> Path:
+    """The folder every process puts the lockfile in.
+
+    ``<mousedb_root>/logs`` when ``mousedb_root`` is set; else the ``logs``
+    folder beside the database (``db_path``), which is the same folder on a
+    standard layout; else ``ConfigError`` naming the command to run.
+
+    WHY never the working directory: the lock only excludes processes that
+    look for it in the SAME place. A machine with ``db_path`` set but not
+    ``mousedb_root`` used to put the lockfile wherever each process happened
+    to be started, so two jobs started from different folders each found the
+    lock free and ran against the database together -- the very overlap this
+    module exists to prevent.
+    """
+    from .config import db_path, log_path, require
+    logs = log_path()
+    if logs is not None:
+        return logs
+    db = db_path()
+    if db is not None:
+        return Path(db).parent / "logs"
+    return require("mousedb_root") / "logs"     # raises ConfigError: says what to set
+
+
 class TaskMutex:
     def __init__(self, name: str = "central-db", stale_minutes: int = 45,
                  base_dir: Optional[Path] = None):
         if base_dir is None:
-            from .config import log_path
-            base_dir = log_path() or Path(".")
+            base_dir = default_lock_dir()
         base_dir = Path(base_dir)
         base_dir.mkdir(parents=True, exist_ok=True)
         self.path = base_dir / (".%s.task.lock" % name)

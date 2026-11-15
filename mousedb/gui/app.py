@@ -5600,12 +5600,14 @@ class CohortSetupTab(QWidget):
         beforehand that looks like a crash, and a person kills the program.
         """
         from .. import task_mutex
+        from ..config import ConfigError
         try:
             probe = task_mutex.TaskMutex()
             free = probe.try_acquire()
-        except OSError:
-            # The lock's folder cannot be reached. Say yes here and let the real
-            # attempt report the problem in its own words.
+        except (OSError, ConfigError):
+            # The lock's folder cannot be reached, or is not configured. Say
+            # yes here and let the real attempt report the problem in its own
+            # words (a ConfigError names the command to run).
             return True
         if free:
             probe.release()

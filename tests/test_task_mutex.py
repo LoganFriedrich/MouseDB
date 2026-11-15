@@ -199,3 +199,54 @@ def test_own_lock_carries_this_computer_and_a_unique_token(tmp_path):
     assert a.holder()[0] == "alive"
     a.release()
     assert not a.path.exists()
+
+
+# -- where the lockfile goes when no folder is passed ------------------------
+
+def _unguarded_mutex(monkeypatch):
+    """TaskMutex's real constructor: the suite's guard refuses a mutex without
+    base_dir, and these tests are about exactly that case (with the location
+    pointed at tmp_path through configuration)."""
+    from tests import conftest as suite
+    monkeypatch.setattr(TaskMutex, "__init__", suite._orig_init)
+
+
+def test_with_only_db_path_set_the_lock_sits_beside_the_database(tmp_path, monkeypatch):
+    """Two jobs exclude each other only if they look for the lock in the SAME
+    place. With db_path set and mousedb_root not, the lockfile used to go into
+    each process's working directory, so jobs started from different folders
+    each found it free."""
+    _unguarded_mutex(monkeypatch)
+    data = tmp_path / "data"
+    data.mkdir()
+    monkeypatch.setenv("MOUSEDB_DB_PATH", str(data / "example.db"))
+    elsewhere = tmp_path / "started_here"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    a = TaskMutex()
+    assert a.path.parent == data / "logs"
+    assert a.try_acquire()
+    try:
+        monkeypatch.chdir(tmp_path)          # a second job started from another folder
+        assert not TaskMutex().try_acquire()
+    finally:
+        a.release()
+    assert not list(elsewhere.iterdir())
+
+
+def test_with_mousedb_root_set_the_lock_is_in_its_logs_folder(tmp_path, monkeypatch):
+    _unguarded_mutex(monkeypatch)
+    monkeypatch.setenv("MOUSEDB_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("MOUSEDB_DB_PATH", str(tmp_path / "other" / "example.db"))
+    assert TaskMutex().path.parent == tmp_path / "root" / "logs"
+
+
+def test_with_nothing_configured_it_says_what_to_set(tmp_path, monkeypatch):
+    import pytest
+    from mousedb.config import ConfigError
+    _unguarded_mutex(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigError) as e:
+        TaskMutex()
+    assert "mousedb_root" in str(e.value)
+    assert not list(tmp_path.iterdir())

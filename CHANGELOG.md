@@ -76,6 +76,11 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- The database-task lock no longer lands in the working directory when
+  `mousedb_root` is unset: with only `db_path` set it goes in the `logs`
+  folder beside the database, and with neither set the job stops with the
+  command to run. Jobs started from different folders used to each find
+  their own lockfile free and run against the database together.
 - `psutil` is now a declared dependency (it was only installed by chance).
   The database-task lock, the watcher check before a snapshot and the bench
   scan use it to see whether a process is still running; an environment built
