@@ -4767,6 +4767,11 @@ def replace_cohort_from_sheet(db, sheet_path, cohort_id, start_date=None,
             session.close()
 
 
+# The ledger rule for a failed phase refresh is shared with the scheduled
+# sheet import (sheet_sync), so both say the same thing about the same state.
+from ..sheet_sync import mark_failed_phase_refresh  # noqa: E402
+
+
 class CohortSetupTab(QWidget):
     """
     Tab for creating and managing cohorts (experiments).
@@ -5518,6 +5523,7 @@ class CohortSetupTab(QWidget):
         for _k in ('sheet_sync', 'phases_rederived'):
             if result.get(_k):
                 _entry[_k] = result[_k]
+        mark_failed_phase_refresh(_entry, cohort_id)
         self._append_sheet_ledger(_entry, path)
 
         if result.get('errors'):
@@ -6576,14 +6582,45 @@ class DatabaseBrowserTab(QWidget):
                 QMessageBox.warning(self, "Error", f"Failed to export:\n{e}")
 
 
+def phase_refresh_failed_text(record: dict) -> str:
+    """What the warning box says when a save's phase refresh failed."""
+    cid = record.get('cohort_id') or 'this cohort'
+    queued = record.get('queued_for_reach_import')
+    after = ("The next scheduled reach import will re-derive them by itself "
+             "(the cohort is on its list of cohorts to re-label)."
+             if queued else
+             "Nothing will re-derive them by itself: run 'mousedb backfill-phases' "
+             "(MouseDB environment), or ask whoever looks after this computer to.")
+    return (f"Your change to {cid} was saved.\n\n"
+            f"But re-deriving {cid}'s test phases afterwards FAILED:\n"
+            f"   {record.get('error')}\n\n"
+            f"Until that is done, {cid}'s pellet scores and reaches may carry "
+            f"test-phase labels from before your change, and the exports "
+            f"carry them too. {after}")
+
+
 class DataEntryWindow(QMainWindow):
     """Main data entry window with tabs."""
+
+    # Emitted by the database's phase hook (Database.on_phase_refresh_failed)
+    # when a commit's phase refresh fails. A signal, delivered QUEUED, because
+    # the hook runs inside the commit, on whatever thread made it: the box is
+    # shown afterwards, on this window's thread, never from inside a commit.
+    phaseRefreshFailed = pyqtSignal(dict)
 
     def __init__(self):
         super().__init__()
         self.db = init_database()
+        # WHY: a failed refresh after a save was only printed to a console
+        # nobody watches, while the saved rows kept labels from the old dates.
+        self.phaseRefreshFailed.connect(self._warn_phase_refresh_failed, Qt.QueuedConnection)
+        self.db.on_phase_refresh_failed = self.phaseRefreshFailed.emit
 
         self._setup_ui()
+
+    def _warn_phase_refresh_failed(self, record):
+        QMessageBox.warning(self, "Saved -- but test phases not updated",
+                            phase_refresh_failed_text(record))
 
     def _setup_ui(self):
         self.setWindowTitle("Connectome Data Entry")

@@ -478,14 +478,8 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
         phases = r.get("phases_rederived")
         if phases:
             entry["phases_rederived"] = phases
-            if phases.get("error"):
-                # The rows are saved; their phase labels may now be stale.
-                entry["success"] = False
-                entry["error"] = "; ".join(filter(None, [
-                    entry.get("error"),
-                    "the sheet's rows were saved, but re-deriving %s's phases failed "
-                    "(%s): its test-phase labels may be out of date until it is run "
-                    "again -- run 'mousedb backfill-phases'" % (cohort_id, phases["error"])]))
+            # The rows are saved; their phase labels may now be stale.
+            mark_failed_phase_refresh(entry, cohort_id)
     except Exception as e:
         entry.update(success=False,
                      error="%s: %s" % (type(e).__name__, e),
@@ -493,6 +487,37 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
         if not copying:
             entry[LEFT_UNCHANGED] = kept or _STOPPED_BEFORE_RECORDS
     return entry
+
+
+def mark_failed_phase_refresh(entry: dict, cohort_id: str) -> None:
+    """Mark a sheet-import ledger entry failed when the phase re-derivation its
+    commit caused failed, and say what happens next.
+
+    WHY failed: the Tracking Sheets tab judges each cohort from this ledger;
+    an entry saying "success" while the cohort's phase labels are stale would
+    show the cohort as done.
+
+    WHY the ending depends on ``queued_for_reach_import``: when the refresh
+    fails, the database puts the cohort on the reach import's list of cohorts
+    still to re-label (``Database._queue_for_reach_import``), and the next
+    reach import re-derives it with nobody doing anything. Telling a person
+    to run ``mousedb backfill-phases`` then sends them to do work that is
+    already in hand; it is said only when the cohort could NOT be queued.
+
+    ONE rule for every route a sheet import takes -- the scheduled import
+    (``_import_one``) and the one started from the window -- so the same
+    state never reads two different ways."""
+    phases = entry.get("phases_rederived") or {}
+    if not phases.get("error"):
+        return
+    entry["success"] = False
+    entry["error"] = "; ".join(filter(None, [
+        entry.get("error"),
+        "the sheet's rows were saved, but re-deriving %s's phases failed (%s): its "
+        "test-phase labels may be out of date until it is run again -- %s" % (
+            cohort_id, phases["error"],
+            "the next reach import re-labels it" if phases.get("queued_for_reach_import")
+            else "run 'mousedb backfill-phases'")]))
 
 
 def requested_cohort_id(text: str) -> Tuple[Optional[str], Optional[str]]:

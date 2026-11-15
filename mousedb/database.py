@@ -96,6 +96,11 @@ class Database:
         # appended to phase_refreshes ({cohort_id, at, pellet_rows_relabelled,
         # reach_rows_relabelled} or {..., error}) for the caller to report.
         self.phase_refreshes: list = []
+        # Called with the record of every refresh that FAILED (see
+        # _run_scoped_backfill), from whatever thread made the commit. The GUI
+        # sets it to a queued Qt signal so a person sees a warning box; None
+        # elsewhere (a command-line caller reads phase_refreshes instead).
+        self.on_phase_refresh_failed = None
         self._register_phase_hooks()
 
         # Current user for audit logging
@@ -184,16 +189,72 @@ class Database:
                     record.update(pellet_rows_relabelled=stats.pellet_rows_updated,
                                   reach_rows_relabelled=stats.reach_rows_updated)
                 except Exception as exc:
-                    # Don't raise -- the user's commit already succeeded.
-                    # Print so the GUI shell surfaces it.
+                    # Don't raise -- the user's commit already succeeded, and
+                    # its rows now carry phase labels derived from the cohort's
+                    # OLD dates. Three things make sure that is put right and
+                    # seen, where a print alone was read by nobody:
+                    #   1. the cohort goes on the reach import's list of
+                    #      cohorts still to re-label, so the next nightly
+                    #      import re-derives it (_queue_for_reach_import);
+                    #   2. the record carries the error (callers report it --
+                    #      the sheet import fails that cohort's ledger line);
+                    #   3. on_phase_refresh_failed, when set, is told (the GUI
+                    #      shows a warning box).
                     record['error'] = "%s: %s" % (type(exc).__name__, exc)
+                    record['queued_for_reach_import'] = self._queue_for_reach_import(cid)
                     print(
                         f"[!] Phase auto-refresh failed for cohort {cid}: {exc}"
                     )
                 self.phase_refreshes.append(record)
+                if 'error' in record and self.on_phase_refresh_failed is not None:
+                    try:
+                        self.on_phase_refresh_failed(dict(record))
+                    except Exception as cb_exc:
+                        print(f"[!] Could not report the failed phase refresh: {cb_exc}")
 
         event.listen(self.SessionLocal, 'before_flush', _collect_dirty_cohorts)
         event.listen(self.SessionLocal, 'after_commit', _run_scoped_backfill)
+
+    def _queue_for_reach_import(self, cohort_id: str) -> bool:
+        """Add ``cohort_id`` to the reach import's list of cohorts still to
+        re-label; True when it is on that list now.
+
+        WHY: a phase refresh that fails after a commit leaves the cohort's rows
+        with labels derived from its old dates, and nothing re-derives them on
+        its own. The reach import already keeps such a list
+        (``import_reaches.PENDING_PHASES_NAME``) and re-labels every cohort on
+        it at the end of each run, whether or not it imported anything for
+        that cohort -- so the nightly job puts it right.
+
+        Only for the CONFIGURED database: that list belongs to it, and the
+        reach import re-labels the configured database. A Database opened on
+        any other file (a copy, a test) must not put its cohorts on the live
+        database's list. The list is read fresh just before it is written,
+        never written from a copy held in memory, so the cohorts already on
+        it -- put there by a reach import that stopped, or an earlier
+        failure -- are kept; and the read and the write hold the list's lock,
+        so a reach import writing it at the same moment cannot drop this
+        cohort, nor this write drop the import's."""
+        try:
+            from .config import require
+            if Path(require("db_path")).resolve() != Path(self.db_path).resolve():
+                return False
+        except Exception:
+            return False                    # not configured: no live list to add to
+        try:
+            # One locked read-and-write (queue_pending_phases): the running
+            # reach import writes the same list, and a write of ours landing
+            # between its read and its write would be lost.
+            # queue_pending_phases also raises the cohort's queue count, so a
+            # reach import re-labelling this very cohort right now (from
+            # dates read before this save) leaves it on the list.
+            from .import_reaches import queue_pending_phases
+            queue_pending_phases([cohort_id], "the cohort was not added to it")
+            return True
+        except Exception as exc:
+            print(f"[!] Could not queue cohort {cohort_id} for re-labelling by the "
+                  f"next reach import: {exc} -- run 'mousedb backfill-phases'")
+            return False
 
     # Key in session.info where log_change parks file lines until a commit.
     # Each entry is (transaction, file_name, line): the transaction says which

@@ -15,6 +15,7 @@ A kill is simulated with a BaseException (KeyboardInterrupt), which no
 import contextlib
 import json
 import shutil
+import sqlite3
 
 import pytest
 
@@ -36,8 +37,10 @@ def _names(tmp_path):
 
 
 def _pending(tmp_path):
+    """The cohort names on the list still to re-label (the file is an object
+    {cohort: queue count}; an older version wrote a plain list)."""
     p = tmp_path / "dbroot" / "logs" / ir.PENDING_PHASES_NAME
-    return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else None
+    return sorted(json.loads(p.read_text(encoding="utf-8"))) if p.is_file() else None
 
 
 def _relabel_calls(monkeypatch, fail_with=None):
@@ -202,3 +205,227 @@ def test_a_dry_run_writes_no_ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(ir, "LEDGER_SAVE_SECONDS", 0)
     ir.run(dry_run=True, log=lambda *_: None)
     assert not (tmp_path / "dbroot" / "logs").exists()
+
+
+# ---------------------------------------------------------------------------
+# An unreadable ledger stops the run; it is never read as "nothing imported".
+# WHY: an unreadable ledger used to be treated as empty, so the run imported
+# every results file again (hours, under the database lock) and said nothing.
+# ---------------------------------------------------------------------------
+
+def _reach_rows(db):
+    with contextlib.closing(sqlite3.connect(str(db))) as c:
+        return c.execute("SELECT COUNT(*) FROM reach_data").fetchone()[0]
+
+
+def _ledger_file(tmp_path):
+    return tmp_path / "dbroot" / "logs" / ir.LEDGER_NAME
+
+
+def test_a_damaged_ledger_stops_the_run_and_imports_nothing(tmp_path, monkeypatch, capsys):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    _features(folder, VIDEOS[1])
+    _ledger_file(tmp_path).write_text('{"Analyzed/Project/PROJA01/x', encoding="utf-8")
+    damaged = _ledger_file(tmp_path).read_text(encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _count(db, VIDEOS[1]) == (0, 0)                 # nothing imported
+    assert _ledger_file(tmp_path).read_text(encoding="utf-8") == damaged   # left as found
+
+    assert ir.main([]) == 1
+    out = capsys.readouterr().out.strip().splitlines()
+    assert out[-1].startswith("[FAIL] ") and str(_ledger_file(tmp_path)) in out[-1]
+    assert "rename that file" in out[-1]
+    out[-1].encode("ascii")                                # one console-safe line
+
+
+def test_a_ledger_that_is_not_a_mapping_is_refused(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    _ledger_file(tmp_path).parent.mkdir(parents=True)
+    _ledger_file(tmp_path).write_text("[]", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _reach_rows(db) == 0                           # nothing imported
+
+
+def test_a_ledger_read_that_fails_briefly_is_retried(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(_ledger_file(tmp_path)).read_text
+    fails = []
+
+    def flaky(self, *a, **k):
+        if self.name == ir.LEDGER_NAME and len(fails) < 2:
+            fails.append(1)
+            raise OSError("the network name is no longer available")
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(_ledger_file(tmp_path)), "read_text", flaky)
+    res = ir.run(log=lambda *_: None)
+    assert len(fails) == 2 and res.imported == 0 and res.skipped == 1
+
+
+def test_a_ledger_read_that_keeps_failing_stops_the_run(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    _features(folder, VIDEOS[1])
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(_ledger_file(tmp_path)).read_text
+
+    def down(self, *a, **k):
+        if self.name == ir.LEDGER_NAME:
+            raise OSError("the network name is no longer available")
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(_ledger_file(tmp_path)), "read_text", down)
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _count(db, VIDEOS[1]) == (0, 0)
+
+
+def test_no_ledger_at_all_imports_everything_and_says_so(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    said = []
+    assert ir.run(log=said.append).imported == 1
+    assert any("no import ledger yet" in s for s in said)
+
+
+def test_an_empty_ledger_is_not_reported_as_missing(tmp_path, monkeypatch):
+    """A ledger that exists and holds nothing (a run that found no results
+    files leaves one) is not "no ledger yet": that line would send a person
+    looking for a file that is there."""
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    ledger = _ledger_file(tmp_path)
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    ledger.write_text("{}", encoding="utf-8")
+    said = []
+    assert ir.run(log=said.append).imported == 1
+    assert not any("no import ledger yet" in s for s in said)
+
+
+def test_a_damaged_list_of_cohorts_to_relabel_stops_the_run(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    _features(root / "Analyzed" / "Project" / "PROJA01", VIDEOS[0])
+    pending = tmp_path / "dbroot" / "logs" / ir.PENDING_PHASES_NAME
+    pending.parent.mkdir(parents=True)
+    pending.write_text('["PROJA_0', encoding="utf-8")
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert _reach_rows(db) == 0                           # nothing imported
+
+
+def test_a_list_damaged_part_way_says_the_run_stopped_part_way(tmp_path, monkeypatch):
+    """Only a stop before the first import may say "nothing was imported"."""
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    _features(folder, VIDEOS[1])
+    monkeypatch.setattr(ir, "LEDGER_SAVE_SECONDS", 0)
+    pending = tmp_path / "dbroot" / "logs" / ir.PENDING_PHASES_NAME
+    real = ir.import_file
+
+    def damages_the_list(conn, path, dry_run=False):
+        out = real(conn, path, dry_run=dry_run)
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text('["PROJA_0', encoding="utf-8")
+        return out
+    monkeypatch.setattr(ir, "import_file", damages_the_list)
+    said = []
+    with pytest.raises(RuntimeError, match="stopped part-way") as e:
+        ir.run(log=said.append)
+    assert "nothing was imported" not in str(e.value)
+    assert _reach_rows(db) == 4                            # both videos landed
+    assert not any("[FAIL]" in s for s in said)            # no video counted as failed
+
+
+# ---------------------------------------------------------------------------
+# A network share that drops for a moment is not a missing ledger.
+# WHY: on Windows an unreachable mapped drive answers "network path not found"
+# (error 53) or "network name not found" (67), which Python raises as
+# FileNotFoundError -- the same exception as a file that is truly not there.
+# Read as "no ledger yet", one such moment re-imported every results file.
+# ---------------------------------------------------------------------------
+
+def share_unreachable(path):
+    """The exception a read on an unreachable mapped share raises."""
+    import errno
+    import os
+    if os.name == "nt":
+        e = OSError(None, "The network path was not found", str(path), 53)
+    else:
+        e = FileNotFoundError(errno.ENOENT, "The network path was not found", str(path))
+    assert isinstance(e, FileNotFoundError)
+    return e
+
+
+def _share_down(monkeypatch, path_type, name, logs_listable=False):
+    """Reads of ``name`` fail as on an unreachable share; so does listing its
+    folder unless ``logs_listable``."""
+    import os
+    real_read = path_type.read_text
+    real_scandir = os.scandir
+
+    def read(self, *a, **k):
+        if self.name == name:
+            raise share_unreachable(self)
+        return real_read(self, *a, **k)
+
+    def scandir(folder="."):
+        if not logs_listable and os.path.basename(os.fspath(folder)) == "logs":
+            raise share_unreachable(folder)
+        return real_scandir(folder)
+    monkeypatch.setattr(path_type, "read_text", read)
+    monkeypatch.setattr(ir.os, "scandir", scandir)
+
+
+def test_a_share_drop_while_reading_the_ledger_reimports_nothing(tmp_path, monkeypatch):
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    _features(folder, VIDEOS[1])
+    assert ir.run(log=lambda *_: None).imported == 2
+    before = _ledger_file(tmp_path).read_text(encoding="utf-8")
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = ir.import_file
+    imported = []
+
+    def spy(conn, path, dry_run=False):
+        imported.append(path.name)
+        return real(conn, path, dry_run=dry_run)
+    monkeypatch.setattr(ir, "import_file", spy)
+    _share_down(monkeypatch, type(folder), ir.LEDGER_NAME)
+    with pytest.raises(RuntimeError, match="nothing was imported"):
+        ir.run(log=lambda *_: None)
+    assert imported == []                                  # nothing imported again
+    monkeypatch.undo()
+    assert _ledger_file(tmp_path).read_text(encoding="utf-8") == before
+
+
+def test_a_ledger_reported_missing_but_listed_in_its_folder_is_retried(tmp_path, monkeypatch):
+    """The folder answers and names the file: the read failed, the file is there."""
+    root, db = _setup(tmp_path, monkeypatch)
+    folder = root / "Analyzed" / "Project" / "PROJA01"
+    _features(folder, VIDEOS[0])
+    ir.run(log=lambda *_: None)
+    monkeypatch.setattr(ir.time, "sleep", lambda s: None)
+    real = type(folder).read_text
+    fails = []
+
+    def once(self, *a, **k):
+        if self.name == ir.LEDGER_NAME and not fails:
+            fails.append(1)
+            raise share_unreachable(self)
+        return real(self, *a, **k)
+    monkeypatch.setattr(type(folder), "read_text", once)
+    res = ir.run(log=lambda *_: None)
+    assert fails == [1] and res.imported == 0 and res.skipped == 1

@@ -31,7 +31,9 @@ WHAT IT DOES
      each video only after its rows are committed, and always whole (written
      beside and swapped in). So a run that is killed -- the scheduled task's
      time limit -- and restarted carries on where it stopped instead of
-     importing every file again.
+     importing every file again. A ledger that exists but cannot be read
+     STOPS the run ([FAIL], exit 1) instead of being taken as empty: taken
+     as empty it meant "import every file again", silently (``load_ledger``).
   4. Leaves out every filed video whose NEWER run waits in a review queue
      (the test of step 6): not imported, not entered in the ledger, its
      cohort not re-labelled. Importing it would only have its rows taken out
@@ -77,10 +79,11 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config import require
 from .pipeline_tree import iter_files
+from .task_mutex import LockWaitTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -275,14 +278,140 @@ def ledger_path() -> Path:
     return require("mousedb_root") / "logs" / LEDGER_NAME
 
 
-def load_ledger() -> Dict[str, str]:
-    p = ledger_path()
-    if p.is_file():
+class StateFileUnreadable(RuntimeError):
+    """The ledger or the pending-cohorts file exists but cannot be read.
+
+    Raised instead of carrying on as if the file were empty; see
+    ``_read_state_file`` for why."""
+
+
+# How long a read of the ledger (or the pending-cohorts file) is retried
+# before the run stops. WHY: the files live on a network share, and a share
+# that drops for a moment answers with an OSError that is gone a few seconds
+# later. That should cost a few seconds, not a failed night.
+STATE_READ_ATTEMPTS = 5
+STATE_READ_RETRY_SECONDS = 2.0
+
+
+def _confirmed_absent(p: Path) -> bool:
+    """True only when a folder above ``p`` can be listed and the listing shows
+    that ``p`` is not there.
+
+    WHY: a FileNotFoundError alone does not mean the file is missing. On
+    Windows a mapped network drive that is briefly unreachable answers
+    "network path not found" / "network name not found", and Python raises
+    those as FileNotFoundError too. Read as "no ledger", that one moment
+    re-imported every results file (hours, under the database lock), and read
+    as "no cohorts waiting", the next save of that list dropped every cohort
+    on it. So "missing" is believed only from a folder that answers: the
+    nearest folder above ``p`` that can be listed must not name the next part
+    of the path (a new database has no logs folder yet, which is the same
+    answer one level up). A folder that cannot be listed at all, up to the
+    root of the drive, means the share is not answering -- not a missing
+    file."""
+    child = p
+    folder = p.parent
+    while True:
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning("ledger %s unreadable; starting a new one", p)
-    return {}
+            with os.scandir(folder) as it:
+                names = {os.path.normcase(e.name) for e in it}
+        except FileNotFoundError:
+            if folder.parent == folder:
+                return False            # even the drive root is not there
+            child, folder = folder, folder.parent
+            continue
+        except OSError:
+            return False
+        return os.path.normcase(child.name) not in names
+
+
+def _read_state_file(p: Path, what: str, kind: Any, start_over: str,
+                     consequence: str) -> Optional[Any]:
+    """The parsed content of ``p``; None when the file does not exist.
+
+    WHY THIS REFUSES INSTEAD OF STARTING AFRESH: the ledger is the only record
+    of which results files are already in the database. Until this was
+    changed, a ledger that could not be read (a share error, a file another
+    program had damaged) was treated as EMPTY, so the run imported every file
+    again: every reach of every filed video rewritten over the share, a run of
+    several hours that holds the database lock all that time -- and nothing
+    said why. A ledger that is truly missing (a new database, a new machine)
+    still starts empty: then importing everything is the right thing to do --
+    but "truly missing" is believed only from a folder listing
+    (``_confirmed_absent``), never from a FileNotFoundError alone, which a
+    dropped network share also raises.
+    A ledger that is there but unreadable stops the run with one line naming
+    the file, what the stop means (``consequence``: whether anything was
+    imported before it) and what to do (``start_over``).
+
+    A read that fails with an OSError is retried for a few seconds first
+    (``STATE_READ_ATTEMPTS``); content that is not JSON, or not a ``kind``,
+    is refused at once -- reading it again would not change it."""
+    last: Optional[BaseException] = None
+    for attempt in range(STATE_READ_ATTEMPTS):
+        try:
+            text = p.read_text(encoding="utf-8")
+            break
+        except FileNotFoundError as e:
+            if _confirmed_absent(p):
+                return None
+            last = e                    # the share, not the file: retry, then refuse
+            if attempt + 1 < STATE_READ_ATTEMPTS:
+                time.sleep(STATE_READ_RETRY_SECONDS)
+        except OSError as e:
+            last = e
+            if attempt + 1 < STATE_READ_ATTEMPTS:
+                time.sleep(STATE_READ_RETRY_SECONDS)
+    else:
+        raise StateFileUnreadable(
+            "the %s %s cannot be read (%s: %s); %s. If the share "
+            "was briefly unavailable, run again; %s"
+            % (what, p, type(last).__name__, last, consequence, start_over))
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise StateFileUnreadable(
+            "the %s %s is not valid JSON (%s); %s. %s"
+            % (what, p, e, consequence, start_over[:1].upper() + start_over[1:]))
+    if not isinstance(data, kind):
+        wanted = " or ".join(k.__name__ for k in (kind if isinstance(kind, tuple) else (kind,)))
+        raise StateFileUnreadable(
+            "the %s %s holds a %s, not a %s; %s. %s"
+            % (what, p, type(data).__name__, wanted, consequence,
+               start_over[:1].upper() + start_over[1:]))
+    return data
+
+
+# What a stop on an unreadable state file means, for the [FAIL] line.
+BEFORE_IMPORTING = "nothing was imported"
+PART_WAY = ("the run stopped part-way; videos imported since its last save "
+            "are imported again by the next run")
+
+
+def read_ledger(consequence: str = BEFORE_IMPORTING) -> Optional[Dict[str, str]]:
+    """The import ledger; None when there is none yet (confirmed from a folder
+    listing, see ``_confirmed_absent``). Raises ``StateFileUnreadable`` when
+    one exists but cannot be read (see ``_read_state_file``: an unreadable
+    ledger used to mean "import every file again", silently).
+
+    None and {} are kept apart so that the run says "no ledger yet" only when
+    there truly is none: a ledger that exists and is empty (left by a run
+    that found no results files) is not news, and calling it missing would
+    send a person looking for a file that is there."""
+    return _read_state_file(
+        ledger_path(), "reach import ledger", dict,
+        "otherwise rename that file (keep it) and run again -- the run then "
+        "imports every results file again, which takes hours", consequence)
+
+
+def load_ledger(consequence: str = BEFORE_IMPORTING) -> Dict[str, str]:
+    """The import ledger; {} when there is none yet. See ``read_ledger``."""
+    data = read_ledger(consequence)
+    if data is None:
+        logger.warning("no reach import ledger at %s yet: every results file will be imported",
+                       ledger_path())
+        return {}
+    return data
 
 
 def _write_json_atomically(p: Path, obj: Any) -> None:
@@ -342,18 +471,124 @@ def pending_phases_path() -> Path:
     return require("mousedb_root") / "logs" / PENDING_PHASES_NAME
 
 
-def load_pending_phases() -> set:
-    p = pending_phases_path()
-    if p.is_file():
-        try:
-            return set(json.loads(p.read_text(encoding="utf-8")))
-        except Exception:
-            logger.warning("%s unreadable; treating as empty", p)
-    return set()
+def load_pending_entries(consequence: str = BEFORE_IMPORTING) -> Dict[str, int]:
+    """The list of cohorts still to re-label, as {cohort: times queued}; {}
+    when the file does not exist. Raises ``StateFileUnreadable`` when it
+    exists but cannot be read: treated as empty, the cohorts it named would
+    keep wrong test-phase labels and nothing would ever say so.
+
+    THE FILE'S FORMAT: a JSON object {cohort: count}. The count goes up by one
+    every time a save QUEUES the cohort (``queue_pending_phases``: its phase
+    refresh failed). WHY: the reach import re-labels a cohort and then takes
+    it off the list. A cohort queued again WHILE it was being re-labelled may
+    have been re-labelled from dates read before that save, and taking it off
+    then lost it, with stale labels and nothing reporting it. The count tells
+    the two apart: the import takes a cohort off only if its count is still
+    the one it read before it began re-labelling it (see ``run``). Older
+    versions wrote a plain JSON list of cohort names; that is still read, as
+    count 0 for each. (An older version reading the new file takes its keys,
+    which are the cohort names, so it keeps working too.)"""
+    data = _read_state_file(
+        pending_phases_path(), "list of cohorts still to re-label", (list, dict),
+        "otherwise rename that file (keep it), run 'mousedb backfill-phases' "
+        "to re-label every cohort, and run again", consequence)
+    if data is None:
+        return {}
+    entries = {c: 0 for c in data} if isinstance(data, list) else data
+    if not all(isinstance(c, str) and isinstance(n, int) and not isinstance(n, bool)
+               for c, n in entries.items()):
+        raise StateFileUnreadable(
+            "the list of cohorts still to re-label %s holds something other than "
+            "cohort names and counts; %s. Otherwise rename that file (keep it), run "
+            "'mousedb backfill-phases' to re-label every cohort, and run again"
+            % (pending_phases_path(), consequence))
+    return dict(entries)
 
 
-def save_pending_phases(cohorts: Iterable[str]) -> None:
-    _write_json_atomically(pending_phases_path(), sorted(cohorts))
+def load_pending_phases(consequence: str = BEFORE_IMPORTING) -> set:
+    """Cohorts still to re-label (the names only); see ``load_pending_entries``."""
+    return set(load_pending_entries(consequence))
+
+
+def save_pending_phases(cohorts: Any) -> None:
+    """Write the list whole. ``cohorts`` is {cohort: count} or, for a plain
+    set of names, each name at count 0. Code that CHANGES the list goes
+    through ``update_pending_phases`` / ``queue_pending_phases``, which hold
+    its lock."""
+    entries = cohorts if isinstance(cohorts, dict) else {c: 0 for c in cohorts}
+    _write_json_atomically(pending_phases_path(), dict(sorted(entries.items())))
+
+
+# How long a writer of the list of cohorts still to re-label waits for another
+# writer to finish with it. Each holds it for one read and one write of a small
+# file (well under a second, a few seconds over a slow share), so a minute
+# means something is wrong, not that the other writer is busy.
+PENDING_PHASES_LOCK_WAIT_SECONDS = 60
+
+
+def update_pending_phases(change: Callable[[set], set],
+                          consequence: str = BEFORE_IMPORTING) -> set:
+    """Read the list of cohorts still to re-label, apply ``change`` to it, and
+    write the result -- as ONE step no other writer can interleave with; the
+    new list.
+
+    WHY: two programs write this list. The reach import adds the cohorts it
+    imported into and takes off those it re-labelled; a save in the MouseDB
+    window whose own phase refresh failed adds that cohort
+    (``Database._queue_for_reach_import``). The commonest reason that refresh
+    fails is a database busy with the running reach import -- so the two write
+    the list at the very moments they are most likely to overlap. Each used to
+    read the file, change it in memory and write it back: a window write that
+    landed between the import's read and its write was overwritten, and that
+    cohort kept labels from its old dates with nothing reporting it.
+
+    HOW: the read-change-write runs under its own lock (a ``TaskMutex`` named
+    ``reach-phases-list`` in the same folder, so the import's hold of the
+    database lock never blocks it, and a writer that crashed while holding it
+    is recognised and its lock broken, as for the database lock). A writer
+    that cannot get the lock within ``PENDING_PHASES_LOCK_WAIT_SECONDS``
+    raises ``LockWaitTimeout``, having changed nothing.
+
+    ``change`` works on the cohort names; a cohort it keeps keeps its queue
+    count, a cohort it adds starts at 1 (see ``load_pending_entries``). A save
+    that queues a cohort uses ``queue_pending_phases`` instead."""
+    def on_entries(entries: Dict[str, int]) -> Dict[str, int]:
+        return {c: entries.get(c, 1) for c in change(set(entries))}
+    return set(_change_pending_entries(on_entries, consequence))
+
+
+def queue_pending_phases(cohorts: Iterable[str],
+                         consequence: str = BEFORE_IMPORTING) -> set:
+    """Put ``cohorts`` on the list of cohorts still to re-label, raising each
+    one's queue count by one (one locked read-and-write); the new list.
+
+    WHY the count goes up even for a cohort already on the list: the running
+    reach import may be re-labelling that very cohort from dates it read
+    before the save that queued it. The import takes a cohort off the list
+    only when its count is still the one it read before it began, so this
+    cohort stays on for the next run instead of being lost with stale labels."""
+    cohorts = list(cohorts)
+
+    def bump(entries: Dict[str, int]) -> Dict[str, int]:
+        out = dict(entries)
+        for c in cohorts:
+            out[c] = out.get(c, 0) + 1
+        return out
+    return set(_change_pending_entries(bump, consequence))
+
+
+def _change_pending_entries(change: Callable[[Dict[str, int]], Dict[str, int]],
+                            consequence: str) -> Dict[str, int]:
+    """Apply ``change`` to {cohort: count} under the list's lock and write the
+    result; see ``update_pending_phases`` for why the lock."""
+    from .task_mutex import TaskMutex
+    lock = TaskMutex("reach-phases-list", base_dir=pending_phases_path().parent)
+    with lock.acquire(wait_seconds=PENDING_PHASES_LOCK_WAIT_SECONDS,
+                      log=lambda *_: None,
+                      waiting_for="another writer of the list of cohorts to re-label"):
+        new = dict(change(load_pending_entries(consequence)))
+        save_pending_phases(new)
+    return new
 
 
 # ---------------------------------------------------------------------------
@@ -754,7 +989,14 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                            "written concurrently over the share. Stop it, or pass --force for a deliberate run.")
     files = find_features_files(root, include_processing)
     res.scanned = len(files)
-    ledger = load_ledger()
+    # Stops the run if a ledger exists but cannot be read. None means there is
+    # no ledger file at all, and only then is "no ledger yet" said.
+    ledger = read_ledger()
+    if ledger is None:
+        ledger = {}
+        if files and not all_files:
+            log("import-reaches: no import ledger yet at %s -- every results file will be imported"
+                % ledger_path())
     moved_from = _moved_entries(ledger, root, files) if not all_files else {}
     res.moved = len(moved_from)
     # Filed videos whose NEWER run waits in a review queue: their filed results
@@ -840,7 +1082,14 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         # transaction committed (below), so the ledger never runs ahead of the
         # database; a kill loses at most the entries since the last save, and
         # those videos are simply imported again by the restart.
-        save_pending_phases(pending | res.cohorts_touched)
+        # The file is RE-READ and added to, never overwritten from what this
+        # run read at its start: another program adds to it while the import
+        # runs (a save in the window whose phase refresh failed --
+        # Database._queue_for_reach_import), and writing only this run's set
+        # would drop that cohort, leaving its labels wrong for good. The
+        # read and the write are one locked step (update_pending_phases), so
+        # that program's write cannot land between them either.
+        update_pending_phases(lambda now: now | pending | res.cohorts_touched, PART_WAY)
         save_ledger(ledger)
 
     last_save = time.monotonic()
@@ -868,10 +1117,13 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                         if time.monotonic() - last_save >= LEDGER_SAVE_SECONDS:
                             try:
                                 checkpoint()
-                            except OSError as e:
+                            except (OSError, StateFileUnreadable, LockWaitTimeout) as e:
                                 # Not fatal: the import goes on and the save at
                                 # the end tries again (and fails the run if it
-                                # still cannot write).
+                                # still cannot write, or still cannot read the
+                                # list of cohorts it adds to). Caught HERE so
+                                # it is never counted as this video failing:
+                                # the video's rows are committed.
                                 res.messages.append("ledger save during the run failed: %s" % e)
                                 log("  [!] ledger save during the run failed: %s" % e)
                             last_save = time.monotonic()
@@ -906,7 +1158,9 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
             conn.close()
         if not dry_run:
             checkpoint()  # also persists refreshed stamps for unchanged files
-            relabel = pending | res.cohorts_touched
+            # Re-read: a cohort queued by another program during this run
+            # (see checkpoint) is re-labelled now rather than a night later.
+            relabel = load_pending_phases(PART_WAY) | pending | res.cohorts_touched
             left = set(relabel)
             if relabel:
                 try:
@@ -918,11 +1172,33 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # against seconds warm on a network share (2026-10-16).
                     with warmed(db, log=log):
                         for cohort in sorted(relabel):
+                            # The cohort's queue count BEFORE re-labelling it.
+                            # If a save queues it again before the re-label is
+                            # done, that save may have landed after the
+                            # re-label read the cohort's dates (they are read
+                            # outside any write transaction), so this re-label
+                            # may be stale: the count has changed and the
+                            # cohort stays on the list for the next run (see
+                            # load_pending_entries).
+                            seen = load_pending_entries(PART_WAY).get(cohort)
                             backfill_phases(cohort_id=cohort)
-                            # Done: a run killed after this point need not
-                            # re-label this cohort again.
                             left.discard(cohort)
-                            save_pending_phases(left)
+
+                            # Re-read and change, as in checkpoint(): the
+                            # cohort just re-labelled leaves the list unless it
+                            # was queued again meanwhile -- a run killed after
+                            # this point need not re-label it again. Every
+                            # cohort not yet re-labelled stays; a cohort done
+                            # earlier in this loop and queued again since
+                            # stays too.
+                            def done(entries, c=cohort, seen=seen):
+                                out = dict(entries)
+                                if out.get(c) == seen:
+                                    out.pop(c, None)
+                                for other in left:
+                                    out.setdefault(other, 1)
+                                return out
+                            _change_pending_entries(done, PART_WAY)
                 except Exception as e:
                     res.messages.append("phase assignment: %s" % e)
                     log("  [!] phase assignment failed: %s" % e)

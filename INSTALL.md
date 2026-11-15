@@ -226,7 +226,7 @@ All subjects with session summaries for analysis:
 | Location | Purpose |
 |----------|---------|
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
-| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete) |
+| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete). If either reach-import file cannot be read, the reach import stops with a `[FAIL]` line saying what to do (docs/WHERE_IS_MY_DATA.md, "An unreadable ledger stops the import") |
 | `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
 | `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarised in `exports/ANALYSES_MANIFEST.json` |
 | `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |

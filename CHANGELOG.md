@@ -76,6 +76,42 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- A save whose automatic re-derivation of a cohort's test phases fails (in the
+  MouseDB window, or a sheet import) no longer leaves the labels wrong with only
+  a console line to show for it: the cohort goes on the reach import's list of
+  cohorts still to re-label (`logs/reach_imports_phases_pending.json`), so the
+  next nightly import re-derives it; the window shows a warning box; and a
+  sheet import made from the window records the failure in its ledger line, as
+  the scheduled one does. Both routes now end that line the same way: `the
+  next reach import re-labels it` when the cohort is on that list, and `run
+  'mousedb backfill-phases'` only when it could not be put there. The reach
+  import now adds to that list instead of overwriting it, so a cohort put
+  there while it runs is kept -- including a cohort saved while the import is
+  re-labelling that same cohort, which stays on the list for the next run.
+  Every change to that list (by the import, or by the window) is one locked
+  read-and-write, so a cohort the window adds between the import's read and
+  its write is no longer overwritten. The list is now written as
+  `{cohort: times queued}`; a plain list written by an older version is still
+  read. Only the configured database's list is used; a database opened on
+  another file never writes to it.
+- `mousedb import-reaches`: a ledger (`logs/reach_imports.json`) or a list of
+  cohorts still to re-label (`logs/reach_imports_phases_pending.json`) that is
+  there but cannot be read when the run starts now stops the run with a
+  `[FAIL]` line naming the file and what to do, and exit code 1. It used to be
+  read as empty, so the run silently imported every results file again
+  (hours, under the database lock) or forgot which cohorts still needed their
+  phases re-derived. A read that fails with a share error is retried for
+  about ten seconds first. A ledger that does not exist yet still means
+  "import everything", and the run now says so -- but only when its folder
+  can be listed and the listing shows no ledger, and never for a ledger that
+  is there but empty. A mapped network drive that is briefly unreachable
+  makes Windows answer "network path not found", which reads exactly like a
+  missing file; that answer alone no longer starts a full re-import, and no
+  longer empties the list of cohorts still to re-label (a save that adds a
+  cohort to the list now refuses, and says so, instead of replacing the list
+  with that one cohort). The list is read again at every save during the
+  run, so one that becomes unreadable then stops the run part-way and says
+  so; the ledger is read only at the start.
 - Where Is My Data tab: Refresh and "Refresh exports now" pressed while
   another job of the tab is running now say "A refresh is still running" and
   start nothing (they did nothing silently, and the exports button first

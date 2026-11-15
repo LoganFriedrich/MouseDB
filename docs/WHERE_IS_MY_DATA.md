@@ -509,6 +509,95 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
   that run imports nothing new for those cohorts; its output then says
   `N cohort(s) still to re-label from an earlier run that stopped`. Do not
   delete this file: a cohort left out of it keeps reaches with no phase.
+  A save in the MouseDB window (or a sheet import) whose own re-derivation of
+  a cohort's phases failed also puts that cohort on this list, so the next
+  import puts its labels right; the window says so in a warning box. The
+  import adds to the list and takes off only the cohorts it has re-labelled,
+  so a cohort put there while it runs is kept. That includes a cohort saved
+  in the window WHILE the import is re-labelling that same cohort: the
+  re-labelling may have read the cohort's dates before the save, so the
+  cohort stays on the list and the next run re-labels it again. (The file
+  records, beside each cohort, how many times a save has put it there; the
+  import takes a cohort off only when that number has not changed since it
+  began re-labelling it. A list written by an older version -- a plain list
+  of names -- is read as before.) Each change to the list takes
+  a short lock first (the file `.reach-phases-list.task.lock` in the same
+  `logs` folder, there only for the second or so the change takes), so a save
+  in the window and the running import can never overwrite each other's
+  change. A lock left behind by a program that crashed is cleared by the next
+  writer, as for the database lock; if a writer still cannot get it within a
+  minute it changes nothing and says so (the window's warning box then tells
+  you to run `mousedb backfill-phases`).
+
+**An unreadable ledger stops the import; it is never started again from
+nothing by itself.** The import reads its ledger (`reach_imports.json`) and
+the list of cohorts still to re-label (`reach_imports_phases_pending.json`)
+when it starts. If either is there but cannot be read, it stops at once,
+before it imports anything; its last line says `nothing was imported`, which
+file it was and what to do (below), and the job fails. A `--dry-run` reads
+only the ledger, not the list of cohorts still to re-label (a dry run
+re-labels nothing), so a dry run does not find a damaged list; the next real
+import does.
+
+What happens when something goes wrong WHILE the import is running:
+
+- **The ledger is damaged during the run.** Nothing visible happens: the
+  import reads the ledger only when it starts, and its next save replaces the
+  file whole from what it holds in memory. The run finishes normally.
+- **The list of cohorts still to re-label is damaged during the run.** The
+  import reads that list again at every save (another program adds to it, see
+  above). Each save along the way fails and is logged as
+  `[!] ledger save during the run failed: ...`, and the import goes on. The
+  next save that has to succeed stops the run with `[FAIL] the list of
+  cohorts still to re-label ... the run stopped part-way; videos imported
+  since its last save are imported again by the next run`. That save is the
+  one made just BEFORE taking out videos sent back to review, whenever the
+  ledger still lists any video now in review (it is made before any row is
+  taken out, so the ledger never claims rows that are gone); otherwise it is
+  the final one. When the run stops at that earlier save, nothing is taken
+  out that night: the videos sent back to review keep their rows until the
+  next run, which takes them out.
+- **The shared drive drops during the run.** The saves fail the same way and
+  are logged the same way, and the run stops at the next save that has to
+  succeed. Its last line is then `[FAIL]` followed by the error the drive
+  gave (for example `[WinError 53] The network path was not found`) -- or,
+  when the drive answered everything except the read of the list, the
+  "stopped part-way" line above.
+
+In the last two cases the rows already imported stay in the database, but the
+videos imported since the last save that worked are not recorded in the
+ledger. The next run imports them again (safe: their rows are replaced, never
+doubled), and the cohorts they belong to are re-labelled by that next run
+instead of this one. A stop at the start looks like this:
+
+```
+[FAIL] the reach import ledger <path> cannot be read (...); nothing was imported. If the share was briefly unavailable, run again; otherwise rename that file (keep it) and run again -- the run then imports every results file again, which takes hours
+```
+
+- Most often the shared drive was unavailable for a moment. The import already
+  tries again for about ten seconds; if the drive is back, simply run
+  `mousedb import-reaches` again (or wait for the next night). This includes
+  the case where the drive answers "network path not found": the import
+  believes a ledger is missing only when it can list the `logs` folder (or,
+  for a new database with no `logs` folder yet, the folder above it) and the
+  ledger is not in the listing. When it cannot list the folder either, the
+  drive is not answering, and it stops as above rather than importing
+  everything again.
+- If the file itself is damaged ("is not valid JSON"), rename it -- for
+  example add `.damaged` to its name; do not delete it -- and run the import
+  again. With no ledger the import brings in every results file once more.
+  That is safe (a video imported again has its rows replaced, never doubled)
+  but takes hours, which is exactly why the import no longer does it on its
+  own. Its first line then says `no import ledger yet ... every results file
+  will be imported` -- a line it prints only when there is no ledger file at
+  all, never for a ledger that is there but empty.
+- If the damaged file is `reach_imports_phases_pending.json`, rename it, run
+  `mousedb backfill-phases` once (it re-derives every cohort's phases, since
+  nobody can tell any more which ones were waiting), then run the import.
+
+Why: until this was changed, a ledger that could not be read was treated as
+empty and the import silently re-imported every file -- hours of work over the
+share, holding the database lock, with nothing saying why.
 
 **Only filed videos are in the database.** Filing means a video is done. When
 a filed video is sent back to a review queue -- a pellet nobody answered, a
