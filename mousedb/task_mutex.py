@@ -174,13 +174,19 @@ def default_lock_dir() -> Path:
 
 class TaskMutex:
     def __init__(self, name: str = "central-db", stale_minutes: int = 45,
-                 base_dir: Optional[Path] = None):
+                 base_dir: Optional[Path] = None,
+                 label: str = "the database-task lock"):
         if base_dir is None:
             base_dir = default_lock_dir()
         base_dir = Path(base_dir)
         base_dir.mkdir(parents=True, exist_ok=True)
         self.path = base_dir / (".%s.task.lock" % name)
         self.stale_seconds = stale_minutes * 60
+        # What this lock is called in every message it writes -- waits, breaks,
+        # releases. WHY: there is more than one lock (the database-task lock,
+        # the current-exports lock), and a message naming the wrong one sends
+        # the person to look at the wrong jobs.
+        self.label = label
         self._held = False
         self._identity: Optional[str] = None
         self._heartbeat_stop = None
@@ -306,7 +312,7 @@ class TaskMutex:
             pass
         if log is not None:
             try:
-                log("  [!] database-task lock: " + line)
+                log("  [!] %s: %s" % (self.label, line))
             except Exception:
                 pass
 
@@ -422,12 +428,14 @@ class TaskMutex:
     def acquire(self, wait_seconds: Optional[float] = None, log=_say,
                 waiting_for: str = "another database task",
                 stall_seconds: Optional[float] = None,
-                lock_label: str = "the database-task lock") -> "TaskMutex":
+                lock_label: Optional[str] = None) -> "TaskMutex":
         """Wait for the lock, then take it.
 
-        ``lock_label`` names this lock in the messages: a job waiting on a
-        different lock (the current-exports lock) must not say it waited for
-        the database-task lock, or the person looks at the wrong jobs.
+        ``lock_label`` names this lock in the messages (default: the label
+        the mutex was made with); given here, it also becomes the label of
+        any break or release this mutex logs. A job waiting on a different
+        lock (the current-exports lock) must not say it waited for the
+        database-task lock, or the person looks at the wrong jobs.
 
         Waits as long as the holder is running AND getting somewhere, up to
         ``wait_seconds`` (default: ``default_wait_seconds()``). WHY so long:
@@ -449,6 +457,9 @@ class TaskMutex:
         once per item (the sheet import: once per cohort) would otherwise sit
         through the whole wait once per item behind the same hung holder.
         """
+        if lock_label is not None:
+            self.label = lock_label
+        lock_label = self.label
         budget = default_wait_seconds() if wait_seconds is None else float(wait_seconds)
         stall = STALL_MINUTES * 60.0 if stall_seconds is None else float(stall_seconds)
         clock, sleep = self._clock, self._sleep
@@ -559,8 +570,9 @@ class TaskMutex:
                 except OSError:
                     pass
             elif now is not None and log is not None:
-                log("  [!] database-task lock: this job's lock was broken while it "
-                    "ran and another job holds it now; that job's lock is left alone")
+                log("  [!] %s: this job's lock was broken while it "
+                    "ran and another job holds it now; that job's lock is left alone"
+                % self.label)
         finally:
             if have_token:
                 self._drop_token()

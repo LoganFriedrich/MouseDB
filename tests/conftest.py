@@ -317,11 +317,11 @@ def _exports_lock_in_tmp(tmp_path_factory, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_production_lock(monkeypatch):
-    def guarded(self, name="central-db", stale_minutes=45, base_dir=None):
+    def guarded(self, name="central-db", stale_minutes=45, base_dir=None, **kw):
         if base_dir is None:
             pytest.fail(
                 "test constructed TaskMutex with the PRODUCTION lock dir; "
                 "pass base_dir=tmp_path (or stub task_mutex.hold)")
         _orig_init(self, name=name, stale_minutes=stale_minutes,
-                   base_dir=base_dir)
+                   base_dir=base_dir, **kw)
     monkeypatch.setattr(TaskMutex, "__init__", guarded)

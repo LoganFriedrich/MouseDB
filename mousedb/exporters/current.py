@@ -446,6 +446,7 @@ def _mtime(p: Path) -> Optional[str]:
 # with this name, in the same folder as every other mousedb task lock
 # (task_mutex.default_lock_dir), lets only one run write at a time.
 EXPORTS_LOCK = "current-exports"
+EXPORTS_LOCK_LABEL = "the current-exports lock"
 
 BUSY_MESSAGE = ("the current exports are already being written by another refresh "
                 "(the nightly job, the Where Is My Data button or a command) -- "
@@ -475,14 +476,16 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
     person is better told now than kept waiting behind an hour-long job.
     A wait that runs out raises task_mutex.LockWaitTimeout (holder named)."""
     from ..task_mutex import TaskMutex
-    mutex = TaskMutex(EXPORTS_LOCK, base_dir=Path(lock_dir) if lock_dir else _lock_dir())
+    # Labelled at construction, so a dead holder's lock broken while waiting
+    # (task_mutex._record_break) is logged under this lock's name too.
+    mutex = TaskMutex(EXPORTS_LOCK, base_dir=Path(lock_dir) if lock_dir else _lock_dir(),
+                      label=EXPORTS_LOCK_LABEL)
     if lock_wait_seconds is not None and lock_wait_seconds <= 0:
         if not mutex.try_acquire(heartbeat=True):
             raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
         return mutex
     return mutex.acquire(wait_seconds=lock_wait_seconds,
-                         waiting_for="another export refresh",
-                         lock_label="the current-exports lock")
+                         waiting_for="another export refresh")
 
 
 def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,

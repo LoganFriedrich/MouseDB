@@ -36,6 +36,19 @@ def _fresh_process_state():
     task_mutex.set_wait_minutes(None)
 
 
+def test_breaking_a_dead_exports_lock_is_logged_under_its_own_name(tmp_path, capsys):
+    """A refresh that finds the exports lock held by a process that has died
+    breaks it -- and its log says it broke the current-exports lock."""
+    dead = TaskMutex(current.EXPORTS_LOCK, base_dir=tmp_path)
+    dead.path.write_text("999999999 2025-01-01T00:00:00")
+    m = current.hold_exports_lock(lock_wait_seconds=60, lock_dir=tmp_path)
+    m.release()
+    said = capsys.readouterr().out
+    assert "broke the lock" in said, said
+    assert "current-exports" in said, said
+    assert "database-task" not in said, said
+
+
 def test_a_lockfile_whose_delete_is_pending_is_waited_for_not_raised(tmp_path, monkeypatch):
     m = TaskMutex(current.EXPORTS_LOCK, base_dir=tmp_path)
     real_open = os.open
