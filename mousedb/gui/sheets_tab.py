@@ -67,6 +67,9 @@ STATE_TEXT = {
     "sheet_newer": ("Sheet edited since last import -- import", "yellow"),
     "never_imported": ("Never imported -- import", "yellow"),
     "last_import_failed": ("LAST IMPORT FAILED -- see message", "red"),
+    # The last import refused to bring the database in step with the sheet,
+    # because the sheet read as broken (importers: "The sheet wins").
+    "not_synced": ("NOT SYNCED -- sheet read as broken, see message", "red"),
     "no_sheet": ("No sheet found", "grey"),
     "error": ("Status error", "red"),
 }
@@ -458,7 +461,8 @@ class TrackingSheetsTab(QWidget):
                     it.setBackground(Qt.darkRed)
                     it.setToolTip(str(c["broken_pin"]))
                 self.table.setItem(i, j, it)
-        n_bad = sum(1 for c in cohorts if c.get("state") in ("last_import_failed", "error"))
+        n_bad = sum(1 for c in cohorts if c.get("state") in ("last_import_failed", "error",
+                                                             "not_synced"))
         n_stale = sum(1 for c in cohorts if c.get("state") in ("sheet_newer", "never_imported"))
         n_pins = sum(1 for ln in notices if ln.startswith("PIN BROKEN"))
         n_refused = len(st.get("refused_files") or [])

@@ -17,8 +17,10 @@ WHAT IS GATHERED
    items marked needs_person): today, a video it cannot file because its
    check against the hand scores could not run (a setting or file to fix).
 2. The tracking-sheet imports (the import ledger): for each cohort in the
-   sheets folder, its last import if it failed, and every date that import
-   had to repair (its REPAIRED warnings) -- correct those in the sheet.
+   sheets folder, its last import if it failed, every date that import
+   had to repair (its REPAIRED warnings) -- correct those in the sheet --
+   and every table it refused to bring in step with the sheet because the
+   sheet read as broken (its NOT SYNCED lines).
 Frozen workbooks (the letter cohorts) are not listed: nobody corrects them.
 
 THE FIX THESE FILE
@@ -85,6 +87,10 @@ def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
                         "says": "The last import of %s's sheet (%s) failed: %s" % (
                             cid, e.get("finished") or e.get("started") or "?",
                             e.get("error") or "no reason recorded")})
+        # The import refused to bring the database in step with the sheet,
+        # because the sheet read as broken (importers: "The sheet wins").
+        for refusal in ((e.get("sheet_sync") or {}).get("refused") or []):
+            out.append({"cohort_id": cid, "source": "sheet import", "says": str(refusal)})
         for w in e.get("warnings") or []:
             if str(w).startswith("REPAIRED"):
                 out.append({"cohort_id": cid, "source": "sheet import", "says": str(w)})

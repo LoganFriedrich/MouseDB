@@ -4911,8 +4911,12 @@ class CohortSetupTab(QWidget):
             "protocols. Select a cohort in the table to view and edit its subjects below.\n\n"
             "Import from Excel: pick a cohort's tracking sheet. A preview comes "
             "first and writes nothing. Then choose:\n\n"
-            "- Import (add-only): adds the rows the database does not have yet. "
-            "Nothing already in the database changes.\n\n"
+            "- Import: the sheet wins. Adds the rows the database does not have "
+            "yet, changes values the sheet now gives differently, and removes rows "
+            "earlier imports of this sheet wrote that the sheet no longer has. Rows "
+            "typed in by hand in this program are never changed or removed. A sheet "
+            "that reads as broken (a tab missing, far fewer rows than before) "
+            "removes nothing and says so.\n\n"
             "- Replace (delete + re-import), for a cohort already in the database: "
             "removes the rows earlier imports of this sheet wrote and imports the "
             "sheet again, so corrected or deleted cells take effect. Rows typed in "
@@ -5318,8 +5322,10 @@ class CohortSetupTab(QWidget):
     def _import_from_excel(self):
         """Import a cohort tracking spreadsheet. The cohort is detected from the
         filename. A dry-run preview is shown first, then the user chooses:
-          - Import (add-only): runs the importer as-is (new cohorts import fully;
-            existing ones only gain rows they don't already have).
+          - Import: runs the importer as-is -- new rows land, and the rows
+            earlier imports wrote are brought in step with the sheet (changed
+            values changed, rows gone from the sheet removed; hand-typed rows
+            never touched; see importers: "The sheet wins").
           - Replace: removes the rows earlier imports of this sheet wrote and
             re-imports it (the only way to pick up corrected or removed cells),
             through replace_cohort_from_sheet: rows typed in by hand are kept,
@@ -5368,6 +5374,12 @@ class CohortSetupTab(QWidget):
             "Would import (dry-run estimate; 'subjects' may over-count):",
             ("\n".join(f"   {k}: {v}" for k, v in counts.items()) or "   (nothing)"),
         ]
+        # What Import would change or remove among rows earlier imports wrote
+        # (the sheet wins), and any refusal to, before the choice is made.
+        from ..sheet_sync import sync_summary
+        _said = sync_summary(dict(preview, dry_run=True))
+        if _said:
+            lines += ["", "If you choose Import: " + _said]
         if exists:
             # What Replace would remove and keep, counted now (read-only) so the
             # choice is made knowing it -- the counts above are only rows the
@@ -5397,7 +5409,7 @@ class CohortSetupTab(QWidget):
             box.exec_()
             return
 
-        add_btn = box.addButton("Import (add-only)", QMessageBox.AcceptRole)
+        add_btn = box.addButton("Import (sheet wins)", QMessageBox.AcceptRole)
         replace_btn = (box.addButton("Replace (delete + re-import)",
                                      QMessageBox.DestructiveRole) if exists else None)
         box.addButton("Cancel", QMessageBox.RejectRole)
@@ -5450,7 +5462,7 @@ class CohortSetupTab(QWidget):
                   "sheet_path": str(path),
                   "started": _dt.now().isoformat(timespec="seconds"),
                   "triggered_by": "gui_cohort_setup", "dry_run": False,
-                  "mode": "replace" if replacing else "add-only"}
+                  "mode": "replace" if replacing else "import"}
         result, failure = None, None
         # The wait for the lock and the import both run on this window's
         # thread; the busy cursor says so.
@@ -5493,6 +5505,11 @@ class CohortSetupTab(QWidget):
                       finished=_dt.now().isoformat(timespec="seconds"))
         if replacing:
             _entry["replace"] = result.get('replace')
+        # What the sheet changed or removed -- the same key the scheduled
+        # import's ledger lines carry.
+        for _k in ('sheet_sync',):
+            if result.get(_k):
+                _entry[_k] = result[_k]
         self._append_sheet_ledger(_entry, path)
 
         if result.get('errors'):

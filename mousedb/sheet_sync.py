@@ -243,6 +243,8 @@ def cohort_status(cohort: str) -> dict:
         state, why = "last_import_failed", (last.get("error") or "unknown error")[:300]
     elif last.get("sheet_mtime") and edited and edited > last["sheet_mtime"]:
         state, why = "sheet_newer", "the sheet was edited after the last import"
+    elif sync_refused(last):
+        state, why = "not_synced", sync_refused(last)[0][:300]
     elif last.get("sheet_name") and chosen.name != last.get("sheet_name"):
         state, why = "sheet_newer", "a different file is now the sheet (%s -> %s)" % (
             last.get("sheet_name"), chosen.name)
@@ -406,7 +408,8 @@ def _finish(entry: dict, results: dict, dry_run: bool, record: bool = True) -> N
         _append_ledger(_for_ledger(entry))
 
 
-def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=None) -> dict:
+def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=None,
+                allow_large_removal: bool = False) -> dict:
     """Import ONE workbook as ONE cohort -- the same steps for every route
     (the folder's cohorts, a named file): the sheet's tables, then its
     animal-level tabs, under the cross-task mutex when anything is written.
@@ -425,6 +428,11 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
     kept, copying = None, False
     try:
         imp = imp or ExcelImporter()
+        if allow_large_removal:
+            # A person checked this cohort's sheet and said its removals are
+            # real (see importers: "The sheet wins"). Recorded in the ledger.
+            imp.allow_large_removal = True
+            entry["allow_large_removal"] = True
         if dry_run:
             r = imp.import_cohort_file(sheet, dry_run=True)
             kept = _not_saved_reason(r, True)
@@ -462,6 +470,11 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                      error="; ".join(errors) or None)
         if kept:
             entry[LEFT_UNCHANGED] = kept
+        # What the sheet changed or removed among the rows earlier imports
+        # wrote -- or why it refused to (importers: "The sheet wins"). Kept
+        # whole in the ledger line: it is the record of what was taken out.
+        if r.get("sheet_sync"):
+            entry["sheet_sync"] = r["sheet_sync"]
     except Exception as e:
         entry.update(success=False,
                      error="%s: %s" % (type(e).__name__, e),
@@ -574,7 +587,8 @@ def _import_aspa_one(text: str, dry_run: bool, triggered_by: str) -> dict:
 
 
 def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
-                   triggered_by: str = "manual", sheets_dir=None) -> dict:
+                   triggered_by: str = "manual", sheets_dir=None,
+                   allow_large_removal: bool = False) -> dict:
     """Import the chosen sheet of each cohort (all cohorts if None).
 
     One cohort failing never stops the others, and NOTHING is swallowed:
@@ -587,10 +601,20 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
 
     ``sheets_dir`` reads a folder other than the configured one
     (``mousedb import --all --directory``); a snapshot or archive folder is
-    refused whichever way it was named (see cohort_sheets.is_stale_source)."""
+    refused whichever way it was named (see cohort_sheets.is_stale_source).
+
+    ``allow_large_removal`` lets the named cohorts' imports remove or change
+    more of what earlier imports wrote than the broken-read guard allows
+    (importers: "The sheet wins"). Only for cohorts named one by one, after a
+    person has checked their sheets: with no cohorts named it is refused."""
     d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
     results = {"triggered_by": triggered_by, "dry_run": dry_run,
                "sheets_dir": str(d) if d else None, "cohorts": []}
+    if allow_large_removal and not cohorts:
+        results["problem"] = ("REFUSED: --allow-large-removal is for cohorts named one by "
+                              "one (--cohort <cohort>) after checking their sheets, never "
+                              "for every cohort at once")
+        return results
     if d is None:
         results["problem"] = ("no tracking-sheet folder configured "
                               "(mousedb-sheets set-dir <folder>)")
@@ -639,7 +663,8 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         if wanted is not None and cohort_id not in wanted:
             continue
         sheet = find_cohort_sheet(cohort_id, sheets_dir=d)
-        _finish(_import_one(cohort_id, sheet, dry_run, triggered_by), results, dry_run)
+        _finish(_import_one(cohort_id, sheet, dry_run, triggered_by,
+                            allow_large_removal=allow_large_removal), results, dry_run)
 
     # A full import also refreshes each frozen letter cohort's ODC tab into
     # animal_records. WHY: that tab is where those animals' surgery, strain and
@@ -863,7 +888,52 @@ def import_succeeded(r: dict) -> bool:
         # The reaching pipeline would go on reading old scores: videos whose
         # scores just landed would wait for nothing.
         return False
+    if any(sync_refused(c) for c in r.get("cohorts", [])):
+        # A sheet that read as broken left the database as it was (see
+        # importers: "The sheet wins"); the job must not look like a success.
+        return False
     return not any(a.get("error") for a in r.get("aspa_animal_records") or [])
+
+
+def sync_refused(entry: dict) -> List[str]:
+    """The refusals in one cohort's outcome: tables whose rows the import did
+    NOT bring in step with the sheet because the sheet read as broken."""
+    return list(((entry or {}).get("sheet_sync") or {}).get("refused") or [])
+
+
+def sync_summary(entry: dict) -> Optional[str]:
+    """One line saying what the sheet changed or removed in the database for
+    this cohort, or None when it changed nothing."""
+    sync = (entry or {}).get("sheet_sync") or {}
+    parts = []
+    for table, what in sorted(sync.items()):
+        if not isinstance(what, dict):
+            continue
+        bits = []
+        if what.get("changed"):
+            bits.append("%d value%s changed" % (len(what["changed"]),
+                                                 "" if len(what["changed"]) == 1 else "s"))
+        trays = what.get("removed_trays") or []
+        if trays:
+            bits.append("%d row%s removed in %d tray%s no longer in the sheet" % (
+                sum(t.get("pellets", 0) for t in trays),
+                "" if sum(t.get("pellets", 0) for t in trays) == 1 else "s",
+                len(trays), "" if len(trays) == 1 else "s"))
+        for key, label in (("removed_cells", "emptied cell"), ("removed", "row")):
+            n = len(what.get(key) or [])
+            if n:
+                bits.append("%d %s%s removed" % (n, label, "" if n == 1 else "s"))
+        if what.get("dates_removed"):
+            bits.append("session date%s no longer in the sheet: %s" % (
+                "" if len(what["dates_removed"]) == 1 else "s",
+                ", ".join(what["dates_removed"])))
+        if bits:
+            parts.append("%s: %s" % (table, "; ".join(bits)))
+    if not parts:
+        return None
+    return "%s from the sheet%s -- %s" % (
+        "would change" if entry.get("dry_run") else "changed",
+        " (NOT SAVED)" if sync.get("not_saved") else "", " | ".join(parts))
 
 
 def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
@@ -887,12 +957,23 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         if c.get(LEFT_UNCHANGED):
             # Right under the FAIL line: what this failure did NOT change.
             log(_ascii("       [!] %s" % c[LEFT_UNCHANGED]))
-        shown = list(c.get("warnings") or [])[:max(show_warnings, 0)]
+        # The sheet wins: what it changed or removed in the database, every
+        # time, and loudly when it refused to (see importers).
+        said = sync_summary(c)
+        if said:
+            log(_ascii("       %s" % said))
+        for refusal in sync_refused(c):
+            log(_ascii("       [!] %s" % refusal))
+        # The refusals are warnings too, already printed above: not twice.
+        refusals = sync_refused(c)
+        shown = [w for w in (c.get("warnings") or []) if w not in refusals]
+        shown = shown[:max(show_warnings, 0)]
         for w in shown:
             log(_ascii("       - %s" % w))
-        if n_warn > len(shown):
+        hidden = n_warn - len(refusals) - len(shown)
+        if hidden > 0:
             log(_ascii("       ... and %d more (all of them: mousedb-sheets import --cohort %s "
-                       "--dry-run --json)" % (n_warn - len(shown), c.get("cohort_id"))))
+                       "--dry-run --json)" % (hidden, c.get("cohort_id"))))
     records = r.get("aspa_animal_records") or []
     for a in records:
         log(_ascii("%s %s %s animal_records %s" % (
@@ -922,6 +1003,7 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         log(_ascii("Sheets: NOTHING IMPORTED -- %s" % r["problem"]))
         return ok
     failed = [str(c.get("cohort_id")) for c in cohorts if not c.get("success")]
+    refused = [str(c.get("cohort_id")) for c in cohorts if sync_refused(c)]
     total_warn = sum(c.get("warning_count", len(c.get("warnings") or [])) for c in cohorts)
     line = "Sheets%s: %d of %d cohort%s %s, %s, %d warning%s" % (
         " (dry run, nothing written)" if r.get("dry_run") else "",
@@ -929,6 +1011,9 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         "checked" if r.get("dry_run") else "imported",
         ("%d FAILED (%s)" % (len(failed), ", ".join(failed))) if failed else "0 failed",
         total_warn, "" if total_warn == 1 else "s")
+    if refused:
+        line += "; %d NOT SYNCED with the sheet -- it read as broken (%s)" % (
+            len(refused), ", ".join(refused))
     if records:
         bad = [str(a.get("cohort_id")) for a in records if a.get("error")]
         line += "; letter-cohort animal records: %d of %d refreshed%s" % (
@@ -1027,6 +1112,10 @@ def main(argv=None) -> int:
     i.add_argument("--dry-run", action="store_true")
     i.add_argument("--json", action="store_true")
     i.add_argument("--triggered-by", default="manual")
+    i.add_argument("--allow-large-removal", action="store_true",
+                   help="with --cohort only: let the import remove or change more of what "
+                        "earlier imports wrote than the broken-read guard allows, after "
+                        "you have checked the sheet really lost those rows")
     p = sub.add_parser("pin", help="Say which file IS a cohort's sheet")
     p.add_argument("cohort")
     p.add_argument("filename")
@@ -1041,7 +1130,8 @@ def main(argv=None) -> int:
         print(json.dumps(st, indent=1, default=str)) if args.json else _print_status(st)
         return 0
     if args.cmd == "import":
-        r = import_cohorts(args.cohort, dry_run=args.dry_run, triggered_by=args.triggered_by)
+        r = import_cohorts(args.cohort, dry_run=args.dry_run, triggered_by=args.triggered_by,
+                           allow_large_removal=args.allow_large_removal)
         if args.json:
             print(json.dumps(r, indent=1, default=str))
         else:

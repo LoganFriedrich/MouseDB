@@ -486,9 +486,11 @@ class DataStatusTab(QWidget):
                 if j == 7 and (q.get("triage", 0) or q.get("deep_review", 0)):
                     it.setForeground(Qt.white)
                     it.setBackground(Qt.darkYellow)
-                if j == 2 and sh.get("state") in ("last_import_failed", "never_imported", "sheet_newer"):
+                if j == 2 and sh.get("state") in ("last_import_failed", "never_imported", "sheet_newer",
+                                                  "not_synced"):
                     it.setForeground(Qt.white)
-                    it.setBackground(Qt.darkRed if sh.get("state") == "last_import_failed" else Qt.darkYellow)
+                    it.setBackground(Qt.darkRed if sh.get("state") in ("last_import_failed", "not_synced")
+                                     else Qt.darkYellow)
                 self.table.setItem(i, j, it)
         ex = st.get("exports") or {}
         lines = ["CURRENT EXPORTS: %s" % ex.get("folder"),

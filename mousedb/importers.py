@@ -38,6 +38,13 @@ from .validators import (
 )
 
 
+def _iso(value) -> Optional[str]:
+    """A date as YYYY-MM-DD for reports and the ledger (None stays None)."""
+    if value is None:
+        return None
+    return value.isoformat() if hasattr(value, 'isoformat') else str(value)
+
+
 class _NotCommitted(Exception):
     """Raised inside an import's database session to leave it WITHOUT a commit.
 
@@ -196,6 +203,9 @@ class ExcelImporter:
 
             if '3b_Manual_Tray' in available_sheets:
                 self._import_pellet_scores(xl, cohort_id, session, dry_run)
+            else:
+                self._refuse_unread_tray_tab(session, cohort_id,
+                                             "the workbook has no 3b_Manual_Tray tab")
 
             # Ramp data (food deprivation phase with tray weights)
             if '3a_Manual_Ramp' in available_sheets:
@@ -302,6 +312,9 @@ class ExcelImporter:
             "the error and import again." % Path(excel_path).name)
         self.__dict__['_not_saved_counts'] = dict(self.imported_counts)
         self.imported_counts = {table: 0 for table in self.imported_counts}
+        if self.__dict__.get('_sheet_sync'):
+            # Its changes and removals were undone with everything else.
+            self.__dict__['_sheet_sync']['not_saved'] = True
         placeholders = self.__dict__.get('_placeholder_starts', {})
         for cohort_id, (start, _dry) in list(placeholders.items()):
             placeholders[cohort_id] = (start, True)
@@ -1170,6 +1183,8 @@ class ExcelImporter:
             df = pd.read_excel(xl, sheet_name='3b_Manual_Tray')
         except Exception as e:
             self.warnings.append(f"Failed to read 3b_Manual_Tray: {e}")
+            self._refuse_unread_tray_tab(session, cohort_id,
+                                         "the 3b_Manual_Tray tab could not be read (%s)" % e)
             return
 
         # PASS 1: parse every scorable row. Nothing is inserted yet, because
@@ -1214,15 +1229,22 @@ class ExcelImporter:
                 score = row.get(col)
                 if pd.isna(score):
                     continue
+                # A cell that holds something but not a score is kept in the
+                # parse as None ("the sheet has a value here, unreadable"),
+                # never dropped: the sync below removes a stored score only
+                # when its cell is EMPTY, and a typo in a cell must not read as
+                # the score having been deleted. None is never stored.
                 try:
                     score = int(score)
                 except (ValueError, TypeError):
+                    scores[pellet_num] = None
                     continue
                 valid, msg = validate_pellet_score(score)
                 if not valid:
                     self.warnings.append(
                         f"Invalid score for {subject_id} {date_val} T{tray_number}P{pellet_num}: {msg}"
                     )
+                    scores[pellet_num] = None
                     continue
                 scores[pellet_num] = score
             rows.append((subject_id, date_val, tray_type, tray_number, scores))
@@ -1241,16 +1263,255 @@ class ExcelImporter:
         # its scores already filed under the weekend date are moved (date_typos).
         from .date_typos import block_date_repairs
         islands = block_date_repairs([(s, d, tt, tn) for s, d, tt, tn, _ in rows])
+        tray_moves = {}
         if islands:
             self._report_block_date_repairs(cohort_id, rows, islands)
-            self._move_misdated_tray_rows(
-                session, cohort_id,
-                {(rows[i][0], rows[i][1], rows[i][2], rows[i][3]): meant
-                 for i, meant in islands.items()}, dry_run)
+            tray_moves = {(rows[i][0], rows[i][1], rows[i][2], rows[i][3]): meant
+                          for i, meant in islands.items()}
+            self._move_misdated_tray_rows(session, cohort_id, tray_moves, dry_run)
             rows = [(s, islands.get(i, d), tt, tn, sc)
                     for i, (s, d, tt, tn, sc) in enumerate(rows)]
 
+        # The sheet is the source of record for what the sheet import wrote:
+        # scores changed in the sheet are changed here, trays no longer in the
+        # sheet are removed -- BEFORE inserting, so the new rows' phases are
+        # derived from the cohort's real set of dates (see _sync_pellet_rows).
+        # A dry run moves nothing, so it is told where the two moves above
+        # would have put the stored rows.
+        self._sync_pellet_rows(
+            session, cohort_id, rows, dry_run,
+            moved=(dict(repairs or {}), tray_moves) if dry_run else None)
+
         self._insert_pellet_rows(session, cohort_id, rows, dry_run)
+
+    # ------------------------------------------------------------------
+    # The sheet wins: keeping what the import wrote in step with the sheet
+    # ------------------------------------------------------------------
+    # WHY: the import used to only ADD. A score corrected in the sheet kept
+    # its old value in the database, and a session typed into the wrong
+    # cohort's workbook, imported, then moved to the right workbook stayed in
+    # the database under the wrong cohort for good -- a phantom session that
+    # no sheet holds. Because a cohort's phases are derived from its set of
+    # session dates, one phantom date relabelled that cohort's real sessions
+    # (baseline read as training, post-injury tests as baseline) in the
+    # database and every export.
+    #
+    # Now every import makes the rows IT wrote match the sheet: a changed
+    # value is changed, a row whose session/tray is gone from the sheet is
+    # removed. Rows anyone else wrote (typed in by hand in the GUI, or with no
+    # record of who wrote them) are never touched: only rows marked
+    # entered_by = SHEET_IMPORT_MARK can be rebuilt from the sheet.
+    #
+    # The one exception is a read that looks broken: a tab that could not be
+    # read, a sheet that parses to nothing, or one that would take away more
+    # than SYNC_MAX_REMOVED_FRACTION of what the database holds for the
+    # cohort (or change more than SYNC_MAX_CHANGED_FRACTION of its values) is
+    # far more likely a tab renamed, a file caught mid-save or columns shifted
+    # than a real edit. Then NOTHING is removed or changed in that table (new
+    # rows are still added, as before), and the import says so loudly: a
+    # parse failure must never wipe data. Changes of up to SYNC_SMALL rows (or
+    # trays) never count as "too much": correcting one surgery of a cohort
+    # that has four is an edit, not a broken read.
+    #
+    # A person who has checked the sheet and really did take that much out
+    # imports that one cohort with allow_large_removal (mousedb-sheets import
+    # --cohort <id> --allow-large-removal), or uses Replace in the GUI's
+    # cohort setup, which rebuilds the cohort from the sheet on purpose. Even
+    # then a tab that could not be read, or that reads as empty, removes
+    # nothing.
+
+    SHEET_IMPORT_MARK = 'excel_import'
+    SYNC_MAX_REMOVED_FRACTION = 0.25
+    SYNC_MAX_CHANGED_FRACTION = 0.25
+    SYNC_SMALL = 5
+
+    # Set by the caller for ONE cohort a person has checked (see above).
+    allow_large_removal = False
+
+    def _sync_guard(self, table: str, unit: str, n_units: int, n_gone: int,
+                    n_rows: int, n_changed: int, sheet_empty: bool) -> Optional[str]:
+        """Why this table must NOT be brought in step with the sheet on this
+        read, or None. n_units/n_gone: the stored units (rows, or trays for
+        pellet scores) the import wrote, and how many the sheet no longer has;
+        n_rows/n_changed: stored rows and how many the sheet would change."""
+        unread = self.__dict__.get('_unread_tabs', {}).get(table)
+        if unread:
+            return unread
+        if sheet_empty:
+            return ("the sheet read as holding none of them, while the database holds "
+                    "%d %s the import wrote for this cohort" % (n_units, unit))
+        if self.allow_large_removal:
+            return None
+        if n_gone > self.SYNC_SMALL and n_gone > self.SYNC_MAX_REMOVED_FRACTION * n_units:
+            return ("the sheet would remove %d of the %d %s the import wrote for this "
+                    "cohort (more than %d%%), which looks like a broken read rather than an "
+                    "edit" % (n_gone, n_units, unit, round(100 * self.SYNC_MAX_REMOVED_FRACTION)))
+        if n_changed > self.SYNC_SMALL and n_changed > self.SYNC_MAX_CHANGED_FRACTION * n_rows:
+            return ("the sheet would change %d of the %d values the import wrote for this "
+                    "cohort (more than %d%%), which looks like shifted columns rather than "
+                    "corrections" % (n_changed, n_rows, round(100 * self.SYNC_MAX_CHANGED_FRACTION)))
+        return None
+
+    def _sync_state(self) -> Dict:
+        """This import's record of what the sheet changed (see _get_result)."""
+        return self.__dict__.setdefault('_sheet_sync', {})
+
+    def _sync_refuse(self, table: str, why: str):
+        """Record a refusal to remove or change anything in one table, as the
+        FIRST warning (the ledger keeps only the first warnings) and under the
+        result's sheet_sync.refused."""
+        text = self._ascii(
+            "NOT SYNCED %s: %s. Nothing was removed or changed in %s for this "
+            "cohort; new rows were still added. If the sheet is wrong, fix it and "
+            "the next import syncs. If the sheet is right and really lost that "
+            "much, import this cohort alone with 'mousedb-sheets import --cohort "
+            "<cohort> --allow-large-removal', or use Replace in the GUI's cohort "
+            "setup." % (table, why, table))
+        self._sync_state().setdefault('refused', []).append(text)
+        self.warnings.insert(0, text)
+
+    def _audit(self, session, action: str, table: str, record_id, old=None, new=None):
+        """One audit-log entry (table audit_log and logs/<date>_changes.jsonl)
+        per row the sync changes or removes, committed with the change. A
+        database object without log_change (a test double) logs nothing."""
+        log = getattr(self.db, 'log_change', None)
+        if callable(log):
+            log(session, action, table, str(record_id), old_values=old, new_values=new)
+
+    def _refuse_unread_tray_tab(self, session, cohort_id: str, why: str):
+        """The tray tab could not be read at all: if the database holds scores
+        the import wrote for this cohort, say loudly that none were synced."""
+        held = session.query(PelletScore.id).filter(
+            PelletScore.entered_by == self.SHEET_IMPORT_MARK,
+            PelletScore.subject_id.in_(
+                session.query(Subject.subject_id).filter_by(cohort_id=cohort_id))).first()
+        if held is not None:
+            self._sync_refuse('pellet_scores', why)
+
+    def _sync_pellet_rows(self, session, cohort_id: str, rows, dry_run: bool, moved=None):
+        """Make this cohort's sheet-imported pellet scores match the parsed
+        sheet (rows: (subject, date, tray type, tray number, {pellet: score
+        or None for an unreadable cell})).
+
+        * a stored score whose cell holds a different score is changed;
+        * a stored score whose TRAY (animal, date, tray) is no longer in the
+          sheet is removed, and so is one whose cell in a tray still in the
+          sheet is now empty. An unreadable cell is not an empty one: its
+          stored score stays (a warning already names the cell);
+        * a score typed in by hand is never touched; when the sheet says
+          something else for it, a warning says which value stands.
+        Every change and removal goes to the audit log with its old and new
+        value, is counted in imported_counts and listed in the result's
+        sheet_sync. ``moved`` (dry run only): (year-typo date map, tray move
+        map) -- where the date repairs would have put stored rows."""
+        sheet: Dict = {}
+        for s, d, tt, tn, sc in rows:
+            tray = sheet.setdefault((s, d, tt, tn), {})
+            for p, v in sc.items():
+                if p in tray and tray[p] != v and tray[p] is not None and v is not None:
+                    self._warn_once(
+                        ('dup-tray', s, d, tt, tn, p),
+                        "3b_Manual_Tray: %s %s %s%s pellet %s is on two rows with different "
+                        "scores (%s and %s); the first is used. Delete the extra row."
+                        % (s, d, tt, tn, p, tray[p], v))
+                    continue
+                tray.setdefault(p, v)
+
+        cohort_subjects = session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
+        stored = session.query(PelletScore).filter(
+            PelletScore.subject_id.in_(cohort_subjects)).all()
+        if not stored:
+            return
+        date_map, tray_map = moved or ({}, {})
+
+        def key_of(ps):
+            d = date_map.get(ps.session_date, ps.session_date)
+            d = tray_map.get((ps.subject_id, d, ps.tray_type, ps.tray_number), d)
+            return (ps.subject_id, d, ps.tray_type, ps.tray_number)
+
+        ours = [ps for ps in stored if ps.entered_by == self.SHEET_IMPORT_MARK]
+        theirs = [ps for ps in stored if ps.entered_by != self.SHEET_IMPORT_MARK]
+
+        for ps in theirs:
+            v = sheet.get(key_of(ps), {}).get(ps.pellet_number)
+            if v is not None and v != ps.score:
+                self._warn_once(
+                    ('hand-kept', ps.subject_id, ps.session_date, ps.tray_type, ps.tray_number),
+                    "3b_Manual_Tray: %s %s %s%s has scores typed in by hand (by %s) that "
+                    "differ from the sheet; the hand-typed values stand -- correct them by "
+                    "hand if the sheet is right" % (
+                        ps.subject_id, ps.session_date, ps.tray_type, ps.tray_number,
+                        ps.entered_by or 'no record of who'))
+
+        changed, gone_cells, gone_trays = [], [], {}
+        for ps in ours:
+            k = key_of(ps)
+            tray = sheet.get(k)
+            if tray is None:
+                gone_trays.setdefault(k, []).append(ps)
+            elif ps.pellet_number not in tray:
+                gone_cells.append(ps)
+            elif tray[ps.pellet_number] is not None and tray[ps.pellet_number] != ps.score:
+                changed.append((ps, tray[ps.pellet_number]))
+
+        if not ours:
+            return
+        stored_trays = {key_of(ps) for ps in ours}
+        why = self._sync_guard('pellet_scores', 'trays', len(stored_trays), len(gone_trays),
+                               len(ours), len(changed) + len(gone_cells), not sheet)
+        if why:
+            self._sync_refuse('pellet_scores', why)
+            return
+
+        report = self._sync_state().setdefault('pellet_scores', {})
+        for ps, new in changed:
+            report.setdefault('changed', []).append({
+                'subject_id': ps.subject_id, 'date': _iso(ps.session_date),
+                'tray': '%s%s' % (ps.tray_type, ps.tray_number),
+                'pellet': ps.pellet_number, 'old': ps.score, 'new': new})
+            if not dry_run:
+                self._audit(session, 'UPDATE', 'pellet_scores', ps.id,
+                            {'score': ps.score}, {'score': new})
+                ps.score = new
+        for ps in gone_cells:
+            report.setdefault('removed_cells', []).append({
+                'subject_id': ps.subject_id, 'date': _iso(ps.session_date),
+                'tray': '%s%s' % (ps.tray_type, ps.tray_number),
+                'pellet': ps.pellet_number, 'old': ps.score})
+        for (s, d, tt, tn), pss in sorted(gone_trays.items()):
+            pss.sort(key=lambda p: p.pellet_number)
+            report.setdefault('removed_trays', []).append({
+                'subject_id': s, 'date': _iso(d), 'tray': '%s%s' % (tt, tn),
+                'pellets': len(pss),
+                # The removed scores, pellet by pellet: '1:2 2:0 ...'
+                'old_scores': ' '.join('%d:%d' % (p.pellet_number, p.score) for p in pss)})
+        removed = gone_cells + [ps for pss in gone_trays.values() for ps in pss]
+        if not dry_run:
+            for ps in removed:
+                self._audit(session, 'DELETE', 'pellet_scores', ps.id, old={
+                    'subject_id': ps.subject_id, 'session_date': _iso(ps.session_date),
+                    'tray_type': ps.tray_type, 'tray_number': ps.tray_number,
+                    'pellet_number': ps.pellet_number, 'score': ps.score,
+                    'test_phase': ps.test_phase, 'entered_by': ps.entered_by})
+                # session.delete, not a bulk delete: the database's phase hook
+                # sees the removal and re-derives the cohort's phases after
+                # the commit (Database._register_phase_hooks).
+                session.delete(ps)
+            session.flush()
+        if changed:
+            self.imported_counts['pellet_scores_changed'] = len(changed)
+        if removed:
+            self.imported_counts['pellet_scores_removed'] = len(removed)
+        # A date with no stored score left changes the cohort's set of session
+        # dates, and with it the phase of every session (phases.py).
+        removed_ids = {id(ps) for ps in removed}
+        left = {ps.session_date for ps in stored if id(ps) not in removed_ids}
+        dates_gone = sorted({ps.session_date for ps in removed} - left
+                            - {k[1] for k in sheet})
+        if dates_gone:
+            report['dates_removed'] = [_iso(d) for d in dates_gone]
+        if not report:
+            self._sync_state().pop('pellet_scores', None)
 
     def _report_block_date_repairs(self, cohort_id: str, rows, islands: Dict):
         """One REPAIRED warning per weekend date read as its block's day, naming
@@ -1389,6 +1650,8 @@ class ExcelImporter:
                     f"({tray_type}) -- stored as 'unassigned'")
 
             for pellet_num, score in scores.items():
+                if score is None:
+                    continue  # a cell with something unreadable in it (see _import_pellet_scores)
                 existing = session.query(PelletScore).filter_by(
                     subject_id=subject_id,
                     session_date=date_val,
@@ -2320,7 +2583,8 @@ class ExcelImporter:
         every workbook (import_all_cohorts), and one cohort's set-aside rows or
         placeholder must never be reported against the next."""
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
-                     '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts'):
+                     '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
+                     '_sheet_sync'):
             self.__dict__.pop(name, None)
 
     def _warn_once(self, key, text: str):
@@ -2589,6 +2853,11 @@ class ExcelImporter:
             'warnings': self.warnings,
             'imported': self.imported_counts,
         }
+        if self.__dict__.get('_sheet_sync'):
+            # What the sheet changed or removed in the database (or, refused,
+            # why it did not): see _sync_pellet_rows. Kept whole in the result
+            # and the ledger -- it is the record of what was taken out.
+            result['sheet_sync'] = self.__dict__['_sheet_sync']
         if '_not_saved_counts' in self.__dict__:
             # What a rolled-back import had read before it was undone (see
             # _report_not_committed): for diagnosis, never counted as saved.
