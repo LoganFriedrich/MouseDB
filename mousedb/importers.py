@@ -3557,11 +3557,27 @@ def read_elife_summary_rows(csv_path: Path, brain_id: str) -> Dict[str, Dict[str
     so the caller can say exactly why nothing was imported. A blank cell is
     ABSENT from the result, not 0: a hemisphere MouseBrain did not count is not
     a hemisphere with zero cells.
+
+    Raises ValueError when the file looks cut off: it does not end with a line
+    break, or the brain's row has fewer or more fields than the header.
+    WHY: MouseBrain rewrites this file in place (not through a temporary
+    file), and the brain import REPLACES a brain's stored groups with what it
+    reads here. A row cut off part-way would otherwise replace every group
+    with the few cells that happened to be written -- a blank cell reads as
+    "not counted", so nothing else would notice.
     """
     import csv as csv_mod
     decode = _elife_column_groups()
     number = brain_id.split('_')[0]
     exact, by_number = [], []
+    with open(csv_path, 'rb') as f:
+        f.seek(0, 2)
+        if f.tell() > 0:
+            f.seek(-1, 2)
+            if f.read(1) not in (b'\n', b'\r'):
+                raise ValueError("%s does not end with a line break (it looks cut off; "
+                                 "re-run MouseBrain's step 6 (count regions))"
+                                 % Path(csv_path).name)
     with open(csv_path, 'r', encoding='utf-8', newline='') as f:
         for row in csv_mod.DictReader(f):
             brain = (row.get('brain') or '').strip()
@@ -3580,6 +3596,12 @@ def read_elife_summary_rows(csv_path: Path, brain_id: str) -> Dict[str, Dict[str
     else:
         raise LookupError("no row for %s in %s (MouseBrain step 6 has not run for this brain, "
                           "or its brain id differs)" % (brain_id, csv_path))
+    # csv.DictReader puts the extra fields of a too-long row under the key
+    # None, and fills the missing fields of a too-short row with None.
+    if None in row or any(v is None for v in row.values()):
+        raise ValueError("the row for %s in %s does not have one field per column of the "
+                         "header (it looks cut off; re-run MouseBrain's step 6 (count "
+                         "regions))" % (brain_id, Path(csv_path).name))
     out: Dict[str, Dict[str, int]] = {}
     for col, val in row.items():
         if not col or not col.startswith('group_') or val is None or str(val).strip() == '':
@@ -3596,6 +3618,29 @@ def read_elife_summary_rows(csv_path: Path, brain_id: str) -> Dict[str, Dict[str
             continue
         out.setdefault(decode.get(rest, rest), {})[hemisphere] = n
     return out
+
+
+# The columns that make a stored count what it is, compared by
+# BrainGlobeImporter.sync_brain_counts to decide whether a brain's file changed.
+# Bookkeeping columns (row id, source file path, import time) are left out: a
+# file moved to another folder holds the same counts. The eLife groups'
+# constituent_regions is left out too: it is filled only when the groups are
+# computed with MouseBrain's own mapping, and is empty when they are read from
+# elife_counts.csv. Comparing it would replace every brain's groups -- same
+# counts, constituents dropped -- whenever the import runs in an environment
+# with the other source, and back again the next time.
+_RC_FIELDS = ('region_id', 'hemisphere', 'cell_type', 'region_name', 'region_acronym',
+              'parent_region_id', 'cell_count', 'cell_density', 'region_volume_mm3',
+              'is_final')
+_EC_FIELDS = ('group_name', 'hemisphere', 'cell_count', 'is_final')
+
+
+def _content(rows, fields):
+    """The rows (ORM objects or dicts) as a multiset of their ``fields``."""
+    from collections import Counter
+    get = (lambda r, f: r.get(f)) if rows and isinstance(rows[0], dict) else getattr
+    return Counter(tuple(get(r, f) for f in fields) for r in rows)
+
 
 
 class BrainGlobeImporter:
@@ -4047,7 +4092,8 @@ class BrainGlobeImporter:
                              brain_id: Optional[str] = None,
                              elife_summary_csv: Optional[Path] = None) -> Dict:
         """
-        Import eLife 25-group aggregated counts.
+        Import eLife 25-group aggregated counts (adds the groups the brain does
+        not have yet; see sync_brain_counts for the import that also replaces).
 
         Two sources, in this order:
           1. mousebrain importable here -> recompute from ``region_counts_dict``
@@ -4072,14 +4118,36 @@ class BrainGlobeImporter:
         Returns:
             Dict with import statistics
         """
-        import json as json_mod
-        from .schema import ElifeRegionCount
-
         self.errors = []
         self.warnings = []
         self.imported_counts = {'elife_region_counts': 0}
 
-        # Recompute with MouseBrain's own mapping when it is importable here.
+        got = self._elife_rows(f"brain_sample_id={brain_sample_id}", region_counts_dict,
+                               hemisphere_counts, brain_id, elife_summary_csv, dry_run)
+        if got is None:
+            return self._get_result()
+        rows, rows_source = got
+
+        with self._import_session(dry_run) as session:
+            for row in rows:
+                self._insert_elife_count(session, brain_sample_id, row, calibration_run_id,
+                                         is_final, rows_source or source_file, dry_run)
+
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
+        return self._get_result()
+
+    def _elife_rows(self, who, region_counts_dict, hemisphere_counts,
+                    brain_id, elife_summary_csv, dry_run):
+        """The eLife group rows of one brain, as ``(rows, source)``: rows are
+        dicts of ElifeRegionCount columns (group_name, hemisphere, cell_count,
+        constituent_regions); source is the file they were read from, or None
+        when they were computed from the region counts. None, with an error
+        recorded, when they cannot be had (see import_elife_counts for the two
+        sources and why every failure is an error line). ``who`` names the
+        brain in messages only ("brain_sample_id=5", "brain <brain id>")."""
+        import json as json_mod
+
         aggregate_fn = None
         try:
             from mousebrain.region_mapping import aggregate_to_elife
@@ -4095,140 +4163,480 @@ class BrainGlobeImporter:
             # importing is an error line: the old "skip when mousebrain is
             # missing" is how eLife counts never reached the database for months
             # without anyone seeing it (2026-08).
-            return self._import_elife_counts_from_summary(
-                brain_sample_id, brain_id, elife_summary_csv,
-                calibration_run_id, is_final, dry_run)
+            return self._elife_rows_from_summary(who, brain_id, elife_summary_csv, dry_run)
 
         print(f"{'[DRY RUN] ' if dry_run else ''}Computing eLife group counts "
-              f"for brain_sample_id={brain_sample_id}")
+              f"for {who}")
+        rows: List[Dict] = []
 
-        with self._import_session(dry_run) as session:
-            # Aggregate total counts
-            elife_total = aggregate_fn(region_counts_dict)
+        def put(group_name, hemisphere, data, only_if_cells):
+            count = data['count'] if isinstance(data, dict) else 0
+            constituents = data.get('constituents', {}) if isinstance(data, dict) else {}
+            if only_if_cells and not count > 0:
+                return
+            rows.append({
+                'group_name': group_name, 'hemisphere': hemisphere, 'cell_count': count,
+                'constituent_regions': (json_mod.dumps(sorted(constituents.keys()))
+                                        if constituents else None),
+            })
 
-            # Aggregate hemisphere counts if available
-            elife_left = {}
-            elife_right = {}
-            if hemisphere_counts:
-                left_dict = {acr: hc.get('left', 0) for acr, hc in hemisphere_counts.items()
-                             if hc.get('left', 0) > 0}
-                right_dict = {acr: hc.get('right', 0) for acr, hc in hemisphere_counts.items()
-                              if hc.get('right', 0) > 0}
-                if left_dict:
-                    elife_left = aggregate_fn(left_dict)
-                if right_dict:
-                    elife_right = aggregate_fn(right_dict)
+        elife_total = aggregate_fn(region_counts_dict)
+        elife_left, elife_right = {}, {}
+        if hemisphere_counts:
+            left_dict = {acr: hc.get('left', 0) for acr, hc in hemisphere_counts.items()
+                         if hc.get('left', 0) > 0}
+            right_dict = {acr: hc.get('right', 0) for acr, hc in hemisphere_counts.items()
+                          if hc.get('right', 0) > 0}
+            if left_dict:
+                elife_left = aggregate_fn(left_dict)
+            if right_dict:
+                elife_right = aggregate_fn(right_dict)
 
-            # Insert rows for each group and hemisphere
-            for group_name, group_data in elife_total.items():
-                count = group_data['count'] if isinstance(group_data, dict) else 0
-                constituents = group_data.get('constituents', {}) if isinstance(group_data, dict) else {}
+        for group_name, group_data in elife_total.items():
+            put(group_name, 'both', group_data, only_if_cells=False)
+            if group_name in elife_left:
+                put(group_name, 'left', elife_left[group_name], only_if_cells=True)
+            if group_name in elife_right:
+                put(group_name, 'right', elife_right[group_name], only_if_cells=True)
+        return rows, None
 
-                self._insert_elife_count(
-                    session, brain_sample_id, group_name, 'both', count,
-                    constituents, calibration_run_id, is_final, source_file, dry_run
-                )
-
-                # Left hemisphere
-                if group_name in elife_left:
-                    left_data = elife_left[group_name]
-                    left_count = left_data['count'] if isinstance(left_data, dict) else 0
-                    left_constituents = left_data.get('constituents', {}) if isinstance(left_data, dict) else {}
-                    if left_count > 0:
-                        self._insert_elife_count(
-                            session, brain_sample_id, group_name, 'left', left_count,
-                            left_constituents, calibration_run_id, is_final, source_file, dry_run
-                        )
-
-                # Right hemisphere
-                if group_name in elife_right:
-                    right_data = elife_right[group_name]
-                    right_count = right_data['count'] if isinstance(right_data, dict) else 0
-                    right_constituents = right_data.get('constituents', {}) if isinstance(right_data, dict) else {}
-                    if right_count > 0:
-                        self._insert_elife_count(
-                            session, brain_sample_id, group_name, 'right', right_count,
-                            right_constituents, calibration_run_id, is_final, source_file, dry_run
-                        )
-
-        if not dry_run and not self.errors:
-            print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
-
-        return self._get_result()
-
-    def _import_elife_counts_from_summary(self, brain_sample_id, brain_id, elife_summary_csv,
-                                          calibration_run_id, is_final, dry_run) -> Dict:
-        """Source 2 of import_elife_counts: the brain's row in MouseBrain's
+    def _elife_rows_from_summary(self, who, brain_id, elife_summary_csv, dry_run):
+        """Source 2 of _elife_rows: the brain's row in MouseBrain's
         elife_counts.csv. Constituent regions are not in that file, so the
         rows carry none. Every failure is an error line (see the WHY above)."""
         where = ("MouseBrain's elife_counts.csv was not given" if elife_summary_csv is None
                  else "MouseBrain's elife_counts.csv does not exist at %s" % elife_summary_csv)
         if elife_summary_csv is None or not Path(elife_summary_csv).is_file():
             self.errors.append(
-                "eLife counts NOT imported for brain_sample_id=%s: mousebrain.region_mapping is not "
-                "importable in this environment and %s" % (brain_sample_id, where))
-            return self._get_result()
+                "eLife counts NOT imported for %s: mousebrain.region_mapping is not "
+                "importable in this environment and %s" % (who, where))
+            return None
         if not brain_id:
             self.errors.append(
-                "eLife counts NOT imported for brain_sample_id=%s: brain_id is needed to find the "
-                "brain's row in %s" % (brain_sample_id, elife_summary_csv))
-            return self._get_result()
+                "eLife counts NOT imported for %s: brain_id is needed to find the "
+                "brain's row in %s" % (who, elife_summary_csv))
+            return None
         try:
-            rows = read_elife_summary_rows(Path(elife_summary_csv), brain_id)
+            by_group = read_elife_summary_rows(Path(elife_summary_csv), brain_id)
         except (LookupError, OSError, ValueError) as e:
             self.errors.append("eLife counts NOT imported for %s: %s" % (brain_id, e))
-            return self._get_result()
+            return None
 
         known = set(_elife_column_groups().values())
-        for name in sorted(rows):
+        for name in sorted(by_group):
             if name not in known:
                 self.warnings.append("group %r in %s is not a known eLife group name; stored as written"
                                      % (name, Path(elife_summary_csv).name))
 
         print(f"{'[DRY RUN] ' if dry_run else ''}Reading eLife group counts for {brain_id} "
               f"from {elife_summary_csv} (mousebrain not importable here)")
-        with self._import_session(dry_run) as session:
-            for group_name, by_hemisphere in rows.items():
-                for hemisphere in ('both', 'left', 'right'):
-                    if hemisphere not in by_hemisphere:
-                        continue
-                    self._insert_elife_count(
-                        session, brain_sample_id, group_name, hemisphere,
-                        by_hemisphere[hemisphere], {}, calibration_run_id, is_final,
-                        str(elife_summary_csv), dry_run)
-        if not dry_run and not self.errors:
-            print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
-        return self._get_result()
+        rows = [{'group_name': group_name, 'hemisphere': hemisphere,
+                 'cell_count': by_hemisphere[hemisphere], 'constituent_regions': None}
+                for group_name, by_hemisphere in by_group.items()
+                for hemisphere in ('both', 'left', 'right') if hemisphere in by_hemisphere]
+        return rows, str(elife_summary_csv)
 
-    def _insert_elife_count(self, session, brain_sample_id, group_name, hemisphere,
-                             cell_count, constituents, calibration_run_id, is_final,
-                             source_file, dry_run):
-        """Insert a single ElifeRegionCount row, skipping duplicates."""
-        import json as json_mod
+    def _insert_elife_count(self, session, brain_sample_id, row, calibration_run_id,
+                            is_final, source_file, dry_run):
+        """Insert one ElifeRegionCount row (a dict from _elife_rows),
+        skipping one the brain already has."""
         from .schema import ElifeRegionCount
 
         existing = session.query(ElifeRegionCount).filter_by(
             brain_sample_id=brain_sample_id,
-            group_name=group_name,
-            hemisphere=hemisphere,
+            group_name=row['group_name'],
+            hemisphere=row['hemisphere'],
         ).first()
         if existing:
             return
 
         elife_count = ElifeRegionCount(
             brain_sample_id=brain_sample_id,
-            group_name=group_name,
-            hemisphere=hemisphere,
-            cell_count=cell_count,
-            constituent_regions=json_mod.dumps(sorted(constituents.keys())) if constituents else None,
             calibration_run_id=calibration_run_id,
             is_final=1 if is_final else 0,
             source_file=source_file,
+            **row,
         )
 
         if not dry_run:
             session.add(elife_count)
         self.imported_counts['elife_region_counts'] += 1
+
+    # A counts file written less than this many seconds ago is left for the
+    # next run (see sync_brain_counts).
+    RECENT_WRITE_S = 120
+
+    # MouseBrain's step 6 writes a brain's counts file FIRST and its row in
+    # elife_counts.csv a few seconds later. An elife_counts.csv last written
+    # more than this many seconds BEFORE the counts file therefore cannot hold
+    # the groups of that count (see sync_brain_counts). The allowance only
+    # covers file servers that keep modification times to the nearest 2 s.
+    ELIFE_BEFORE_COUNTS_ALLOWANCE_S = 2
+
+    def _unfinished_count_rows(self, csv_path: Path, df: pd.DataFrame) -> List[str]:
+        """Why one per-brain counts file looks cut off, as one message per
+        problem; empty when it looks whole.
+
+        WHY: sync_brain_counts REPLACES a brain's stored counts with what the
+        file holds. _region_count_rows quietly passes over a row without a
+        count (fine for an import that only adds), so a file cut off part-way
+        -- a copy that died, a disk that filled -- would replace every stored
+        count with the rows that happened to be complete. A file is therefore
+        refused (and the stored counts kept) when:
+          - it does not end with a line break: every writer of these files
+            ends each row with one, so the last row is cut off (perhaps in
+            the middle of a number, which no other test could see);
+          - a row names a region but its cell_count -- or, in a file with
+            left_count / right_count columns, either of those -- is empty or
+            not a number: MouseBrain writes all three for every region,
+            zeros included.
+        """
+        problems = []
+        try:
+            with open(csv_path, 'rb') as f:
+                f.seek(0, 2)
+                if f.tell() > 0:
+                    f.seek(-1, 2)
+                    if f.read(1) not in (b'\n', b'\r'):
+                        problems.append(f"{csv_path.name} does not end with a line break "
+                                        f"(its last row is cut off)")
+        except OSError as e:
+            problems.append(f"{csv_path.name} could not be read to the end: {e}")
+        col_map = self._detect_region_csv_format(df) or {}
+        names = [col_map[k] for k in ('region_id', 'acronym', 'region_name') if col_map.get(k)]
+        counts = [col_map[k] for k in ('cell_count', 'left_count', 'right_count')
+                  if col_map.get(k)]
+        bad = []
+        for i, row in df.iterrows():
+            if not any(pd.notna(row.get(c)) and str(row.get(c)).strip() for c in names):
+                continue
+            if any(self._parse_int(row.get(c)) is None for c in counts):
+                bad.append(int(i) + 2)        # file line: 1 is the header
+        if bad:
+            shown = ', '.join(str(n) for n in bad[:5]) + (' ...' if len(bad) > 5 else '')
+            problems.append(f"{csv_path.name}: {len(bad)} row(s) name a region but have no "
+                            f"readable {' / '.join(counts) or 'cell_count'} (line {shown})")
+        return problems
+
+    def _disagrees_with_region_summary(self, csv_path: Path, brain_id: str, df: pd.DataFrame,
+                                       region_summary_csv: Optional[Path]) -> Optional[str]:
+        """Why one per-brain counts file disagrees with MouseBrain's own
+        region_counts.csv written AFTER it; None when it agrees, or when there
+        is nothing to compare it with.
+
+        WHY: a counts file cut off exactly at a row boundary ends with a line
+        break and every row it still has is complete, so
+        _unfinished_count_rows cannot see it -- and sync_brain_counts would
+        REPLACE the brain's stored counts with it, deleting the regions that
+        were cut off. MouseBrain's step 6 writes the per-brain counts file
+        first and then the brain's row in region_counts.csv (through a
+        temporary file, so that one is never cut off), from the same counts.
+        When region_counts.csv is NEWER than the counts file, its row for the
+        brain was written after it, from the same count: if its total or its
+        set of regions differs from the file's, the file lost rows.
+
+        What it cannot see: a counts file cut off when step 6 stopped before
+        writing region_counts.csv (that file is then older, and holds the
+        previous count, so it proves nothing). A region_counts.csv rewritten
+        later for ANOTHER brain while this brain's row is still from an
+        earlier count makes this refuse a whole file; the message says to
+        re-run step 6, which writes both again.
+        """
+        import csv as csv_mod
+        if region_summary_csv is None or not Path(region_summary_csv).is_file():
+            return None
+        summary = Path(region_summary_csv)
+        if summary.stat().st_mtime < csv_path.stat().st_mtime - self.ELIFE_BEFORE_COUNTS_ALLOWANCE_S:
+            return None
+        col_map = self._detect_region_csv_format(df) or {}
+        count_col, acr_col = col_map.get('cell_count'), col_map.get('acronym')
+        if not count_col:
+            return None
+        file_total, file_regions = 0, set()
+        for _, row in df.iterrows():
+            n = self._parse_int(row.get(count_col))
+            if n is not None:
+                file_total += n
+            if acr_col and pd.notna(row.get(acr_col)) and str(row.get(acr_col)).strip():
+                file_regions.add(str(row.get(acr_col)).strip())
+        try:
+            with open(summary, 'r', encoding='utf-8', newline='') as f:
+                mine = [r for r in csv_mod.DictReader(f)
+                        if (r.get('brain') or '').strip() == brain_id
+                        or (r.get('brain') or '').strip().replace('\\', '/').rsplit('/', 1)[-1]
+                        == brain_id]
+        except (OSError, ValueError, csv_mod.Error):
+            return None
+        if not mine:
+            return None
+        row = mine[-1]
+        problems = []
+        summary_total = self._parse_int(row.get('total_cells'))
+        if summary_total is not None and summary_total != file_total:
+            problems.append(f"its cells add up to {file_total} but {summary.name} (written "
+                            f"after it) says {summary_total}")
+        if acr_col:
+            summary_regions = {c[len('region_'):] for c, v in row.items()
+                               if c and c.startswith('region_')
+                               and not c.startswith(('region_left_', 'region_right_'))
+                               and v is not None and str(v).strip() != ''}
+            if summary_regions and summary_regions != file_regions:
+                missing = sorted(summary_regions - file_regions)
+                problems.append(f"{summary.name} (written after it) has {len(summary_regions)} "
+                                f"regions for the brain and the file {len(file_regions)}"
+                                + (f" (missing: {', '.join(missing[:5])}"
+                                   f"{' ...' if len(missing) > 5 else ''})" if missing else ""))
+        if not problems:
+            return None
+        return (f"{csv_path.name}: {'; '.join(problems)}. The file looks cut off, so "
+                f"{brain_id} is left as it is and the counts the database holds for it are "
+                f"kept; re-run MouseBrain's step 6 (count regions) for the brain")
+
+    def sync_brain_counts(self, csv_path: Path, brain_id: Optional[str] = None,
+                          elife_summary_csv: Optional[Path] = None,
+                          dry_run: bool = False, force: bool = False,
+                          now: Optional[float] = None,
+                          region_summary_csv: Optional[Path] = None) -> Dict:
+        """Make the database hold what one brain's counts file says now: its
+        region counts and its eLife group counts, all marked final.
+
+        WHY: this used to only ADD rows a brain did not have yet. A brain
+        recounted after its registration was corrected kept its FIRST counts in
+        the database, marked final, for good -- the nightly import never
+        replaced them, and nothing said so. Now each run compares the file with
+        what the database holds for that brain, and when they differ replaces
+        the brain's rows, all in one transaction: no reader ever sees half of
+        an old count and half of a new one.
+
+        What it never does:
+          - It never touches a brain whose counts file is gone: the stored
+            counts stay (only files that exist are read).
+          - It never replaces counts from a file that may be half written: a
+            file (or MouseBrain's elife_counts.csv) changed less than
+            RECENT_WRITE_S seconds ago, one that cannot be read, one that
+            holds no region rows, and one that looks cut off
+            (_unfinished_count_rows: no line break at its end, or a region
+            row without a readable count; or _disagrees_with_region_summary:
+            MouseBrain's region_counts.csv, written AFTER the counts file,
+            gives the brain another total or other regions -- a file cut off
+            exactly at a row boundary) is refused with an error, and the
+            stored counts are kept. The next run takes it.
+          - It never stores groups read from an elife_counts.csv last written
+            before the counts file (more than ELIFE_BEFORE_COUNTS_ALLOWANCE_S
+            earlier): MouseBrain writes the counts file first and the groups
+            after, so such a row is from an EARLIER count -- step 6 stopped
+            between the two. The groups then count as not had (below).
+            (Groups computed here with MouseBrain's own mapping come from the
+            counts file itself and need no such check.)
+          - When the region counts change but the brain's eLife groups cannot
+            be had (its row is missing from elife_counts.csv, that file is
+            older than the counts file, or it looks cut off -- no line break
+            at its end, or the brain's row has another number of fields than
+            the header ...), the region counts are still
+            replaced and the brain's OLD eLife rows are removed with them --
+            they describe the old count and would disagree with the new one
+            -- and the result says so in ``elife_errors``. They come back on
+            the first run that can read them. When the region counts did NOT
+            change, stored groups are left as they are and the failure is
+            still reported.
+
+        What it cannot see: a counts file cut off exactly at a row boundary
+        when step 6 stopped before writing region_counts.csv (see
+        _disagrees_with_region_summary); and an elife_counts.csv rewritten AFTER the counts
+        file (for another brain) that still carries this brain's row from an
+        earlier count. Nothing in the file tells that row's age; MouseBrain's
+        step 6 rewrites both files together, so this needs step 6 to have
+        stopped between them AND another brain to be counted before the next
+        import.
+
+        ``force`` replaces the rows even when nothing changed (the command's
+        --update). A dry run compares and counts but writes nothing.
+
+        Returns the usual result dict, plus ``region_action`` ('new',
+        'replaced', 'unchanged' or None when refused), ``elife_action``
+        ('new', 'replaced', 'unchanged', 'removed', 'failed') and
+        ``elife_errors``. ``success`` is about the region counts; a brain whose
+        eLife groups failed has ``success`` True and a non-empty
+        ``elife_errors``.
+        """
+        import time
+        from .schema import ElifeRegionCount, RegionCount
+
+        self.errors = []
+        self.warnings = []
+        self.imported_counts = {'brain_samples': 0, 'region_counts': 0,
+                                'elife_region_counts': 0}
+        outcome = {'region_action': None, 'elife_action': None, 'elife_errors': [],
+                   'forced': bool(force)}
+
+        def done():
+            return {**self._get_result(), **outcome}
+
+        csv_path = Path(csv_path)
+        if not csv_path.is_file():
+            self.errors.append(f"File not found: {csv_path}")
+            return done()
+        if not brain_id:
+            brain_id = self._extract_brain_from_path(csv_path)
+        if not brain_id:
+            self.errors.append("Could not determine brain ID")
+            return done()
+        brain_info = self.parse_brain_name(brain_id)
+        if not brain_info:
+            self.errors.append(f"Could not parse brain ID: {brain_id}")
+            return done()
+
+        now = time.time() if now is None else now
+        for f in (csv_path, elife_summary_csv):
+            if f is None or not Path(f).is_file():
+                continue
+            age = now - Path(f).stat().st_mtime
+            if age < self.RECENT_WRITE_S:
+                self.errors.append(
+                    f"{Path(f).name} was written {max(age, 0):.0f} s ago and may still be "
+                    f"being written; {brain_id} is left for the next run and the counts "
+                    f"the database holds for it are kept")
+                return done()
+
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            self.errors.append(f"Failed to read {csv_path.name}: {e}; the counts the "
+                               f"database holds for {brain_id} are kept")
+            return done()
+        rows = self._region_count_rows(df)
+        if rows is None:
+            return done()
+        if not rows:
+            self.errors.append(f"{csv_path.name} holds no region rows; the counts the "
+                               f"database holds for {brain_id} are kept")
+            return done()
+        unfinished = self._unfinished_count_rows(csv_path, df)
+        if unfinished:
+            self.errors.append(f"{'; '.join(unfinished)}. The file looks cut off, so "
+                               f"{brain_id} is left as it is and the counts the database "
+                               f"holds for it are kept; re-run MouseBrain's step 6 "
+                               f"(count regions) for the brain")
+            return done()
+        disagrees = self._disagrees_with_region_summary(csv_path, brain_id, df,
+                                                        region_summary_csv)
+        if disagrees:
+            self.errors.append(disagrees)
+            return done()
+
+        # The eLife groups, read BEFORE the database is opened. Their failure
+        # is collected apart from self.errors: it must not undo the region
+        # counts (see the docstring).
+        region_counts_dict, hemisphere_counts = self._region_totals(df)
+        elife = None
+        if not region_counts_dict:
+            outcome['elife_errors'].append(f"no region rows in {csv_path.name}")
+        else:
+            held = self.errors
+            self.errors = []
+            got = self._elife_rows(f"brain {brain_id}", region_counts_dict, hemisphere_counts,
+                                   brain_id, elife_summary_csv, dry_run)
+            outcome['elife_errors'] += self.errors
+            self.errors = held
+            if got is not None and got[1] is not None:
+                # Read from elife_counts.csv (not computed from the file):
+                # is that file older than the counts file? See the docstring.
+                counts_at = csv_path.stat().st_mtime
+                elife_at = Path(got[1]).stat().st_mtime
+                if elife_at < counts_at - self.ELIFE_BEFORE_COUNTS_ALLOWANCE_S:
+                    outcome['elife_errors'].append(
+                        f"{Path(got[1]).name} was last written "
+                        f"{counts_at - elife_at:.0f} s before {csv_path.name}, so its row for "
+                        f"{brain_id} is from an earlier count (MouseBrain's step 6 writes the "
+                        f"counts file first and the groups after); re-run step 6 (count "
+                        f"regions) for the brain")
+                    got = None
+            if got is not None:
+                elife = got
+
+        with self._import_session(dry_run) as session:
+            brain_sample = self._ensure_brain_sample(session, brain_id, brain_info, dry_run)
+            if not brain_sample:
+                self.errors.append(
+                    f"Region counts for {brain_id} NOT imported: its cohort "
+                    f"{brain_info['cohort_id']} is not in the database yet (import "
+                    f"the cohort's tracking sheet or one of its videos first)")
+                return done()
+
+            stored_rc = (session.query(RegionCount).filter_by(
+                brain_sample_id=brain_sample.id).all() if brain_sample.id else [])
+            new_rc = [dict(row, is_final=1) for row in rows]
+            if not stored_rc:
+                outcome['region_action'] = 'new'
+            elif force or _content(stored_rc, _RC_FIELDS) != _content(new_rc, _RC_FIELDS):
+                outcome['region_action'] = 'replaced'
+            else:
+                outcome['region_action'] = 'unchanged'
+            if outcome['region_action'] != 'unchanged':
+                if stored_rc and not dry_run:
+                    for old in stored_rc:
+                        session.delete(old)
+                    session.flush()
+                for row in rows:
+                    if not dry_run:
+                        session.add(RegionCount(
+                            brain_sample_id=brain_sample.id, calibration_run_id=None,
+                            is_final=1, source_file=str(csv_path), **row))
+                    self.imported_counts['region_counts'] += 1
+
+            stored_ec = (session.query(ElifeRegionCount).filter_by(
+                brain_sample_id=brain_sample.id).all() if brain_sample.id else [])
+            if elife is not None:
+                elife_rows, elife_source = elife
+                new_ec = [dict(row, is_final=1) for row in elife_rows]
+                if not stored_ec:
+                    outcome['elife_action'] = 'new'
+                elif force or _content(stored_ec, _EC_FIELDS) != _content(new_ec, _EC_FIELDS):
+                    outcome['elife_action'] = 'replaced'
+                else:
+                    outcome['elife_action'] = 'unchanged'
+                if outcome['elife_action'] != 'unchanged':
+                    if stored_ec and not dry_run:
+                        for old in stored_ec:
+                            session.delete(old)
+                        session.flush()
+                    for row in elife_rows:
+                        if not dry_run:
+                            session.add(ElifeRegionCount(
+                                brain_sample_id=brain_sample.id, calibration_run_id=None,
+                                is_final=1, source_file=elife_source or str(csv_path), **row))
+                        self.imported_counts['elife_region_counts'] += 1
+            else:
+                outcome['elife_action'] = 'failed'
+                if stored_ec and outcome['region_action'] == 'replaced':
+                    if not dry_run:
+                        for old in stored_ec:
+                            session.delete(old)
+                    outcome['elife_action'] = 'removed'
+                    outcome['elife_errors'].append(
+                        f"its {len(stored_ec)} stored eLife group count(s) were removed: they "
+                        f"were computed from the previous region counts, which this run replaced")
+        return done()
+
+    def _region_totals(self, df: pd.DataFrame):
+        """({acronym: total}, {acronym: {'left': n, 'right': n}}) from a
+        per-brain CSV's region_acronym / cell_count / left_count / right_count
+        columns -- what the eLife grouping is computed from."""
+        region_counts_dict, hemisphere_counts = {}, {}
+        if 'region_acronym' not in df.columns:
+            return region_counts_dict, hemisphere_counts
+        for _, row in df.iterrows():
+            acr = row.get('region_acronym')
+            if acr is None or pd.isna(acr) or str(acr) == '':
+                continue
+            acr = str(acr)
+            total = self._parse_int(row.get('cell_count')) or 0
+            left = self._parse_int(row.get('left_count')) or 0
+            right = self._parse_int(row.get('right_count')) or 0
+            region_counts_dict[acr] = total
+            if left > 0 or right > 0:
+                hemisphere_counts[acr] = {'left': left, 'right': right}
+        return region_counts_dict, hemisphere_counts
 
     def import_cells_from_xml(self, xml_path: Path, brain_id: Optional[str] = None,
                                calibration_run_id: Optional[int] = None,

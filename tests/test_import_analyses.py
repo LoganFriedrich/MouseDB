@@ -1457,10 +1457,13 @@ class TestImportBrainsExitCode:
             name = Path(p).name
             return None if name.startswith("junk") else name.split("_counts")[0]
 
-        def import_region_counts(self, csv_path, brain_id=None, is_final=True, dry_run=False):
+        def sync_brain_counts(self, csv_path, brain_id=None, elife_summary_csv=None,
+                              dry_run=False, force=False, region_summary_csv=None):
             ok = brain_id != "B2"
             return {"success": ok, "imported": {"region_counts": 3 if ok else 0},
-                    "errors": [] if ok else ["cohort not in the database"], "warnings": []}
+                    "errors": [] if ok else ["cohort not in the database"], "warnings": [],
+                    "region_action": "new" if ok else None,
+                    "elife_action": "new" if ok else None, "elife_errors": []}
 
     def _setup(self, tmp_path, monkeypatch, calibration_ok=True):
         import sqlalchemy
@@ -1473,7 +1476,6 @@ class TestImportBrainsExitCode:
         monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: _Db())
         monkeypatch.setattr(imod, "BrainGlobeImporter",
                             lambda db: self._Importer(db, calibration_ok))
-        monkeypatch.setattr(cli, "_import_elife_from_csv", lambda *a, **k: (0, []))
         for name in ("B1_counts.csv", "B2_counts.csv", "junk_counts.csv", "calibration_runs.csv"):
             _write(tmp_path / name, "region,count\nroot,1\n")
         return cli

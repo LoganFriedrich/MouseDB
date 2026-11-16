@@ -107,6 +107,32 @@ checked-in code, not what's planned.
   scheduled sheet import) now name the file in one sentence -- and any
   `mousedb-sheets` command that still needs a location from it stops with
   one `[FAIL]` line and exit 1 -- instead of ending in a traceback.
+- Brain import: a brain's counts follow its counts file. The import only
+  added counts a brain did not have yet, so a brain recounted (for example
+  after its registration was corrected) kept its first counts in the
+  database, marked final, and nothing said so. Each run now compares every
+  brain's file with the database and, when they differ, replaces that brain's
+  region counts and eLife groups together in one transaction; each brain's
+  line says `added`, `unchanged` or `REPLACED`. A file changed in the last
+  two minutes, unreadable, without region rows, or cut off (no line break at
+  its end, a region row without a readable count, or -- for a file cut off
+  between two rows -- another total or other regions than MouseBrain's
+  `region_counts.csv` written after it) is left for the next run with the
+  stored counts kept; a file that is gone removes nothing. Two counts files
+  naming one brain are neither imported (`[FAIL]` names both). When a
+  recounted brain's groups cannot be had -- its row is missing from
+  `elife_counts.csv`, that file looks cut off, or it was last written before
+  the counts file, so its row is from the earlier count -- the old groups
+  are removed with the old counts and the run ends with `[FAIL]`; when the
+  counts did not change, the stored groups stay. Warnings (`Unknown
+  acronym`: a region left out) are printed under each brain's line. Not
+  detected: a stale row in an `elife_counts.csv` that was rewritten later for
+  another brain, and a counts file cut off between two rows when step 6
+  stopped before writing `region_counts.csv`.
+  `--update` now replaces in that same single transaction (it used to delete
+  first and import after, so a failed import left the brain with nothing).
+  The first run after this change replaces every brain recounted since its
+  first import.
 - Brain import: a brain that is refused writes nothing. A counts file whose
   columns could not be read was refused only after a placeholder animal and
   the brain's row had been added, and those were saved although the import

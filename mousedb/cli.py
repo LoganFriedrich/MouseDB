@@ -1123,26 +1123,24 @@ def _import_brains_body(args, summary_dir):
                   % csv_path.name)
             return 1
 
-        if args.update:
-            _delete_brain_data(db, brain_id, dry_run)
-
-        result = importer.import_region_counts(
-            csv_path, brain_id=brain_id, is_final=True, dry_run=dry_run)
-        _print_import_result(f"Region counts ({brain_id})", result)
+        # The region counts and the eLife groups (MouseBrain's aggregate,
+        # elife_counts.csv, normally sits beside the per-brain CSV in
+        # 2_Data_Summary) in one transaction; changed counts replace the
+        # stored ones (see BrainGlobeImporter.sync_brain_counts).
+        elife_csv = (summary_dir or csv_path.parent) / 'elife_counts.csv'
+        result = importer.sync_brain_counts(
+            csv_path, brain_id=brain_id, elife_summary_csv=elife_csv,
+            dry_run=dry_run, force=args.update,
+            region_summary_csv=(summary_dir or csv_path.parent) / 'region_counts.csv')
+        print("  " + _brain_sync_line(brain_id, result, prefix))
+        _print_brain_warnings(brain_id, result)
         if not result['success']:
             print(f"[FAIL] brain {brain_id} NOT imported -- see the lines above")
             return 1
-
-        # Also import eLife counts. MouseBrain's aggregate (elife_counts.csv)
-        # normally sits beside the per-brain CSV in 2_Data_Summary.
-        if result['success'] and not dry_run:
-            elife_csv = (summary_dir or csv_path.parent) / 'elife_counts.csv'
-            _, elife_errors = _import_elife_from_csv(
-                importer, db, csv_path, brain_id, dry_run, elife_csv)
-            if elife_errors:
-                print(f"[FAIL] eLife group counts NOT imported for brain {brain_id} "
-                      f"-- see the lines above")
-                return 1
+        if result['elife_errors']:
+            print(f"[FAIL] eLife group counts NOT imported for brain {brain_id} "
+                  f"-- see the lines above")
+            return 1
         return 0
 
     if args.all:
@@ -1185,10 +1183,25 @@ def _import_brains_body(args, summary_dir):
         total_regions = 0
         total_elife = 0
         elife_failed = []
+        actions = {}
         # MouseBrain's step 6 writes the eLife aggregate itself (one row per
         # brain); it is what the eLife import reads when mousebrain is not
         # importable in this environment.
         elife_csv = summary_dir / 'elife_counts.csv'
+
+        # Which files name which brain. Several files naming one brain (say a
+        # bare '<brain>_counts.csv' left beside step 6's
+        # '<mouse>_<brain>_counts.csv') cannot both be its counts, and since
+        # each import REPLACES the stored counts, importing both would let
+        # whichever sorts last win every night, whatever its age. None of
+        # them is imported: the stored counts stay, and the [FAIL] line names
+        # every file, for a person to say which one is the brain's.
+        files_of = {}
+        for csv_path in brain_csvs:
+            brain_id = importer._extract_brain_from_path(csv_path)
+            if brain_id:
+                files_of.setdefault(brain_id, []).append(csv_path)
+        announced = set()
 
         for csv_path in brain_csvs:
             brain_id = importer._extract_brain_from_path(csv_path)
@@ -1198,34 +1211,46 @@ def _import_brains_body(args, summary_dir):
                 print(f"  Skipping {csv_path.name}: could not parse brain ID")
                 not_imported.append("%s (no brain ID in the file name)" % csv_path.name)
                 continue
+            if len(files_of[brain_id]) > 1:
+                if brain_id not in announced:
+                    announced.add(brain_id)
+                    names = ", ".join(f.name for f in files_of[brain_id])
+                    print(f"  {prefix}{brain_id}: [FAIL] {len(files_of[brain_id])} counts files "
+                          f"name this brain ({names}); none of them is imported and the "
+                          f"counts the database holds for it are kept. Move aside every "
+                          f"file but the brain's current counts, then run the import again")
+                    not_imported.append("%s (%d counts files name it: %s)"
+                                        % (brain_id, len(files_of[brain_id]), names))
+                continue
 
-            if args.update:
-                _delete_brain_data(db, brain_id, dry_run)
-
-            result = importer.import_region_counts(
-                csv_path, brain_id=brain_id, is_final=True, dry_run=dry_run)
-            rc = result.get('imported', {}).get('region_counts', 0)
-            total_regions += rc
-
-            status = "[OK]" if result['success'] else "[FAIL]"
-            errs = f" ({', '.join(result['errors'])})" if result['errors'] else ""
-            print(f"  {brain_id}: {rc} region counts {status}{errs}")
+            # The brain's counts follow its file: new ones are added, changed
+            # ones REPLACE what the database holds (a recount), unchanged ones
+            # are left alone -- region counts and eLife groups together, in
+            # one transaction (see BrainGlobeImporter.sync_brain_counts).
+            result = importer.sync_brain_counts(
+                csv_path, brain_id=brain_id, elife_summary_csv=elife_csv,
+                dry_run=dry_run, force=args.update,
+                region_summary_csv=summary_dir / 'region_counts.csv')
+            total_regions += result.get('imported', {}).get('region_counts', 0)
+            total_elife += result.get('imported', {}).get('elife_region_counts', 0)
+            for action in (result.get('region_action'), result.get('elife_action')):
+                if action:
+                    actions[action] = actions.get(action, 0) + 1
+            print("  " + _brain_sync_line(brain_id, result, prefix))
+            _print_brain_warnings(brain_id, result)
             if not result['success']:
                 not_imported.append(brain_id)
-
-            # Import eLife counts
-            if result['success']:
-                elife_count, elife_errors = _import_elife_from_csv(
-                    importer, db, csv_path, brain_id, dry_run, elife_csv)
-                total_elife += elife_count
-                if elife_errors:
-                    elife_failed.append(brain_id)
+            elif result['elife_errors']:
+                elife_failed.append(brain_id)
 
         # Summary
         print(f"\n{'=' * 60}")
         print(f"{prefix}Import Complete:")
-        print(f"  Region counts: {total_regions}")
-        print(f"  eLife group counts: {total_elife}")
+        print(f"  Region count rows written: {total_regions}")
+        print(f"  eLife group count rows written: {total_elife}")
+        if actions:
+            print("  Count sets (region and eLife, per brain): " + ", ".join(
+                "%d %s" % (n, a) for a, n in sorted(actions.items())))
         if elife_failed:
             print(f"  [FAIL] eLife group counts NOT imported for {len(elife_failed)} brain(s): "
                   f"{', '.join(elife_failed)} -- see the lines above")
@@ -1252,89 +1277,46 @@ def _import_brains_body(args, summary_dir):
     return 1
 
 
-def _import_elife_from_csv(importer, db, csv_path, brain_id, dry_run, elife_csv=None):
-    """Parse a per-brain CSV and import eLife grouped counts.
-
-    Returns (count, errors). Every reason nothing was imported is PRINTED and
-    returned -- the silent `return 0` paths this function used to have are
-    how eLife counts went unimported for months without anyone noticing.
-    ``elife_csv`` is MouseBrain's own aggregate (2_Data_Summary/elife_counts.csv),
-    read when mousebrain is not importable here (see importers.import_elife_counts).
-    """
-    import csv as csv_mod
-    from .schema import BrainSample
-
-    region_counts_dict = {}
-    hemisphere_counts = {}
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv_mod.DictReader(f)
-        for row in reader:
-            acr = row.get('region_acronym', '')
-            if not acr:
-                continue
-            total = int(row.get('cell_count', 0) or 0)
-            left = int(row.get('left_count', 0) or 0)
-            right = int(row.get('right_count', 0) or 0)
-            region_counts_dict[acr] = total
-            if left > 0 or right > 0:
-                hemisphere_counts[acr] = {'left': left, 'right': right}
-
-    def _fail(msg):
-        print(f"    [FAIL] eLife counts ({brain_id}): {msg}")
-        return 0, [msg]
-
-    if not region_counts_dict:
-        return _fail(f"no region rows in {csv_path.name}")
-
-    brain_info = importer.parse_brain_name(brain_id)
-    if not brain_info:
-        return _fail(f"brain id {brain_id!r} does not parse as BRAIN#_PROJECT_COHORT_SUBJECT_MAGx_zSTEP")
-
-    with db.session() as session:
-        bs = session.query(BrainSample).filter_by(
-            subject_id=brain_info['subject_id'], brain_id=brain_id
-        ).first()
-        if not bs:
-            return _fail("no brain_samples row (the region-count import should have created it)")
-
-        result = importer.import_elife_counts(
-            brain_sample_id=bs.id,
-            region_counts_dict=region_counts_dict,
-            hemisphere_counts=hemisphere_counts,
-            is_final=True,
-            source_file=str(csv_path),
-            dry_run=dry_run,
-            brain_id=brain_id,
-            elife_summary_csv=elife_csv,
-        )
-        for err in result.get('errors', []):
-            print(f"    [FAIL] eLife counts ({brain_id}): {err}")
-        for warn in result.get('warnings', []):
-            print(f"    [!] eLife counts ({brain_id}): {warn}")
-        return (result.get('imported', {}).get('elife_region_counts', 0),
-                list(result.get('errors', [])))
+# At most this many warning lines are printed per brain (the rest are counted):
+# one atlas update can make hundreds of acronyms unknown at once.
+BRAIN_WARNINGS_SHOWN = 10
 
 
-def _delete_brain_data(db, brain_id, dry_run):
-    """Delete existing region/eLife counts for a brain (for re-import)."""
-    from .schema import BrainSample, RegionCount, ElifeRegionCount
+def _print_brain_warnings(brain_id, result):
+    """Print a brain's warnings under its line, as '[!]' lines.
 
-    with db.session() as session:
-        bs = session.query(BrainSample).filter_by(brain_id=brain_id).first()
-        if not bs:
-            return
+    WHY: a warning here is data left out or stored on trust -- 'Unknown
+    acronym: X' is a region whose counts did NOT go in, and a group name
+    elife_counts.csv carries that mousedb does not know is stored as written.
+    Nothing fails silently, so they are shown, not just collected."""
+    warnings = result.get('warnings') or []
+    for warn in warnings[:BRAIN_WARNINGS_SHOWN]:
+        print(f"    [!] {brain_id}: {warn}")
+    if len(warnings) > BRAIN_WARNINGS_SHOWN:
+        print(f"    [!] {brain_id}: ... and {len(warnings) - BRAIN_WARNINGS_SHOWN} more warning(s)")
 
-        prefix = "[DRY RUN] " if dry_run else ""
-        rc_count = session.query(RegionCount).filter_by(brain_sample_id=bs.id).count()
-        ec_count = session.query(ElifeRegionCount).filter_by(brain_sample_id=bs.id).count()
 
-        if rc_count > 0 or ec_count > 0:
-            print(f"  {prefix}Deleting existing data for {brain_id}: "
-                  f"{rc_count} region counts, {ec_count} eLife counts")
-            if not dry_run:
-                session.query(RegionCount).filter_by(brain_sample_id=bs.id).delete()
-                session.query(ElifeRegionCount).filter_by(brain_sample_id=bs.id).delete()
-                session.commit()
+def _brain_sync_line(brain_id, result, prefix=""):
+    """One line saying what a brain's counts import did: the region counts and
+    the eLife groups, each new / replaced / unchanged, or why not."""
+    if not result['success']:
+        return "%s%s: [FAIL] %s" % (prefix, brain_id, "; ".join(result['errors']))
+    got = result.get('imported', {})
+    words = {'new': 'added',
+             'replaced': ('REPLACED (--update)' if result.get('forced')
+                          else 'REPLACED (the file changed)'),
+             'unchanged': 'unchanged'}
+    region = "region counts %s" % words[result['region_action']]
+    if result['region_action'] != 'unchanged':
+        region += " (%d rows)" % got.get('region_counts', 0)
+    action = result.get('elife_action')
+    if action in words:
+        elife = "eLife groups %s" % words[action]
+        if action != 'unchanged':
+            elife += " (%d rows)" % got.get('elife_region_counts', 0)
+        return "%s%s: %s, %s [OK]" % (prefix, brain_id, region, elife)
+    return "%s%s: %s [OK]; [FAIL] eLife groups NOT imported: %s" % (
+        prefix, brain_id, region, "; ".join(result['elife_errors']))
 
 
 def _print_import_result(label, result):
@@ -1867,7 +1849,8 @@ def main():
              "<mousebrain_pipeline_root>/3D_Cleared/2_Data_Summary, from "
              "`mousedb config --set mousebrain_pipeline_root <path>`")
     brain_parser.add_argument('--update', action='store_true',
-        help='Delete existing counts for brain(s) before re-importing')
+        help="Replace each brain's stored counts even when its file has not changed "
+             "(without it, only brains whose counts file changed are replaced)")
     brain_parser.add_argument('--dry-run', action='store_true',
         help='Validate without writing to database')
     brain_parser.set_defaults(func=cmd_import_brains)

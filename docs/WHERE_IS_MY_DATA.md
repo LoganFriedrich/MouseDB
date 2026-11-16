@@ -976,6 +976,120 @@ so must be archived). Do not edit or delete it.
   scheduler's time limit, or by End in Task Scheduler -- leaves the previous
   version of each, never half a file.
 
+## How brain counts get here
+
+MouseBrain's last step writes one counts file per brain into
+`3D_Cleared/2_Data_Summary` of its pipeline folder (`<brain>_counts.csv`: the
+cells in every atlas region, in total and per side), plus one file for all
+brains with the 25 functional groups (`elife_counts.csv`) and its record of
+every calibration run (`calibration_runs.csv`). `mousedb import-brains --all`
+(scheduled daily where set up, and step 4 of the Update button) reads that
+folder. Nothing in it is changed.
+
+**The database holds what each brain's file says now.** For every counts
+file the import compares the file with what the database holds for that
+brain:
+
+| what it finds | what it does | what the line for that brain says |
+|---|---|---|
+| a brain the database has no counts for | adds them | `region counts added`, `eLife groups added` |
+| the same counts as before | nothing | `unchanged` |
+| different counts (the brain was recounted, for example after its registration was corrected) | **replaces** that brain's counts -- region counts and groups together, in one step, so nobody ever sees half an old count and half a new one | `REPLACED (the file changed)` |
+
+(For the groups only the numbers are compared. The list of atlas regions in
+each group is filled when the groups are computed with MouseBrain's own
+mapping and empty when they are read from `elife_counts.csv`; the same
+numbers from the other source are `unchanged`, and the stored list is kept.)
+
+Rules that keep a replacement safe:
+
+- A counts file that is gone does not remove anything: the brain keeps the
+  counts it has.
+- A file changed in the last two minutes may still be being written. That
+  brain is left alone (its stored counts kept) and the run ends with a
+  `[FAIL]` line naming it; the next run takes it. The same happens when the
+  file cannot be read or holds no region rows.
+  The two-minute rule also covers `elife_counts.csv`, which every brain
+  shares: if THAT file changed in the last two minutes, every brain waits,
+  and the run ends with a `[FAIL]` line naming all of them. Nothing is lost:
+  the next scheduled run (or the task's restart after a failure, where it
+  has one), or running the command again a few minutes later,
+  imports them all.
+- A counts file that looks cut off is refused the same way (stored counts
+  kept, `[FAIL]` naming the brain, the words `looks cut off` in its line):
+  a file whose last line has no line break at its end (its last row was cut
+  off, perhaps in the middle of a number), or a row that names a region but
+  has no readable number in `cell_count`, `left_count` or `right_count`
+  (MouseBrain writes all three for every region, zeros included). Replacing
+  from such a file would keep only the rows that happened to be complete.
+  To fix it, run MouseBrain's step 6 (count regions) for that brain again;
+  the next import takes the new file.
+- A counts file cut off exactly between two rows ends with a line break and
+  every row it still has is complete, so the checks above cannot see it.
+  For that the import compares the file with MouseBrain's own
+  `region_counts.csv` (one row per brain, which step 6 writes right AFTER
+  the counts file, from the same count). When `region_counts.csv` is newer
+  than the counts file and gives the brain a different total of cells, or
+  other regions, the file lost rows: it is refused the same way (stored
+  counts kept, `[FAIL]` naming the brain and the regions missing, `looks
+  cut off` in its line). Fix: run step 6 for that brain again.
+  When `region_counts.csv` is OLDER than the counts file -- step 6 stopped
+  after writing the counts file and before writing `region_counts.csv` -- it
+  holds the previous count and proves nothing, so a counts file cut off
+  between two rows in that same moment is NOT caught. If step 6 ever stops
+  part-way for a brain, run it again for that brain.
+  The other way round, a `region_counts.csv` rewritten later for ANOTHER
+  brain, while this brain's row is still from its earlier count, refuses a
+  good file; running step 6 again for the brain clears that too.
+- Two counts files that name the same brain (for example an old
+  `<brain>_counts.csv` left beside step 6's `<mouse>_<brain>_counts.csv`):
+  neither is imported, the brain keeps the counts it has, and the run ends
+  with a `[FAIL]` line naming every one of the files. Only a person can say
+  which one is the brain's current count: move the other aside (out of
+  `2_Data_Summary`) and run the import again. (Importing both would let
+  whichever file sorts last replace the counts on every run, however old.)
+- When a brain's groups cannot be had, it is reported with a `[FAIL]` line
+  naming the brain. That happens when its row is missing from
+  `elife_counts.csv`; when `elife_counts.csv` looks cut off (MouseBrain
+  rewrites it in place: it does not end with a line break, or the brain's
+  row has fewer or more cells than the file has columns); and when
+  `elife_counts.csv` was last written BEFORE
+  the brain's counts file: MouseBrain writes the counts file first and the
+  groups a few seconds after, so a row in an older `elife_counts.csv` is
+  from an earlier count (MouseBrain's step 6 stopped between the two). The
+  fix is the same: run step 6 for that brain again.
+  If the brain's region counts were replaced in that run, its OLD groups are
+  removed -- they were computed from the old count and would disagree with
+  the new one. They come back on the first run that can read the new ones.
+  If the region counts did not change, stored groups are left as they are.
+  (When mousebrain is installed where the import runs, the groups are
+  computed from the counts file itself and this check is not needed.)
+- What the import cannot see: an `elife_counts.csv` that still holds a
+  brain's row from an earlier count but was rewritten AFTER the brain's
+  counts file (because step 6 stopped for this brain and then counted
+  another brain before the import ran). Nothing in the file tells how old
+  one brain's row is. If step 6 ever stops part-way for a brain, run it
+  again for that brain before counting others.
+- A brain that is refused (its cohort is not in the database yet, its file
+  cannot be read ...) writes nothing at all, not even its animal or its
+  brain row.
+- Warnings are printed under the brain's line, as lines starting `[!]` (at
+  most ten per brain, then a count of the rest). `Unknown acronym: X` means
+  region X is NOT in the brain's counts: the atlas mousedb uses does not
+  know it. `group ... is not a known eLife group name` means a group in
+  `elife_counts.csv` was stored under the name it has there. Neither fails
+  the run.
+
+`--dry-run` shows the same lines (`REPLACED` included) without writing
+anything. `--update` replaces every brain's counts even when its file has
+not changed (only needed if rows were changed in the database by hand).
+
+The first run of this version replaces the counts of every brain whose file
+differs from what the database holds -- every brain recounted since it was
+first imported. Run `mousedb import-brains --all --dry-run` first: it lists
+every brain that would be replaced, so the change can be checked brain by
+brain before it happens.
+
 ## How far a study's list of sessions has got
 
 A study usually needs particular sessions -- one animal's tray run on one
@@ -1033,7 +1147,8 @@ in this fixed order:
    mousedb, which an import never touches
 2. MouseReach results -> reach_data (every new or changed video)
 3. MouseBrain analysis registry -> exports
-4. Brain region counts -> database
+4. Brain region counts -> database (a recounted brain's counts replace the
+   old ones; see "How brain counts get here")
 5. Snapshot + current exports rewritten (so the tab and the CSVs show what
    just landed)
 
