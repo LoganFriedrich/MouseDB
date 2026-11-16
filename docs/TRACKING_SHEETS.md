@@ -389,7 +389,11 @@ When it finds one, the import:
   date is corrected in the sheet. **What you do:** correct the date in the
   sheet.
 
-Only the tray-scoring tab is checked this way.
+Only the tray-scoring tab is checked this way. While several files match the
+cohort and none is pinned, no date is repaired and nothing is moved (see
+"When several files match a cohort"): the rows are read as dated in the file,
+and the warning `HELD BACK until the cohort's sheet is pinned: re-dating ...`
+says so. The import after you pin the sheet does the repair.
 
 ### A weekend date among one day's rows is read as that day
 
@@ -731,9 +735,23 @@ with a `1` on the end -- the system does not guess silently: the status says
 **N files match -- choose**, and until you choose, it reads the most recently
 edited one and says so. The import does not stop, but until you choose it
 only ADDS for that cohort: new rows from the newest file are added, and
-nothing earlier imports wrote is changed or removed to match it, in any
-table (otherwise a draft or an old copy could take rows out); the animal
-details are left as they were. The cohort's line says why:
+empty values are filled in (a weight's % of body weight), but nothing
+already stored is changed, moved or removed to match that file, in any
+table (otherwise a draft or an old copy could take rows out). That covers
+more than "The sheet wins": these steps wait for the pin too, and each one
+it held back is listed as a warning starting `HELD BACK until the cohort's
+sheet is pinned:`
+
+- re-dating scores typed a year off or on a weekend (the rows are read as
+  dated in the file, so they are not stored twice);
+- removing an earlier import of a virus batch the file shows as copied from
+  another cohort's workbook;
+- replacing the placeholder note of an animal or the placeholder start date
+  of a cohort first created from a video;
+- recording an animal as dead from a `Survived` cell.
+
+The phase labels are worked out again as after any import that adds rows.
+The animal details are left as they were. The cohort's line says why:
 
 ```
        [!] animal details left as they were: 2 files match CNT_NN's sheet name (...) and none is pinned, ...
@@ -891,6 +909,7 @@ animal-details copy, video data and tissue data are not touched.
 | `Cohort <cohort> is not in the database and its tracking sheet gives no start date, so nothing could be filed ...` | Type a dated day-0 weigh-in; the waiting rows land on the next import. |
 | `0_Injection_Calculations: the virus prep for '...' was NOT imported -- this calculator has no date ...` | Add a date row (e.g. `Prep_Date`) to the calculator, or enter the prep as a dated batch block. |
 | `0_Injection_Calculations: batch '...' not imported: dated ..., before this cohort began` or `... already recorded for <cohort>` | The block was copied from an earlier cohort's workbook, so it is not this cohort's prep. Clear the block in the sheet, or give it this cohort's own date if the prep really was made for it. If an earlier import had recorded it, that record has been removed; one entered by a person is never removed. |
+| `HELD BACK until the cohort's sheet is pinned: ...` | Several files match the cohort and none is pinned, so the import changed nothing already stored (see "When several files match a cohort"). Pin the cohort's sheet and import again; that import does what the line names. |
 | `0_Injection_Calculations: vertical format is empty template` | Nothing: the calculator is still empty. |
 | `6_Ladder: ladder result not imported: the animal has no other record ...` | Record the animal elsewhere in the sheet first (`0a_Metadata`, a weight or a tray row); the next import takes the ladder row. |
 | `6_Ladder: ladder result not imported: a step-count cell holds something that is not a number` | Correct the cell to a number. |

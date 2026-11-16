@@ -579,3 +579,59 @@ def test_a_first_import_on_a_guess_is_still_reported_not_synced(tmp_path):
     r = imp.import_cohort_file(_workbook(_sheet(tmp_path)))
     assert len(r["sheet_sync"]["refused"]) == 1
     assert r["imported"]["pellet_scores"] > 0                        # rows still added
+
+
+def _guess(db, path):
+    imp = ExcelImporter(db)
+    imp.sync_blocked = "2 files match (test)"
+    return imp.import_cohort_file(path)
+
+
+def _dates_stored(db):
+    with db.session() as s:
+        out = {}
+        for p in s.query(PelletScore):
+            out[p.session_date] = out.get(p.session_date, 0) + 1
+        return out
+
+
+def test_a_workbook_read_on_a_guess_re_dates_no_stored_score(tmp_path):
+    """WHY: the sheet-wins sync was refused on a guess, but the year-typo
+    repair still moved stored scores to the date it read -- following a file
+    nobody chose. They stay where they are, and are not stored twice."""
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    typo = DAYS[3].replace(year=DAYS[3].year - 1)
+    with db.session() as s:      # an earlier import filed that day under the typo
+        s.query(PelletScore).filter_by(session_date=DAYS[3]).update({"session_date": typo})
+    days = [typo if d == DAYS[3] else d for d in DAYS]
+    per_day = _dates_stored(db)[typo]
+
+    r = _guess(db, _workbook(_sheet(tmp_path), days=days))
+    stored = _dates_stored(db)
+    assert stored.get(typo) == per_day and DAYS[3] not in stored
+    assert any("HELD BACK" in w and "re-dating" in w for w in r["warnings"])
+
+    _import(db, _workbook(_sheet(tmp_path), days=days))        # once pinned: moved
+    stored = _dates_stored(db)
+    assert stored.get(DAYS[3]) == per_day and typo not in stored
+
+
+def test_a_workbook_read_on_a_guess_replaces_no_note_and_records_no_death(tmp_path):
+    db = _db(tmp_path)
+    note = "auto-created from video 20260302_PROJA0101_P1 by the reach import"
+    with db.session() as s:
+        s.query(Subject).filter_by(subject_id=ANIMALS[0]).update({"notes": note})
+    path = _workbook(_sheet(tmp_path))
+    wb = openpyxl.load_workbook(path)
+    ws = wb["4_Contusion_Injury_Details"]
+    ws.cell(row=2, column=6, value="N")          # the first animal did not survive
+    wb.save(path)
+
+    r = _guess(db, path)
+    with db.session() as s:
+        a = s.query(Subject).filter_by(subject_id=ANIMALS[0]).one()
+        assert a.notes == note and a.is_active != 0
+    held = r["sheet_sync"]["held_back"]
+    assert any("placeholder note" in h for h in held)
+    assert any("not survived" in h for h in held)

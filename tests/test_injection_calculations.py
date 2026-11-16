@@ -231,3 +231,20 @@ class TestCarriedOverBatches:
         imp, s = _importer(), StoreSession(date(2026, 7, 12), [self._prep("CNT_05"), hand])
         imp._import_injection_batches(_sheet_df(LAB_BLOCK), "CNT_07", s, False)
         assert s.deleted == []
+
+
+def test_a_workbook_read_on_a_guess_takes_no_batch_back():
+    """WHY: with several files matching a cohort and none pinned, the import
+    reads one as a guess and must change nothing already stored; it still
+    removed an earlier import of a batch the guessed file showed as copied."""
+    name = TestCarriedOverBatches.NAME
+    prep = TestCarriedOverBatches.PREP
+    earlier = _Row(cohort_id="PROJA_71", prep_date=prep, virus_name=name,
+                   entered_by="excel_import")
+    own = _Row(cohort_id="PROJA_73", prep_date=prep, virus_name=name,
+               entered_by="excel_import")
+    imp, s = _importer(), StoreSession(date(2026, 7, 12), [earlier, own], "PROJA_73")
+    imp.sync_blocked = "2 files match (test)"
+    imp._import_injection_batches(_sheet_df(LAB_BLOCK), "PROJA_73", s, False)
+    assert s.deleted == []
+    assert any("HELD BACK" in w for w in imp.warnings)

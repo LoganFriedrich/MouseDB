@@ -158,7 +158,9 @@ class ExcelImporter:
         with self._import_session(dry_run) as session:
             # Ensure cohort exists
             cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
-            if cohort and str(cohort.notes or '').lower().startswith('auto-created'):
+            if (cohort and str(cohort.notes or '').lower().startswith('auto-created')
+                    and not self._held_back(
+                        "replacing %s's placeholder start date" % cohort_id)):
                 # The pipeline created this cohort from a video before the
                 # sheet was imported (videos arrive daily, sheets "eventually"),
                 # with the video's date as a placeholder start. The sheet is
@@ -817,6 +819,8 @@ class ExcelImporter:
         # weight % lands on the day its scores are filed under.
         repairs = self._tab_date_repairs(
             cohort_id, '3b_Manual_Tray', [self._parse_date(v) for v in df['Date']])
+        if self.sync_blocked:
+            repairs = {}   # the scores are not re-dated either (see _held_back)
         for _, row in df.iterrows():
             raw_id = row.get('Animal')
             if self._blank(raw_id):
@@ -1274,6 +1278,9 @@ class ExcelImporter:
                     self.__dict__.setdefault('_marked_dead', set()).add(subject_id)
                     # Mark subject as inactive (dead)
                     subject = session.query(Subject).filter_by(subject_id=subject_id).first()
+                    if (subject and subject.is_active != 0 and self._held_back(
+                            "recording %s as not survived" % subject_id)):
+                        subject = None
                     if subject and not dry_run:
                         subject.is_active = 0
                         if not subject.date_of_death:
@@ -1409,6 +1416,15 @@ class ExcelImporter:
         # the typed year are moved to it -- otherwise the phases of the whole
         # cohort are derived around a year-long false gap (date_typos).
         repairs = self._tab_date_repairs(cohort_id, '3b_Manual_Tray', [r[1] for r in rows])
+        if repairs and self._held_back(
+                "re-dating the 3b_Manual_Tray scores typed a year off (%s); the rows "
+                "are read as dated in the file" % ", ".join(
+                    "%s -> %s" % (t, m) for t, m in sorted(repairs.items()))):
+            # WHY not re-dated at all, rather than only the stored rows left
+            # alone: rows read under the corrected date would not match the
+            # stored ones under the typed date and would be stored a second
+            # time -- one tray counted on two days.
+            repairs = {}
         if repairs:
             rows = [(s, repairs.get(d, d), tt, tn, sc) for s, d, tt, tn, sc in rows]
             self._move_misdated_pellet_rows(session, cohort_id, repairs, dry_run)
@@ -1419,6 +1435,11 @@ class ExcelImporter:
         from .date_typos import block_date_repairs
         islands = block_date_repairs([(s, d, tt, tn) for s, d, tt, tn, _ in rows])
         tray_moves = {}
+        if islands and self._held_back(
+                "re-dating %d weekend-dated 3b_Manual_Tray row%s to the weekday they sit "
+                "among; the rows are read as dated in the file" % (
+                    len(islands), "" if len(islands) == 1 else "s")):
+            islands = {}   # as for the year typos above: never stored twice
         if islands:
             self._report_block_date_repairs(cohort_id, rows, islands)
             tray_moves = {(rows[i][0], rows[i][1], rows[i][2], rows[i][3]): meant
@@ -1486,13 +1507,17 @@ class ExcelImporter:
     # Set by the caller when the workbook being read may not be the cohort's
     # sheet at all: a sentence saying why (sheet_sync sets it when several
     # files match the cohort's sheet name and none is pinned, so the newest was
-    # read as a guess). Then NOTHING the import wrote before is changed or
-    # removed, in any table, whatever allow_large_removal says: new rows are
-    # still added, as an add-only import always did. WHY: bringing the
-    # database in step with a file nobody chose would change and remove rows
-    # to match a draft or an old copy. Recorded once as a refusal, even when
-    # the cohort has no earlier rows yet, so the cohort shows as NOT SYNCED
-    # until a person pins its sheet.
+    # read as a guess). Then NOTHING already stored is changed, moved or
+    # removed, in any table, whatever allow_large_removal says: the sheet-wins
+    # sync is refused (_sync_guard), and every other step that would change a
+    # stored row is held back (_held_back): re-dating scores typed on a wrong
+    # date, removing a virus prep copied from an earlier cohort's workbook,
+    # replacing a placeholder note or start date, recording a death. New rows
+    # are still added and EMPTY values filled in (a weight's percentage), as
+    # an add-only import always did. WHY: bringing the database in step with
+    # a file nobody chose would change and remove rows to match a draft or an
+    # old copy. Recorded once as a refusal, even when the cohort has no earlier
+    # rows yet, so the cohort shows as NOT SYNCED until a person pins its sheet.
     sync_blocked = None
 
     # What a surgery row stores from its tab, per type: the values compared
@@ -1548,6 +1573,21 @@ class ExcelImporter:
                     "than corrections" % (n_changed, n_rows, round(100 * self.SYNC_MAX_CHANGED_FRACTION)))
         return None
 
+    def _held_back(self, what: str) -> bool:
+        """True when the workbook may not be the cohort's sheet (sync_blocked):
+        the caller then does NOT make the change ``what`` describes to a stored
+        row. Each change held back is listed once, under the result's
+        sheet_sync.held_back and as a warning, so the person who pins the sheet
+        can see what the next import will do. False otherwise."""
+        if not self.sync_blocked:
+            return False
+        held = self._sync_state().setdefault('held_back', [])
+        text = self._ascii("HELD BACK until the cohort's sheet is pinned: %s" % what)
+        if text not in held:
+            held.append(text)
+            self.warnings.append(text)
+        return True
+
     def _sync_state(self) -> Dict:
         """This import's record of what the sheet changed (see _get_result)."""
         return self.__dict__.setdefault('_sheet_sync', {})
@@ -1566,8 +1606,9 @@ class ExcelImporter:
                 return
             self.__dict__['_blocked_said'] = True
             text = self._ascii(
-                "NOT SYNCED any table: %s. Nothing earlier imports wrote for this "
-                "cohort was removed or changed; new rows were still added. Say which "
+                "NOT SYNCED any table: %s. Nothing already stored for this cohort was "
+                "removed, changed or moved; new rows were still added and empty "
+                "values filled in. Say which "
                 "file is the sheet with 'mousedb-sheets pin <cohort> \"<file name>\"' "
                 "(or the Tracking Sheets tab), then import again." % why)
             self._sync_state().setdefault('refused', []).append(text)
@@ -2404,7 +2445,11 @@ class ExcelImporter:
                 # from such a block is taken back, so a sheet that was copied
                 # corrects itself; a row a person entered is never touched.
                 removed = False
-                if existing and existing.entered_by == 'excel_import' and not dry_run:
+                if (existing and existing.entered_by == 'excel_import'
+                        and not self._held_back(
+                            "removing %s's earlier import of copied batch %r" % (
+                                cohort_id, title))
+                        and not dry_run):
                     session.delete(existing)
                     removed = True
                 self.warnings.append(
@@ -3237,7 +3282,10 @@ class ExcelImporter:
                 session.add(subject)
                 session.flush()
             self.imported_counts['subjects'] = self.imported_counts.get('subjects', 0) + 1
-        elif str(existing.notes or '').lower().startswith('auto-created'):
+        elif (str(existing.notes or '').lower().startswith('auto-created')
+              and not self._held_back(
+                  "replacing the placeholder note of %s, first created from a video"
+                  % subject_id)):
             # The animal was first created from a video, before its sheet named
             # it, with a placeholder note saying so (import_reaches). The sheet
             # names it now, so the note is no longer true -- and it is how the
