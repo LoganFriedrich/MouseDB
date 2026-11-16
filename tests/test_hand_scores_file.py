@@ -97,3 +97,59 @@ def test_only_an_import_of_every_sheet_moves_full_import_at(tmp_path, monkeypatc
     assert m1["full_import_at"] == m1["written_at"] and m1["sheets_seen"] == ["CNT_01", "CNT_02"]
     m2 = w()                                    # e.g. one cohort imported by hand
     assert m2["full_import_at"] == m1["full_import_at"] and m2["sheets_seen"] == ["CNT_01", "CNT_02"]
+
+
+def _database_with_an_unfinished_save(tmp_path):
+    """A database file with a stopped writer's unfinished save beside it: 3
+    saved rows, plus an abandoned change that would have made them 2003."""
+    import shutil
+    import sqlite3
+    live = tmp_path / "live.db"
+    con = sqlite3.connect(str(live), isolation_level=None)
+    con.execute("PRAGMA journal_mode = DELETE")
+    con.execute("PRAGMA cache_size = 1")
+    con.execute("CREATE TABLE t (n INTEGER, pad TEXT)")
+    con.execute("BEGIN")
+    con.executemany("INSERT INTO t VALUES (?, ?)", [(i, "x" * 900) for i in range(3)])
+    con.execute("COMMIT")
+    con.execute("BEGIN")
+    con.executemany("INSERT INTO t VALUES (?, ?)", [(i, "y" * 900) for i in range(2000)])
+    con.execute("UPDATE t SET pad = 'changed'")
+    # Copied while the writer is mid-save: exactly what a killed writer leaves.
+    stopped = tmp_path / "stopped.db"
+    shutil.copy(live, stopped)
+    shutil.copy(str(live) + "-journal", str(stopped) + "-journal")
+    con.execute("ROLLBACK")
+    con.close()
+    return stopped
+
+
+def test_the_read_gets_past_a_stopped_writers_unfinished_save(tmp_path):
+    import sqlite3
+    import pytest
+    stopped = _database_with_an_unfinished_save(tmp_path)
+    q = "SELECT n, pad FROM t ORDER BY n"
+    # What the old code did: a read-only connection is refused outright.
+    con = sqlite3.connect("file:%s?mode=ro" % stopped.as_posix(), uri=True)
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        con.execute(q).fetchall()
+    con.close()
+    # The read undoes the unfinished save and returns only what was saved.
+    assert hsf._read_rows(stopped, q) == [(0, "x" * 900), (1, "x" * 900), (2, "x" * 900)]
+
+
+def test_the_read_still_cannot_change_a_row(tmp_path, monkeypatch):
+    import sqlite3
+    import pytest
+    stopped = _database_with_an_unfinished_save(tmp_path)
+    with pytest.raises(sqlite3.OperationalError, match="readonly"):
+        hsf._read_rows(stopped, "DELETE FROM t")
+
+
+def test_another_failure_of_the_read_is_not_retried(tmp_path):
+    import sqlite3
+    import pytest
+    db = tmp_path / "plain.db"
+    sqlite3.connect(str(db)).close()
+    with pytest.raises(sqlite3.OperationalError, match="no such table"):
+        hsf._read_rows(db, "SELECT * FROM nothing_here")

@@ -83,6 +83,36 @@ def _last_successful_imports() -> Dict[str, str]:
     return out
 
 
+def _read_rows(db_file, q: str) -> list:
+    """Run one read of the database and return its rows.
+
+    The read is tried on a read-only connection first. WHY the second try:
+    when a writer was stopped part-way through a save, it leaves its unfinished
+    save beside the database, and the next connection has to undo it before
+    anything can be read. A read-only connection is not allowed to do that and
+    fails with "attempt to write a readonly database" -- which left the scores
+    file a day old although the import itself had landed. So on exactly that
+    refusal the read is repeated on an ordinary connection, which undoes the
+    unfinished save (as any writer's next open would) and is then told to
+    accept reads only (PRAGMA query_only), so this code still cannot change a
+    row. Any other failure is raised as it is.
+    """
+    con = sqlite3.connect("file:%s?mode=ro" % Path(db_file).as_posix(), uri=True, timeout=600)
+    try:
+        return con.execute(q).fetchall()
+    except sqlite3.OperationalError as e:
+        if "readonly" not in str(e).lower():
+            raise
+    finally:
+        con.close()
+    con = sqlite3.connect(str(db_file), timeout=600)
+    try:
+        con.execute("PRAGMA query_only = ON")
+        return con.execute(q).fetchall()
+    finally:
+        con.close()
+
+
 def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print,
           full_run: bool = False, sheets_seen: Optional[list] = None) -> dict:
     """Write the scores file and its manifest. Reads the database under the
@@ -101,11 +131,7 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
            JOIN subjects s ON s.subject_id = ps.subject_id
            LEFT JOIN cohorts c ON c.cohort_id = s.cohort_id"""
     with hold(waiting_for="another database task"):
-        con = sqlite3.connect("file:%s?mode=ro" % Path(db_file).as_posix(), uri=True, timeout=600)
-        try:
-            rows = con.execute(q).fetchall()
-        finally:
-            con.close()
+        rows = _read_rows(db_file, q)
     out = []
     for sid, day, tt, tn, pellet, score, cohort, project in rows:
         out.append((video_key(sid, day, tt, tn), int(pellet), int(score), sid, cohort,
