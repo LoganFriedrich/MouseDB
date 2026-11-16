@@ -727,6 +727,57 @@ class TestAFolderWithNothingRegisteredIsNoError:
         assert res.errors == 1 and res.archived == 0
         assert any("--confirm-withdrawn Alpha_Detection" in m for m in res.messages)
 
+    # WHY the next three: the ledger alone decided "nothing of it was
+    # mirrored". A new ledger (lost, set aside, a first run against a mirror
+    # that already exists) knows nothing of earlier copies, so the analysis
+    # was waved through as a [note]: exit 0, no manifest row, no reason on
+    # the tab, while the mirror still held its files.
+
+    def _alpha_held(self, db, res):
+        assert res.errors >= 1 and res.archived == 0
+        assert (db / "exports" / "Alpha_Detection" / "registry.json").is_file()
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert not (db / "_archived").exists()
+        manifest = json.loads((db / "exports" / "ANALYSES_MANIFEST.json").read_text())
+        rows = {r["analysis_name"]: r for r in manifest["analyses"]}
+        assert "Alpha_Detection" in rows, sorted(rows)
+        assert any("has no registry.json" in m for m in rows["Alpha_Detection"]["problems"])
+
+    def test_a_new_ledger_does_not_hide_a_mirrored_folder(self, roots, capsys):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (db / "logs" / "analysis_imports.json").unlink()
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        capsys.readouterr()
+        assert ia.main([]) == 1
+        out = capsys.readouterr().out
+        assert "[FAIL] Alpha_Detection: exports/Alpha_Detection has no registry.json" in out
+        assert "nothing of it is in the mirror" not in out
+        self._alpha_held(db, ia.run(log=_quiet))
+
+    def test_nor_does_a_ledger_set_aside(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (db / "logs" / "analysis_imports.json").write_text("[]", encoding="utf-8")
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        assert ia.main(["--set-aside-ledger"]) == 1
+        self._alpha_held(db, ia.run(log=_quiet))
+
+    def test_a_mirror_that_cannot_be_listed_is_held_too(self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (db / "logs" / "analysis_imports.json").unlink()
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+
+        def unlistable(dest, analysis):
+            raise PermissionError("access denied")
+        monkeypatch.setattr(ia, "mirror_files_of", unlistable)
+        res = ia.run(log=_quiet)
+        assert res.errors == 1 and res.archived == 0
+        assert any("could not be listed" in m and "Alpha_Detection" in m for m in res.messages)
+        assert "Alpha_Detection" in {r["analysis_name"] for r in res.manifest}
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+
 
 class TestConfirmWithdrawn:
     """WHY: nothing but this tool writes into the mirror, so when MouseBrain

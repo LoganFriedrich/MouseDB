@@ -178,9 +178,10 @@ checked-in code, not what's planned.
   read as "no files". Now an analysis folder without `registry.json` whose
   files the mirror holds, a folder that cannot be listed, or a run that lists
   no registry at all while the mirror holds files, archives nothing and fails
-  with a `[FAIL]` line. A folder without `registry.json` that nothing was ever
-  mirrored from (MouseBrain makes the folder before anything is registered in
-  it) is a `[note]`, not an error.
+  with a `[FAIL]` line. A folder without `registry.json` of which the mirror
+  holds nothing -- judged from the mirror's own folders as well as the
+  ledger, so a new or set-aside ledger cannot hide it (MouseBrain makes the
+  folder before anything is registered in it) -- is a `[note]`, not an error.
 - `mousedb import-analyses --confirm-withdrawn <analysis>` (repeatable):
   archives, through the usual archive step, every mirrored file of an
   analysis that MouseBrain no longer has, where the run would otherwise hold

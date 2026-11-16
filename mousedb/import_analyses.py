@@ -36,9 +36,11 @@ WHAT IT DOES
      while the ledger holds files archives nothing (see ``archivable_keys``).
      Every file kept back this way is an error of the run with its reason,
      and shows on the Where Is My Data tab (see ``held_problems``). A folder
-     with no registry.json and nothing mirrored from it (MouseBrain creates
-     the folder before anything is registered in it) is not an error: there
-     is nothing to copy and nothing to protect.
+     with no registry.json and nothing of it in the mirror -- neither in the
+     ledger nor in the mirror's own folders, which are listed too because a
+     new or set-aside ledger knows nothing of earlier copies -- is not an
+     error (MouseBrain creates the folder before anything is registered in
+     it): there is nothing to copy and nothing to protect.
   3a. When a person confirms that MouseBrain withdrew an analysis (or files of
      it) -- ``--confirm-withdrawn <analysis>`` -- the run archives every
      mirrored file of that analysis MouseBrain no longer has, through the same
@@ -691,8 +693,24 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                 log("  [note] %s: no %s at the source and confirmed withdrawn; its mirror "
                     "is archived" % (analysis, REGISTRY_FILE))
                 continue
-            if analysis not in mirrored:
-                # Nothing of it was ever mirrored, so there is nothing to keep
+            # Does the mirror hold anything of it? The ledger answers for
+            # what this ledger copied, but the MIRROR itself is asked too.
+            # WHY: a ledger set aside (--set-aside-ledger), lost, or new on a
+            # machine whose mirror already exists knows nothing of earlier
+            # copies; deciding from it alone read "nothing to keep safe"
+            # while the mirror still held the analysis, and the analysis
+            # dropped off the Where Is My Data tab with no reason given.
+            in_mirror = analysis in mirrored
+            if not in_mirror:
+                try:
+                    in_mirror = bool(mirror_files_of(dest, analysis))
+                except OSError as e:
+                    problem(row, "%s: exports/%s has no %s, and the mirror's folders of it "
+                                 "could not be listed (%s); nothing of it was copied or "
+                                 "archived -- run again" % (analysis, analysis, REGISTRY_FILE, e))
+                    continue
+            if not in_mirror:
+                # Nothing of it is in the mirror, so there is nothing to keep
                 # safe and nothing to copy: no error. WHY: MouseBrain creates
                 # exports/<analysis> as soon as anything opens that analysis's
                 # registry -- before anything is registered in it (a new
@@ -700,7 +718,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                 # Counted as an error, that empty folder failed this job every
                 # night and no later run could clear it.
                 del rows[analysis]
-                log("  [note] %s: exports/%s has no %s and nothing of it has been mirrored; "
+                log("  [note] %s: exports/%s has no %s and nothing of it is in the mirror; "
                     "nothing to do (an analysis with nothing registered yet)"
                     % (analysis, analysis, REGISTRY_FILE))
                 continue
