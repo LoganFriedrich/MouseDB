@@ -133,6 +133,18 @@ checked-in code, not what's planned.
   first and import after, so a failed import left the brain with nothing).
   The first run after this change replaces every brain recounted since its
   first import.
+- Brain import: calibration runs follow the tracker. A run already in the
+  database was skipped by every later import, so a run first imported while
+  `started`, or before it was marked best, kept that state for good; it is now
+  updated from `calibration_runs.csv` (status, cells found, duration, best,
+  settings, date). The importer also reads the tracker's own column names
+  (`det_ball_xy`, `det_threshold`, `duration_seconds`, `marked_best`,
+  `created_at` ...); it read names the tracker never writes, so every run
+  arrived without its detection settings, duration or date and was never
+  marked best. Runs without a tracker id are left as they are. The first
+  run after this change updates nearly every stored run once (its date,
+  and often its duration, settings or best flag); `mousedb import-brains
+  --all --dry-run` shows the count as `calibration_runs_updated`.
 - Brain import: a brain that is refused writes nothing. A counts file whose
   columns could not be read was refused only after a placeholder animal and
   the brain's row had been added, and those were saved although the import

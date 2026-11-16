@@ -1080,6 +1080,25 @@ Rules that keep a replacement safe:
   `elife_counts.csv` was stored under the name it has there. Neither fails
   the run.
 
+**Calibration runs follow the tracker too.** A run the tracker names by its
+own id (`exp_id`) that is already in the database is brought in line with
+the tracker on every run: its status (a run first seen as `started` becomes
+`completed` or `failed`), cells found, duration, whether it is marked best,
+its detection settings and its date. The `Calibration runs` line counts new
+and updated runs separately. A row with no `exp_id` gets a made-up id when it
+is first imported and is never changed afterwards, because the same made-up
+id need not name the same run the next time.
+
+The first run after this change updates nearly every stored calibration run
+once: older imports read column names the tracker does not write, so stored
+runs are missing their date, duration and detection settings, and a run
+marked best in the tracker is not best here. Run `mousedb import-brains --all
+--dry-run` first to see how many: the `Calibration runs` block prints
+`calibration_runs_updated: <n>` (and `calibration_runs: <n>` for runs it
+would add). The values written are the tracker's own, and a second run
+changes nothing. These rows are only ever written by this import, so no
+entry a person made is overwritten.
+
 `--dry-run` shows the same lines (`REPLACED` included) without writing
 anything. `--update` replaces every brain's counts even when its file has
 not changed (only needed if rows were changed in the database by hand).

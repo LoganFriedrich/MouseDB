@@ -3773,7 +3773,8 @@ class BrainGlobeImporter:
 
         self.errors = []
         self.warnings = []
-        self.imported_counts = {'calibration_runs': 0, 'brain_samples': 0}
+        self.imported_counts = {'calibration_runs': 0, 'calibration_runs_updated': 0,
+                                'brain_samples': 0}
 
         if not csv_path.exists():
             self.errors.append(f"File not found: {csv_path}")
@@ -3831,32 +3832,38 @@ class BrainGlobeImporter:
 
                 # Check for duplicate run
                 run_id = row.get('exp_id') or row.get('run_id')
-                if not run_id or pd.isna(run_id):
+                from_tracker = bool(run_id) and not pd.isna(run_id)
+                if not from_tracker:
                     run_id = f"{brain_id}_{len(brain_sample.calibration_runs) + 1}"
 
+                fields = self._calibration_fields(row)
                 existing = session.query(CalibrationRun).filter_by(
                     brain_sample_id=brain_sample.id if brain_sample.id else 0,
                     run_id=str(run_id)
                 ).first()
                 if existing:
+                    # A run the tracker names by its own id is brought in line
+                    # with the tracker: a run first imported while it was
+                    # 'started', or before it was marked best, used to keep
+                    # that first state for good. A run WITHOUT a tracker id
+                    # got a made-up one (brain + running number) that need not
+                    # name the same run next time, so it is never touched.
+                    if from_tracker:
+                        changed = {k: v for k, v in fields.items()
+                                   if getattr(existing, k) != v}
+                        if changed:
+                            if not dry_run:
+                                for k, v in changed.items():
+                                    setattr(existing, k, v)
+                            self.imported_counts['calibration_runs_updated'] += 1
                     continue
 
                 # Create calibration run
                 cal_run = CalibrationRun(
                     brain_sample_id=brain_sample.id,
                     run_id=str(run_id),
-                    ball_xy_um=self._parse_float(row.get('ball_xy') or row.get('ball_xy_um')),
-                    ball_z_um=self._parse_float(row.get('ball_z') or row.get('ball_z_um')),
-                    soma_diameter_um=self._parse_float(row.get('soma_diameter')),
-                    threshold=self._parse_float(row.get('threshold')),
-                    cells_detected=self._parse_int(row.get('det_cells_found') or row.get('cells_detected')),
-                    detection_time_s=self._parse_float(row.get('detection_time_s')),
-                    status=row.get('status') if pd.notna(row.get('status')) else 'unknown',
-                    is_best=1 if row.get('is_best') in (True, 1, '1', 'True', 'true') else 0,
-                    run_date=self._parse_datetime(row.get('timestamp') or row.get('run_date')),
-                    user=row.get('user') if pd.notna(row.get('user')) else None,
-                    notes=row.get('notes') if pd.notna(row.get('notes')) else None,
                     source_csv=str(csv_path),
+                    **fields,
                 )
 
                 if not dry_run:
@@ -3864,7 +3871,8 @@ class BrainGlobeImporter:
                 self.imported_counts['calibration_runs'] += 1
 
         if not dry_run and not self.errors:
-            print(f"  Committed {self.imported_counts['calibration_runs']} calibration runs")
+            print(f"  Committed {self.imported_counts['calibration_runs']} new and "
+                  f"{self.imported_counts['calibration_runs_updated']} updated calibration runs")
 
         if not_brains:
             names = ", ".join("%s (%d)" % (n, c) for n, c in sorted(not_brains.items()))
@@ -3872,6 +3880,43 @@ class BrainGlobeImporter:
                 "%d calibration run(s) name no brain and were skipped (training or test "
                 "runs, by name and count): %s" % (sum(not_brains.values()), names))
         return self._get_result()
+
+    def _calibration_fields(self, row) -> Dict:
+        """The CalibrationRun columns one row of the tracker's
+        calibration_runs.csv gives.
+
+        The tracker's own column names are read first (det_ball_xy,
+        det_threshold, duration_seconds, marked_best, created_at ...), then the
+        older names this importer was first written for. WHY: it read only the
+        older names, which the tracker does not write, so every run reached the
+        database with no detection settings, no duration, and is_best 0 --
+        a run marked best in the tracker was never best here.
+        """
+        def first(*names):
+            for name in names:
+                value = row.get(name)
+                if value is not None and not (isinstance(value, float) and pd.isna(value)):
+                    if not (isinstance(value, str) and value.strip() == ''):
+                        return value
+            return None
+
+        status = first('status')
+        user = first('user')
+        notes = first('notes')
+        best = first('marked_best', 'is_best')
+        return {
+            'ball_xy_um': self._parse_float(first('det_ball_xy', 'ball_xy', 'ball_xy_um')),
+            'ball_z_um': self._parse_float(first('det_ball_z', 'ball_z', 'ball_z_um')),
+            'soma_diameter_um': self._parse_float(first('det_soma_diameter', 'soma_diameter')),
+            'threshold': self._parse_float(first('det_threshold', 'threshold')),
+            'cells_detected': self._parse_int(first('det_cells_found', 'cells_detected')),
+            'detection_time_s': self._parse_float(first('duration_seconds', 'detection_time_s')),
+            'status': str(status) if status is not None else 'unknown',
+            'is_best': 1 if best in (True, 1, '1', 'True', 'true') else 0,
+            'run_date': self._parse_datetime(first('created_at', 'timestamp', 'run_date')),
+            'user': str(user) if user is not None else None,
+            'notes': str(notes) if notes is not None else None,
+        }
 
     def import_region_counts(self, csv_path: Path, brain_id: Optional[str] = None,
                              calibration_run_id: Optional[int] = None,
@@ -4938,12 +4983,16 @@ class BrainGlobeImporter:
         """Parse datetime value."""
         if pd.isna(value) if hasattr(pd, 'isna') else value is None:
             return None
-        if isinstance(value, datetime):
-            return value
         try:
-            return pd.to_datetime(value)
+            ts = pd.to_datetime(value)
         except Exception:
             return None
+        if pd.isna(ts):
+            return None
+        # A plain datetime without a time zone, as the database stores it, so a
+        # stored run compares equal to the same run read again (see
+        # import_calibration_runs).
+        return ts.to_pydatetime().replace(tzinfo=None)
 
     def _get_result(self) -> Dict:
         """Get import result summary."""
