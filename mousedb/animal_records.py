@@ -52,12 +52,30 @@ blank or accepts in another spelling, the ODC tab) this module names it,
 because nobody else will. A row that is not a performed surgery is never
 named for its id: a plan's id is not a problem until the surgery happens.
 
-Each import REPLACES that cohort's rows for the tabs it read, so a correction
+Each import REPLACES that cohort's rows for the tabs it READ, so a correction
 made in the sheet replaces the old value instead of piling up beside it. The
 sheet import (sheet_sync) runs this only after the importer has SAVED the same
 workbook: when the importer saved nothing (it recorded an error and undid the
 whole workbook), these rows are left as they were, so the animal details never
 describe a workbook the rest of the database does not hold.
+
+A tab's stored rows are left as they were -- not replaced -- when:
+  * the tab was not read at all: missing from the workbook, empty, or without
+    an animal id column. WHY: every tab used to be wiped whether or not it was
+    read, so a renamed tab emptied that tab's records;
+  * the tab was read but gives NO record while the database holds some for
+    this cohort (unless a person who checked the sheet allows it --
+    ``allow_large_removal``, the same permission the importer's broken-read
+    guard takes). WHY: a read that suddenly holds nothing is far more likely
+    a tab caught mid-save or columns shifted than every animal's details
+    deleted on purpose -- the same reasoning as the importer's guard
+    (importers: "The sheet wins");
+  * the caller asks for it (``keep_tabs``): the sheet import keeps the surgery
+    tabs when the importer refused to sync the surgeries, and the tray tab when
+    it refused the pellet scores, so the animal details never follow a read
+    the rest of the import judged broken.
+Each tab left this way is returned under "kept" with the reason, and the sheet
+import reports it beside the importer's own refusals.
 Values are text; dates become YYYY-MM-DD; blanks and "?" are not stored.
 """
 from __future__ import annotations
@@ -572,8 +590,14 @@ def _records_from_rows(rows, header, tab, cohort_id, subject_col, source, warnin
     return out
 
 
-def read_cnt_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[dict]:
-    """Records from a project cohort workbook's animal-level tabs (header in row 1)."""
+def read_cnt_workbook(path: Path, cohort_id: str, warnings: List[str],
+                      tabs_read: Optional[List[str]] = None) -> List[dict]:
+    """Records from a project cohort workbook's animal-level tabs (header in row 1).
+    ``tabs_read``, when given, gets the name of every tab actually READ (present,
+    with a header row and an animal id column) -- the only tabs whose stored
+    records may be replaced (see the module docstring)."""
+    if tabs_read is None:
+        tabs_read = []
     import openpyxl
     from .file_holders import readable_workbook
     path = Path(path)
@@ -593,18 +617,22 @@ def read_cnt_workbook(path: Path, cohort_id: str, warnings: List[str]) -> List[d
             if col is None:
                 warnings.append(_ascii("%s: '%s' has no animal id column" % (path.name, tab)))
                 continue
+            tabs_read.append(tab)
             out += _records_from_rows(it, header, tab, cohort_id, col, path.name, warnings,
                                       gated=tab in SURGERY_PROOF_COLUMNS,
                                       importer_reads_tab=True, raw_header=raw_header)
         if TRAY_TAB in wb.sheetnames:
-            out += _tray_fields(wb[TRAY_TAB], cohort_id, path.name)
+            out += _tray_fields(wb[TRAY_TAB], cohort_id, path.name, tabs_read)
     finally:
         wb.close()
     return out
 
 
-def _tray_fields(ws, cohort_id: str, source: str) -> List[dict]:
-    """First non-blank value of each TRAY_FIELDS column per animal on the scoring tab."""
+def _tray_fields(ws, cohort_id: str, source: str, tabs_read: Optional[List[str]] = None
+                 ) -> List[dict]:
+    """First non-blank value of each TRAY_FIELDS column per animal on the scoring tab.
+    The tab counts as read (``tabs_read``) only when it has an animal id column
+    and at least one of TRAY_FIELDS."""
     it = ws.iter_rows(values_only=True)
     try:
         header = [text_value(h) or "" for h in next(it)]
@@ -614,6 +642,8 @@ def _tray_fields(ws, cohort_id: str, source: str) -> List[dict]:
     fields = [(header.index(f), f) for f in TRAY_FIELDS if f in header]
     if col is None or not fields:
         return []
+    if tabs_read is not None:
+        tabs_read.append(TRAY_TAB)
     found: Dict[tuple, str] = {}
     for r in it:
         if r is None or col >= len(r):
@@ -629,8 +659,10 @@ def _tray_fields(ws, cohort_id: str, source: str) -> List[dict]:
              "field": f, "value": v, "source_file": source} for (sid, f), v in found.items()]
 
 
-def read_odc_tab(path: Path, cohort_id: str, warnings: List[str]) -> List[dict]:
-    """Records from a frozen letter-cohort workbook's ODC tab (header row found by 'Animal ID')."""
+def read_odc_tab(path: Path, cohort_id: str, warnings: List[str],
+                 tabs_read: Optional[List[str]] = None) -> List[dict]:
+    """Records from a frozen letter-cohort workbook's ODC tab (header row found by
+    'Animal ID'). ``tabs_read`` gets ODC_TAB when that header was found."""
     import openpyxl
     from .file_holders import readable_workbook
     path = Path(path)
@@ -645,6 +677,8 @@ def read_odc_tab(path: Path, cohort_id: str, warnings: List[str]) -> List[dict]:
         header = [text_value(h) or "" for h in (r or ())]
         if "Animal ID" in header:
             col = header.index("Animal ID")
+            if tabs_read is not None:
+                tabs_read.append(ODC_TAB)
             return _records_from_rows(rows[i + 1:], header, ODC_TAB, cohort_id, col, path.name, warnings)
     warnings.append(_ascii("%s: '%s' tab has no 'Animal ID' header" % (path.name, ODC_TAB)))
     return []
@@ -668,16 +702,60 @@ def replace_cohort(db, cohort_id: str, tabs, records: List[dict]) -> int:
     return len(records)
 
 
-def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: bool = False) -> dict:
+def stored_counts(db, cohort_id: str, tabs) -> Dict[str, int]:
+    """{tab: rows stored for this cohort}. Reads only: a database that has no
+    animal_records table yet holds none (and a dry run must not create it)."""
+    from sqlalchemy import func, inspect
+    if db is None or not tabs or not inspect(db.engine).has_table("animal_records"):
+        return {}
+    AnimalRecord = _table()
+    with db.session() as s:
+        rows = (s.query(AnimalRecord.source_tab, func.count(AnimalRecord.id))
+                .filter(AnimalRecord.cohort_id == cohort_id,
+                        AnimalRecord.source_tab.in_(list(tabs)))
+                .group_by(AnimalRecord.source_tab).all())
+    return {tab: n for tab, n in rows}
+
+
+def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: bool = False,
+                allow_large_removal: bool = False,
+                keep_tabs: Optional[Dict[str, str]] = None) -> dict:
     """Read and (unless dry_run) store one cohort's animal records. Never raises:
-    returns {"records": n, "warnings": [...], "error": text-or-None}."""
+    returns {"records": n, "warnings": [...], "error": text-or-None,
+    "kept": [{"tab": name, "why": sentence}, ...]}.
+
+    Only the tabs actually READ are replaced, and of those not a tab the caller
+    asks to keep (``keep_tabs``: {tab: why}) nor one that reads as holding no
+    record while the database holds some for this cohort, unless
+    ``allow_large_removal`` (see the module docstring for why). ``records`` is
+    the number of records stored (or, in a dry run, that would be)."""
     warnings: List[str] = []
+    kept: List[dict] = []
     try:
+        tabs_read: List[str] = []
         if kind == "odc":
-            records, tabs = read_odc_tab(sheet, cohort_id, warnings), (ODC_TAB,)
+            records = read_odc_tab(sheet, cohort_id, warnings, tabs_read)
         else:
-            records, tabs = read_cnt_workbook(sheet, cohort_id, warnings), CNT_TABS + (TRAY_TAB,)
-        n = len(records) if dry_run else replace_cohort(db, cohort_id, tabs, records)
-        return {"records": n, "warnings": warnings, "error": None}
+            records = read_cnt_workbook(sheet, cohort_id, warnings, tabs_read)
+        stored = stored_counts(db, cohort_id, tabs_read)
+        given = {}
+        for r in records:
+            given[r["source_tab"]] = given.get(r["source_tab"], 0) + 1
+        replace = []
+        for tab in tabs_read:
+            if keep_tabs and tab in keep_tabs:
+                kept.append({"tab": tab, "why": keep_tabs[tab]})
+            elif not given.get(tab) and stored.get(tab) and not allow_large_removal:
+                kept.append({"tab": tab, "why": (
+                    "the '%s' tab read as holding no animal's details, while the database "
+                    "holds %d of this cohort's from it; that looks like a broken read "
+                    "(a tab caught mid-save, shifted columns), not every row deleted on "
+                    "purpose" % (tab, stored[tab]))})
+            else:
+                replace.append(tab)
+        records = [r for r in records if r["source_tab"] in replace]
+        n = len(records) if dry_run else replace_cohort(db, cohort_id, replace, records)
+        return {"records": n, "warnings": warnings, "error": None, "kept": kept}
     except Exception as e:
-        return {"records": 0, "warnings": warnings, "error": "%s: %s" % (type(e).__name__, e)}
+        return {"records": 0, "warnings": warnings, "error": "%s: %s" % (type(e).__name__, e),
+                "kept": kept}

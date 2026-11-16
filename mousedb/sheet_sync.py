@@ -341,15 +341,58 @@ def status() -> dict:
 # import
 # ---------------------------------------------------------------------------
 
-def _animal_records(imp, cohort_id, sheet, kind, dry_run):
+# The animal-detail tabs that follow one of the importer's tables: when the
+# importer refused to sync that table with the sheet (it read as broken), these
+# tabs' animal details are left as they were too (animal_records: keep_tabs).
+# WHY: the surgery tabs feed both the surgeries table and the animal details,
+# and the tray tab feeds both the pellet scores and each animal's Sex record;
+# a read the importer judged broken must not replace the same tab's copy.
+_TABS_OF_REFUSED_TABLE = {
+    "surgeries": ("4_Contusion_Injury_Details", "5_SC_Injection_Details"),
+    "pellet_scores": ("3b_Manual_Tray",),
+}
+
+
+def _tabs_to_keep(r: dict) -> Dict[str, str]:
+    """{animal-detail tab: why it is left as it was} for the importer result r."""
+    keep = {}
+    for table in ((r.get("sheet_sync") or {}).get("refused_tables") or []):
+        for tab in _TABS_OF_REFUSED_TABLE.get(table, ()):
+            keep.setdefault(tab, "the import refused to sync %s with the sheet (it read "
+                                 "as broken; see that refusal), so the animal details "
+                                 "from the same tab were left as they were too" % table)
+    return keep
+
+
+def _animal_records(imp, cohort_id, sheet, kind, dry_run, r=None,
+                    allow_large_removal: bool = False):
     """Copy the sheet's animal-level tabs into animal_records (see mousedb.animal_records).
     None when the importer has no database (test doubles). Called only once
-    the importer has saved the same workbook -- see _not_saved_reason."""
+    the importer has saved the same workbook -- see _not_saved_reason. ``r``:
+    the importer's result, whose refusals keep the matching tabs (see
+    _TABS_OF_REFUSED_TABLE)."""
     db = getattr(imp, "db", None)
     if db is None:
         return None
     from .animal_records import sync_cohort
-    return sync_cohort(db, cohort_id, sheet, kind, dry_run=dry_run)
+    return sync_cohort(db, cohort_id, sheet, kind, dry_run=dry_run,
+                       allow_large_removal=allow_large_removal,
+                       keep_tabs=_tabs_to_keep(r or {}))
+
+
+def _report_kept_tabs(entry: dict, rec: Optional[dict]) -> None:
+    """Each animal-detail tab left as it was is reported WITH the refusals
+    (sheet_sync.refused of the cohort's outcome): it is the same kind of
+    event -- a part of the database deliberately not brought in step with the
+    sheet -- and it fails the import the same way (import_succeeded)."""
+    for k in (rec or {}).get("kept") or []:
+        text = ("NOT SYNCED animal details '%s': %s. That tab's stored animal details "
+                "were left as they were. If the sheet is wrong, fix it and the next "
+                "import syncs; if the tab really holds nothing now, import this cohort "
+                "alone with 'mousedb-sheets import --cohort <cohort> "
+                "--allow-large-removal'." % (k["tab"], k["why"]))
+        sync = entry.setdefault("sheet_sync", {})
+        sync["refused"] = list(sync.get("refused") or []) + [text]
 
 
 # The key, in a cohort's outcome and its ledger line, that says this import
@@ -454,7 +497,8 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
             saved = False            # a dry run saves nothing
             kept = _not_saved_reason(r, True)
             copying = not kept
-            rec = _animal_records(imp, cohort_id, sheet, "cohort", True) if copying else None
+            rec = (_animal_records(imp, cohort_id, sheet, "cohort", True, r,
+                                   allow_large_removal) if copying else None)
         else:
             # Under the cross-task mutex, one cohort at a time. WHY:
             # this import commits to connectome.db like the reach and
@@ -471,7 +515,8 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                 kept = _not_saved_reason(r, False)
                 saved = kept is None
                 copying = not kept
-                rec = _animal_records(imp, cohort_id, sheet, "cohort", False) if copying else None
+                rec = (_animal_records(imp, cohort_id, sheet, "cohort", False, r,
+                                       allow_large_removal) if copying else None)
         errors = list(r.get("errors", []))
         warnings = list(r.get("warnings", []))
         imported = dict(r.get("imported") or {})
@@ -493,7 +538,8 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
         # wrote -- or why it refused to (importers: "The sheet wins"). Kept
         # whole in the ledger line: it is the record of what was taken out.
         if r.get("sheet_sync"):
-            entry["sheet_sync"] = r["sheet_sync"]
+            entry["sheet_sync"] = dict(r["sheet_sync"])
+        _report_kept_tabs(entry, rec)
         phases = r.get("phases_rederived")
         if phases:
             entry["phases_rederived"] = phases

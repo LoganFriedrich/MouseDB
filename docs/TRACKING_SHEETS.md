@@ -551,6 +551,35 @@ What to do: fix the error named on the `FAIL` line and import again. The
 animal details are refreshed by the next import that saves. Nothing else is
 needed.
 
+### When one tab reads as broken, that tab's animal details stay as they were
+
+Even when the import saves, the copy of each animal's details replaces only
+the tabs it could really read, one tab at a time (`0a_Metadata`,
+`4_Contusion_Injury_Details`, `5_SC_Injection_Details`, the `Sex` column of
+`3b_Manual_Tray`, and on a letter workbook its `ODC` tab). A tab's stored
+details are left exactly as they were when:
+
+- the tab is **missing** from the workbook, is empty, or has no animal id
+  column (a renamed tab used to empty its animal details);
+- the tab is there but gives **no animal's details at all** while the
+  database holds some from it -- most likely a tab caught mid-save or shifted
+  columns, not every row deleted on purpose;
+- the import **refused to sync** the table fed by the same tab (see "The
+  sheet wins"): the two surgery tabs stay as they were when the surgeries were
+  refused, the tray tab's `Sex` when the pellet scores were refused.
+
+Each such tab is listed with the other refusals, under the cohort's line:
+
+```
+       [!] NOT SYNCED animal details '0a_Metadata': the '0a_Metadata' tab read as holding no animal's details, ...
+```
+
+and it counts as a refusal: the cohort is listed as NOT SYNCED in the
+closing line and the scheduled job's run shows as failed. What to do: if the
+sheet is wrong, fix it and import again. If the tab really is empty now on
+purpose, import that cohort alone with
+`mousedb-sheets import --cohort <cohort> --allow-large-removal`.
+
 ### Where the warnings appear, and what "[N warnings]" means
 
 | Where | What you see |

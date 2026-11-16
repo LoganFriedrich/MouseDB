@@ -1544,6 +1544,9 @@ class ExcelImporter:
             "<cohort> --allow-large-removal', or use Replace in the GUI's cohort "
             "setup." % (table, why, table))
         self._sync_state().setdefault('refused', []).append(text)
+        # By name too, for the steps that follow the importer: the sheet import
+        # leaves a refused table's animal-detail tabs as they were (sheet_sync).
+        self._sync_state().setdefault('refused_tables', []).append(table)
         self.warnings.insert(0, text)
 
     def _audit(self, session, action: str, table: str, record_id, old=None, new=None):

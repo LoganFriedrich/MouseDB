@@ -98,7 +98,7 @@ def copies(monkeypatch):
     """Every request to animal_records.sync_cohort, recorded instead of run."""
     calls = []
 
-    def fake_sync(db, cohort_id, sheet, kind, dry_run=False):
+    def fake_sync(db, cohort_id, sheet, kind, dry_run=False, **kw):
         calls.append((cohort_id, kind, dry_run))
         return {"records": 7, "warnings": [], "error": None}
 

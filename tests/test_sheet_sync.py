@@ -186,3 +186,37 @@ class TestImportLedger:
         c = r["cohorts"][0]
         assert c["success"] is False and "database-task lock" in c["error"]
         assert ss.cohort_status("05")["state"] == "last_import_failed"
+
+
+def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(folder, monkeypatch):
+    """WHY: the importer refused to sync the surgeries (the sheet read as
+    broken), yet the animal details from the same surgery tabs were replaced
+    from that very read. They now stay as they were, reported with the
+    refusals."""
+    import mousedb.animal_records as ar
+    import mousedb.importers as imp
+
+    class Refuses:
+        db = object()
+
+        def import_cohort_file(self, *a, **k):
+            return {"success": True, "imported": {}, "warnings": [], "errors": [],
+                    "sheet_sync": {"refused": ["NOT SYNCED surgeries: ..."],
+                                   "refused_tables": ["surgeries"]}}
+
+    asked = []
+
+    def fake_sync(db, cid, sheet, kind, dry_run=False, allow_large_removal=False,
+                  keep_tabs=None):
+        asked.append(dict(keep_tabs or {}))
+        return {"records": 3, "warnings": [], "error": None,
+                "kept": [{"tab": t, "why": w} for t, w in (keep_tabs or {}).items()]}
+
+    monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Refuses())
+    monkeypatch.setattr(ar, "sync_cohort", fake_sync)
+    r = ss.import_cohorts(["CNT_05"])
+    assert set(asked[0]) == {"4_Contusion_Injury_Details", "5_SC_Injection_Details"}
+    refusals = ss.sync_refused(r["cohorts"][0])
+    assert any("animal details '4_Contusion_Injury_Details'" in x for x in refusals)
+    assert any("animal details '5_SC_Injection_Details'" in x for x in refusals)
+    assert not ss.import_succeeded(r)

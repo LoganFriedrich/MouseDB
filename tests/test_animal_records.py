@@ -96,3 +96,81 @@ def test_import_replaces_instead_of_piling_up(tmp_path):
 def test_sync_never_raises(tmp_path):
     r = ar.sync_cohort(None, "PROJA_01", tmp_path / "missing.xlsx")
     assert r["error"] and r["records"] == 0
+
+
+# ---------------------------------------------------------------------------
+# a tab whose read looks broken leaves its stored details as they were
+# ---------------------------------------------------------------------------
+
+def _stored_by_tab(db):
+    from mousedb.schema import AnimalRecord
+    with db.session() as s:
+        out = {}
+        for r in s.query(AnimalRecord):
+            out[r.source_tab] = out.get(r.source_tab, 0) + 1
+        return out
+
+
+def _scratch_db(tmp_path):
+    from mousedb.database import Database
+    return Database(tmp_path / "t.db")
+
+
+def test_a_tab_missing_from_the_workbook_keeps_its_details(tmp_path):
+    """WHY: every tab's details used to be deleted whether or not the tab was
+    read, so a tab renamed or cut from the workbook emptied its records."""
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    before = _stored_by_tab(db)
+    assert before.get("0a_Metadata")
+    wb = openpyxl.load_workbook(p)
+    del wb["0a_Metadata"]
+    wb.save(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    assert _stored_by_tab(db).get("0a_Metadata") == before["0a_Metadata"]
+
+
+def test_a_tab_that_reads_as_empty_keeps_its_details_unless_allowed(tmp_path):
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    before = _stored_by_tab(db)["0a_Metadata"]
+    wb = openpyxl.load_workbook(p)
+    ws = wb["0a_Metadata"]
+    ws.delete_rows(2, ws.max_row)                # header only: no animal at all
+    wb.save(p)
+
+    r = ar.sync_cohort(db, "PROJA_01", p)
+    assert _stored_by_tab(db).get("0a_Metadata") == before
+    assert [k["tab"] for k in r["kept"]] == ["0a_Metadata"]
+    assert "broken read" in r["kept"][0]["why"]
+
+    r = ar.sync_cohort(db, "PROJA_01", p, allow_large_removal=True)
+    assert r["kept"] == [] and "0a_Metadata" not in _stored_by_tab(db)
+
+
+def test_a_tab_the_caller_keeps_is_left_as_it_was(tmp_path):
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    before = _stored_by_tab(db)
+    ar.replace_cohort(db, "PROJA_01", ("4_Contusion_Injury_Details",), [])
+    r = ar.sync_cohort(db, "PROJA_01", p,
+                       keep_tabs={"4_Contusion_Injury_Details": "surgeries refused"})
+    assert r["kept"] == [{"tab": "4_Contusion_Injury_Details", "why": "surgeries refused"}]
+    assert "4_Contusion_Injury_Details" not in _stored_by_tab(db)
+    assert _stored_by_tab(db)["0a_Metadata"] == before["0a_Metadata"]
+
+
+def test_a_dry_run_does_not_create_the_table(tmp_path):
+    from sqlalchemy import inspect
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    r = ar.sync_cohort(db, "PROJA_01", p, dry_run=True)
+    assert r["error"] is None and r["records"] > 0
+    assert not inspect(db.engine).has_table("animal_records")
