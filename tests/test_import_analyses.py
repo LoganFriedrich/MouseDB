@@ -392,6 +392,43 @@ class TestLedgerAndManifestAreSafe:
         json.loads(path.read_text(encoding="utf-8"))
 
 
+
+class TestOneMirrorAtATime:
+    """WHY: the nightly task and the Update everything button both start the
+    mirror, and nothing kept two runs apart: each reads the ledger at the
+    start and rewrites it at the end, so the second dropped the first's
+    entries. A run now takes its own lock; one that cannot get it in time
+    says so and changes nothing."""
+
+    @pytest.fixture
+    def held(self, roots, monkeypatch):
+        from mousedb import task_mutex
+        monkeypatch.setenv(task_mutex.WAIT_ENV, "0.002")     # about 0.1 s
+        # the lock the docs name: <mousedb_root>/logs/.import-analyses.task.lock
+        reg, db = roots
+        m = task_mutex.TaskMutex("import-analyses", base_dir=db / "logs")
+        assert m.try_acquire()
+        yield m
+        m.release()
+
+    def test_a_second_run_waits_then_stops_without_changing_anything(self, roots, held, capsys):
+        reg, db = roots
+        assert ia.main([]) == 1
+        out = capsys.readouterr().out
+        assert "[FAIL] import-analyses not run" in out
+        assert not (db / "exports" / "Alpha_Detection").exists()
+        assert not (db / "logs" / "analysis_imports.json").exists()
+
+    def test_a_dry_run_takes_no_lock(self, roots, held):
+        assert ia.main(["--dry-run"]) == 0
+
+    def test_the_lock_is_given_back(self, roots):
+        reg, db = roots
+        assert ia.main([]) == 0
+        assert ia.main([]) == 0
+        assert not (db / "logs" / ".import-analyses.task.lock").exists()
+
+
 class TestCli:
     def test_main_dry_run_returns_zero_and_json(self, roots, capsys):
         reg, db = roots

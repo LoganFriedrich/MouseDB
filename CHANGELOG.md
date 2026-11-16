@@ -143,6 +143,12 @@ checked-in code, not what's planned.
     beside them, so two imports finishing together cannot drop each other's
     cohorts from that list or leave a scores file that does not match its
     manifest's hash.
+- `mousedb import-analyses` runs one at a time: it takes its own lock
+  (`logs/.import-analyses.task.lock`), so the nightly task and the Update
+  everything button can no longer run it together and drop each other's
+  ledger entries. A run that cannot get the lock in time ends with
+  `[FAIL] import-analyses not run: ...` and changes nothing. `--dry-run`
+  takes no lock.
 - `mousedb import-analyses` archives a mirrored file only when it is sure the
   file was withdrawn: its analysis was listed in full this run, or the
   analysis folder is gone. It used to archive every mirrored file of an

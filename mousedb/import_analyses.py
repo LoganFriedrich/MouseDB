@@ -39,7 +39,12 @@ WHAT IT DOES
      approved method) and what this run copied, skipped and archived.
 
 It writes NO database rows -- only files under <mousedb_root> -- so, unlike
-``import-reaches``, it needs no watcher guard and may run at any time.
+``import-reaches``, it needs no watcher guard and may run at any time. It
+does take a lock of its own (``LOCK_NAME``; ``<mousedb_root>/logs/
+.import-analyses.task.lock``) so that only ONE mirror runs at a time: the
+nightly task and the Update everything button both start it, and two runs
+copying, archiving and rewriting the same ledger at once lose each other's
+entries (see ``main``). A ``--dry-run`` writes nothing and takes no lock.
 
 Usage:
     mousedb import-analyses                # mirror what is new or changed
@@ -72,6 +77,7 @@ REGISTRY_FILE = "registry.json"        # one per analysis: exports/<analysis>/re
 LEDGER_NAME = "analysis_imports.json"  # <mousedb_root>/logs/analysis_imports.json
 MANIFEST_NAME = "ANALYSES_MANIFEST.json"  # <mousedb_root>/exports/ANALYSES_MANIFEST.json
 ARCHIVE_SUBDIR = ("_archived", "analyses")  # <mousedb_root>/_archived/analyses/<stamp>/...
+LOCK_NAME = "import-analyses"          # <mousedb_root>/logs/.import-analyses.task.lock (see main)
 
 MANIFEST_FIELDS = ("analysis_name", "entries", "current", "invalidated", "last_updated",
                    "approved_method_hash", "stale_vs_approved", "no_approved_method",
@@ -536,9 +542,32 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, help="Copy at most this many files (testing)")
     ap.add_argument("--json", action="store_true", help="Machine-readable summary")
     args = ap.parse_args(argv)
+    quiet = (lambda *_: None) if args.json else print
+    from .task_mutex import LockWaitTimeout, TaskMutex
     try:
-        res = run(all_files=args.all, dry_run=args.dry_run, limit=args.limit,
-                  log=(lambda *_: None) if args.json else print)
+        if args.dry_run:
+            res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet)
+        else:
+            # One mirror at a time. WHY: the nightly task and the Update
+            # everything button (mousedb update) both run this, and nothing
+            # kept them apart. Each run reads the ledger at the start and
+            # rewrites it at the end, so two at once dropped the other's
+            # entries (files then copied and hashed again), and both could
+            # move the same withdrawn file. A second run waits for the first
+            # (task_mutex's usual wait: as long as the holder is working) and
+            # then finds nothing left to do. Its own lock, not the database
+            # lock: this import writes files only, and must not queue behind
+            # the hours-long database jobs. It sits beside the ledger it
+            # protects (<mousedb_root>/logs), named explicitly so it never
+            # depends on which settings point the database lock elsewhere.
+            lock = TaskMutex(LOCK_NAME, base_dir=ledger_path().parent,
+                             label="the analysis-import lock")
+            with lock.acquire(log=(quiet if args.json else print),
+                              waiting_for="another analysis import"):
+                res = run(all_files=args.all, dry_run=False, limit=args.limit, log=quiet)
+    except LockWaitTimeout as e:
+        print("[FAIL] import-analyses not run: %s" % e)
+        return 1
     except StateFileUnreadable as e:
         print("[FAIL] import-analyses not run: %s" % e)
         return 1

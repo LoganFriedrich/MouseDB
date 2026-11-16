@@ -757,6 +757,18 @@ Two cases read differently on that line:
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 
+**Only one mirror runs at a time.** The nightly task and the **Update
+everything** button both start `mousedb import-analyses`. When one is already
+running, the second waits for it (its output says what it is waiting for),
+then runs and normally finds nothing left to copy. If it waits longer than
+the lock's usual limit (the same rules as the database jobs' lock: it keeps
+waiting while the first run is still getting somewhere), it stops with
+`[FAIL] import-analyses not run: ...`, changes nothing, and the job fails;
+run it again later. The lock is the file
+`<mousedb_root>/logs/.import-analyses.task.lock` while a run holds it. Do not
+delete it by hand: a lock left by a run that crashed is taken over
+automatically. A `--dry-run` writes nothing and does not wait.
+
 **The mirror's ledger.** `<mousedb_root>/logs/analysis_imports.json` is the
 mirror's own record of every file it has copied. It is how the next run knows
 which files are unchanged, and which files MouseBrain has since withdrawn (and
