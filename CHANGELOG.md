@@ -86,7 +86,9 @@ checked-in code, not what's planned.
   - With several files matching a cohort and none pinned, the import only
     adds for that cohort and leaves its animal details as they were; the
     cohort is NOT SYNCED until a file is pinned. Nothing stored is changed,
-    moved or removed on such a guess -- the move of scores stored under a
+    moved or removed on such a guess (adding is still done: new rows, a
+    weight's empty % of body weight, and a `[PLANNING]` note at the end of
+    the notes of a cohort that has none; existing note text is kept) -- the move of scores stored under a
     year-typo or weekend date (the rows read are still re-dated, decided
     tray by tray: only a tray the import still has stored under the wrong
     date, and not under the right one, is read as typed -- a score typed in

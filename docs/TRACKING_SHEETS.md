@@ -803,9 +803,13 @@ with a `1` on the end -- the system does not guess silently: the status says
 **N files match -- choose**, and until you choose, it reads the most recently
 edited one and says so. The import does not stop, but until you choose it
 only ADDS for that cohort: new rows from the newest file are added, and
-empty values are filled in (a weight's % of body weight), but nothing
-already stored is changed, moved or removed to match that file, in any
-table (otherwise a draft or an old copy could take rows out). That covers
+empty values are filled in (a weight's % of body weight; and, when the
+cohort has no planning note yet, the planning tab's text is added to the end
+of the cohort's notes as a `[PLANNING] ...` entry -- the note text already
+there is kept, and a cohort that already has a planning note keeps it). Apart
+from those additions, nothing already stored is changed, moved or removed to
+match that file, in any table (otherwise a draft or an old copy could take
+rows out). That covers
 more than "The sheet wins": these steps wait for the pin too, and each one
 it held back is listed as a warning starting `HELD BACK until the cohort's
 sheet is pinned:`
