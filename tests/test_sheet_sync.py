@@ -400,3 +400,17 @@ def test_the_and_n_more_line_counts_only_refusals_that_are_warnings():
             "NOT SYNCED animal details '0a_Metadata': not read"]}}]},
         show_warnings=1, log=lines.append)
     assert any("and 1 more" in x for x in lines)
+
+
+def test_a_reused_importer_forgets_the_last_workbooks_weight_percent_and_pin_warning():
+    """WHY: one importer can be used for workbook after workbook; a tray's
+    "Weight %" read from one workbook, or "the pin warning has been said",
+    must not be carried into the next workbook's import."""
+    import mousedb.importers as imp
+
+    importer = imp.ExcelImporter(db=object())
+    importer.__dict__["_tray_weight_percent"] = {("CNT_77_01", "2031-03-04"): 91.0}
+    importer.__dict__["_blocked_said"] = True
+    importer._reset_run_state()
+    assert "_tray_weight_percent" not in importer.__dict__
+    assert "_blocked_said" not in importer.__dict__

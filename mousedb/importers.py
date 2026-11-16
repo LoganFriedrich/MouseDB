@@ -3150,7 +3150,11 @@ class ExcelImporter:
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
                      '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead',
                      '_facts_seen', '_seen_rows', '_unread_tabs',
-                     '_notes_cleared'):
+                     '_notes_cleared',
+                     # A tray's "Weight %" as read from this workbook, and
+                     # "the pin warning has been said": both belong to one
+                     # workbook's import and must not reach the next one's.
+                     '_tray_weight_percent', '_blocked_said'):
             self.__dict__.pop(name, None)
 
     def _warn_once(self, key, text: str):
