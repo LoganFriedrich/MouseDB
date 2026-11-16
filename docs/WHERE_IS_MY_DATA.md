@@ -353,7 +353,7 @@ already writing:
 
 - **Refresh exports now** does not wait. A box says "The exports are already
   being written -- try again when it finishes. Nothing was changed." Usually
-  the other one is the nightly job, which runs from midnight.
+  the other one is the scheduled nightly job.
 - **The nightly job and the terminal commands wait** while the other refresh
   is working: the nightly job up to 15 minutes (a fixed bound of its own, so a
   button press cannot push the job past its time limit -- see INSTALL.md,

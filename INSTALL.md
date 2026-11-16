@@ -412,7 +412,10 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   `python -c "import psutil"` in the MouseDB environment.
 
   **How long a job waits.** While the job holding the lock is running AND
-  getting somewhere (its CPU time and read/write count move), the waiting job
+  getting somewhere (its CPU time and read/write count move; a holder whose
+  counters are refused -- for example one started in another person's login --
+  is judged by its lockfile, which a running holder touches once a minute),
+  the waiting job
   waits -- up to its **wait budget** -- and says so in its log every ten
   minutes. So a slow import DELAYS the next job instead of cancelling it. It
   stops waiting, loudly, in two cases: the budget runs out, or the holder has
