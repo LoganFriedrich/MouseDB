@@ -5551,7 +5551,11 @@ class CohortSetupTab(QWidget):
             extra = self._after_import_lines(after)
             if extra:
                 text += "\n\n" + "\n".join(extra)
-            if _entry.get('success') and not after.get('hand_scores_error'):
+            # The verdict every import route uses (sheet_sync.import_succeeded):
+            # a kept animal-detail tab is a refusal and counts against it, as
+            # a failed hand-scores rewrite does. WHY: this box said "Import
+            # complete" over a refusal printed in its own text.
+            if sheet_sync.import_succeeded(after):
                 QMessageBox.information(self, "Import complete", text)
             else:
                 QMessageBox.warning(self, "Replace saved, with problems", text)

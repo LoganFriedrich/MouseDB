@@ -191,6 +191,25 @@ def test_a_committed_replace_copies_details_and_rewrites_both_files(app_mod, wor
     assert line["scores_saved"] is True
 
 
+def test_a_replace_that_kept_an_animal_detail_tab_is_not_reported_complete(
+        app_mod, world, monkeypatch):
+    """WHY: a Replace whose animal-detail copy kept a tab (a refusal, which
+    fails every other import route) was shown as "Import complete"."""
+    import mousedb.animal_records as ar
+    monkeypatch.setattr(app_mod, "replace_cohort_from_sheet", lambda *a, **k: {
+        "success": True, "imported": {"pellet_scores": 20}, "warnings": [], "errors": [],
+        "replace": {"committed": True, "removed": {}, "kept": 0, "kept_rows": [],
+                    "start_date": None}})
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
+        "records": 4, "warnings": [], "error": None,
+        "kept": [{"tab": "0a_Metadata", "unread": True, "why": "the tab was not read"}]})
+    _Box.CHOICE = "Replace"
+    app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
+    titles = [t for t, _text in _Box.SHOWN]
+    assert "Import complete" not in titles
+    assert any("NOT SYNCED animal details '0a_Metadata'" in text for _t, text in _Box.SHOWN)
+
+
 def test_an_undone_replace_changes_nothing_else(app_mod, world, monkeypatch):
     monkeypatch.setattr(app_mod, "replace_cohort_from_sheet", lambda *a, **k: {
         "success": False, "imported": {"pellet_scores": 0}, "warnings": [],
