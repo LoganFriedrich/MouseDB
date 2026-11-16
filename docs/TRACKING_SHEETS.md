@@ -581,7 +581,17 @@ never depends on mousedb); it reads one file mousedb writes:
   since this video was ready" (the video waits) from "it has been, and has no
   scores for this session" (the session was never scored by hand: there is
   nothing to compare, so the video is filed without the comparison). A cohort
-  with no sheet at all is settled by the next import of every sheet.
+  with no sheet at all is settled by the next import of every sheet. It also
+  carries `scores_sha256`, a fingerprint of the exact `.csv` it was written
+  with: the two files are replaced one after the other, and the pipeline uses
+  the fingerprint to notice when it has read a new `.csv` with the old `.json`
+  (or the reverse) and reads both again.
+
+If a program (the pipeline, or a spreadsheet program you opened the file in)
+has one of the two files open at the moment it is replaced, Windows refuses
+the replacement; the import tries again for up to ten seconds before it
+reports the write as failed. Close the file if the `FAIL hand scores` line
+below keeps appearing.
 
 Every import that writes (the scheduled job, the Tracking Sheets tab,
 **Update the database now**, `mousedb-sheets import`) rewrites the file when

@@ -40,16 +40,30 @@ hand_pellet_scores.json  beside it:
                             import of one cohort rewrites the file too, and
                             says nothing about the others.
 
+    scores_sha256           the SHA-256 of hand_pellet_scores.csv as written with
+                            this manifest. WHY: the two files are two renames,
+                            not one, so a reader can catch the new scores file
+                            beside the old manifest (or the reverse). The reader
+                            compares this hash with the scores file it read and,
+                            when they differ, reads both again instead of
+                            keeping a mismatched pair. A manifest written before
+                            this key existed has none; a reader accepts it.
+
 The file is rewritten after every sheet import (any route: the nightly job,
-the GUI, mousedb-sheets) and by `mousedb hand-scores`. It is written to a
-temporary name and renamed, so a reader never sees half a file.
+the GUI, mousedb-sheets) and by `mousedb hand-scores`. Each file is written to
+a temporary name and renamed, so a reader never sees half a file; the scores
+file is renamed first and the manifest, carrying its hash, second. A rename
+that Windows refuses because a reader has the file open at that instant is
+retried for up to ten seconds before the write counts as failed.
 """
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import sqlite3
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -69,6 +83,37 @@ def video_key(subject_id: str, session_date, tray_type: str, tray_number) -> str
     """'CNT_02_07', 2025-07-09, 'P', 1 -> '20250709_CNT0207_P1'."""
     day = str(session_date)[:10].replace("-", "")
     return "%s_%s_%s%d" % (day, subject_id.replace("_", ""), tray_type, int(tray_number))
+
+
+# How long a rename refused by Windows (PermissionError: a reader -- the
+# reaching pipeline, a person's spreadsheet program -- has the target open) is
+# retried before the write counts as failed: REPLACE_TRIES tries,
+# REPLACE_WAIT_SECONDS apart. The same pattern as the reach import's ledger
+# write (import_reaches._write_json_atomically).
+REPLACE_TRIES = 20
+REPLACE_WAIT_SECONDS = 0.5
+
+
+def _replace(tmp: Path, target: Path) -> None:
+    """os.replace, retried while Windows refuses it because the target is open.
+    WHY: a reader holds the file only for a moment; failing the whole write on
+    that moment used to leave the scores file new and its manifest old."""
+    for attempt in range(REPLACE_TRIES):
+        try:
+            os.replace(tmp, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_TRIES - 1:
+                raise
+            time.sleep(REPLACE_WAIT_SECONDS)
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def _last_successful_imports() -> Dict[str, str]:
@@ -142,7 +187,10 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
         w = csv.writer(f)
         w.writerow(COLUMNS)
         w.writerows(out)
-    os.replace(tmp, dest / FILE_NAME)
+    # Hashed from the temporary file, which is exactly what the rename puts in
+    # place; the manifest below carries the hash (see scores_sha256 above).
+    scores_hash = _sha256(tmp)
+    _replace(tmp, dest / FILE_NAME)
     previous = {}
     try:
         previous = json.loads((dest / MANIFEST_NAME).read_text(encoding="utf-8"))
@@ -156,10 +204,11 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
         "last_successful_import": _last_successful_imports(),
         "sheets_seen": sorted(sheets_seen) if sheets_seen is not None else previous.get("sheets_seen"),
         "full_import_at": now if full_run else previous.get("full_import_at"),
+        "scores_sha256": scores_hash,
     }
     tmp = dest / (MANIFEST_NAME + ".tmp")
     tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-    os.replace(tmp, dest / MANIFEST_NAME)
+    _replace(tmp, dest / MANIFEST_NAME)
     log("Hand scores written: %d pellets of %d sessions -> %s" % (
         manifest["rows"], manifest["videos"], dest / FILE_NAME))
     return manifest

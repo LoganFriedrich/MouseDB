@@ -153,3 +153,47 @@ def test_another_failure_of_the_read_is_not_retried(tmp_path):
     sqlite3.connect(str(db)).close()
     with pytest.raises(sqlite3.OperationalError, match="no such table"):
         hsf._read_rows(db, "SELECT * FROM nothing_here")
+
+
+def _scratch_writer(tmp_path, monkeypatch):
+    from mousedb.database import init_database
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+    monkeypatch.setattr(sheet_sync, "LEDGER", tmp_path / "ledger.jsonl")
+    init_database(tmp_path / "scratch.db")
+    return lambda **k: hsf.write(db_file=tmp_path / "scratch.db", dest=tmp_path / "out",
+                                 log=lambda *a: None, **k)
+
+
+def test_the_manifest_carries_the_hash_of_its_scores_file(tmp_path, monkeypatch):
+    """WHY: the scores file and its manifest are two renames. A reader that
+    catches one new and one old must be able to tell, so the manifest names the
+    exact scores file it was written with."""
+    import hashlib
+    w = _scratch_writer(tmp_path, monkeypatch)
+    m = w()
+    data = (tmp_path / "out" / hsf.FILE_NAME).read_bytes()
+    assert m["scores_sha256"] == hashlib.sha256(data).hexdigest()
+    on_disk = json.loads((tmp_path / "out" / hsf.MANIFEST_NAME).read_text())
+    assert on_disk["scores_sha256"] == m["scores_sha256"]
+
+
+def test_a_rename_refused_while_a_reader_has_the_file_open_is_retried(tmp_path, monkeypatch):
+    """WHY: on Windows a rename over a file another program has open fails for
+    that moment. Failing the write then left a new scores file beside an old
+    manifest; the rename is retried instead."""
+    import os as _os
+    w = _scratch_writer(tmp_path, monkeypatch)
+    real = _os.replace
+    refused = []
+
+    def busy_once(src, dst):
+        if str(dst).endswith(hsf.MANIFEST_NAME) and not refused:
+            refused.append(dst)
+            raise PermissionError(13, "The process cannot access the file")
+        return real(src, dst)
+
+    monkeypatch.setattr(hsf, "REPLACE_WAIT_SECONDS", 0)
+    monkeypatch.setattr(hsf.os, "replace", busy_once)
+    m = w()
+    assert refused                                    # the first try was refused
+    assert json.loads((tmp_path / "out" / hsf.MANIFEST_NAME).read_text()) == m
