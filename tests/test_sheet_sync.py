@@ -338,8 +338,8 @@ def test_a_letter_cohorts_kept_odc_tab_fails_the_full_import(invented, monkeypat
         def import_cohort_file(self, *a, **k):
             return {"success": True, "imported": {}, "warnings": [], "errors": []}
     monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Fake())
-    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda *a, **k: ["K"])
-    monkeypatch.setattr(cs, "find_aspa_sheet", lambda *a, **k: tmp_path / "K.xlsx")
+    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda *a, **k: ["Z"])
+    monkeypatch.setattr(cs, "find_aspa_sheet", lambda *a, **k: tmp_path / "Z.xlsx")
     monkeypatch.setattr(dbmod, "get_db", lambda *a, **k: "db")
     monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
         "records": 0, "warnings": [], "error": None,
@@ -348,7 +348,7 @@ def test_a_letter_cohorts_kept_odc_tab_fails_the_full_import(invented, monkeypat
     lines = []
     assert ss.print_import_result(r, log=lines.append) is False
     assert any("[!] NOT SYNCED animal details 'ODC'" in x for x in lines)
-    assert "1 NOT SYNCED (ASPA_11)" in lines[-1]
+    assert "1 NOT SYNCED (ASPA_26)" in lines[-1]
 
 
 def test_the_letter_cohort_score_import_reports_a_kept_odc_tab(monkeypatch, tmp_path, capsys):
@@ -357,7 +357,7 @@ def test_the_letter_cohort_score_import_reports_a_kept_odc_tab(monkeypatch, tmp_
     import mousedb.database as dbmod
     from mousedb.cohort_tools import import_aspa_scores as ias
 
-    book = tmp_path / "K.xlsx"
+    book = tmp_path / "Z.xlsx"
     book.write_bytes(b"x")
     monkeypatch.setattr(sheets, "find_aspa_sheet", lambda *a, **k: book)
     monkeypatch.setattr(sheets, "aspa_data_dir", lambda *a, **k: tmp_path)
@@ -368,7 +368,7 @@ def test_the_letter_cohort_score_import_reports_a_kept_odc_tab(monkeypatch, tmp_
     monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
         "records": 0, "warnings": [], "error": None,
         "kept": [{"tab": "ODC", "why": "the 'ODC' tab read as holding no animal's details"}]})
-    e = ias.import_cohort("K", apply=False)
+    e = ias.import_cohort("Z", apply=False)
     assert any("animal details 'ODC'" in x for x in ss.sync_refused(e))
-    assert ias.main(["--cohort", "K"]) == 1
+    assert ias.main(["--cohort", "Z"]) == 1
     assert "[!] NOT SYNCED animal details 'ODC'" in capsys.readouterr().out

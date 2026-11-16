@@ -208,12 +208,16 @@ def test_a_tab_that_was_not_read_is_reported_and_removed_only_when_allowed(tmp_p
 
 def test_an_odc_tab_without_its_header_is_reported(tmp_path):
     db = _scratch_db(tmp_path)
-    p = tmp_path / "K.xlsx"
+    p = tmp_path / "Z.xlsx"                    # an invented letter cohort
     _odc_workbook(p)
-    ar.sync_cohort(db, "ASPA_11", p, "odc")
+    wb = openpyxl.load_workbook(p)
+    for row in (4, 5):
+        wb["ODC"].cell(row, 1, "Z")
+    wb.save(p)
+    ar.sync_cohort(db, "ASPA_26", p, "odc")
     assert _stored_by_tab(db).get("ODC")
     wb = openpyxl.load_workbook(p)
     wb["ODC"]["B3"] = "Animal"                 # the header cell no longer found
     wb.save(p)
-    r = ar.sync_cohort(db, "ASPA_11", p, "odc")
+    r = ar.sync_cohort(db, "ASPA_26", p, "odc")
     assert _stored_by_tab(db).get("ODC") and [k["tab"] for k in r["kept"]] == ["ODC"]
