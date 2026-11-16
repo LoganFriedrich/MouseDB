@@ -96,6 +96,17 @@ checked-in code, not what's planned.
   only, so a sheets folder set with `mousedb config --machine --set
   cohort_sheets_dir` was invisible to every other login. Writes still go to
   your own file only.
+- A tracking-sheets (or ASPA) folder that is set but cannot be reached -- a
+  drive not connected, a renamed folder -- is said as such, with the folder
+  set, by the Tracking Sheets tab, `mousedb-sheets status` / `import`,
+  `mousedb cohort-sheets` and `mousedb new-sheet`. Before, it was reported as
+  "no tracking-sheet folder is configured", sending people to set again a
+  setting that was right. The reasons (not set / unreachable / no sheet in it
+  / settings file damaged) come from `cohort_sheets.cohort_sheets_dir_state`.
+  With a damaged settings file, `mousedb-sheets status` and `import` (the
+  scheduled sheet import) now name the file in one sentence -- and any
+  `mousedb-sheets` command that still needs a location from it stops with
+  one `[FAIL]` line and exit 1 -- instead of ending in a traceback.
 - Cohort Setup's **Replace** refuses an archive or snapshot copy, a "Copy of
   ..." or an export, as Import already did, and the refusal is shown before the
   preview. Before, Replace used such a file and put its old values back over the

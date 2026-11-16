@@ -38,7 +38,10 @@ Resolution order, first hit wins:
      ``mousedb config --machine --set cohort_sheets_dir <path>``). The pins
      and ``aspa_data_dir`` are read the same way. Writes (set-dir, pins) go
      to the person's own file only.
-  3. Nothing -- and callers say so loudly, with instructions.
+  3. Nothing -- and callers say so loudly, with instructions, and WHY:
+     cohort_sheets_dir_state tells "not set" from "set but unreachable"
+     (drive not connected) from "reachable but no sheet in it" from "a
+     settings file is damaged".
 
 A damaged settings file is never read as empty and never written over
 (mousedb.config.SettingsFileDamaged): losing it used to lose every pin.
@@ -255,24 +258,109 @@ def set_cohort_sheets_dir(path) -> Path:
     return _update_own_config(lambda cfg: cfg.__setitem__("cohort_sheets_dir", value))
 
 
+# Why a configured folder is not in use, as cohort_sheets_dir_state reports it.
+DIR_OK = "ok"                    # set, reachable, holds a sheet
+DIR_UNSET = "unset"              # nothing set anywhere
+DIR_UNREACHABLE = "unreachable"  # set, but that folder cannot be reached
+DIR_NO_SHEET = "no_sheet"        # set and reachable, but holds no sheet
+DIR_DAMAGED = "damaged"          # a settings file that would say is damaged
+
+
+def _folder_state(env_var: str, key: str, is_sheet) -> Tuple[Optional[Path], str, Optional[str]]:
+    """(folder or None, reason, the value as set) for a sheets-type folder.
+
+    The environment variable is tried first, then the merged settings, and the
+    first one that names a usable folder wins (as before). When none does, the
+    reason is the FIRST one set -- the one a person would expect in force --
+    unless a settings file is damaged, which is said first."""
+    try:
+        cfg_value = _read_config().get(key)
+    except Exception as e:  # config.SettingsFileDamaged; its message names the file
+        cfg_value, damaged = None, str(e)
+    else:
+        damaged = None
+    first = None
+    for raw in (os.environ.get(env_var), cfg_value):
+        if not raw:
+            continue
+        d = Path(raw)
+        try:
+            if not d.is_dir():
+                reason = DIR_UNREACHABLE
+            elif any(is_sheet(f.name) for f in d.iterdir()):
+                return d, DIR_OK, str(raw)
+            else:
+                reason = DIR_NO_SHEET
+        except OSError:
+            reason = DIR_UNREACHABLE
+        if first is None:
+            first = (None, reason, str(raw))
+    if damaged:
+        # Said before any other reason: the damaged file may well hold the
+        # folder that is wanted, so "unreachable" or "not set" would mislead.
+        return None, DIR_DAMAGED, damaged
+    if first is not None:
+        return first
+    return None, DIR_UNSET, None
+
+
+def cohort_sheets_dir_state() -> Tuple[Optional[Path], str, Optional[str]]:
+    """(folder or None, reason, raw) for the tracking-sheet folder.
+
+    reason is DIR_OK (folder returned), DIR_UNSET, DIR_UNREACHABLE (set, but
+    the folder is not there or cannot be read -- an unmapped drive, a share
+    that is down, a renamed folder), DIR_NO_SHEET (reachable, but nothing in it
+    is named as a sheet) or DIR_DAMAGED (a settings file is damaged; raw is
+    then the message naming it). raw is the value as set (or that message).
+
+    WHY this exists: cohort_sheets_dir answers only "a folder, or None", and
+    every caller turned None into "no folder is configured". A folder that was
+    set correctly but sat on a drive that was not connected was reported as
+    never set -- sending the person to set again what was already right,
+    instead of to reconnect the drive. Status and import messages are worded
+    from this reason instead.
+    """
+    return _folder_state(ENV_VAR, "cohort_sheets_dir", _sheet_cohort)
+
+
 def cohort_sheets_dir() -> Optional[Path]:
     """The configured directory of live cohort tracking sheets, or None.
 
     Returns a directory only if it exists AND actually contains a tracking
     sheet: an empty directory of the right name is not the right directory.
-    A damaged settings file raises config.SettingsFileDamaged rather than
-    reading as None.
+    For WHY there is none, ask cohort_sheets_dir_state(). A damaged settings
+    file raises config.SettingsFileDamaged rather than reading as None.
     """
-    for raw in (os.environ.get(ENV_VAR), _read_config().get("cohort_sheets_dir")):
-        if not raw:
-            continue
-        d = Path(raw)
-        try:
-            if d.is_dir() and any(_sheet_cohort(f.name) for f in d.iterdir()):
-                return d
-        except OSError:
-            continue
-    return None
+    d, reason, raw = cohort_sheets_dir_state()
+    if reason == DIR_DAMAGED:
+        _raise_damaged()
+    return d
+
+
+def _raise_damaged():
+    """Re-read the settings so the damaged file raises its own exception
+    (with the file named and the fix) for a caller that expects a folder."""
+    _read_config()
+
+
+def describe_dir_state(reason: str, raw: Optional[str], what: str = "tracking-sheet folder",
+                       how_to_set: str = "mousedb-sheets set-dir <folder>") -> Optional[str]:
+    """One sentence for a person saying why there is no usable ``what``, worded
+    from cohort_sheets_dir_state's reason; None when it is in use."""
+    if reason == DIR_OK:
+        return None
+    if reason == DIR_UNSET:
+        return "no %s is set (%s)" % (what, how_to_set)
+    if reason == DIR_UNREACHABLE:
+        return ("the %s is set to %s, but that folder cannot be reached -- is the drive "
+                "or network share connected, and is the folder still there? (The "
+                "setting itself was not changed.)" % (what, raw))
+    if reason == DIR_NO_SHEET:
+        return ("the %s is set to %s and can be reached, but nothing in it is named as a "
+                "sheet" % (what, raw))
+    if reason == DIR_DAMAGED:
+        return "the %s cannot be read from the settings: %s" % (what, raw)
+    return "the %s is not in use (%s)" % (what, reason)
 
 
 # ---------------------------------------------------------------------------
@@ -620,19 +708,19 @@ def _aspa_file_letter(name: str):
     return m.group(1).upper() if m else None
 
 
+def aspa_data_dir_state() -> Tuple[Optional[Path], str, Optional[str]]:
+    """(folder or None, reason, raw) for the ASPA animal sheets folder -- the
+    same reasons as cohort_sheets_dir_state, for the same reason."""
+    return _folder_state(ASPA_ENV_VAR, "aspa_data_dir", _aspa_file_letter)
+
+
 def aspa_data_dir() -> Optional[Path]:
     """The configured folder of ASPA animal sheets, or None (merged settings,
     like every other setting). A damaged settings file raises."""
-    for raw in (os.environ.get(ASPA_ENV_VAR), _read_config().get("aspa_data_dir")):
-        if not raw:
-            continue
-        d = Path(raw)
-        try:
-            if d.is_dir() and any(_aspa_file_letter(f.name) for f in d.iterdir()):
-                return d
-        except OSError:
-            continue
-    return None
+    d, reason, raw = aspa_data_dir_state()
+    if reason == DIR_DAMAGED:
+        _raise_damaged()
+    return d
 
 
 def set_aspa_data_dir(path) -> Path:
@@ -730,7 +818,7 @@ def describe() -> str:
         lines.append("Sheet names by project: %s" % _projects.describe())
     except ValueError as e:
         lines.append("Sheet names by project: UNREADABLE -- %s" % e)
-    d = cohort_sheets_dir()
+    d, d_reason, d_raw = cohort_sheets_dir_state()
     if d is not None:
         cohorts = available_cohorts(d)
         lines.append("Cohort tracking sheets: %s" % d)
@@ -745,7 +833,7 @@ def describe() -> str:
             lines.append("  NOT read: %s -- %s" % (name, reason))
         for b in broken_pins(d):
             lines.append("  PIN BROKEN: %s" % b["why"])
-    a = aspa_data_dir()
+    a, a_reason, a_raw = aspa_data_dir_state()
     if a is not None:
         letters = available_aspa_cohorts(a)
         lines.append("ASPA animal sheets: %s" % a)
@@ -757,12 +845,25 @@ def describe() -> str:
     # user's home folder name) come from the machine and may hold any
     # character just as file names may. Escaped, a path is still
     # recognisable; unescaped, one accented letter is a crash.
-    if d is not None or a is not None:
-        if d is None:
+    # A folder that IS set but cannot be used is said as such, with the value
+    # set. WHY: these used to read "not configured" whatever the cause, and a
+    # person whose drive was merely disconnected was sent to set again a
+    # folder that was set correctly.
+    if d is None and d_reason != DIR_UNSET:
+        lines.append("")
+        lines.append("Cohort tracking sheets: NOT IN USE -- %s." % describe_dir_state(
+            d_reason, d_raw, how_to_set="mousedb cohort-sheets --set <path>"))
+    if a is None and a_reason != DIR_UNSET:
+        lines.append("")
+        lines.append("ASPA animal sheets: NOT IN USE -- %s." % describe_dir_state(
+            a_reason, a_raw, what="ASPA animal sheets folder",
+            how_to_set="mousedb cohort-sheets --set-aspa <path>"))
+    if d is not None or a is not None or d_reason != DIR_UNSET:
+        if d is None and d_reason == DIR_UNSET:
             lines.append("")
             lines.append("No cohort tracking sheets folder configured "
                          "(mousedb cohort-sheets --set <path>).")
-        if a is None:
+        if a is None and a_reason == DIR_UNSET:
             lines.append("")
             lines.append("No ASPA animal sheets configured "
                          "(mousedb cohort-sheets --set-aspa <path>).")

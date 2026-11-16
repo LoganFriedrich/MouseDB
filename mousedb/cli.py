@@ -1487,11 +1487,13 @@ def cmd_new_sheet(args):
     from .cohort_tools.make_sheets import NewSheetRefused, REFUSED_EXIT
     folder = args.output_dir
     if not folder:
-        from .cohort_sheets import cohort_sheets_dir
-        folder = cohort_sheets_dir()
+        from .cohort_sheets import cohort_sheets_dir_state, describe_dir_state
+        folder, reason, raw = cohort_sheets_dir_state()
     if not folder:
-        print("REFUSED: no sheets folder is set (mousedb-sheets set-dir <folder>), and no "
-              "--output-dir was given.", file=_sys.stderr)
+        # Worded from WHY there is none: a folder that is set but whose drive
+        # is not connected is not "not set" (cohort_sheets_dir_state).
+        print(_ascii("REFUSED: %s, and no --output-dir was given."
+                     % describe_dir_state(reason, raw)), file=_sys.stderr)
         raise SystemExit(REFUSED_EXIT)
     try:
         target, problems = st.build_sheet(args.cohort, args.animals, folder)

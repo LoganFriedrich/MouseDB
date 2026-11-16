@@ -84,6 +84,36 @@ If the folder set for this machine holds no readable sheet at all (say every
 sheet in it was renamed `Copy of ...`), the table stays empty, the line at the
 top says so and names the folder, and the red box still lists what is in it.
 
+The line at the top always says WHY no folder is in use, because each has a
+different fix:
+
+| The line says | What it means | What to do |
+|---|---|---|
+| *No tracking-sheet folder is set* | Nothing was ever set on this computer for you. | **Set sheets folder...** (or see "Setting the folder"). |
+| *... is set to `<folder>`, but that folder cannot be reached* | The setting is fine; the drive or network share is not connected, or the folder was renamed. The setting was NOT changed. | Connect the drive (or open the share once in Explorer) and press **Refresh**. Only if the folder really moved, set the new one. |
+| *... is set to `<folder>` and can be reached, but nothing in it is named as a sheet* | The folder is there, but no file in it is read as a sheet. | Check the red box for files that are not read, and the sheet names. |
+| *The tracking-sheet folder cannot be read from the settings: the mousedb settings file `<file>` is damaged and was not read (...)* | A settings file (yours or the machine's) became not valid JSON while this window was open. The folder may well be set in it, so it is not called "not set". | Open the named file in a text editor and put it right (see INSTALL.md, "A damaged settings file"), then press **Refresh**. |
+
+If a settings file is already damaged when `mousedb-entry` starts, this tab
+is not shown at all: the database's location cannot be read either, so a
+smaller window holding only the Setup tab opens instead, naming the file.
+Put the file right, close that window and open `mousedb-entry` again.
+
+From a terminal it reads the same. `mousedb-sheets status` prints the folder
+line as `Tracking sheets folder: (NOT IN USE: ...)` -- for a damaged settings
+file `(NOT IN USE: a settings file is damaged -- see below)` -- with the
+sentence from the table on the line under it. `mousedb-sheets import` (which
+is what the scheduled sheet import runs) imports nothing, ends with
+`Sheets: NOTHING IMPORTED -- <the same sentence>` and exits 1, so the
+scheduler records a failure.
+
+`mousedb import --all` opens the database before it looks for the folder, and
+the database's location is a setting too: with a damaged settings file it
+stops at that point with one line, `[FAIL] the mousedb settings file <file> is
+damaged ...`, naming the same file and the same fix. Any `mousedb-sheets`
+command that needs a location from a damaged file stops the same way -- one
+`[FAIL]` line and exit 1, never a wall of Python error text.
+
 ## Importing
 
 1. Press **Import all sheets**. (Or select rows and press **Import selected**.)
@@ -1148,8 +1178,10 @@ says *Recorded -- but another folder is in use* and names the folder still
 being read; clear or change the variable for your choice to take effect.
 
 If the shared folder is ever moved or renamed, every machine that imports
-needs this done again -- the tab will show *no tracking-sheet folder is
-configured* until it is.
+needs this done again -- the tab will show *... is set to `<old folder>`, but
+that folder cannot be reached* until it is. That same line appears when the
+folder is merely on a drive that is not connected right now; then connect the
+drive instead, and change nothing.
 
 The folder path is deliberately never written into the code (it typically
 contains a username and the organisation's folder names, and the code is

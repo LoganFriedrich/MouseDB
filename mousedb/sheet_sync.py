@@ -304,30 +304,62 @@ def aspa_cohort_status(letter: str) -> dict:
             "ambiguous": False, "pinned": None, "last_import": last, "state": state, "why": why}
 
 
+def _no_sheets_folder_problem(reason: str, raw) -> str:
+    """The sentence status() and import_cohorts give when no tracking-sheet
+    folder is in use, worded from cohort_sheets_dir_state's reason. A folder
+    that is set but cannot be reached is said as such, with the value set and
+    "the setting was not changed" -- the fix is to reconnect the drive, not
+    to set the folder again."""
+    from . import sheet_projects
+    why = _cs.describe_dir_state(
+        reason, raw, how_to_set="use 'Set sheets folder' / mousedb-sheets set-dir <folder>")
+    if reason == _cs.DIR_NO_SHEET:
+        why += " (sheet names: %s)" % sheet_projects.describe()
+    return why[:1].upper() + why[1:]
+
+
+def _ledger_or_none() -> Optional[str]:
+    """The ledger's path for status(), or None when it cannot be worked out.
+
+    WHY soft here: the ledger's folder comes from the settings, and when a
+    settings file is damaged working it out raises. status() must still return
+    -- its "problem" line is what tells the person WHICH file is damaged; a
+    raise here used to end ``mousedb-sheets status`` in a traceback instead."""
+    try:
+        return str(_ledger())
+    except ConfigError:
+        return None
+
+
 def status() -> dict:
     """Everything the Tracking Sheets tab shows, as one JSON-able dict.
 
     Two folders: the tracking sheets (every project named in the lab
     settings, sheet_projects) and ASPA's frozen workbooks; both are listed."""
-    from .cohort_sheets import aspa_data_dir, available_aspa_cohorts
-    d = cohort_sheets_dir()
-    a = aspa_data_dir()
+    from .cohort_sheets import aspa_data_dir_state, available_aspa_cohorts
+    # The state, not only the folder. WHY: "no folder" used to be reported as
+    # "not configured" whatever the cause, so a folder set correctly on a
+    # drive that was merely disconnected sent the person to set it again.
+    d, d_reason, d_raw = _cs.cohort_sheets_dir_state()
+    a, a_reason, a_raw = aspa_data_dir_state()
     out = {
         "config_path": str(CONFIG_PATH),
         "cnt_sheets_dir": str(d) if d else None,
         "aspa_sheets_dir": str(a) if a else None,
         "configured": d is not None,
-        "ledger": str(_ledger()),
+        # Why there is no folder in use: ok / unset / unreachable / no_sheet /
+        # damaged (cohort_sheets.cohort_sheets_dir_state), and the value as set.
+        "sheets_dir_state": d_reason,
+        "configured_raw": d_raw if d_reason != _cs.DIR_DAMAGED else None,
+        "aspa_dir_state": a_reason,
+        "aspa_configured_raw": a_raw if a_reason != _cs.DIR_DAMAGED else None,
+        "ledger": _ledger_or_none(),
         "cohorts": [],
         "refused_files": _refused_files(d),
         "problem": None,
     }
     if d is None:
-        from . import sheet_projects
-        out["problem"] = ("No tracking-sheet folder is configured, or the configured "
-                          "folder holds no tracking sheet (sheet names: %s). "
-                          "Use 'Set sheets folder' / mousedb-sheets set-dir."
-                          % sheet_projects.describe())
+        out["problem"] = _no_sheets_folder_problem(d_reason, d_raw)
     else:
         for cohort_id in available_cohorts(d):
             project = cohort_id.rsplit("_", 1)[0]
@@ -791,7 +823,13 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     more of what earlier imports wrote than the broken-read guard allows
     (importers: "The sheet wins"). Only for cohorts named one by one, after a
     person has checked their sheets: with no cohorts named it is refused."""
-    d = Path(sheets_dir) if sheets_dir else cohort_sheets_dir()
+    # The folder's STATE, not cohort_sheets_dir(): that raises on a damaged
+    # settings file, so the "why no folder" sentence below was never reached
+    # and the import ended in a traceback instead of saying which file to fix.
+    if sheets_dir:
+        d, d_reason, d_raw = Path(sheets_dir), _cs.DIR_OK, None
+    else:
+        d, d_reason, d_raw = _cs.cohort_sheets_dir_state()
     results = {"triggered_by": triggered_by, "dry_run": dry_run,
                "sheets_dir": str(d) if d else None, "cohorts": []}
     if allow_large_removal and not cohorts:
@@ -799,9 +837,10 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
                               "one (--cohort <cohort>) after checking their sheets, never "
                               "for every cohort at once")
         return results
-    if d is None:
-        results["problem"] = ("no tracking-sheet folder configured "
-                              "(mousedb-sheets set-dir <folder>)")
+    if d is None or d_reason != _cs.DIR_OK:
+        # Worded from WHY there is no folder (not set / unreachable / no sheet
+        # in it / settings damaged) -- see _no_sheets_folder_problem.
+        results["problem"] = _no_sheets_folder_problem(d_reason, d_raw)
         return results
     if not d.is_dir():
         results["problem"] = "the tracking-sheet folder does not exist: %s" % d
@@ -1377,7 +1416,17 @@ def _print_status(st: dict) -> None:
     # Every line through _ascii, the folder line included: the folder's path is
     # whatever the synced drive calls it, and one non-ASCII letter in it would
     # crash the listing on a Windows console before a single row was shown.
-    print(_ascii("Tracking sheets folder: %s" % (st["cnt_sheets_dir"] or "(NOT CONFIGURED)")))
+    # A damaged settings file is not "not configured" (the folder may well be
+    # set in it); the problem line below names the file.
+    if st["cnt_sheets_dir"]:
+        folder = st["cnt_sheets_dir"]
+    elif st.get("sheets_dir_state") == _cs.DIR_DAMAGED:
+        folder = "(NOT IN USE: a settings file is damaged -- see below)"
+    elif st.get("configured_raw"):
+        folder = "(NOT IN USE: %s)" % st["configured_raw"]
+    else:
+        folder = "(NOT CONFIGURED)"
+    print(_ascii("Tracking sheets folder: %s" % folder))
     if st.get("problem"):
         print(_ascii("  [!] %s" % st["problem"]))
         return
@@ -1476,7 +1525,18 @@ def main(argv=None) -> int:
     sd = sub.add_parser("set-dir", help="Where the CNT tracking sheets live")
     sd.add_argument("folder")
     args = ap.parse_args(argv)
+    try:
+        return _run(args)
+    except ConfigError as e:
+        # WHY: a location that is not set, or a settings file that is damaged,
+        # comes with a message naming the exact fix; a traceback buried it.
+        # One line and exit 1, as `mousedb` itself does (cli.main).
+        print(_ascii("[FAIL] %s" % e))
+        return 1
 
+
+def _run(args) -> int:
+    """One mousedb-sheets subcommand (main parses and catches ConfigError)."""
     if args.cmd == "status":
         st = status()
         print(json.dumps(st, indent=1, default=str)) if args.json else _print_status(st)
