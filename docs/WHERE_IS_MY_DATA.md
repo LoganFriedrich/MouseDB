@@ -730,7 +730,7 @@ next run that can see the files carries on as normal. The cases:
 |---|---|
 | the analysis is listed in full (its `registry.json` is there) and a file it mirrored before is no longer there | archives that file |
 | the whole analysis folder `exports/<analysis>` is gone, and other analyses are still there | archives every mirrored file of that analysis (MouseBrain withdrew it) |
-| the folder `exports/<analysis>` is there but has no `registry.json` | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If the analysis really was withdrawn, MouseBrain removes the whole folder. |
+| the folder `exports/<analysis>` is there but has no `registry.json` | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. MouseBrain itself never removes an analysis folder: a person withdraws an analysis by removing its whole `exports/<analysis>` folder (together with `figures/<analysis>` and `logs/<analysis>.log`), and the next run then archives its mirror (row above). If MouseBrain set a damaged `registry.json` aside (MouseBrain's `logs` folder then holds `<analysis>.registry.json.unreadable-<time>`) and no new one has been written yet, this job keeps failing every night until the next registration in that analysis writes a new `registry.json` or MouseBrain's registry is repaired (see MouseBrain's registry guide). |
 | a folder of the analysis cannot be opened (a network error, no permission) | archives nothing of it: `[FAIL] <analysis>: its files could not be listed ...`. The other analyses are mirrored as usual. |
 | no analysis at all is listed, yet the mirror holds files | archives nothing: `[FAIL] no analysis registry was listed ...`. Run `mousedb config --show` and check that `mousebrain_registry_root` points at MouseBrain's registry folder (when it is not set, the mirror uses the `Registry` folder inside `mousebrain_pipeline_root`, so check that one instead) and that the share is reachable. If every analysis really was withdrawn, move the mirrored files under `_archived/analyses/` by hand and rename `logs/analysis_imports.json` (keep it). |
 
@@ -752,7 +752,10 @@ AFTER the date shown, the count is still judged against the old method and
 can say 0 while samples need re-running. To bring it up to date, have
 MouseBrain rewrite the record (`mousebrain-registry --name <analysis>
 --refresh-approved`, see MouseBrain's registry guide), then run
-`mousedb import-analyses` (or wait for the nightly run). Other things you may
+`mousedb import-analyses` (or wait for the nightly run). The recorded date
+and `--refresh-approved` need a MouseBrain whose analysis registry keeps
+`approved_method_recorded_at`; with an older MouseBrain the option does not
+exist and the date shows as unknown (below) -- update MouseBrain first. Other things you may
 see in that place:
 
 - `approved method as recorded at an unknown date (registry written before

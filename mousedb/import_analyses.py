@@ -310,7 +310,9 @@ def stale_phrase(row: dict) -> str:
     WHY the date: the count compares each entry with the approved method
     RECORDED in MouseBrain's registry.json, which is only as new as the last
     time MouseBrain wrote that file (``mousebrain-registry --name <analysis>
-    --refresh-approved`` rewrites it on demand). Shown bare, "0 stale" after a
+    --refresh-approved`` rewrites it on demand, in a MouseBrain whose
+    registry records ``approved_method_recorded_at``; an older one has
+    neither the option nor the date). Shown bare, "0 stale" after a
     change of the approved method looked like "all current" when it meant
     "judged against the old method". The date lets a person see which.
     A registry written before MouseBrain recorded the date says so.
@@ -455,10 +457,11 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             continue
         reg_path = root / "exports" / analysis / REGISTRY_FILE
         if reg_path not in files:
-            # A folder without its registry.json is not something MouseBrain
-            # withdrew (that removes the folder): it is a registry being
-            # rebuilt, or a share that answered short. Archiving on it moved
-            # every mirrored file of the analysis away.
+            # A folder without its registry.json is not a withdrawn analysis
+            # (a person withdraws one by removing its whole folder; MouseBrain
+            # never removes it): it is a registry being rebuilt or set aside
+            # as damaged, or a share that answered short. Archiving on it
+            # moved every mirrored file of the analysis away.
             problem(row, "%s: exports/%s has no %s; nothing of it was copied or archived "
                          "-- the mirror is kept as it was" % (analysis, analysis, REGISTRY_FILE))
             continue
