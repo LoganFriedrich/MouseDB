@@ -3663,6 +3663,30 @@ class BrainGlobeImporter:
         self.warnings: List[str] = []
         self.imported_counts: Dict[str, int] = {}
 
+    @contextmanager
+    def _import_session(self, dry_run: bool):
+        """The session one brain import runs in: committed ONLY when the import
+        is real (not a dry run) and recorded no error; otherwise rolled back.
+
+        WHY: Database.session() commits whenever its block ends normally, and
+        these imports used to ``return`` out of that block on an error. A brain
+        whose CSV turned out to be unreadable after its placeholder animal and
+        brain row had been added therefore saved those rows anyway -- an import
+        that reported [FAIL] still wrote to the database. Same pattern as
+        ExcelImporter._import_session: an import either lands whole or not at
+        all. The rollback is asked for explicitly, because a caller may hand in
+        a database whose session() does not roll back on its own.
+        """
+        try:
+            with self.db.session() as session:
+                yield session
+                if dry_run or self.errors:
+                    session.rollback()
+                    raise _NotCommitted()
+                session.commit()
+        except _NotCommitted:
+            pass
+
     def parse_brain_name(self, brain_id: str) -> Optional[Dict]:
         """
         Parse brain ID into components.
@@ -3724,7 +3748,7 @@ class BrainGlobeImporter:
         # warning per such row, every night, buried any real problem in the
         # task log ("... and 13 more warnings", 2026-10).
         not_brains: dict = {}
-        with self.db.session() as session:
+        with self._import_session(dry_run) as session:
             for _, row in df.iterrows():
                 brain_id = row.get('brain') or row.get('brain_id')
                 if not brain_id or pd.isna(brain_id):
@@ -3794,9 +3818,8 @@ class BrainGlobeImporter:
                     session.add(cal_run)
                 self.imported_counts['calibration_runs'] += 1
 
-            if not dry_run and not self.errors:
-                session.commit()
-                print(f"  Committed {self.imported_counts['calibration_runs']} calibration runs")
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['calibration_runs']} calibration runs")
 
         if not_brains:
             names = ", ".join("%s (%d)" % (n, c) for n, c in sorted(not_brains.items()))
@@ -3845,20 +3868,27 @@ class BrainGlobeImporter:
             self.errors.append(f"Failed to read CSV: {e}")
             return self._get_result()
 
-        with self.db.session() as session:
-            # Try to determine brain_id from filename or data
-            if not brain_id:
-                brain_id = self._extract_brain_from_path(csv_path)
+        # Everything that can refuse this file is checked BEFORE the database
+        # session opens: the brain id, the column layout, the acronym lookup.
+        # WHY: a refusal used to come after the placeholder animal and brain
+        # row had been added, and the session then saved them although the
+        # import reported [FAIL] (see _import_session).
+        if not brain_id:
+            brain_id = self._extract_brain_from_path(csv_path)
+        if not brain_id:
+            self.errors.append("Could not determine brain ID")
+            return self._get_result()
 
-            if not brain_id:
-                self.errors.append("Could not determine brain ID")
-                return self._get_result()
+        brain_info = self.parse_brain_name(brain_id)
+        if not brain_info:
+            self.errors.append(f"Could not parse brain ID: {brain_id}")
+            return self._get_result()
 
-            brain_info = self.parse_brain_name(brain_id)
-            if not brain_info:
-                self.errors.append(f"Could not parse brain ID: {brain_id}")
-                return self._get_result()
+        rows = self._region_count_rows(df)
+        if rows is None:
+            return self._get_result()
 
+        with self._import_session(dry_run) as session:
             # Ensure brain sample exists
             brain_sample = self._ensure_brain_sample(session, brain_id, brain_info, dry_run)
             if not brain_sample:
@@ -3873,137 +3903,134 @@ class BrainGlobeImporter:
                     f"the cohort's tracking sheet or one of its videos first)")
                 return self._get_result()
 
-            # Detect CSV format and column names
-            col_map = self._detect_region_csv_format(df)
-            if not col_map:
-                self.errors.append("Could not detect CSV format")
-                return self._get_result()
+            for row in rows:
+                self._insert_region_count(session, brain_sample, row,
+                                          calibration_run_id, is_final, csv_path, dry_run)
 
-            # Load acronym-to-ID lookup if we need it
-            acronym_lookup = {}
-            if 'region_id' not in col_map and 'acronym' in col_map:
-                acronym_lookup = self.get_acronym_to_id()
-                if not acronym_lookup:
-                    self.errors.append(
-                        "CSV has acronyms but no region_id column, "
-                        "and acronym-to-ID lookup is unavailable"
-                    )
-                    return self._get_result()
-
-            # Check if CSV has left/right hemisphere columns
-            has_hemisphere_cols = 'left_count' in col_map and 'right_count' in col_map
-
-            for _, row in df.iterrows():
-                # Get region identification
-                region_id = self._parse_int(row.get(col_map.get('region_id', '__none__')))
-                acronym = None
-                if col_map.get('acronym'):
-                    acronym_val = row.get(col_map['acronym'])
-                    acronym = str(acronym_val) if pd.notna(acronym_val) else None
-
-                region_name = None
-                if col_map.get('region_name'):
-                    name_val = row.get(col_map['region_name'])
-                    region_name = str(name_val) if pd.notna(name_val) else None
-
-                # Resolve acronym to region_id if needed
-                if region_id is None and acronym:
-                    info = acronym_lookup.get(acronym)
-                    if info:
-                        region_id = info['id']
-                        if not region_name:
-                            region_name = info['name']
-                    else:
-                        self.warnings.append(f"Unknown acronym: {acronym}")
-                        continue
-
-                cell_count = self._parse_int(row.get(col_map.get('cell_count', '__none__')))
-                if region_id is None or cell_count is None:
-                    continue
-
-                if not region_name:
-                    region_name = f"Region_{region_id}"
-
-                # Insert total count (hemisphere='both')
-                if not has_hemisphere_cols:
-                    # Original format: single hemisphere column
-                    hemisphere = 'both'
-                    if col_map.get('hemisphere'):
-                        h_val = row.get(col_map['hemisphere'])
-                        hemisphere = str(h_val) if pd.notna(h_val) else 'both'
-
-                    self._insert_region_count(
-                        session, brain_sample, region_id, region_name, acronym,
-                        hemisphere, cell_count, col_map, row,
-                        calibration_run_id, is_final, csv_path, dry_run
-                    )
-                else:
-                    # Per-brain format with left_count/right_count columns
-                    # Insert total
-                    self._insert_region_count(
-                        session, brain_sample, region_id, region_name, acronym,
-                        'both', cell_count, col_map, row,
-                        calibration_run_id, is_final, csv_path, dry_run
-                    )
-                    # Insert left
-                    left_count = self._parse_int(row.get(col_map['left_count']))
-                    if left_count is not None and left_count > 0:
-                        self._insert_region_count(
-                            session, brain_sample, region_id, region_name, acronym,
-                            'left', left_count, col_map, row,
-                            calibration_run_id, is_final, csv_path, dry_run
-                        )
-                    # Insert right
-                    right_count = self._parse_int(row.get(col_map['right_count']))
-                    if right_count is not None and right_count > 0:
-                        self._insert_region_count(
-                            session, brain_sample, region_id, region_name, acronym,
-                            'right', right_count, col_map, row,
-                            calibration_run_id, is_final, csv_path, dry_run
-                        )
-
-            if not dry_run and not self.errors:
-                session.commit()
-                print(f"  Committed {self.imported_counts['region_counts']} region counts")
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['region_counts']} region counts")
 
         return self._get_result()
 
-    def _insert_region_count(self, session, brain_sample, region_id, region_name,
-                              acronym, hemisphere, cell_count, col_map, row,
-                              calibration_run_id, is_final, csv_path, dry_run):
-        """Insert a single RegionCount row, skipping duplicates."""
+    def _region_count_rows(self, df: pd.DataFrame) -> Optional[List[Dict]]:
+        """The region-count rows one per-brain CSV holds, as dicts of
+        RegionCount columns, in file order; None (with an error recorded) when
+        the file's layout cannot be read.
+
+        Supports two layouts:
+        - Long format with region_id, region_name, hemisphere, cell_count
+        - Per-brain format with region_acronym, region_name, cell_count,
+          left_count, right_count (acronyms resolved to Allen Atlas ids;
+          a 'both' row for the total plus a 'left'/'right' row for each
+          hemisphere with cells)
+        A row whose acronym the atlas does not know is skipped with a warning.
+        When the file names the same region and hemisphere twice, the first
+        one counts (the database holds one row per region and hemisphere).
+        """
+        col_map = self._detect_region_csv_format(df)
+        if not col_map:
+            self.errors.append("Could not detect CSV format")
+            return None
+
+        acronym_lookup = {}
+        if 'region_id' not in col_map and 'acronym' in col_map:
+            acronym_lookup = self.get_acronym_to_id()
+            if not acronym_lookup:
+                self.errors.append(
+                    "CSV has acronyms but no region_id column, "
+                    "and acronym-to-ID lookup is unavailable"
+                )
+                return None
+
+        has_hemisphere_cols = 'left_count' in col_map and 'right_count' in col_map
+        rows: List[Dict] = []
+        seen = set()
+
+        def add(region_id, region_name, acronym, hemisphere, cell_count, row):
+            key = (region_id, hemisphere)
+            if key in seen:
+                return
+            seen.add(key)
+            rows.append({
+                'region_id': region_id,
+                'region_name': region_name,
+                'region_acronym': acronym,
+                'parent_region_id': self._parse_int(
+                    row.get(col_map.get('parent_id', '__none__'))),
+                'hemisphere': hemisphere,
+                'cell_count': cell_count,
+                'cell_density': self._parse_float(
+                    row.get(col_map.get('density', '__none__'))),
+                'region_volume_mm3': self._parse_float(
+                    row.get(col_map.get('volume', '__none__'))),
+                'cell_type': 'all',
+            })
+
+        for _, row in df.iterrows():
+            region_id = self._parse_int(row.get(col_map.get('region_id', '__none__')))
+            acronym = None
+            if col_map.get('acronym'):
+                acronym_val = row.get(col_map['acronym'])
+                acronym = str(acronym_val) if pd.notna(acronym_val) else None
+
+            region_name = None
+            if col_map.get('region_name'):
+                name_val = row.get(col_map['region_name'])
+                region_name = str(name_val) if pd.notna(name_val) else None
+
+            if region_id is None and acronym:
+                info = acronym_lookup.get(acronym)
+                if info:
+                    region_id = info['id']
+                    if not region_name:
+                        region_name = info['name']
+                else:
+                    self.warnings.append(f"Unknown acronym: {acronym}")
+                    continue
+
+            cell_count = self._parse_int(row.get(col_map.get('cell_count', '__none__')))
+            if region_id is None or cell_count is None:
+                continue
+            if not region_name:
+                region_name = f"Region_{region_id}"
+
+            if not has_hemisphere_cols:
+                hemisphere = 'both'
+                if col_map.get('hemisphere'):
+                    h_val = row.get(col_map['hemisphere'])
+                    hemisphere = str(h_val) if pd.notna(h_val) else 'both'
+                add(region_id, region_name, acronym, hemisphere, cell_count, row)
+            else:
+                add(region_id, region_name, acronym, 'both', cell_count, row)
+                left_count = self._parse_int(row.get(col_map['left_count']))
+                if left_count is not None and left_count > 0:
+                    add(region_id, region_name, acronym, 'left', left_count, row)
+                right_count = self._parse_int(row.get(col_map['right_count']))
+                if right_count is not None and right_count > 0:
+                    add(region_id, region_name, acronym, 'right', right_count, row)
+        return rows
+
+    def _insert_region_count(self, session, brain_sample, row, calibration_run_id,
+                             is_final, csv_path, dry_run):
+        """Insert one RegionCount row (a dict from _region_count_rows),
+        skipping one the brain already has."""
         from .schema import RegionCount
 
-        # Check for duplicate
         existing = session.query(RegionCount).filter_by(
             brain_sample_id=brain_sample.id,
-            region_id=region_id,
-            hemisphere=hemisphere,
-            cell_type='all'
+            region_id=row['region_id'],
+            hemisphere=row['hemisphere'],
+            cell_type=row['cell_type'],
         ).first()
         if existing:
             return
 
         region_count = RegionCount(
             brain_sample_id=brain_sample.id,
-            region_id=region_id,
-            region_name=region_name,
-            region_acronym=acronym,
-            parent_region_id=self._parse_int(
-                row.get(col_map.get('parent_id', '__none__'))
-            ),
-            hemisphere=hemisphere,
-            cell_count=cell_count,
-            cell_density=self._parse_float(
-                row.get(col_map.get('density', '__none__'))
-            ),
-            region_volume_mm3=self._parse_float(
-                row.get(col_map.get('volume', '__none__'))
-            ),
-            cell_type='all',
             calibration_run_id=calibration_run_id,
             is_final=1 if is_final else 0,
             source_file=str(csv_path),
+            **row,
         )
 
         if not dry_run:
@@ -4075,7 +4102,7 @@ class BrainGlobeImporter:
         print(f"{'[DRY RUN] ' if dry_run else ''}Computing eLife group counts "
               f"for brain_sample_id={brain_sample_id}")
 
-        with self.db.session() as session:
+        with self._import_session(dry_run) as session:
             # Aggregate total counts
             elife_total = aggregate_fn(region_counts_dict)
 
@@ -4124,9 +4151,8 @@ class BrainGlobeImporter:
                             right_constituents, calibration_run_id, is_final, source_file, dry_run
                         )
 
-            if not dry_run and not self.errors:
-                session.commit()
-                print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
 
         return self._get_result()
 
@@ -4161,7 +4187,7 @@ class BrainGlobeImporter:
 
         print(f"{'[DRY RUN] ' if dry_run else ''}Reading eLife group counts for {brain_id} "
               f"from {elife_summary_csv} (mousebrain not importable here)")
-        with self.db.session() as session:
+        with self._import_session(dry_run) as session:
             for group_name, by_hemisphere in rows.items():
                 for hemisphere in ('both', 'left', 'right'):
                     if hemisphere not in by_hemisphere:
@@ -4170,9 +4196,8 @@ class BrainGlobeImporter:
                         session, brain_sample_id, group_name, hemisphere,
                         by_hemisphere[hemisphere], {}, calibration_run_id, is_final,
                         str(elife_summary_csv), dry_run)
-            if not dry_run and not self.errors:
-                session.commit()
-                print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['elife_region_counts']} eLife region counts")
         return self._get_result()
 
     def _insert_elife_count(self, session, brain_sample_id, group_name, hemisphere,
@@ -4253,7 +4278,7 @@ class BrainGlobeImporter:
             self.errors.append(f"Failed to parse XML: {e}")
             return self._get_result()
 
-        with self.db.session() as session:
+        with self._import_session(dry_run) as session:
             # Ensure brain sample exists
             brain_sample = self._ensure_brain_sample(session, brain_id, brain_info, dry_run)
             if not brain_sample:
@@ -4300,9 +4325,8 @@ class BrainGlobeImporter:
                     session.add(cell)
                 self.imported_counts['detected_cells'] += 1
 
-            if not dry_run and not self.errors:
-                session.commit()
-                print(f"  Committed {self.imported_counts['detected_cells']} detected cells")
+        if not dry_run and not self.errors:
+            print(f"  Committed {self.imported_counts['detected_cells']} detected cells")
 
         return self._get_result()
 

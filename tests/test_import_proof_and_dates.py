@@ -475,7 +475,10 @@ class TestNoInventedDates:
         # warnings, so an error that only points at a warning hides the reason.
         brain = '357_CNT_09_08_1p625x_z4'
         csv_path = tmp_path / (brain + '_counts.csv')
-        csv_path.write_text('region,count\nroot,1\n')
+        # A readable file, so the cohort is the only reason it is refused
+        # (an unreadable one is refused for its layout before the database
+        # is opened).
+        csv_path.write_text('region_id,count\n1,1\n')
         result = BrainGlobeImporter(db).import_region_counts(csv_path, brain_id=brain)
         assert not result['success']
         assert [e for e in result['errors']

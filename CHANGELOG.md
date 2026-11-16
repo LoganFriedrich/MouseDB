@@ -107,6 +107,11 @@ checked-in code, not what's planned.
   scheduled sheet import) now name the file in one sentence -- and any
   `mousedb-sheets` command that still needs a location from it stops with
   one `[FAIL]` line and exit 1 -- instead of ending in a traceback.
+- Brain import: a brain that is refused writes nothing. A counts file whose
+  columns could not be read was refused only after a placeholder animal and
+  the brain's row had been added, and those were saved although the import
+  printed `[FAIL]`. Every brain import (counts, eLife groups, calibration runs,
+  detected cells) now saves all of its rows or none, and a dry run saves none.
 - Cohort Setup's **Replace** refuses an archive or snapshot copy, a "Copy of
   ..." or an export, as Import already did, and the refusal is shown before the
   preview. Before, Replace used such a file and put its old values back over the
