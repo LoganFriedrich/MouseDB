@@ -581,6 +581,15 @@ def test_a_first_import_on_a_guess_is_still_reported_not_synced(tmp_path):
     assert r["imported"]["pellet_scores"] > 0                        # rows still added
 
 
+def test_a_percentage_typed_in_the_rows_own_column_replaces_the_stored_fraction(tmp_path):
+    """The two units are compared as one, and a real change still lands: a
+    stored 0.87 whose own column now reads 85 becomes 85."""
+    db = _db(tmp_path)
+    _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 0.87}))
+    _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 85}))
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 85
+
+
 def _guess(db, path):
     imp = ExcelImporter(db)
     imp.sync_blocked = "2 files match (test)"
