@@ -547,3 +547,35 @@ def test_the_tray_tabs_percentage_is_kept_in_step(tmp_path):
     assert _percent(db, ANIMALS[0], DAYS[0]) == 0.9
     _import(db, tray_percent(_workbook(_sheet(tmp_path)), 0.8), allow=True)
     assert _percent(db, ANIMALS[0], DAYS[0]) == 0.8
+
+
+# --------------------------------------------------------------------------
+# a workbook nobody chose: add only
+# --------------------------------------------------------------------------
+
+def test_a_workbook_read_on_a_guess_changes_and_removes_nothing(tmp_path):
+    """WHY: with several files matching one cohort and none pinned, the newest
+    is read -- a guess. Bringing the database in step with it would change and
+    remove rows to match a draft or an old copy; the import adds only."""
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    d, a = DAYS[2], ANIMALS[1]
+    old = _scores(d, a)[4]
+    imp = ExcelImporter(db)
+    imp.sync_blocked = "2 files match (test)"
+    imp.allow_large_removal = True            # never overrides it
+    r = imp.import_cohort_file(_workbook(_sheet(tmp_path), days=DAYS[:5],
+                                         score_edit={(d, a, 1): (5, (old + 1) % 3)}))
+    assert _pellets(db)[(a, d, 1, 5)] == old                       # not changed
+    assert any(k[1] == DAYS[-1] for k in _pellets(db))              # not removed
+    refused = r["sheet_sync"]["refused"]
+    assert len(refused) == 1 and "pin" in refused[0] and "2 files match" in refused[0]
+
+
+def test_a_first_import_on_a_guess_is_still_reported_not_synced(tmp_path):
+    db = _db(tmp_path)
+    imp = ExcelImporter(db)
+    imp.sync_blocked = "2 files match (test)"
+    r = imp.import_cohort_file(_workbook(_sheet(tmp_path)))
+    assert len(r["sheet_sync"]["refused"]) == 1
+    assert r["imported"]["pellet_scores"] > 0                        # rows still added

@@ -444,6 +444,17 @@ def _not_saved_reason(r: dict, dry_run: bool) -> Optional[str]:
             "refreshes them")
 
 
+def _blocked_reason(sync_blocked: Optional[str], dry_run: bool) -> Optional[str]:
+    """The LEFT_UNCHANGED sentence when the workbook may not be the cohort's
+    sheet (see _unpinned_choice), else None."""
+    if not sync_blocked:
+        return None
+    return ("animal details %s: %s; pin the cohort's sheet ('mousedb-sheets pin "
+            "<cohort> <file>') and import again" % (
+                "would be left as they are" if dry_run else "left as they were",
+                sync_blocked))
+
+
 def _new_entry(cohort_id, sheet, triggered_by: str, dry_run: bool) -> dict:
     """The start of one cohort's outcome record (the ledger's line shape)."""
     return {"cohort_id": cohort_id, "sheet_name": sheet.name if sheet else None,
@@ -465,14 +476,41 @@ def _finish(entry: dict, results: dict, dry_run: bool, record: bool = True) -> N
         _append_ledger(_for_ledger(entry))
 
 
+def _unpinned_choice(cohort_id: str, sheet, sheets_dir) -> Optional[str]:
+    """Why ``sheet`` may not be the cohort's sheet, or None.
+
+    Not None when more than one file in the folder matches the cohort's sheet
+    name and no pin names the one read (none is pinned, or the pin is broken),
+    so find_cohort_sheet read the newest -- a guess. WHY it matters: an import
+    brings the rows earlier imports wrote in step with the file it reads,
+    changing and removing them (importers: "The sheet wins"), and on a guess
+    that could follow a draft or an old copy. The import is then add-only for
+    that cohort (importers.ExcelImporter.sync_blocked) and its animal details
+    are left as they were, until a person pins the real sheet."""
+    if sheet is None:
+        return None
+    cands = cohort_sheet_candidates(cohort_id, sheets_dir=sheets_dir)
+    if len(cands) <= 1:
+        return None
+    pin = pinned_sheet(cohort_id)
+    if pin and sheet.name == pin:
+        return None
+    return ("%d files match %s's sheet name (%s) and none is pinned, so the newest, %s, "
+            "was read without anyone choosing it" % (
+                len(cands), cohort_id, ", ".join(c.name for c in cands), sheet.name))
+
+
 def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=None,
-                allow_large_removal: bool = False) -> dict:
+                allow_large_removal: bool = False, sync_blocked: Optional[str] = None) -> dict:
     """Import ONE workbook as ONE cohort -- the same steps for every route
     (the folder's cohorts, a named file): the sheet's tables, then its
     animal-level tabs, under the cross-task mutex when anything is written.
     The animal-level tabs are copied only when the importer saved the
     workbook (see _not_saved_reason); otherwise the outcome says, under
     LEFT_UNCHANGED, that they were left as they were and why.
+    ``sync_blocked``: why the workbook may not be the cohort's sheet (see
+    _unpinned_choice): the import is then add-only and the animal details are
+    left as they were.
     Never raises: a crash becomes this cohort's failure, with the reason."""
     from .importers import ExcelImporter
     entry = _new_entry(cohort_id, sheet, triggered_by, dry_run)
@@ -492,10 +530,13 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
             # real (see importers: "The sheet wins"). Recorded in the ledger.
             imp.allow_large_removal = True
             entry["allow_large_removal"] = True
+        if sync_blocked:
+            imp.sync_blocked = sync_blocked
+            entry["sync_blocked"] = sync_blocked
         if dry_run:
             r = imp.import_cohort_file(sheet, dry_run=True)
             saved = False            # a dry run saves nothing
-            kept = _not_saved_reason(r, True)
+            kept = _not_saved_reason(r, True) or _blocked_reason(sync_blocked, True)
             copying = not kept
             rec = (_animal_records(imp, cohort_id, sheet, "cohort", True, r,
                                    allow_large_removal) if copying else None)
@@ -514,6 +555,7 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                 # replace the cohort's copy from a workbook it did not save.
                 kept = _not_saved_reason(r, False)
                 saved = kept is None
+                kept = kept or _blocked_reason(sync_blocked, False)
                 copying = not kept
                 rec = (_animal_records(imp, cohort_id, sheet, "cohort", False, r,
                                        allow_large_removal) if copying else None)
@@ -768,7 +810,9 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
             continue
         sheet = find_cohort_sheet(cohort_id, sheets_dir=d)
         _finish(_import_one(cohort_id, sheet, dry_run, triggered_by,
-                            allow_large_removal=allow_large_removal), results, dry_run)
+                            allow_large_removal=allow_large_removal,
+                            sync_blocked=_unpinned_choice(cohort_id, sheet, d)),
+                results, dry_run)
 
     # A full import also refreshes each frozen letter cohort's ODC tab into
     # animal_records. WHY: that tab is where those animals' surgery, strain and

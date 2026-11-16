@@ -220,3 +220,39 @@ def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(folder, monke
     assert any("animal details '4_Contusion_Injury_Details'" in x for x in refusals)
     assert any("animal details '5_SC_Injection_Details'" in x for x in refusals)
     assert not ss.import_succeeded(r)
+
+
+def test_several_files_and_no_pin_import_add_only_until_pinned(folder, monkeypatch):
+    """WHY: the newest of several matching files was imported, and the import
+    then changed and removed rows to match it -- on a guess."""
+    import os, time
+    import mousedb.animal_records as ar
+    import mousedb.importers as imp
+    rival = folder / "Connectome_05_Animal_Tracking (2).xlsx"
+    rival.write_bytes(b"y")
+    later = time.time() + 3600
+    os.utime(rival, (later, later))
+    built = []
+
+    class Records:
+        db = object()
+        sync_blocked = None
+
+        def import_cohort_file(self, *a, **k):
+            built.append(self)
+            return {"success": True, "imported": {}, "warnings": [], "errors": []}
+
+    copied = []
+    monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Records())
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: copied.append(a) or {
+        "records": 1, "warnings": [], "error": None, "kept": []})
+
+    (c,) = ss.import_cohorts(["CNT_05"])["cohorts"]
+    assert built[-1].sync_blocked and "2 files match" in built[-1].sync_blocked
+    assert copied == []                                   # animal details left alone
+    assert "pin" in c[ss.LEFT_UNCHANGED]
+    assert c["scores_saved"] is True
+
+    cs.pin_cohort_sheet("CNT_05", rival.name)
+    (c,) = ss.import_cohorts(["CNT_05"])["cohorts"]
+    assert built[-1].sync_blocked is None and len(copied) == 1

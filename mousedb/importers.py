@@ -261,6 +261,10 @@ class ExcelImporter:
             # rows earlier imports wrote are brought in step with the sheet.
             for table in ('weights', 'ramp_entries', 'surgeries'):
                 self._sync_table(session, cohort_id, table, dry_run)
+            if self.sync_blocked:
+                # Said even when no table held an earlier row to refuse over
+                # (a first import): the cohort stays NOT SYNCED until pinned.
+                self._sync_refuse('every table', self.sync_blocked)
 
             # Log skipped sheets
             TEMPLATE_SHEETS = {'2_OCD_Animal_Tracking', '2_ODC_Animal_Tracking',
@@ -1479,6 +1483,18 @@ class ExcelImporter:
     # Set by the caller for ONE cohort a person has checked (see above).
     allow_large_removal = False
 
+    # Set by the caller when the workbook being read may not be the cohort's
+    # sheet at all: a sentence saying why (sheet_sync sets it when several
+    # files match the cohort's sheet name and none is pinned, so the newest was
+    # read as a guess). Then NOTHING the import wrote before is changed or
+    # removed, in any table, whatever allow_large_removal says: new rows are
+    # still added, as an add-only import always did. WHY: bringing the
+    # database in step with a file nobody chose would change and remove rows
+    # to match a draft or an old copy. Recorded once as a refusal, even when
+    # the cohort has no earlier rows yet, so the cohort shows as NOT SYNCED
+    # until a person pins its sheet.
+    sync_blocked = None
+
     # What a surgery row stores from its tab, per type: the values compared
     # with the sheet when the import syncs (_sync_table).
     _SURGERY_FIELDS = {
@@ -1510,6 +1526,10 @@ class ExcelImporter:
         value that was stored empty is not counted: columns typed in later
         (accessory details, backfilled days after the scores) fill blanks,
         while a shifted column or a broken read overwrites values."""
+        if self.sync_blocked:
+            # First: no other reason, and no permission, matters when the
+            # workbook may not be the cohort's sheet (see sync_blocked).
+            return self.sync_blocked
         unread = self.__dict__.get('_unread_tabs', {}).get(table)
         if unread:
             return unread
@@ -1535,7 +1555,24 @@ class ExcelImporter:
     def _sync_refuse(self, table: str, why: str):
         """Record a refusal to remove or change anything in one table, as the
         FIRST warning (the ledger keeps only the first warnings) and under the
-        result's sheet_sync.refused."""
+        result's sheet_sync.refused. A refusal because the workbook may not be
+        the cohort's sheet (sync_blocked) is said ONCE for every table, with
+        what to do about it: pin the sheet."""
+        # By name too, for the steps that follow the importer: the sheet import
+        # leaves a refused table's animal-detail tabs as they were (sheet_sync).
+        self._sync_state().setdefault('refused_tables', []).append(table)
+        if self.sync_blocked and why == self.sync_blocked:
+            if self.__dict__.get('_blocked_said'):
+                return
+            self.__dict__['_blocked_said'] = True
+            text = self._ascii(
+                "NOT SYNCED any table: %s. Nothing earlier imports wrote for this "
+                "cohort was removed or changed; new rows were still added. Say which "
+                "file is the sheet with 'mousedb-sheets pin <cohort> \"<file name>\"' "
+                "(or the Tracking Sheets tab), then import again." % why)
+            self._sync_state().setdefault('refused', []).append(text)
+            self.warnings.insert(0, text)
+            return
         text = self._ascii(
             "NOT SYNCED %s: %s. Nothing was removed or changed in %s for this "
             "cohort; new rows were still added. If the sheet is wrong, fix it and "
@@ -1544,9 +1581,6 @@ class ExcelImporter:
             "<cohort> --allow-large-removal', or use Replace in the GUI's cohort "
             "setup." % (table, why, table))
         self._sync_state().setdefault('refused', []).append(text)
-        # By name too, for the steps that follow the importer: the sheet import
-        # leaves a refused table's animal-detail tabs as they were (sheet_sync).
-        self._sync_state().setdefault('refused_tables', []).append(table)
         self.warnings.insert(0, text)
 
     def _audit(self, session, action: str, table: str, record_id, old=None, new=None):

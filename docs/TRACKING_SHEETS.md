@@ -716,7 +716,22 @@ cohort's only file, the cohort has no row in the table and is not imported.
 **When several files match a cohort** -- a `(2)` copy, a dated backup, a draft
 with a `1` on the end -- the system does not guess silently: the status says
 **N files match -- choose**, and until you choose, it reads the most recently
-edited one and says so. The import does not stop.
+edited one and says so. The import does not stop, but until you choose it
+only ADDS for that cohort: new rows from the newest file are added, and
+nothing earlier imports wrote is changed or removed to match it, in any
+table (otherwise a draft or an old copy could take rows out); the animal
+details are left as they were. The cohort's line says why:
+
+```
+       [!] animal details left as they were: 2 files match CNT_NN's sheet name (...) and none is pinned, ...
+       [!] NOT SYNCED any table: 2 files match CNT_NN's sheet name (...) ... Say which file is the sheet with 'mousedb-sheets pin <cohort> "<file name>"' ...
+```
+
+The cohort counts as NOT SYNCED, so the scheduled job's run shows as failed
+every night until a file is pinned -- on the machine that runs the scheduled
+import (pins are kept per machine login, see below). The same holds when a
+pin is broken (see "A broken pin"). The pellet scores the newest file adds
+still reach the reaching pipeline's hand-scores file.
 
 To choose: press **Refresh**, select the row, press **This is the sheet**,
 pick the file from the list. That choice is called a **pin**. It is shown as
@@ -743,8 +758,9 @@ button says so.
 
 **A broken pin.** If the pinned file is later renamed, moved or deleted, the
 pin is broken. The cohort is then read from its newest file, as if nothing
-were pinned; a cohort with no other file has no sheet at all and is not
-imported. This is reported, not hidden:
+were pinned (and, while it has more than one file, only ADDS -- see "When
+several files match a cohort" above); a cohort with no other file has no
+sheet at all and is not imported. This is reported, not hidden:
 
 - `mousedb-sheets status` prints one `[!]` line under that cohort's row,
   naming the pinned file, the file read instead, and how to fix it;
