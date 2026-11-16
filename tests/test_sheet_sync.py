@@ -188,7 +188,19 @@ class TestImportLedger:
         assert ss.cohort_status("05")["state"] == "last_import_failed"
 
 
-def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(folder, monkeypatch):
+@pytest.fixture
+def invented(tmp_path, monkeypatch):
+    """A sheets folder holding one invented cohort's sheet (CNT_77)."""
+    d = tmp_path / "sheets77"
+    d.mkdir()
+    (d / "Connectome_77_Animal_Tracking.xlsx").write_bytes(b"x")
+    monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setenv(cs.ENV_VAR, str(d))
+    monkeypatch.setattr(ss, "LEDGER", tmp_path / "ledger.jsonl")
+    return d
+
+
+def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(invented, monkeypatch):
     """WHY: the importer refused to sync the surgeries (the sheet read as
     broken), yet the animal details from the same surgery tabs were replaced
     from that very read. They now stay as they were, reported with the
@@ -214,7 +226,7 @@ def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(folder, monke
 
     monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Refuses())
     monkeypatch.setattr(ar, "sync_cohort", fake_sync)
-    r = ss.import_cohorts(["CNT_05"])
+    r = ss.import_cohorts(["CNT_77"])
     assert set(asked[0]) == {"4_Contusion_Injury_Details", "5_SC_Injection_Details"}
     refusals = ss.sync_refused(r["cohorts"][0])
     assert any("animal details '4_Contusion_Injury_Details'" in x for x in refusals)
@@ -222,13 +234,13 @@ def test_a_refused_table_keeps_its_tabs_animal_details_and_says_so(folder, monke
     assert not ss.import_succeeded(r)
 
 
-def test_several_files_and_no_pin_import_add_only_until_pinned(folder, monkeypatch):
+def test_several_files_and_no_pin_import_add_only_until_pinned(invented, monkeypatch):
     """WHY: the newest of several matching files was imported, and the import
     then changed and removed rows to match it -- on a guess."""
     import os, time
     import mousedb.animal_records as ar
     import mousedb.importers as imp
-    rival = folder / "Connectome_05_Animal_Tracking (2).xlsx"
+    rival = invented / "Connectome_77_Animal_Tracking (2).xlsx"
     rival.write_bytes(b"y")
     later = time.time() + 3600
     os.utime(rival, (later, later))
@@ -247,12 +259,12 @@ def test_several_files_and_no_pin_import_add_only_until_pinned(folder, monkeypat
     monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: copied.append(a) or {
         "records": 1, "warnings": [], "error": None, "kept": []})
 
-    (c,) = ss.import_cohorts(["CNT_05"])["cohorts"]
+    (c,) = ss.import_cohorts(["CNT_77"])["cohorts"]
     assert built[-1].sync_blocked and "2 files match" in built[-1].sync_blocked
     assert copied == []                                   # animal details left alone
     assert "pin" in c[ss.LEFT_UNCHANGED]
     assert c["scores_saved"] is True
 
-    cs.pin_cohort_sheet("CNT_05", rival.name)
-    (c,) = ss.import_cohorts(["CNT_05"])["cohorts"]
+    cs.pin_cohort_sheet("CNT_77", rival.name)
+    (c,) = ss.import_cohorts(["CNT_77"])["cohorts"]
     assert built[-1].sync_blocked is None and len(copied) == 1
