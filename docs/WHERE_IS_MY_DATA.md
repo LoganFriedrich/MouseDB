@@ -504,8 +504,7 @@ has rows but no file and is not in a review queue:
 Nothing is deleted, and the import still succeeds: a listing that missed some
 files must never cost data. What to do: find out where the file went. If it
 was moved or renamed by mistake, put it back -- the next import clears the
-line. If the video really should no longer be in the database, that is a
-decision for a person, not for the import. A video that was being moved
+line. A video that was being moved
 between folders while the import ran can show up for one night and then
 disappear from the list by itself, and so can a video imported by hand with
 `--include-processing` while it is still being processed, until it is filed.
@@ -518,6 +517,17 @@ NOT listed, as long as the renamed file is in the pipeline -- even though the
 name written inside it is still the old one, and the rows still carry that
 old name. (Rows imported before that file name was recorded fall back to the
 video name written inside the file.)
+
+**If the video really should no longer be in the database** (it was withdrawn
+on purpose, or recorded by mistake), that is a decision for a person, and
+there is deliberately no button or command for it in this tool. Do not delete
+rows by hand. Hand the line from the list to whoever looks after the
+database, and leave the line on the list until they have decided; it does no
+harm there.
+
+Never try to take out the rows of a video that IS filed (its results file is
+in the pipeline): the next import would bring them back anyway, and a video
+that needs another look goes back through a review queue instead.
 
 ## How tissue analysis outputs get here
 

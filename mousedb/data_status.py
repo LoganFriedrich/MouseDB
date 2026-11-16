@@ -419,7 +419,9 @@ def rows_without_file_problem(path: Path) -> Optional[str]:
     shown = ", ".join(videos[:5]) + (", ..." if len(videos) > 5 else "")
     return ("%d video(s) have reaches in the database but no results file in the "
             "pipeline, and are not in review (%s; found by the reach import of %s). "
-            "Nothing was removed: put the file back, or decide the rows should go. "
+            "Nothing was removed: put the file back, or hand the line to whoever "
+            "looks after the database (docs/WHERE_IS_MY_DATA.md, 'Reaches whose "
+            "results file has gone'). "
             "Full list: %s" % (len(videos), shown, report.get("checked_at") or "?", path))
 
 
