@@ -494,15 +494,27 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
     if lock_wait_seconds is not None and lock_wait_seconds <= 0:
         started = mutex._clock()
         while not mutex.try_acquire(heartbeat=True):
-            # "Busy" only when there is a holder to name. With no lockfile at
-            # all, the lock was released a moment ago (or its delete is still
-            # pending): try again, briefly. A folder that refuses writes is
-            # raised by try_acquire (LockFolderNotWritable) within the grace
-            # period, so this never tells a person "already being written"
-            # while nothing is writing.
-            if (mutex.holder()[0] != "absent"
+            # "Busy" only when there is a holder to name. Try again, briefly,
+            # in the two cases where the lock was released a moment ago:
+            #   * no lockfile at all;
+            #   * creating the lockfile was just refused (try_acquire recorded
+            #     the refusal in _refused_since) and the file left at the path
+            #     cannot be read, so its holder is "unknown". On Windows that
+            #     is a lockfile whose delete is still pending: it refuses both
+            #     creation and reading for a moment after the previous refresh
+            #     released it. Reading it as a holder told a person "already
+            #     being written" just after the other refresh had finished.
+            # A folder that refuses writes is raised by try_acquire
+            # (LockFolderNotWritable) within the grace period, and a holder
+            # that is really there is named at once -- so "already being
+            # written" is said only while something holds the lock.
+            state, who = mutex.holder()
+            released_moments_ago = (
+                state == "absent"
+                or (state == "unknown" and mutex.path in mutex._refused_since))
+            if (not released_moments_ago
                     or mutex._clock() - started > PENDING_DELETE_GRACE_SECONDS + 5):
-                raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
+                raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, who))
             mutex._sleep(0.2)
         return mutex
     return mutex.acquire(wait_seconds=lock_wait_seconds,
