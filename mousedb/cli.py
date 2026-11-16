@@ -1381,6 +1381,9 @@ def cmd_import_analyses(args):
     if args.all: argv.append("--all")
     if args.dry_run: argv.append("--dry-run")
     if args.limit: argv += ["--limit", str(args.limit)]
+    for a in (args.confirm_withdrawn or ()):
+        argv += ["--confirm-withdrawn", a]
+    if args.set_aside_ledger: argv.append("--set-aside-ledger")
     raise SystemExit(_main(argv))
 
 
@@ -1723,6 +1726,11 @@ def main():
     ia.add_argument('--all', action='store_true', help='Ignore the ledger; re-check every file')
     ia.add_argument('--dry-run', action='store_true', help='Count only; write nothing')
     ia.add_argument('--limit', type=int, help='Copy at most this many files')
+    ia.add_argument('--confirm-withdrawn', action='append', metavar='ANALYSIS',
+                    help='Confirm MouseBrain withdrew this analysis (or files of it): archive '
+                         'every mirrored file of it MouseBrain no longer has (repeatable)')
+    ia.add_argument('--set-aside-ledger', action='store_true',
+                    help='Keep an unusable ledger aside and start a new one')
     ia.set_defaults(func=cmd_import_analyses)
 
     # mousedb-init

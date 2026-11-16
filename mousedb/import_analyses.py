@@ -39,6 +39,13 @@ WHAT IT DOES
      with no registry.json and nothing mirrored from it (MouseBrain creates
      the folder before anything is registered in it) is not an error: there
      is nothing to copy and nothing to protect.
+  3a. When a person confirms that MouseBrain withdrew an analysis (or files of
+     it) -- ``--confirm-withdrawn <analysis>`` -- the run archives every
+     mirrored file of that analysis MouseBrain no longer has, through the same
+     archive step, even where it would otherwise hold back (see
+     ``confirmed_extra_keys``). WHY a supported command: nothing but this
+     tool writes into the mirror, so the remedy for "everything really was
+     withdrawn" cannot be "move the files by hand".
   4. Writes ``<mousedb_root>/exports/ANALYSES_MANIFEST.json``: one row per
      analysis with its entry counts (current, invalidated, stale against the
      approved method) and what this run copied, skipped and archived, plus
@@ -56,6 +63,8 @@ Usage:
     mousedb import-analyses                # mirror what is new or changed
     mousedb import-analyses --dry-run      # count only; write nothing (no ledger, no manifest)
     mousedb import-analyses --all          # ignore the ledger; re-check every file
+    mousedb import-analyses --confirm-withdrawn <analysis>   # archive what MouseBrain withdrew of it
+    mousedb import-analyses --set-aside-ledger   # keep an unreadable ledger aside, start a new one
 """
 from __future__ import annotations
 
@@ -239,9 +248,10 @@ def load_ledger() -> Dict[str, dict]:
     because a dropped network share also answers "file not found"."""
     data = _read_state_file(
         ledger_path(), "analysis mirror ledger", dict,
-        "otherwise rename that file (keep it) and run again -- the run then "
-        "starts a new ledger, re-checks every file, and cannot archive files "
-        "that MouseBrain withdrew before the rename", "nothing was copied or archived")
+        "otherwise run `mousedb import-analyses --set-aside-ledger`: it keeps "
+        "that file beside the new one, starts a new ledger and re-checks every "
+        "file; files MouseBrain withdrew before that are then archived with "
+        "`--confirm-withdrawn <analysis>`", "nothing was copied or archived")
     if data is None:
         logger.warning("no analysis mirror ledger at %s yet: every file will be checked",
                        ledger_path())
@@ -253,6 +263,67 @@ def save_ledger(ledger: Dict[str, dict]) -> None:
     # Atomic (temporary file + os.replace): a run killed mid-write leaves the
     # old ledger, never half of one that the next run would refuse to read.
     _write_json_atomically(ledger_path(), ledger)
+
+
+SET_ASIDE_SUFFIX = ".set-aside-"   # logs/analysis_imports.json.set-aside-<YYYYmmdd_HHMMSS>
+
+
+def ledger_needs_setting_aside() -> Tuple[bool, str]:
+    """(True, why) when the ledger is there but holds something no run can
+    use: content that is not JSON or not a mapping, or entries that name no
+    analysis. (False, why) otherwise -- also when the file cannot be READ,
+    which is the share, not the file, and is not mended by setting it aside."""
+    p = ledger_path()
+    try:
+        text = p.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        if _confirmed_absent(p):
+            return False, "there is no ledger yet"
+        return False, "the ledger cannot be reached (the share did not answer); run again later"
+    except OSError as e:
+        return False, "the ledger cannot be reached (%s); run again later" % e
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return True, "it is not valid JSON"
+    if not isinstance(data, dict):
+        return True, "it holds a %s, not a mapping" % type(data).__name__
+    unnamed = [k for k in data if analysis_of_key(k) is None]
+    if unnamed:
+        return True, "%d entr%s name no analysis" % (len(unnamed),
+                                                    "y" if len(unnamed) == 1 else "ies")
+    return False, "the ledger reads correctly"
+
+
+def set_aside_ledger(stamp_dir: str) -> Path:
+    """Move the ledger to ``<ledger>.set-aside-<stamp>`` beside it (kept,
+    never deleted) so this run starts a new one.
+
+    WHY a command and not "rename it by hand": nothing but this tool writes
+    into its folders, and a ledger renamed by hand to some other name left no
+    trace of why. The set-aside copy keeps the old record for anyone who
+    needs to look at it."""
+    p = ledger_path()
+    target = p.with_name(p.name + SET_ASIDE_SUFFIX + stamp_dir)
+    os.replace(str(p), str(target))
+    return target
+
+
+def mirror_files_of(dest: Path, analysis: str) -> List[Path]:
+    """Every file the MIRROR holds for one analysis: ``exports/<a>/**``,
+    ``figures/<a>/**`` and ``logs/<a>.log`` under ``<mousedb_root>``.
+    Raises when a folder cannot be listed (a short list would hide files)."""
+    found: List[Path] = []
+    for d in (dest / "exports" / analysis, dest / "figures" / analysis):
+        found.extend(_files_under(d))
+    log_file = dest / "logs" / ("%s.log" % analysis)
+    try:
+        if stat.S_ISREG(os.stat(log_file).st_mode):
+            found.append(log_file)
+    except FileNotFoundError:
+        if not _confirmed_absent(log_file):
+            raise
+    return sorted(set(found))
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +504,50 @@ def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
     return gone, kept
 
 
+
+def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present: set,
+                         unlistable: set, mirrored: set, dest: Path, run_problem) -> Dict[str, dict]:
+    """For each analysis a person confirmed withdrawn (``--confirm-withdrawn``),
+    the mirror's files of it that neither the ledger nor this run's listing of
+    the source holds -- as extra keys for ``archivable_keys``, which still
+    decides, as for any ledger key, whether the run may archive them.
+
+    WHY the mirror is listed too: the ledger is the usual record of what was
+    mirrored, but a ledger set aside (``--set-aside-ledger``) forgot every
+    file mirrored before it, so a file MouseBrain withdrew before that would
+    otherwise stay in the mirror for good. Refused, as an error of the run:
+    a name that is not a single folder name; a name the mirror holds nothing
+    of (no ``exports/<a>/registry.json`` and nothing in the ledger -- a
+    mistyped name); an analysis whose source or mirror folders could not be
+    listed this run."""
+    extra: Dict[str, dict] = {}
+    for a in confirmed:
+        if not _plain_name(a):
+            run_problem("--confirm-withdrawn %r: not an analysis name (one folder name, no "
+                        "path); nothing was archived for it" % a)
+            continue
+        if a in unlistable:
+            run_problem("--confirm-withdrawn %s: its folders at the source could not be "
+                        "listed this run, so nothing of it was archived; run again" % a)
+            continue
+        if a not in mirrored and not (dest / "exports" / a / REGISTRY_FILE).is_file():
+            run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name "
+                        "(no exports/%s/%s and nothing in the ledger); nothing was archived "
+                        "-- check the name" % (a, a, REGISTRY_FILE))
+            continue
+        try:
+            files = mirror_files_of(dest, a)
+        except OSError as e:
+            run_problem("--confirm-withdrawn %s: the mirror's folders of it could not be "
+                        "listed (%s); nothing of it was archived; run again" % (a, e))
+            continue
+        for f in files:
+            k = rel_key(dest, f)
+            if k not in ledger and k not in present:
+                extra[k] = {}
+    return extra
+
+
 def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root: Path,
                   reason: Optional[str] = None) -> List[str]:
     """Make every kept ledger key visible. Returns the run-level problems
@@ -479,15 +594,28 @@ def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root
                    % (len(held), root / "exports", ", ".join(sorted(held))))
     if unnamed:
         out.append("%d ledger entr%s name%s no analysis (for example %s) and were kept, not "
-                   "archived; they do not belong in the analysis mirror's ledger -- rename "
-                   "logs/%s (keep it) so the next run starts a new one"
+                   "archived; they do not belong in the analysis mirror's ledger -- run "
+                   "`mousedb import-analyses --set-aside-ledger`, which keeps logs/%s "
+                   "aside and starts a new one"
                    % (len(unnamed), "y" if len(unnamed) == 1 else "ies",
                       "s" if len(unnamed) == 1 else "", unnamed[0], LEDGER_NAME))
     return out
 
 
+def _plain_name(name: str) -> bool:
+    """An analysis name as MouseBrain makes one: a single folder name, never
+    a path (so ``--confirm-withdrawn`` cannot reach outside the mirror)."""
+    return bool(name) and name not in (".", "..") and not any(c in name for c in ("/", "\\", ":"))
+
+
 def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = None,
-        log=print) -> ImportResult:
+        log=print, confirm_withdrawn: Optional[List[str]] = None,
+        set_aside: bool = False) -> ImportResult:
+    """One mirror run. ``confirm_withdrawn``: analyses a person confirms
+    MouseBrain withdrew (wholly or in part) -- every mirrored file of them
+    that MouseBrain no longer has is archived, see ``--confirm-withdrawn`` in
+    main. ``set_aside``: an unusable ledger is moved aside first and the run
+    starts a new one, see ``set_aside_ledger``."""
     res = ImportResult()
     root = registry_root()
     dest = require("mousedb_root")
@@ -497,12 +625,27 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             "or mousebrain_registry_root / mousebrain_pipeline_root points at the wrong "
             "folder: see mousedb config --show)" % root)
     folders = list_analysis_folders(root)   # raises when exports/ cannot be listed
-    ledger = load_ledger()
-    # Analyses of which the ledger records mirrored files.
-    mirrored = {analysis_of_key(k) for k in ledger}
     now = datetime.now()
     imported_at = now.isoformat(timespec="seconds")
     stamp_dir = now.strftime("%Y%m%d_%H%M%S")
+    ledger: Optional[Dict[str, dict]] = None
+    if set_aside:
+        needed, why = ledger_needs_setting_aside()
+        if not needed:
+            log("  [note] --set-aside-ledger: the ledger was left as it is (%s)" % why)
+        elif dry_run:
+            log("  [note] --set-aside-ledger: would set %s aside (%s) and start a new one"
+                % (ledger_path(), why))
+            ledger = {}
+        else:
+            target = set_aside_ledger(stamp_dir)
+            log("  [note] --set-aside-ledger: %s set aside as %s (%s); a new ledger is started"
+                % (ledger_path(), target.name, why))
+    if ledger is None:
+        ledger = load_ledger()
+    # Analyses of which the ledger records mirrored files.
+    mirrored = {analysis_of_key(k) for k in ledger}
+    confirmed = sorted(set(confirm_withdrawn or ()))
     rows: Dict[str, dict] = {}
     present = set()
     todo: List[Tuple[Path, str, str, Optional[str]]] = []  # (src, key, stamp, hash-if-known)
@@ -510,6 +653,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # among them). Only these -- and analyses whose folder is confirmed gone
     # -- may have mirrored files archived; see archivable_keys.
     listed: set = set()
+    # Analyses whose folder is there without registry.json and that a person
+    # confirmed withdrawn (--confirm-withdrawn): archived like a listed one.
+    withdrawn: set = set()
+    unlistable: set = set()        # analyses whose source folders could not be listed
 
     run_problems: List[str] = []   # problems no single row carries (manifest "problems")
 
@@ -531,11 +678,19 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         try:
             files = analysis_files(root, analysis)
         except OSError as e:
+            unlistable.add(analysis)
             problem(row, "%s: its files could not be listed (%s); nothing of it was copied "
                          "or archived -- the mirror is kept as it was" % (analysis, e))
             continue
         reg_path = root / "exports" / analysis / REGISTRY_FILE
         if reg_path not in files:
+            if analysis in confirmed:
+                # A person confirmed the withdrawal: archive its mirror (below).
+                del rows[analysis]
+                withdrawn.add(analysis)
+                log("  [note] %s: no %s at the source and confirmed withdrawn; its mirror "
+                    "is archived" % (analysis, REGISTRY_FILE))
+                continue
             if analysis not in mirrored:
                 # Nothing of it was ever mirrored, so there is nothing to keep
                 # safe and nothing to copy: no error. WHY: MouseBrain creates
@@ -556,7 +711,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             # a share that answered short. Archiving on it moved every
             # mirrored file of the analysis away.
             problem(row, "%s: exports/%s has no %s; nothing of it was copied or archived "
-                         "-- the mirror is kept as it was" % (analysis, analysis, REGISTRY_FILE))
+                         "-- the mirror is kept as it was. If MouseBrain is rebuilding its "
+                         "registry, run again later; if the analysis was withdrawn, run "
+                         "`mousedb import-analyses --confirm-withdrawn %s`"
+                    % (analysis, analysis, REGISTRY_FILE, analysis))
             continue
         res.analyses += 1
         listed.add(analysis)
@@ -605,22 +763,40 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         todo = todo[:limit]
     # Mirrored before, gone from the source now: to be archived (never deleted)
     # -- but only when the run can be sure it is gone (see archivable_keys).
-    gone, kept = archivable_keys(ledger, present, listed, folders, root)
+    # Files of an analysis a person confirmed withdrawn that the mirror holds
+    # but the ledger does not (a ledger set aside or started anew) join them.
+    extra = confirmed_extra_keys(confirmed, ledger, present, unlistable, mirrored, dest,
+                                 run_problem)
+    pool = dict(ledger)
+    pool.update(extra)
+    gone, kept = archivable_keys(pool, present, listed | withdrawn, folders, root)
     guard = None
-    if gone and not listed:
+    held_back = [k for k in gone if analysis_of_key(k) not in confirmed]
+    if held_back and not listed:
         # Not one registry was listed, yet the ledger holds mirrored files:
         # far more likely an empty or wrong listing (a share that answered
         # with nothing, a pipeline root pointing at a new, empty folder) than
-        # every analysis withdrawn at once. Archive nothing.
-        kept, gone = sorted(kept + gone), []
+        # every analysis withdrawn at once. Archive nothing a person has not
+        # confirmed withdrawn (--confirm-withdrawn).
+        gone = [k for k in gone if analysis_of_key(k) in confirmed]
+        kept = sorted(kept + held_back)
         msg = ("no analysis registry was listed under %s, but the ledger holds %d mirrored "
-               "files; nothing was archived. If every analysis really was withdrawn, move "
-               "the mirrored files to _archived by hand and rename the ledger (keep it)"
-               % (root / "exports", len(kept)))
+               "files; nothing was archived. Check that the registry folder is right "
+               "(mousedb config --show) and the share is reachable, then run again. If "
+               "these analyses really were withdrawn in MouseBrain, run `mousedb "
+               "import-analyses --confirm-withdrawn <analysis>` once for each (%s): that "
+               "archives their mirror"
+               % (root / "exports", len(held_back),
+                  ", ".join(sorted({analysis_of_key(k) or "?" for k in held_back}))))
         run_problem(msg)
         guard = msg
     for msg in held_problems(kept, rows, imported_at, root, reason=guard):
         run_problem(msg)
+    for a in confirmed:
+        if a not in unlistable and _plain_name(a) and not any(
+                analysis_of_key(k) == a for k in gone + kept):
+            log("  [note] --confirm-withdrawn %s: the mirror holds no file of it that "
+                "MouseBrain no longer has; nothing to archive" % a)
     log("import-analyses: %d analyses under %s; %d files: %d to copy, %d unchanged, %d to archive, "
         "%d kept (not listed this run)%s" %
         (res.analyses, root, res.scanned, len(todo), res.skipped, len(gone), len(kept),
@@ -684,12 +860,21 @@ def main(argv=None) -> int:
                     help="Count what would be copied or archived; write nothing (no ledger, no manifest)")
     ap.add_argument("--limit", type=int, help="Copy at most this many files (testing)")
     ap.add_argument("--json", action="store_true", help="Machine-readable summary")
+    ap.add_argument("--confirm-withdrawn", action="append", metavar="ANALYSIS", default=[],
+                    help="Confirm that MouseBrain withdrew this analysis (or files of it): "
+                         "archive every mirrored file of it that MouseBrain no longer has, "
+                         "even when the run would otherwise keep them back (repeatable)")
+    ap.add_argument("--set-aside-ledger", action="store_true",
+                    help="If the ledger cannot be used (not JSON, or entries that name no "
+                         "analysis), keep it beside the new one as "
+                         "analysis_imports.json.set-aside-<time> and start a new ledger")
     args = ap.parse_args(argv)
     quiet = (lambda *_: None) if args.json else print
     from .task_mutex import LockWaitTimeout, TaskMutex
     try:
         if args.dry_run:
-            res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet)
+            res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet,
+                      confirm_withdrawn=args.confirm_withdrawn, set_aside=args.set_aside_ledger)
         else:
             # One mirror at a time. WHY: the nightly task and the "Update
             # the database now" button on the Where Is My Data tab
@@ -708,7 +893,9 @@ def main(argv=None) -> int:
                              label="the analysis-import lock")
             with lock.acquire(log=(quiet if args.json else print),
                               waiting_for="another analysis import"):
-                res = run(all_files=args.all, dry_run=False, limit=args.limit, log=quiet)
+                res = run(all_files=args.all, dry_run=False, limit=args.limit, log=quiet,
+                          confirm_withdrawn=args.confirm_withdrawn,
+                          set_aside=args.set_aside_ledger)
     except LockWaitTimeout as e:
         print("[FAIL] import-analyses not run: %s" % e)
         return 1

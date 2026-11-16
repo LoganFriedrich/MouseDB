@@ -340,7 +340,7 @@ class TestLedgerAndManifestAreSafe:
         withdrawn.unlink()
         assert ia.main([]) == 1
         out = capsys.readouterr().out
-        assert "[FAIL]" in out and "analysis_imports.json" in out and "rename" in out
+        assert "[FAIL]" in out and "analysis_imports.json" in out and "--set-aside-ledger" in out
         # nothing was rewritten: the damaged file is still there for a person
         # to look at, and the mirror was not touched
         assert ledger.read_text(encoding="utf-8").endswith('{"ha')
@@ -725,6 +725,162 @@ class TestAFolderWithNothingRegisteredIsNoError:
         (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
         res = ia.run(log=_quiet)
         assert res.errors == 1 and res.archived == 0
+        assert any("--confirm-withdrawn Alpha_Detection" in m for m in res.messages)
+
+
+class TestConfirmWithdrawn:
+    """WHY: nothing but this tool writes into the mirror, so when MouseBrain
+    really did withdraw an analysis that the run holds back (every analysis
+    gone at once, or a folder left without its registry.json), the remedy is
+    a command that archives through the usual archive step -- never "move the
+    files by hand". Archived, never deleted."""
+
+    def _archived(self, db):
+        base = db / "_archived" / "analyses"
+        if not base.exists():
+            return []
+        return sorted(p.relative_to(base).as_posix() for p in base.rglob("*") if p.is_file())
+
+    def test_every_analysis_withdrawn_is_archived_when_confirmed(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        for a in ("Alpha_Detection", "Beta_ROI"):
+            shutil.rmtree(str(reg / "exports" / a))
+            shutil.rmtree(str(reg / "figures" / a))
+            (reg / "logs" / ("%s.log" % a)).unlink()
+        assert ia.main(["--confirm-withdrawn", "Alpha_Detection",
+                        "--confirm-withdrawn", "Beta_ROI"]) == 0
+        assert len(self._archived(db)) == 2 * FILES_PER_ANALYSIS
+        assert not (db / "exports" / "Alpha_Detection" / "registry.json").exists()
+        assert json.loads((db / "logs" / "analysis_imports.json").read_text()) == {}
+
+    def test_only_the_confirmed_one_is_archived_when_nothing_is_listed(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        for a in ("Alpha_Detection", "Beta_ROI"):
+            shutil.rmtree(str(reg / "exports" / a))
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.archived == FILES_PER_ANALYSIS
+        assert all("Alpha_Detection" in k for k in self._archived(db))
+        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()   # held back
+        assert res.errors >= 1
+        assert any("--confirm-withdrawn <analysis>" in m and "Beta_ROI" in m
+                   for m in res.messages), res.messages
+
+    def test_a_folder_left_without_its_registry_is_archived_when_confirmed(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0 and res.archived == FILES_PER_ANALYSIS
+        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()
+        assert "Alpha_Detection" not in {r["analysis_name"] for r in res.manifest}
+
+    def test_a_still_registered_analysis_keeps_what_it_still_has(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0 and res.archived == 0
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+
+    def test_a_mistyped_name_archives_nothing_and_fails(self, roots, capsys):
+        reg, db = roots
+        ia.run(log=_quiet)
+        capsys.readouterr()
+        assert ia.main(["--confirm-withdrawn", "Alpha_Detectoin"]) == 1
+        assert "check the name" in capsys.readouterr().out
+        assert not (db / "_archived").exists()
+
+    @pytest.mark.parametrize("name", ["..", "../exports", "a/b", "a\\b", ""])
+    def test_a_path_is_not_an_analysis_name(self, roots, name):
+        reg, db = roots
+        ia.run(log=_quiet)
+        res = ia.run(log=_quiet, confirm_withdrawn=[name])
+        assert res.errors == 1 and res.archived == 0
+        assert not (db / "_archived").exists()
+
+    def test_an_absence_that_cannot_be_confirmed_is_still_kept(self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
+        monkeypatch.setattr(ia, "_confirmed_absent", lambda path: False, raising=False)
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.archived == 0 and res.errors >= 1
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+
+    def test_dry_run_counts_but_moves_nothing(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        res = ia.run(log=_quiet, dry_run=True, confirm_withdrawn=["Alpha_Detection"])
+        assert res.archived == FILES_PER_ANALYSIS
+        assert not (db / "_archived").exists()
+
+
+class TestSetAsideLedger:
+    """WHY: an unusable ledger stops the run; the way on is a command that
+    keeps the old file beside the new one, not a rename by hand into this
+    tool's folders. Files MouseBrain withdrew before the new ledger was
+    started are then archived with --confirm-withdrawn, which also reads
+    what the mirror itself holds."""
+
+    def test_an_unreadable_ledger_is_set_aside_and_the_run_goes_on(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        ledger = db / "logs" / "analysis_imports.json"
+        ledger.write_text('{"exports/Alpha_Detection/registry.json": {"ha', encoding="utf-8")
+        assert ia.main(["--set-aside-ledger"]) == 0
+        aside = list((db / "logs").glob("analysis_imports.json.set-aside-*"))
+        assert len(aside) == 1 and aside[0].read_text(encoding="utf-8").endswith('{"ha')
+        assert len(json.loads(ledger.read_text())) == 2 * FILES_PER_ANALYSIS
+
+    def test_files_withdrawn_before_it_are_archived_once_confirmed(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (db / "logs" / "analysis_imports.json").write_text("[]", encoding="utf-8")
+        (reg / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").unlink()
+        assert ia.main(["--set-aside-ledger"]) == 0
+        figure = db / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png"
+        assert figure.is_file()                    # the new ledger never knew it
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0 and res.archived == 1
+        assert not figure.exists()
+        assert list((db / "_archived" / "analyses").rglob("S1.png"))
+        assert (db / "figures" / "Beta_ROI" / "A1" / "R1" / "S1.png").is_file()
+
+    def test_a_good_ledger_is_left_alone(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        assert ia.main(["--set-aside-ledger"]) == 0
+        assert not list((db / "logs").glob("analysis_imports.json.set-aside-*"))
+
+    def test_entries_that_name_no_analysis_are_set_aside(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        ledger = db / "logs" / "analysis_imports.json"
+        data = json.loads(ledger.read_text())
+        data["stray.txt"] = {"hash": "x", "stamp": "1:1"}
+        ledger.write_text(json.dumps(data), encoding="utf-8")
+        assert ia.main([]) == 1
+        assert ia.main(["--set-aside-ledger"]) == 0
+        assert "stray.txt" not in json.loads(ledger.read_text())
+
+    def test_the_mousedb_command_passes_both_options_on(self, monkeypatch):
+        from mousedb import cli
+        seen = {}
+
+        def fake_main(argv):
+            seen["argv"] = argv
+            return 0
+        monkeypatch.setattr(ia, "main", fake_main)
+        args = argparse.Namespace(all=False, dry_run=False, limit=None,
+                                  confirm_withdrawn=["A_X"], set_aside_ledger=True)
+        with pytest.raises(SystemExit):
+            cli.cmd_import_analyses(args)
+        assert seen["argv"] == ["--confirm-withdrawn", "A_X", "--set-aside-ledger"]
 
 
 class TestImportBrains:

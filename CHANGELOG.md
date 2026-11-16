@@ -181,6 +181,17 @@ checked-in code, not what's planned.
   with a `[FAIL]` line. A folder without `registry.json` that nothing was ever
   mirrored from (MouseBrain makes the folder before anything is registered in
   it) is a `[note]`, not an error.
+- `mousedb import-analyses --confirm-withdrawn <analysis>` (repeatable):
+  archives, through the usual archive step, every mirrored file of an
+  analysis that MouseBrain no longer has, where the run would otherwise hold
+  it back (every analysis gone at once, a folder left without its
+  `registry.json`, files withdrawn before a new ledger was started). Refuses
+  a name the mirror holds nothing of, a path, and a source it cannot list.
+- `mousedb import-analyses --set-aside-ledger`: keeps an unusable ledger
+  (not JSON, or lines that name no analysis) beside the new one as
+  `analysis_imports.json.set-aside-<time>` and starts a new ledger. The
+  messages and docs no longer tell anyone to move mirrored files or rename
+  the ledger by hand.
 - `mousedb import-analyses`: its ledger (`logs/analysis_imports.json`) and
   `exports/ANALYSES_MANIFEST.json` are written whole or not at all, and a
   ledger that is there but cannot be read stops the run with a `[FAIL]` line
