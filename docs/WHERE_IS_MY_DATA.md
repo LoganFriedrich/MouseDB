@@ -365,9 +365,12 @@ already writing:
   refresh is still writing when that time is up, or shows no sign of progress
   for 30 minutes (it may be stuck), they stop without changing anything, and
   the files stay those of the last refresh that finished. The nightly job then
-  prints `[FAIL] current exports not refreshed` and reports itself as failed;
-  the other refresh is writing the same exports, so nothing is lost but the
-  night's green tick. A terminal command prints one line starting
+  prints `[FAIL] current exports not refreshed` and reports itself as failed.
+  The other refresh is NOT a substitute for it: the nightly job reaches its
+  exports only after replacing the snapshot, so a refresh still writing at
+  that point almost always started from the PREVIOUS snapshot, and the
+  night's imports are not in the exports (see the paragraph below for what
+  to do). A terminal command prints one line starting
   `[!] another export refresh is still writing the current exports` and exits
   with code 4. Run it again once the other one is done.
 - "No sign of progress" is judged by the other refresh's CPU time and
@@ -397,7 +400,18 @@ database-task lock it took for the snapshot, so the other scheduled database
 jobs wait behind it too -- for at most those 15 minutes. If a button-started
 export is still running 15 minutes after the nightly job has reached its
 exports (after the snapshot, which itself takes a while), the nightly job
-reports `[FAIL]` for its exports; the button's export finishes them.
+reports `[FAIL]` for its exports and leaves them to the button's export. That
+export does finish, but it does NOT bring in the night's imports: it started
+before the nightly job replaced the snapshot, so it was building from the
+previous one. When it ends it either holds the previous snapshot's data, or --
+because the snapshot was replaced while it was writing -- its `MANIFEST.json`
+says `"complete": false` ("the snapshot was replaced while these exports were
+being written ... write them again") and the button shows "The exports were
+not fully rewritten". Either way the exports are a day behind until they are
+written again. What to do: once the button's export has finished (and the
+nightly job is done), press **Refresh exports now** again; or leave it, and
+the next nightly run writes them. Nothing is lost -- the data is in the
+snapshot and the database -- but it is not in the exports until then.
 
 **When "Refresh exports now" shows a warning instead.** If the refresh ran but
 did not finish cleanly -- a cohort's file could not be written, the snapshot

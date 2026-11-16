@@ -138,8 +138,15 @@ DEFAULT_LOCK_WAIT_MINUTES = 165
 # could add up to that many minutes again to a job sized without them -- and
 # the scheduler would stop the job part way through the exports, leaving one
 # night's cohort files beside another night's combined files and manifest.
-# Giving up costs little: the other refresh is writing the same exports from
-# the same snapshot, and this job says [FAIL] so the night is not silent.
+# Giving up is not free, and this job says [FAIL] so the night is not silent:
+# this job reaches its exports only AFTER it has replaced the snapshot, so a
+# refresh still writing then almost always started from the PREVIOUS
+# snapshot. It ends with the previous snapshot's data, or (the snapshot having
+# been replaced under it) with complete=false in MANIFEST.json -- either way
+# the night's imports are not in the exports until someone presses "Refresh
+# exports now" after it finishes, or the next nightly run writes them. The
+# operator docs (WHERE_IS_MY_DATA.md) say so. The bound stays short anyway:
+# a late night costs one day's freshness, a stopped job costs a mixed folder.
 EXPORTS_LOCK_WAIT_MINUTES = 15
 
 
