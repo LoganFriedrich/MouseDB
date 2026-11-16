@@ -139,7 +139,11 @@ checked-in code, not what's planned.
   cannot write is an error at once (`the lock folder cannot be written`,
   naming the folder), never "busy" and never a full wait;
   `mousedb-current-exports` exits 5 for it, and the button says the folder
-  cannot be written instead of "already being written". A broken or released lock is
+  cannot be written instead of "already being written".
+- Where Is My Data: "Refresh exports now" starts its exporter program in the
+  Python environment's own folder, not the window's working folder, so a
+  window opened from a folder holding a mousedb source tree cannot make the
+  program run that tree instead of the installed code. A broken or released lock is
   logged under its own name (a broken current-exports lock was logged as the
   database-task lock).
 - Current exports: when the per-reach skip record

@@ -54,8 +54,11 @@ def test_the_button_runs_the_installed_code_as_a_fresh_program(monkeypatch):
     monkeypatch.setattr(current_mod, "refresh_current",
                         lambda *a, **k: in_window.append(1) or {"files": {}, "problems": []})
 
+    seen_kw = []
+
     def fake_run(cmd, **kw):
         started.append(cmd)
+        seen_kw.append(kw)
         return SimpleNamespace(returncode=0, stdout=b"complete for ODC upload: True")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
@@ -69,6 +72,15 @@ def test_the_button_runs_the_installed_code_as_a_fresh_program(monkeypatch):
     assert not in_window, "the exporter ran inside the window, with the code it was opened with"
     assert started and started[0][1:3] == ["-m", "mousedb.exporters.current"]
     assert "--no-wait" in started[0]
+    # Started in a neutral folder: with -m, the working directory comes first
+    # on the import path, so the window's folder (perhaps a source checkout
+    # holding a mousedb/ tree) would decide which code runs.
+    import os
+    from pathlib import Path
+    cwd = seen_kw[0].get("cwd")
+    assert cwd is not None, "the program inherits the window's working directory"
+    assert Path(cwd) != Path(os.getcwd())
+    assert not (Path(cwd) / "mousedb" / "__init__.py").exists()
 
 
 def test_a_busy_exporter_program_is_reported_as_busy(monkeypatch):

@@ -157,10 +157,17 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
     if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
         exe = exe.parent / "python.exe"
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # cwd: the Python environment's own folder, never the window's. WHY: with
+    # -m, Python puts the working directory FIRST on the import path, so a
+    # window started from a folder holding a ``mousedb`` source tree would make
+    # the program import that tree instead of the installed package -- the
+    # very mismatch this fresh program exists to avoid. The environment's
+    # folder holds the interpreter and its library folders, never a package
+    # named mousedb at its top.
     proc = subprocess.run([str(exe), "-m", "mousedb.exporters.current", "--no-wait"],
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           stdin=subprocess.DEVNULL, creationflags=flags,
-                          timeout=timeout_seconds)
+                          cwd=str(exe.parent), timeout=timeout_seconds)
     out = proc.stdout.decode("utf-8", errors="replace")
     return {"returncode": proc.returncode, "busy": proc.returncode == EXIT_BUSY,
             "lock_folder": proc.returncode == EXIT_LOCK_FOLDER, "output": out}
