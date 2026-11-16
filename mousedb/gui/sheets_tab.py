@@ -62,6 +62,8 @@ from PyQt5.QtWidgets import (
     QInputDialog, QMessageBox, QPlainTextEdit,
 )
 
+from ..config import ConfigError
+
 STATE_TEXT = {
     "up_to_date": ("Up to date", "green"),
     "sheet_newer": ("Sheet edited since last import -- import", "yellow"),
@@ -161,8 +163,9 @@ class _Worker(QThread):
 
 def _set_but_not_accepted_folder() -> Optional[Path]:
     """The sheets folder this machine is SET to (environment variable first,
-    then local config -- cohort_sheets_dir's order), when it exists but
-    status() does not accept it; else None."""
+    then the settings in force -- your own file over the machine's, as
+    cohort_sheets_dir reads them), when it exists but status() does not
+    accept it; else None. A damaged settings file raises (the caller says so)."""
     from .. import cohort_sheets
     raws = [os.environ.get(getattr(cohort_sheets, "ENV_VAR", "MOUSEDB_COHORT_SHEETS"))]
     reader = getattr(cohort_sheets, "_read_config", None)
@@ -578,7 +581,9 @@ class TrackingSheetsTab(QWidget):
                 "the cohort and choose again from the files that are there." % e)
             self.refresh()
             return
-        except OSError as e:
+        except (OSError, ConfigError) as e:
+            # ConfigError: the settings file is damaged -- refused, never
+            # written over (the message names it and the copy kept of it).
             self._log("[FAIL] could not save the pin: %s" % e)
             QMessageBox.warning(self, "Not pinned",
                                 "The choice could not be saved: %s\n\nNothing was pinned." % e)
@@ -613,10 +618,10 @@ class TrackingSheetsTab(QWidget):
             return
         cohort_id = ids[items.index(choice)]
         from ..cohort_sheets import pin_cohort_sheet, pinned_sheet
-        was = pinned_sheet(cohort_id)
         try:
+            was = pinned_sheet(cohort_id)
             pin_cohort_sheet(cohort_id, None)
-        except (ValueError, OSError) as e:
+        except (ValueError, OSError, ConfigError) as e:
             self._log("[FAIL] %s -- nothing was unpinned" % e)
             QMessageBox.warning(self, "Not unpinned", "%s\n\nNothing was unpinned." % e)
             self.refresh()
@@ -665,12 +670,33 @@ class TrackingSheetsTab(QWidget):
                         if extra else ""))
             return
         from .. import cohort_sheets
-        self._log("Sheets folder %s recorded in %s"
-                  % (folder, cohort_sheets.set_cohort_sheets_dir(folder)))
+        try:
+            written = cohort_sheets.set_cohort_sheets_dir(folder)
+        except (OSError, ConfigError) as e:
+            # ConfigError: the settings file is damaged -- refused, never
+            # written over, so every other setting and pin in it survives.
+            self._log("[FAIL] %s" % e)
+            QMessageBox.warning(self, "Sheets folder not saved",
+                                "%s\n\nThe sheets folder setting was not changed." % e)
+            return
+        self._log("Sheets folder %s recorded in %s" % (folder, written))
         # WHY this check: an environment variable naming a usable folder takes
         # precedence over the recorded setting (cohort_sheets_dir), so the
         # choice just made would silently change nothing.
-        in_force = cohort_sheets.cohort_sheets_dir()
+        try:
+            in_force = cohort_sheets.cohort_sheets_dir()
+        except ConfigError as e:
+            # The save went to this person's own file, but the MACHINE
+            # settings file can still be damaged, and reading the folder in
+            # force then raises. Said in a box, not lost as a traceback in
+            # the button's handler.
+            self._log("[!] %s" % e)
+            QMessageBox.warning(
+                self, "Recorded -- but the settings cannot be read",
+                "%s was recorded, but the folder in use cannot be worked out:\n\n%s"
+                % (folder, e))
+            self.refresh()
+            return
         if in_force is not None and (os.path.normcase(os.path.abspath(str(in_force)))
                                      != os.path.normcase(str(folder))):
             var = getattr(cohort_sheets, "ENV_VAR", "MOUSEDB_COHORT_SHEETS")

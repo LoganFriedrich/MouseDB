@@ -6858,6 +6858,58 @@ class DataEntryWindow(QMainWindow):
         self.statusBar.showMessage(f"{datetime.now().strftime('%H:%M:%S')} - {message}")
 
 
+SETTINGS_ONLY_TITLE = "mousedb cannot open its database yet"
+
+
+class SettingsOnlyWindow(QMainWindow):
+    """What opens instead of the main window when the settings stop it.
+
+    WHY: the main window cannot be built without the database, and the
+    database's location comes from the settings. When those cannot give it
+    -- a settings file that is damaged (not valid JSON), or no database
+    folder set at all -- building the main window raises
+    ``config.ConfigError``. Uncaught, that was a traceback in a console, or
+    nothing at all for a person who starts mousedb from a shortcut, and the
+    Setup tab (the place that names the problem and fixes it) was inside the
+    window that never opened. So this window holds the Setup tab alone, with
+    the reason above it; once the setting is put right, mousedb is closed and
+    opened again and the full window comes up.
+    """
+
+    def __init__(self, reason: str):
+        super().__init__()
+        self.reason = reason
+        self.setWindowTitle(SETTINGS_ONLY_TITLE)
+        self.setMinimumSize(900, 600)
+        self.setStyleSheet(STYLESHEET)
+        central = QWidget()
+        self.setCentralWidget(central)
+        layout = QVBoxLayout(central)
+        self.reason_label = QLabel(
+            "mousedb cannot open its database, so only the Setup tab is "
+            "shown.\n\n%s\n\nPut it right (the Setup tab below lists what "
+            "is wrong), then close this window and open mousedb again." % reason)
+        self.reason_label.setWordWrap(True)
+        self.reason_label.setStyleSheet("color: #b00;")
+        layout.addWidget(self.reason_label)
+        from .setup_tab import SetupTab
+        # db=None: the Setup tab only reads and writes the settings files.
+        self.setup_tab = SetupTab(None)
+        layout.addWidget(self.setup_tab)
+
+
+def open_main_window():
+    """``(window, problem)``: the main window and None, or -- when the
+    settings cannot give the database (see SettingsOnlyWindow) -- a window
+    holding only the Setup tab and the reason, so the person is told what to
+    fix instead of the program failing to start."""
+    from .. import config as _cfg
+    try:
+        return DataEntryWindow(), None
+    except _cfg.ConfigError as exc:
+        return SettingsOnlyWindow(str(exc)), str(exc)
+
+
 def main():
     """Main entry point for GUI."""
     # The batch jobs wait up to 10 minutes for a locked database (see
@@ -6916,8 +6968,12 @@ def main():
                     sys.exit(0)
         dlg.close()
 
-    window = DataEntryWindow()
+    window, problem = open_main_window()
     window.show()
+    if problem:
+        # Said in a box as well as in the window: it is the one thing the
+        # person must act on before mousedb can do anything else.
+        QMessageBox.warning(window, SETTINGS_ONLY_TITLE, problem)
 
     sys.exit(app.exec_())
 

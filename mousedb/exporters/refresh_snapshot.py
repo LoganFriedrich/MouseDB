@@ -49,10 +49,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from ..config import db_path as _db_path, snapshot_dir as _snapshot_dir, require
+from ..config import (at_import as _at_import, db_path as _db_path,
+                      snapshot_dir as _snapshot_dir, require)
 
-DEFAULT_DB = _db_path()                 # None until configured
-DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
+DEFAULT_DB = _at_import(_db_path)                 # None until configured
+DEFAULT_SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.

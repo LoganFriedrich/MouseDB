@@ -31,11 +31,15 @@ ROUTING
     tool never depends on mousedb.
 
     That command lives in the MouseReach environment, whose location is site
-    configuration, so it is NOT hardcoded here. Set ONE of these in
-    ``~/.mousedb/config.json``:
+    configuration, so it is NOT hardcoded here. Set ONE of these, read like
+    every other mousedb setting (environment variable, then your own
+    ``~/.mousedb/config.json``, then the machine settings file every login
+    shares -- ``mousedb config --machine --set <key> <value>`` sets it there):
 
-        "mousereach_route_cmd": "<full path to mousereach-route-to-queue>"
-        "mousereach_env":       "<the env's Scripts/bin directory>"
+        mousereach_route_cmd  (MOUSEDB_MOUSEREACH_ROUTE_CMD)
+                              <full path to mousereach-route-to-queue>
+        mousereach_env        (MOUSEDB_MOUSEREACH_ENV)
+                              <the env's Scripts/bin directory>
 
     With neither set, --route prints the worklist and says routing is not
     configured, and still exits 0 -- an unconfigured integration is not a
@@ -385,10 +389,15 @@ def route_command():
     Site configuration, never a literal in source: a hardcoded environment
     path would be wrong on every other machine and would not survive the
     public repo's own content rules.
-    """
-    from mousedb.cohort_sheets import _read_config
 
-    cfg = _read_config()
+    Read through mousedb.config.get -- environment variable, then the
+    person's own settings laid over the machine's -- like every other
+    setting. WHY: it used to read the person's own file only, so a value set
+    once for the computer (``mousedb config --machine --set``) was never seen
+    and routing said "not configured" for every other login.
+    """
+    from mousedb import config as cfg
+
     cmd = cfg.get("mousereach_route_cmd")
     if cmd:
         return str(cmd)
@@ -410,7 +419,8 @@ def route(worklist_path, queue="triage", reason=ROUTE_REASON):
     cmd = route_command()
     if not cmd:
         print("  routing not configured -- set mousereach_route_cmd or "
-              "mousereach_env in ~/.mousedb/config.json to file these "
+              "mousereach_env (mousedb config --set <key> <value>, or with "
+              "--machine for everyone on this computer) to file these "
               "automatically")
         return False
     subprocess.run([cmd, "--worklist", str(worklist_path),

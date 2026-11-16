@@ -31,7 +31,15 @@ Where values come from, in order:
 
 There is NO built-in default. An unset value is ``None`` from the plain
 accessor, and ``require()`` raises ConfigError with the exact command to fix
-it. Nothing in this module touches the filesystem beyond reading the file.
+it. Nothing in this module touches the filesystem beyond reading the
+settings files and, when asked to set a value, writing one of them.
+
+Every settings file -- here and in mousedb.cohort_sheets, which keeps the
+sheets folder and the pins in the same files -- is read by ONE reader
+(read_settings_file) and written by ONE writer (update_settings_file). A
+damaged file is never read as "nothing set" and never written over
+(SettingsFileDamaged says why). The sheets settings are read merged, exactly
+like the keys below; only writes are per file.
 
 Keys (config.json name -> environment variable):
   mousedb_root              MOUSEDB_ROOT            folder holding connectome.db, exports/, logs/
@@ -85,32 +93,166 @@ class ConfigError(RuntimeError):
     """A required location is not configured. The message says how to set it."""
 
 
-def _read_file(path: Path) -> dict:
+class SettingsFileDamaged(ConfigError):
+    """A settings file exists but cannot be read as settings (not JSON, not a
+    set of named values, or not readable at all).
+
+    WHY a separate failure, never "no settings": until this existed a damaged
+    file read as EMPTY. Everything it held -- the database folder, the sheets
+    folder, every pinned sheet -- silently became "not configured", and the
+    next ``mousedb config --set`` or "This is the sheet" click wrote the file
+    back holding that ONE value, so every other setting and pin was gone for
+    good. Now a damaged file stops whatever needed it with a message naming
+    the file, and nothing is ever written over it (see update_settings_file).
+    """
+
+    def __init__(self, path, why: str, backup=None):
+        self.path, self.why, self.backup = Path(path), why, backup
+        msg = ("the mousedb settings file %s is damaged and was not read (%s).\n"
+               "  Open it in a text editor and put it right (it must be JSON: "
+               "{\"key\": \"value\", ...}), or delete it and set the values again "
+               "(mousedb config --show lists them)." % (path, why))
+        if backup is not None:
+            msg += ("\n  Nothing was saved: a copy of the damaged file is at %s"
+                    % backup)
+        super().__init__(msg)
+
+
+def read_settings_file(path) -> dict:
+    """One settings file, as a dict. The ONE reader every settings file in
+    mousedb goes through (this module and mousedb.cohort_sheets).
+
+      missing (or empty)           -> {}  (nothing set there: the normal state)
+      not readable / not JSON /
+      JSON that is not {key: ...}  -> raises SettingsFileDamaged
+
+    Read as utf-8-sig. WHY: a file saved from Windows Notepad may start with a
+    byte-order mark, which plain utf-8 JSON parsing rejects -- and a file
+    rejected for that reason used to read as empty (see SettingsFileDamaged).
+    """
+    path = Path(path)
     try:
-        if path.is_file():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        pass
-    return {}
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError) as e:
+        raise SettingsFileDamaged(path, "%s: %s" % (type(e).__name__, e))
+    if not text.strip():
+        # An empty file holds nothing; that is not damage (a person may have
+        # emptied it on purpose) and writing into it loses nothing.
+        return {}
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise SettingsFileDamaged(path, "not valid JSON: %s" % e)
+    if not isinstance(data, dict):
+        raise SettingsFileDamaged(path, "it holds a %s, not named settings"
+                                  % type(data).__name__)
+    return data
+
+
+def settings_file_problems() -> list:
+    """(path, why) for each settings file that is damaged -- the person's own
+    and the machine's. Empty when both read (or are absent). For the status
+    displays, which must SAY a file is damaged rather than fail to open."""
+    out = []
+    for path in (CONFIG_PATH, machine_config_path()):
+        try:
+            read_settings_file(path)
+        except SettingsFileDamaged as e:
+            out.append((e.path, e.why))
+    return out
+
+
+# How long a write keeps retrying a file another program holds open. WHY:
+# on Windows a reader (the GUI, a scheduled job, a virus scanner) that has the
+# file open makes the final rename fail with PermissionError for a moment.
+_REPLACE_TRIES, _REPLACE_WAIT = 20, 0.25
+
+
+def _keep_damaged_copy(path: Path) -> Optional[Path]:
+    """Copy a damaged settings file aside as <name>.damaged-<time>, so the
+    person can see and mend what was in it. None when even that fails."""
+    import shutil
+    from datetime import datetime
+    dest = path.with_name("%s.damaged-%s" % (path.name,
+                                             datetime.now().strftime("%Y%m%d-%H%M%S")))
+    try:
+        shutil.copy2(str(path), str(dest))
+        return dest
+    except OSError:
+        return None
+
+
+def update_settings_file(path, change) -> Path:
+    """Read ONE settings file, let ``change(dict)`` alter it in place, and
+    write it back. Returns the path written.
+
+    The ONE writer every settings file in mousedb goes through. It:
+      * refuses a damaged file (SettingsFileDamaged): a copy is kept as
+        <name>.damaged-<time>, the file itself is left exactly as it was, and
+        the message names both. WHY: writing back "what could be read" from a
+        damaged file is writing back almost nothing -- every other setting
+        and pin used to be lost that way;
+      * writes a temporary file beside it and swaps it in with os.replace, so
+        a crash or a full disk mid-write leaves the old file whole rather than
+        a half-written one (which the next read would find damaged);
+      * retries the swap for a few seconds while another program holds the
+        file open (Windows refuses the rename then).
+    Reads and writes ONLY the file named -- never the merged view -- so a
+    person's file never gains copies of the machine file's values.
+    """
+    import time
+    path = Path(path)
+    try:
+        cfg = read_settings_file(path)
+    except SettingsFileDamaged as e:
+        backup = _keep_damaged_copy(path) if path.is_file() else None
+        raise SettingsFileDamaged(path, e.why, backup) from None
+    change(cfg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name("%s.%d.tmp" % (path.name, os.getpid()))
+    tmp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(str(tmp), str(path))
+            return path
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                try:
+                    tmp.unlink()
+                except OSError:
+                    pass
+                raise
+            time.sleep(_REPLACE_WAIT)
+    return path
 
 
 def read_user_config() -> dict:
-    """This person's own file only."""
-    return _read_file(CONFIG_PATH)
+    """This person's own file only. Raises SettingsFileDamaged if it is damaged."""
+    return read_settings_file(CONFIG_PATH)
 
 
 def read_machine_config() -> dict:
-    """The file shared by every login on this computer only."""
-    return _read_file(machine_config_path())
+    """The file shared by every login on this computer only. Raises
+    SettingsFileDamaged if it is damaged."""
+    return read_settings_file(machine_config_path())
+
+
+def merge_settings(machine: dict, user: dict) -> dict:
+    """The settings in force from the two files: the machine file, with this
+    person's own file laid over it key by key (theirs wins). One function so
+    every reader (here and mousedb.cohort_sheets) merges the same way."""
+    merged = dict(machine)
+    merged.update(user)
+    return merged
 
 
 def read_config() -> dict:
     """The settings in force: the machine file, with this person's own file
-    laid over it key by key (theirs wins)."""
-    merged = read_machine_config()
-    merged.update(read_user_config())
-    return merged
+    laid over it key by key (theirs wins). Raises SettingsFileDamaged if
+    either file is damaged -- never reads a damaged file as "nothing set"."""
+    return merge_settings(read_machine_config(), read_user_config())
 
 
 def set_value(key: str, value: Optional[str], machine: bool = False) -> Path:
@@ -121,27 +263,47 @@ def set_value(key: str, value: Optional[str], machine: bool = False) -> Path:
     Only the chosen file is read and rewritten -- never the merged view --
     so setting one key for yourself never copies the machine's values into
     your own file (where they would then hide later changes to the machine
-    file)."""
+    file). A damaged file is refused, never overwritten (update_settings_file)."""
     if key not in KEYS:
         raise KeyError("unknown mousedb config key %r (known: %s)" % (key, ", ".join(KEYS)))
     path = machine_config_path() if machine else CONFIG_PATH
-    cfg = _read_file(path)
-    if value is None:
-        cfg.pop(key, None)
-    else:
-        cfg[key] = str(value)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    return path
+
+    def change(cfg):
+        if value is None:
+            cfg.pop(key, None)
+        else:
+            cfg[key] = str(value)
+    return update_settings_file(path, change)
 
 
 def get(key: str) -> Optional[str]:
-    """Raw string value for a key (env first, then the file), or None."""
+    """Raw string value for a key (env first, then the merged settings files),
+    or None. Raises SettingsFileDamaged when a settings file it has to read is
+    damaged (an environment variable that answers first needs no file)."""
     env = KEYS.get(key)
     if env and os.environ.get(env):
         return os.environ[env]
     v = read_config().get(key)
     return str(v) if v else None
+
+
+def at_import(accessor):
+    """``accessor()``, or None when a settings file is damaged. ONLY for the
+    few values computed when a module is first imported (mousedb.MOUSEDB_ROOT
+    and the like).
+
+    WHY: an import that raised would stop every mousedb command from even
+    starting -- including ``mousedb config --show``, the place that says
+    which file is damaged. The damage is not hidden by this: the first thing
+    that actually needs a location (require(), get()) reads the files again
+    and refuses loudly. The data-entry window is one such thing (it opens the
+    database as it is built); its start-up catches that refusal and opens a
+    window holding only the Setup tab instead (gui/app.py,
+    open_main_window)."""
+    try:
+        return accessor()
+    except SettingsFileDamaged:
+        return None
 
 
 def _path(key: str) -> Optional[Path]:
@@ -292,7 +454,15 @@ def status() -> list:
               | "derived" | "not set"
       exists  True / False for a path, None when there is nothing to check
     """
-    user, machine = read_user_config(), read_machine_config()
+    # A damaged file contributes nothing HERE (and is named by problems()),
+    # so the setup screen and `mousedb config --show` still open and can say
+    # what is wrong. Everything else that reads the settings refuses instead.
+    def _tolerant(reader):
+        try:
+            return reader()
+        except SettingsFileDamaged:
+            return {}
+    user, machine = _tolerant(read_user_config), _tolerant(read_machine_config)
     out = []
     for key, env in KEYS.items():
         kind, help_text = KEY_HELP.get(key, ("text", ""))
@@ -304,7 +474,10 @@ def status() -> list:
             source, value = "machine config file", str(machine[key])
         else:
             fn = _ACCESSORS.get(key)
-            derived = fn() if fn else None
+            try:
+                derived = fn() if fn else None
+            except SettingsFileDamaged:
+                derived = None
             source, value = ("derived", str(derived)) if derived else ("not set", "")
         exists = None
         if value and kind in ("dir", "file"):
@@ -325,7 +498,11 @@ def problems() -> list:
     Empty means the tool can run. Used by the setup screen so a person is told what
     is wrong in one place instead of meeting one ConfigError at a time, hours apart.
     """
-    found = []
+    # Said first: a damaged settings file makes every value it held look
+    # "not set", and that is the real cause to fix.
+    found = ["the settings file %s is damaged and is not being read (%s). Open it "
+             "in a text editor and put it right, or delete it and set its values "
+             "again." % (path, why) for path, why in settings_file_problems()]
     for entry in status():
         if entry["required"] and not entry["value"]:
             found.append("%s is not set. %s" % (entry["key"], entry["help"]))

@@ -32,8 +32,16 @@ second project's sheets were never recognised.
 Resolution order, first hit wins:
 
   1. ``MOUSEDB_COHORT_SHEETS`` environment variable.
-  2. ``cohort_sheets_dir`` in ``~/.mousedb/config.json``.
+  2. ``cohort_sheets_dir`` in the settings in force: this person's own
+     ``~/.mousedb/config.json`` laid over the machine settings file every
+     login on the computer shares (mousedb.config; set it there with
+     ``mousedb config --machine --set cohort_sheets_dir <path>``). The pins
+     and ``aspa_data_dir`` are read the same way. Writes (set-dir, pins) go
+     to the person's own file only.
   3. Nothing -- and callers say so loudly, with instructions.
+
+A damaged settings file is never read as empty and never written over
+(mousedb.config.SettingsFileDamaged): losing it used to lose every pin.
 
 There is deliberately no built-in fallback path. The previous arrangement was a
 hardcoded default on the ``import`` command pointing at a directory that had since
@@ -123,7 +131,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -207,22 +214,45 @@ _DISCOVER_MAX_DEPTH = 6
 # configuration
 # ---------------------------------------------------------------------------
 
+def _own_config() -> dict:
+    """This person's own settings file (CONFIG_PATH) only -- what the writers
+    below change. Raises config.SettingsFileDamaged when it is damaged."""
+    from . import config as _config
+    return _config.read_settings_file(CONFIG_PATH)
+
+
 def _read_config() -> dict:
-    try:
-        if CONFIG_PATH.is_file():
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
-        pass
-    return {}
+    """The settings in force: the machine settings file shared by every login
+    on this computer, with this person's own file laid over it key by key --
+    the SAME merge mousedb.config uses for every other setting.
+
+    WHY merged: this used to read the person's own file only, while the rest of
+    mousedb read both. A sheets folder (or pin, or ASPA folder) set once for
+    the whole computer with ``mousedb config --machine --set`` was therefore
+    invisible here: every other login -- and the scheduled jobs, if they run
+    as one -- had "no sheets folder" while the Setup tab showed one set.
+
+    Raises config.SettingsFileDamaged when either file is damaged, never
+    reading it as "nothing set" (see that class for what that used to cost).
+    """
+    from . import config as _config
+    return _config.merge_settings(_config.read_machine_config(), _own_config())
+
+
+def _update_own_config(change) -> Path:
+    """Change this person's own settings file through mousedb.config's one
+    writer: a damaged file is refused (and copied aside), never overwritten;
+    the write is a temporary file swapped in. Only the person's own file is
+    read and written, so the machine file's values are never copied into it."""
+    from . import config as _config
+    return _config.update_settings_file(CONFIG_PATH, change)
 
 
 def set_cohort_sheets_dir(path) -> Path:
-    """Record where this machine's cohort sheets are. Returns the config path."""
-    cfg = _read_config()
-    cfg["cohort_sheets_dir"] = str(Path(path))
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    return CONFIG_PATH
+    """Record where this machine's cohort sheets are, in this person's own
+    settings file. Returns the config path."""
+    value = str(Path(path))
+    return _update_own_config(lambda cfg: cfg.__setitem__("cohort_sheets_dir", value))
 
 
 def cohort_sheets_dir() -> Optional[Path]:
@@ -230,6 +260,8 @@ def cohort_sheets_dir() -> Optional[Path]:
 
     Returns a directory only if it exists AND actually contains a tracking
     sheet: an empty directory of the right name is not the right directory.
+    A damaged settings file raises config.SettingsFileDamaged rather than
+    reading as None.
     """
     for raw in (os.environ.get(ENV_VAR), _read_config().get("cohort_sheets_dir")):
         if not raw:
@@ -401,16 +433,19 @@ def pin_cohort_sheet(cohort: str, filename: Optional[str], sheets_dir=None) -> P
                         "is in the sheets folder. The files for cohort %s are: %s"
                         % (name, n, n, ", ".join(have) if have else "(none)")))
                 name = same[0]
-    cfg = _read_config()
-    pins = cfg.setdefault("pinned_sheets", {})
-    key = n
-    if name:
-        pins[key] = name
-    else:
-        pins.pop(key, None)
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    return CONFIG_PATH
+    def change(cfg):
+        # This person's own file only (never the merged view, which would copy
+        # the machine file's settings into it). An unpin that leaves no pin
+        # drops the key, so an empty set of pins never hides the machine
+        # file's pins (a person's own key wins over the machine's whole).
+        pins = cfg.setdefault("pinned_sheets", {})
+        if name:
+            pins[n] = name
+        else:
+            pins.pop(n, None)
+        if not pins:
+            cfg.pop("pinned_sheets", None)
+    return _update_own_config(change)
 
 
 def find_cohort_sheet(cohort: str, sheets_dir=None) -> Optional[Path]:
@@ -586,7 +621,8 @@ def _aspa_file_letter(name: str):
 
 
 def aspa_data_dir() -> Optional[Path]:
-    """The configured folder of ASPA animal sheets, or None."""
+    """The configured folder of ASPA animal sheets, or None (merged settings,
+    like every other setting). A damaged settings file raises."""
     for raw in (os.environ.get(ASPA_ENV_VAR), _read_config().get("aspa_data_dir")):
         if not raw:
             continue
@@ -600,12 +636,10 @@ def aspa_data_dir() -> Optional[Path]:
 
 
 def set_aspa_data_dir(path) -> Path:
-    """Record where this machine's ASPA animal sheets are."""
-    cfg = _read_config()
-    cfg["aspa_data_dir"] = str(Path(path))
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    return CONFIG_PATH
+    """Record where this machine's ASPA animal sheets are, in this person's
+    own settings file."""
+    value = str(Path(path))
+    return _update_own_config(lambda cfg: cfg.__setitem__("aspa_data_dir", value))
 
 
 def aspa_letter(cohort) -> Optional[str]:
@@ -746,4 +780,6 @@ def describe() -> str:
         "Or set the %s environment variable." % ENV_VAR,
         "Saved to %s, which is local to this machine and never committed."
         % CONFIG_PATH,
+        "(To set it once for everyone who logs in to this computer instead:",
+        "    mousedb config --machine --set cohort_sheets_dir \"<path>\")",
     ]))

@@ -38,12 +38,12 @@ from typing import Dict, List, Optional
 
 from . import DEFAULT_EXPORT_PATH
 
-from .config import require, snapshot_dir as _snapshot_dir
+from .config import at_import as _at_import, require, snapshot_dir as _snapshot_dir
 from .import_analyses import MANIFEST_NAME as ANALYSES_MANIFEST_NAME
 from .import_analyses import STOP_RECORD_NAME as ANALYSES_STOP_RECORD_NAME
 from .import_analyses import read_stop, stale_phrase, stop_line
 
-SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set snapshot_dir ...)
+SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured (mousedb config --set snapshot_dir ...)
 
 # When the snapshot counts as out of date. The job that rewrites it is normally
 # scheduled daily, so a day and a half allows for one late or slow run without

@@ -315,12 +315,51 @@ mousedb config --show
 ```
 
 Any command that needs a location that is not set stops with a message naming
-the exact `mousedb config --set` line to run. Values can also be given per run
+the exact `mousedb config --set` line to run. The data-entry window
+(`mousedb-entry`) opened before the database folder is set shows a smaller
+window holding only the Setup tab, with that message above it: set the
+folders there with **Choose...**, close the window and open it again. Values can also be given per run
 as environment variables (`mousedb config --show` lists them). Order of
 precedence: environment variable, then your own file, then the machine file;
 `mousedb config --show` names both files and, for every key, which one its
 value came from (`config file` = yours, `machine config file` = the
 computer's).
+
+**Every setting is read the same way, the sheets settings included.** The
+tracking-sheets folder (`cohort_sheets_dir`), the ASPA sheets folder
+(`aspa_data_dir`), the sheet pins, and the bench-scan routing settings
+(`mousereach_route_cmd`, `mousereach_env`) are all read from your own file
+laid over the machine file. `mousedb-sheets set-dir`, the Tracking Sheets
+tab's **Set sheets folder...** and **This is the sheet** write to your own
+file; to give the sheets folder to everyone who logs in to the computer
+(including a scheduled job running as another login), set it in the machine
+file instead:
+
+```
+mousedb config --machine --set cohort_sheets_dir "<folder holding the tracking workbooks>"
+```
+
+**A damaged settings file is never read as empty, and never written over.**
+If either file is not valid JSON (say it was edited by hand and a comma went
+missing), anything that needs a setting stops with a message naming the file
+-- it does not carry on as if nothing were set. `mousedb config --show`
+still prints, and lists the file first under *Problems*. The data-entry
+window (`mousedb-entry`) cannot open the database without its location, so
+when a settings file is already damaged as it starts, the full window does
+not open: a smaller window titled *mousedb cannot open its database yet*
+opens instead, with a message box naming the file, and the Setup tab alone
+inside it, listing the file first under its problems. (The same smaller
+window opens when no database folder is set at all.) Put the file right,
+close that window and open `mousedb-entry` again. If the file is damaged
+while the full window is already open, the window stays open and each
+button that needs a setting says so in a box. A `--set`, a
+**Set sheets folder...** or a **This is the sheet** aimed at a damaged file
+saves nothing: it keeps a copy beside it as `config.json.damaged-<date-time>`
+and says where. Open the file in a text editor and put it right (it must
+look like `{"key": "value", ...}`), or delete it and set the values again. (A
+file saved by Notepad with a byte-order mark is read normally.) Each save
+writes a temporary file beside the settings file and swaps it in, so a save
+cut off half-way leaves the old file whole.
 
 ### Study facts (once per study)
 

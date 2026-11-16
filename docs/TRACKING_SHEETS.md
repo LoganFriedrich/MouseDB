@@ -861,8 +861,12 @@ as waiting, until you pin the sheet and the next import has run.
 
 To choose: press **Refresh**, select the row, press **This is the sheet**,
 pick the file from the list. That choice is called a **pin**. It is shown as
-`[pinned]` and kept in `~/.mousedb/config.json` on THIS machine only -- so
-pin on the machine that runs the scheduled import, too. To forget a pin,
+`[pinned]` and kept in YOUR OWN `~/.mousedb/config.json` on THIS machine --
+so pin on the machine, and as the login, that runs the scheduled import,
+too. (Pins are read from your own file laid over the machine settings file,
+like every setting; a pin set in the machine file applies to every login
+that has no pins of its own. A pin is never saved into a damaged settings
+file: the button then says so, names the file, and pins nothing.) To forget a pin,
 press **Forget a pin...** and pick the cohort (the list shows every pinned
 cohort, broken pins included); the cohort's newest file is read again. From a
 terminal: `mousedb-sheets pin CNT_NN "<exact file name>"`; to forget it,
@@ -1126,6 +1130,17 @@ From a terminal, `mousedb-sheets set-dir "<folder>"` applies the same tests
 and also refuses a folder that does not exist. Both record the folder in
 full, so a folder typed relative to where you stand still works for the
 scheduled job and the GUI.
+
+The button and `set-dir` record the folder in YOUR OWN settings file. To set
+it once for everyone who logs in to this computer -- the scheduled import
+included, whichever login it runs as -- run, from an administrator
+PowerShell:
+
+```
+mousedb config --machine --set cohort_sheets_dir "<folder>"
+```
+
+The folder is read from your own file first, then the machine file.
 
 An environment variable, `MOUSEDB_COHORT_SHEETS`, comes before the recorded
 setting when it names a usable folder. If it is set on the machine, the tab

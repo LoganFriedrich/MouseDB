@@ -46,10 +46,10 @@ from . import data_dictionary as dd
 from . import layout, missing, trays
 from .. import DEFAULT_EXPORT_PATH
 
-from ..config import require, snapshot_dir as _snapshot_dir
+from ..config import at_import as _at_import, require, snapshot_dir as _snapshot_dir
 
 CURRENT_DIR = (Path(DEFAULT_EXPORT_PATH) / "current") if DEFAULT_EXPORT_PATH else None
-DEFAULT_SNAPSHOT_DIR = _snapshot_dir()  # None until configured
+DEFAULT_SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured
 
 # Column order of reach_data.csv: identity first, then the reach, then
 # provenance. extended_features (a JSON blob per row) goes LAST so a person

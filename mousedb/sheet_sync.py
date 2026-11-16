@@ -91,6 +91,7 @@ from typing import Dict, List, Optional, Tuple
 
 from . import DEFAULT_LOG_PATH
 from . import cohort_sheets as _cs
+from .config import ConfigError
 from .cohort_sheets import (
     CONFIG_PATH, available_cohorts, cohort_sheet_candidates, cohort_sheets_dir,
     find_cohort_sheet, is_stale_source, pin_cohort_sheet, pinned_sheet,
@@ -1419,7 +1420,9 @@ def _pin_command(cohort: str, filename: Optional[str]) -> int:
                          % (cohort_id, " (was %s)" % was if was else "")))
             return 0
         cfg = pin_cohort_sheet(cohort_id, filename)
-    except ValueError as e:
+    except (ValueError, ConfigError) as e:
+        # ConfigError: a damaged settings file (config.SettingsFileDamaged) --
+        # refused, never written over; its message names the file and the copy.
         print(_ascii("[FAIL] %s -- nothing was %s" % (e, "pinned" if filename else "unpinned")))
         return 1
     # The name as recorded (the guard stores a file's real spelling when only
@@ -1502,7 +1505,13 @@ def main(argv=None) -> int:
             for f in _refused_files(folder) if folder.is_dir() else []:
                 print(_ascii("[!] not read as a sheet: %s -- %s" % (f.get("file"), f.get("reason"))))
             return 1
-        print(_ascii("sheets folder %s recorded in %s" % (folder, set_cohort_sheets_dir(folder))))
+        try:
+            written = set_cohort_sheets_dir(folder)
+        except ConfigError as e:
+            # A damaged settings file is refused, never written over.
+            print(_ascii("[FAIL] %s" % e))
+            return 1
+        print(_ascii("sheets folder %s recorded in %s" % (folder, written)))
         return 0
     return 2
 

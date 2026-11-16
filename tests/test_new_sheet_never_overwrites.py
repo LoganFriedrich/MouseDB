@@ -685,3 +685,32 @@ def test_set_folder_says_when_an_environment_variable_overrides_it(sheets, tmp_p
     assert [b[0] for b in ui.boxes] == ["warning"]
     assert cs.ENV_VAR in ui.boxes[0][2] and str(sheets) in ui.boxes[0][2]
     assert json.loads(cs.CONFIG_PATH.read_text())["cohort_sheets_dir"] == str(other)
+
+
+def test_set_folder_with_a_damaged_machine_settings_file_says_so_in_a_box(tmp_path, make_tab,
+                                                                          ui, monkeypatch):
+    """The folder is saved in this person's own file, which is fine -- but the
+    folder in force is read from both files, and the MACHINE settings file
+    every login shares is damaged. That is said in a message box naming the
+    file and saying the choice was saved -- not left to the window's
+    catch-all error box, which said only that the click "did not work"."""
+    from mousedb import config
+    monkeypatch.delenv(cs.ENV_VAR, raising=False)
+    machine = tmp_path / "machine" / "config.json"
+    machine.parent.mkdir()
+    machine.write_text('{"lab_name": ', encoding="utf-8")
+    monkeypatch.setenv(config.MACHINE_CONFIG_ENV, str(machine))
+    d = tmp_path / "sheets"
+    d.mkdir()
+    (d / "Connectome_99_Animal_Tracking.xlsx").write_bytes(REAL)
+    tab = make_tab(_folder_status(tmp_path))
+    ui.folder = str(d)
+    _click(tab, "Set sheets folder...")
+    assert [b[0] for b in ui.boxes] == ["warning"], ui.boxes
+    assert str(machine) in ui.boxes[0][2] and "damaged" in ui.boxes[0][2]
+    # Said as what happened -- the choice WAS saved -- not as the window's
+    # catch-all "That did not work", which reads as if nothing was saved.
+    assert "was recorded" in ui.boxes[0][2], ui.boxes
+    assert "did not work" not in ui.boxes[0][2]
+    assert json.loads(cs.CONFIG_PATH.read_text())["cohort_sheets_dir"] == str(d)
+    assert machine.read_text(encoding="utf-8") == '{"lab_name": '

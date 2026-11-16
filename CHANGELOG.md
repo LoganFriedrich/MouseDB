@@ -76,6 +76,26 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- A damaged settings file (`~/.mousedb/config.json` or the machine file, not
+  valid JSON) is no longer read as empty and then written back holding one
+  value: anything that needs a setting stops with a message naming the file,
+  `mousedb config --show` still prints and lists it first under Problems, and
+  a `--set`, set-dir or pin saves nothing, keeping a copy as
+  `config.json.damaged-<date-time>`. Before, every other setting and every pin
+  in it was lost at the next save. A file with a byte-order mark is now read,
+  and every save is a temporary file swapped in (mousedb/config.py).
+- `mousedb-entry` no longer dies with a traceback (or shows nothing, when
+  started from a shortcut) when the settings cannot give it the database --
+  a damaged settings file, or no database folder set. It opens a window
+  holding only the Setup tab, with the reason above it and in a message box;
+  once the setting is put right, it is closed and opened again
+  (mousedb/gui/app.py, `open_main_window`).
+- The tracking-sheets folder, the pins, the ASPA folder and the bench-scan
+  routing settings are read from your own settings laid over the machine
+  file, like every other setting. Before, they were read from your own file
+  only, so a sheets folder set with `mousedb config --machine --set
+  cohort_sheets_dir` was invisible to every other login. Writes still go to
+  your own file only.
 - Cohort Setup's **Replace** refuses an archive or snapshot copy, a "Copy of
   ..." or an export, as Import already did, and the refusal is shown before the
   preview. Before, Replace used such a file and put its old values back over the

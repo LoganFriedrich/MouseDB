@@ -26,7 +26,12 @@ from pathlib import Path
 # what to set. Why: this is a public tool; a lab's drive letters are not part
 # of it, and a silent wrong default is worse than a clear error.
 from . import config as _config
-MOUSEDB_ROOT = _config.mousedb_root()
-DEFAULT_DB_PATH = _config.db_path()
-DEFAULT_EXPORT_PATH = _config.export_path()
-DEFAULT_LOG_PATH = _config.log_path()
+# at_import: a damaged settings file must not stop mousedb from being
+# imported (`mousedb config --show` must still run and name the file); it is
+# refused loudly by the first thing that needs a location instead. The
+# data-entry window needs the database, so it opens a Setup-tab-only window
+# in that case (gui/app.py, open_main_window).
+MOUSEDB_ROOT = _config.at_import(_config.mousedb_root)
+DEFAULT_DB_PATH = _config.at_import(_config.db_path)
+DEFAULT_EXPORT_PATH = _config.at_import(_config.export_path)
+DEFAULT_LOG_PATH = _config.at_import(_config.log_path)

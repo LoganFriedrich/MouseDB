@@ -109,8 +109,10 @@ def cmd_cohort_sheets(args):
     """Show, set, or discover where this machine's cohort tracking sheets are.
 
     The path is lab-specific and this repository is public, so it is never in
-    source: it lives in ~/.mousedb/config.json, or the MOUSEDB_COHORT_SHEETS
-    environment variable.
+    source: it lives in ~/.mousedb/config.json (what --set writes), the
+    machine settings file every login shares (mousedb config --machine --set
+    cohort_sheets_dir <path>), or the MOUSEDB_COHORT_SHEETS environment
+    variable -- read in the order variable, own file, machine file.
     """
     from .cohort_sheets import (
         describe, discover, set_cohort_sheets_dir, available_cohorts,
