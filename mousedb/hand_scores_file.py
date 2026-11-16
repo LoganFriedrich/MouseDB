@@ -23,8 +23,10 @@ hand_pellet_scores.csv   one row per hand-scored pellet:
 hand_pellet_scores.json  beside it:
     written_at              when this file was written
     rows, videos            how many pellets, how many sessions
-    last_successful_import  {cohort id: when its last successful sheet import
-                            ended} -- so the pipeline can tell "the sheet has
+    last_successful_import  {cohort id: when its last sheet import that SAVED
+                            the cohort's scores ended -- even if a later step of
+                            that import, such as copying the animal details,
+                            failed} -- so the pipeline can tell "the sheet has
                             not been imported since this video was ready"
                             (wait) from "it was, and has no scores for it"
                             (never scored by hand: filed without comparing)
@@ -129,12 +131,30 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _scores_landed(entry: dict) -> bool:
+    """Whether one ledger line is an import that SAVED its cohort's scores.
+
+    The line's scores_saved when it has one (sheet_sync.SCORES_SAVED: true even
+    when a later step of the same import, such as copying the animal details,
+    failed); a line written before that key existed counts by "success", as
+    before. WHY scores_saved and not success: a video waits for its session's
+    hand scores until an import after it was ready has brought the cohort's
+    scores in. Counting by success let a failed accessory step hold videos
+    whose scores had in fact been saved."""
+    if entry.get("dry_run"):
+        return False
+    if "scores_saved" in entry:
+        return bool(entry["scores_saved"])
+    return bool(entry.get("success"))
+
+
 def _last_successful_imports() -> Dict[str, str]:
-    """{cohort_id: when its last successful (not dry-run) sheet import finished}."""
+    """{cohort_id: when its last (not dry-run) sheet import that saved the
+    cohort's scores finished} -- see _scores_landed."""
     from .sheet_sync import _read_ledger
     out = {}
     for e in _read_ledger():
-        if e.get("success") and not e.get("dry_run") and e.get("cohort_id"):
+        if _scores_landed(e) and e.get("cohort_id"):
             when = e.get("finished") or e.get("started")
             if when and when > out.get(e["cohort_id"], ""):
                 out[e["cohort_id"]] = when

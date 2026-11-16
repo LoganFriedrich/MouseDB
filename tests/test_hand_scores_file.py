@@ -231,3 +231,50 @@ def test_a_folder_other_than_the_configured_one_settles_nothing(tmp_path, monkey
     assert calls[-1]["full_run"] is False and calls[-1]["sheets_seen"] is None
     sheet_sync.import_cohorts(None)
     assert calls[-1]["full_run"] is True and calls[-1]["sheets_seen"] == ["CNT_77"]
+
+
+def test_an_import_that_saved_the_scores_counts_even_if_a_later_step_failed(tmp_path, monkeypatch):
+    """WHY: a video with no hand score for its session is filed only once an
+    import after it was ready brought its cohort's scores in. An import whose
+    animal-details step failed AFTER the scores were saved used to count as no
+    import at all, so those videos kept waiting on accessory information."""
+    w = _scratch_writer(tmp_path, monkeypatch)
+    sheet_sync._append_ledger({"cohort_id": "PROJA_77", "success": True, "dry_run": False,
+                               "finished": "2026-01-01T20:00:00"})
+    sheet_sync._append_ledger({"cohort_id": "PROJA_77", "success": False, "dry_run": False,
+                               "scores_saved": True, "finished": "2026-01-02T20:00:00"})
+    sheet_sync._append_ledger({"cohort_id": "PROJA_77", "success": False, "dry_run": False,
+                               "scores_saved": False, "finished": "2026-01-03T20:00:00"})
+    sheet_sync._append_ledger({"cohort_id": "PROJA_78", "success": True, "dry_run": False,
+                               "scores_saved": False, "finished": "2026-01-03T20:00:00"})
+    m = w()
+    assert m["last_successful_import"] == {"PROJA_77": "2026-01-02T20:00:00"}
+
+
+def test_the_import_records_that_its_scores_were_saved_when_the_details_fail(tmp_path, monkeypatch):
+    import mousedb.animal_records as ar
+    import mousedb.cohort_sheets as cs
+    d = tmp_path / "sheets"
+    d.mkdir()
+    (d / "Connectome_77_Animal_Tracking.xlsx").write_bytes(b"x")
+    monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setenv(cs.ENV_VAR, str(d))
+    monkeypatch.setattr(sheet_sync, "LEDGER", tmp_path / "ledger.jsonl")
+    monkeypatch.setattr(task_mutex, "hold", lambda *a, **k: contextlib.nullcontext())
+
+    class Saves:
+        db = object()
+
+        def import_cohort_file(self, *a, **k):
+            return {"success": True, "imported": {"pellet_scores": 20}, "warnings": [], "errors": []}
+
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
+        "records": 0, "warnings": [], "error": "tab unreadable"})
+    import mousedb.importers as imp
+    monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Saves())
+    r = sheet_sync.import_cohorts(["CNT_77"])
+    c = r["cohorts"][0]
+    assert c["success"] is False and c["scores_saved"] is True
+    line = json.loads((tmp_path / "ledger.jsonl").read_text().splitlines()[-1])
+    assert line["scores_saved"] is True
+    assert hsf._last_successful_imports() == {"CNT_77": line["finished"]}

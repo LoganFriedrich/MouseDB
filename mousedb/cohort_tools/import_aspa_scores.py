@@ -208,7 +208,9 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
     entry = {"cohort_id": cohort_id, "sheet_name": sheet.name if sheet else None,
              "sheet_path": str(sheet) if sheet else None,
              "started": datetime.now().isoformat(timespec="seconds"),
-             "triggered_by": "aspa-scores", "dry_run": not apply}
+             "triggered_by": "aspa-scores", "dry_run": not apply,
+             # Set True once the scores are committed (see below).
+             "scores_saved": False}
     if sheet is None:
         entry.update(success=False, error="no ASPA sheet for cohort %s" % letter)
         return entry
@@ -265,6 +267,10 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
             imp._insert_pellet_rows(session, cohort_id, rows, dry_run=not apply)
             if apply:
                 session.commit()
+                # The scores are saved from here on, whatever happens to the
+                # animal details below (sheet_sync.SCORES_SAVED says why the
+                # ledger records this apart from success).
+                entry["scores_saved"] = True
         # The workbook's ODC tab (each animal's surgery, drugs, strain, group ...)
         # goes into animal_records for the per-reach ODC export. After the score
         # session has closed: two open write transactions on one SQLite file lock.

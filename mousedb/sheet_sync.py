@@ -357,6 +357,20 @@ def _animal_records(imp, cohort_id, sheet, kind, dry_run):
 # person). Absent when they were refreshed.
 LEFT_UNCHANGED = "animal_records_left_unchanged"
 
+# The key, in a cohort's outcome and its ledger line, that says whether this
+# import SAVED the workbook's rows -- the pellet scores among them -- whatever
+# happened after. WHY apart from "success": success is False for anything that
+# went wrong, including steps after the save (copying the animal details, the
+# phase re-derivation). The hand-scores file (hand_scores_file) tells the
+# reaching pipeline when each cohort's scores were last imported; a video whose
+# session has no score is filed without the comparison only once an import
+# after it was ready has SAVED the cohort's scores. Counting only successful
+# imports there made a failure in an accessory step (the animal details) hold
+# those videos -- accessory information never holds up pellet scoring. Always
+# False for a dry run. Absent from ledger lines written before it existed;
+# hand_scores_file then falls back on "success".
+SCORES_SAVED = "scores_saved"
+
 _STOPPED_BEFORE_RECORDS = ("animal details left as they were: the import stopped on the "
                            "error before it reached them")
 
@@ -425,7 +439,9 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
     # kept: why the animal details are left alone (None = copy them).
     # copying: set the moment animal_records is asked to replace anything, so a
     # crash before that moment is recorded as having left them alone too.
-    kept, copying = None, False
+    # saved: the importer saved the workbook (its scores among it) -- see
+    # SCORES_SAVED for why that is recorded apart from success.
+    kept, copying, saved = None, False, False
     try:
         imp = imp or ExcelImporter()
         if allow_large_removal:
@@ -435,6 +451,7 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
             entry["allow_large_removal"] = True
         if dry_run:
             r = imp.import_cohort_file(sheet, dry_run=True)
+            saved = False            # a dry run saves nothing
             kept = _not_saved_reason(r, True)
             copying = not kept
             rec = _animal_records(imp, cohort_id, sheet, "cohort", True) if copying else None
@@ -452,6 +469,7 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                 # The animal details follow the importer's save; they never
                 # replace the cohort's copy from a workbook it did not save.
                 kept = _not_saved_reason(r, False)
+                saved = kept is None
                 copying = not kept
                 rec = _animal_records(imp, cohort_id, sheet, "cohort", False) if copying else None
         errors = list(r.get("errors", []))
@@ -470,6 +488,7 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                      error="; ".join(errors) or None)
         if kept:
             entry[LEFT_UNCHANGED] = kept
+        entry[SCORES_SAVED] = saved
         # What the sheet changed or removed among the rows earlier imports
         # wrote -- or why it refused to (importers: "The sheet wins"). Kept
         # whole in the ledger line: it is the record of what was taken out.
@@ -486,6 +505,9 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                      traceback=traceback.format_exc()[-2000:])
         if not copying:
             entry[LEFT_UNCHANGED] = kept or _STOPPED_BEFORE_RECORDS
+        # The importer commits before the animal details are copied, so a
+        # crash after it returned still leaves its rows saved.
+        entry[SCORES_SAVED] = saved
     return entry
 
 

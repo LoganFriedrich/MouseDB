@@ -575,7 +575,11 @@ never depends on mousedb); it reads one file mousedb writes:
   pipeline names its video (`20250709_CNT0207_P1`: date, animal without
   underscores, tray type and number);
 - `hand_pellet_scores.json` beside it: when the file was written; for each
-  cohort, when its last successful sheet import finished; which cohorts the
+  cohort, when its last sheet import that SAVED the cohort's scores finished
+  (an import whose scores were saved counts here even when a later step of
+  it failed -- copying the animal details, for example -- because the scores
+  are in; each line of the import history says so as `"scores_saved": true`,
+  and the cohort still shows `FAIL` until that step works); which cohorts the
   sheets folder has a sheet for; and when the last import of EVERY sheet
   finished. The pipeline uses these to tell "the sheet has not been imported
   since this video was ready" (the video waits) from "it has been, and has no
