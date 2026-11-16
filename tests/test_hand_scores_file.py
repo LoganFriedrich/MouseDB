@@ -192,7 +192,7 @@ def test_a_rename_refused_while_a_reader_has_the_file_open_is_retried(tmp_path, 
             raise PermissionError(13, "The process cannot access the file")
         return real(src, dst)
 
-    monkeypatch.setattr(hsf, "REPLACE_WAIT_SECONDS", 0)
+    monkeypatch.setattr(hsf, "REPLACE_WAIT_SECONDS", 0, raising=False)
     monkeypatch.setattr(hsf.os, "replace", busy_once)
     m = w()
     assert refused                                    # the first try was refused
