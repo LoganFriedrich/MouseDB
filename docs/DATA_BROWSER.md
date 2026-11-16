@@ -46,6 +46,13 @@ The front page lists the places to start:
 | **brain_region_counts** | brain and atlas region | Cell counts per region, per brain |
 | **brain_group_counts** | brain and functional group | Cell counts in the 25 groups of Wang et al. 2022 |
 
+In the two brain tables, `status` is `imported` for every brain: it is written
+when the brain is first imported and nothing changes it, so it does not say
+how far a brain has got in MouseBrain. Whether a brain's registration was
+approved is kept by MouseBrain, not in this database; the raw `brain_samples`
+table has a `registration_approved` column, but no import fills it (it is 0
+for every brain), so the brain tables leave it out.
+
 Below them are three **ready-made questions**: a small form where you type an
 animal id (or a cohort id, or an animal and a date) and press **Run**:
 

@@ -244,3 +244,30 @@ def test_brain_tables_get_their_ready_made_tables_once_in_the_snapshot(env):
         for c in con.execute('PRAGMA table_info("%s")' % view):
             assert descriptions[view].get(c[1]), "%s.%s" % (view, c[1])
     con.close()
+
+
+def test_brain_tables_do_not_present_a_column_nothing_fills(env):
+    """No import fills brain_samples.registration_approved (0 for every brain;
+    approval is kept by MouseBrain), and status is 'imported' for every brain.
+    A ready-made table showing that column read as "no registration was
+    approved"; the descriptions said 1 meant a person approved it."""
+    pd.DataFrame({"id": [7], "subject_id": ["PRJ_01_01"], "brain_id": ["1_PRJ_01_01_1x_z4"],
+                  "status": ["imported"], "registration_approved": [0]}
+                 ).to_parquet(env["snap"] / "brain_samples.parquet", index=False)
+    pd.DataFrame({"id": [1], "brain_sample_id": [7], "region_id": [1], "region_name": ["R"],
+                  "hemisphere": ["both"], "cell_count": [5], "is_final": [1]}
+                 ).to_parquet(env["snap"] / "region_counts.parquet", index=False)
+    pd.DataFrame({"id": [1], "brain_sample_id": [7], "group_name": ["G"], "hemisphere": ["both"],
+                  "cell_count": [9], "is_final": [1]}
+                 ).to_parquet(env["snap"] / "elife_region_counts.parquet", index=False)
+    r = B.build(progress=lambda *_: None)
+    con = _ro(r.path)
+    for view in ("brain_region_counts", "brain_group_counts"):
+        columns = [c[1] for c in con.execute('PRAGMA table_info("%s")' % view)]
+        assert "registration_approved" not in columns, view
+        assert "status" in columns
+    con.close()
+    described = site.column_descriptions()["brain_samples"]
+    assert "approved the registration" not in described["registration_approved"]
+    assert "Not filled" in described["registration_approved"]
+    assert "'imported' for every brain" in described["status"]

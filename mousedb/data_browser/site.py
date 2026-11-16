@@ -147,11 +147,15 @@ OWN = {
         "atlas_name": "Atlas the brain was registered to.",
         "registration_date": "When it was registered.",
         "registration_quality": "Registration quality score (0-1).",
-        "registration_approved": "1 = a person approved the registration, 0 = not yet.",
+        "registration_approved": ("Not filled by any import: 0 for every brain. Whether a "
+                                  "brain's registration was approved is kept by MouseBrain, "
+                                  "not here."),
         "raw_path": "Raw image file, relative to the brain's folder.",
         "registered_path": "Registered data, relative to the brain's folder.",
         "detection_xml_path": "Cell detection output, relative to the brain's folder.",
-        "status": "pending, registered, detected or analyzed.",
+        "status": ("'imported' for every brain: the brain import writes it when it first "
+                   "adds the brain and nothing changes it afterwards, so it does not say "
+                   "how far the brain has got in MouseBrain."),
         "notes": "Free-text notes.",
         "created_at": "When the row was written to the database.",
     },

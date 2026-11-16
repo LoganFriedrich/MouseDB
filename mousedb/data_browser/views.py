@@ -215,6 +215,11 @@ def _animals(con, has) -> str:
     return "animals"
 
 
+# The brain views carry b.status but NOT b.registration_approved. WHY: no
+# import fills registration_approved (it is 0 for every brain; whether a
+# registration was approved is kept by MouseBrain), so a column of zeros in a
+# ready-made table read as "no brain has an approved registration". It is
+# still in the raw brain_samples table, with a description saying so.
 def _brain_regions(con, has) -> str:
     have = set(_columns(con, "region_counts"))
     extra = [c for c in ("region_acronym", "hemisphere", "cell_type", "cell_count",
@@ -222,7 +227,7 @@ def _brain_regions(con, has) -> str:
     con.execute("""
         CREATE VIEW brain_region_counts AS
         SELECT b.subject_id, %s AS cohort_id, b.brain_id, b.status,
-               b.registration_approved, r.region_name, %s
+               r.region_name, %s
         FROM region_counts r JOIN brain_samples b ON b.id = r.brain_sample_id
     """ % (_COHORT_FROM_ID % ("b.subject_id", "b.subject_id"),
            ", ".join("r.%s" % c for c in extra)))
@@ -236,7 +241,7 @@ def _brain_groups(con, has) -> str:
     con.execute("""
         CREATE VIEW brain_group_counts AS
         SELECT b.subject_id, %s AS cohort_id, b.brain_id, b.status,
-               b.registration_approved, g.group_name, %s
+               g.group_name, %s
         FROM elife_region_counts g JOIN brain_samples b ON b.id = g.brain_sample_id
     """ % (_COHORT_FROM_ID % ("b.subject_id", "b.subject_id"),
            ", ".join("g.%s" % c for c in extra)))

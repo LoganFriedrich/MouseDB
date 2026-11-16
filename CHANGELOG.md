@@ -150,6 +150,12 @@ checked-in code, not what's planned.
   the brain's row had been added, and those were saved although the import
   printed `[FAIL]`. Every brain import (counts, eLife groups, calibration runs,
   detected cells) now saves all of its rows or none, and a dry run saves none.
+- Data browser: the brain region and group tables no longer show
+  `registration_approved`. No import fills it, so it was 0 for every brain and
+  read as "no registration was approved"; its description said 1 meant a
+  person approved it. The descriptions of `brain_samples.registration_approved`
+  and `status` now say what they really hold (never filled; `imported` for
+  every brain).
 - Cohort Setup's **Replace** refuses an archive or snapshot copy, a "Copy of
   ..." or an export, as Import already did, and the refusal is shown before the
   preview. Before, Replace used such a file and put its old values back over the
