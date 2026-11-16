@@ -1192,7 +1192,9 @@ def import_succeeded(r: dict) -> bool:
         # A sheet that read as broken left the database as it was (see
         # importers: "The sheet wins"); the job must not look like a success.
         return False
-    return not any(a.get("error") for a in r.get("aspa_animal_records") or [])
+    # A letter cohort's ODC tab kept as it was (see _aspa_animal_records)
+    # fails the run like any other refusal: nothing is kept in silence.
+    return not any(a.get("error") or a.get("kept") for a in r.get("aspa_animal_records") or [])
 
 
 def sync_refused(entry: dict) -> List[str]:
@@ -1296,6 +1298,8 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         log(_ascii("%s %s %s animal_records %s" % (
             "FAIL" if a.get("error") else "OK  ", a.get("cohort_id"),
             a.get("sheet_name") or "-", a.get("error") or a.get("records"))))
+        for k in a.get("kept") or []:
+            log("       [!] %s" % kept_tab_text(k, frozen=True))
     for f in r.get("refused_files") or []:
         log(_ascii("[!] not read as a sheet: %s -- %s" % (f.get("file"), f.get("reason"))))
     for cid, what in sorted((r.get("fix_these") or {}).items()):
@@ -1341,9 +1345,12 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
             len(refused), ", ".join(refused))
     if records:
         bad = [str(a.get("cohort_id")) for a in records if a.get("error")]
-        line += "; letter-cohort animal records: %d of %d refreshed%s" % (
-            len(records) - len(bad), len(records),
-            (", %d FAILED (%s)" % (len(bad), ", ".join(bad))) if bad else "")
+        held = [str(a.get("cohort_id")) for a in records
+                if a.get("kept") and not a.get("error")]
+        line += "; letter-cohort animal records: %d of %d refreshed%s%s" % (
+            len(records) - len(bad) - len(held), len(records),
+            (", %d FAILED (%s)" % (len(bad), ", ".join(bad))) if bad else "",
+            (", %d NOT SYNCED (%s)" % (len(held), ", ".join(held))) if held else "")
     log(_ascii(line))
     return ok
 

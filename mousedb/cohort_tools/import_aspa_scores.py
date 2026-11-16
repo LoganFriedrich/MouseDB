@@ -281,6 +281,11 @@ def import_cohort(letter: str, apply: bool = False) -> dict:
                      imported=imported,
                      warnings=(warnings + imp.warnings + rec["warnings"])[:50],
                      error=("animal records not imported: %s" % rec["error"]) if rec["error"] else None)
+        # An ODC tab left as it was (it read as empty while records are stored)
+        # is reported with the refusals, as on every other route: it fails
+        # the import (sheet_sync.import_succeeded, and main's exit code).
+        from ..sheet_sync import _report_kept_tabs
+        _report_kept_tabs(entry, rec, frozen=True)
     except Exception as e:
         import traceback
         entry.update(success=False, error="%s: %s" % (type(e).__name__, e),
@@ -314,9 +319,13 @@ def main(argv=None) -> int:
             e.get("parsed_trays", "-"), e.get("parsed_pellets", "-"),
             e.get("imported") or e.get("error"),
             "  [%d warning(s)]" % len(e["warnings"]) if e.get("warnings") else ""))
+        from ..sheet_sync import sync_refused, _ascii
+        refused = sync_refused(e)
+        for x in refused:
+            print("      [!] %s" % _ascii(x))
         for w in (e.get("warnings") or [])[:5]:
-            print("      %s" % w)
-        ok = ok and bool(e.get("success"))
+            print("      %s" % _ascii(w))
+        ok = ok and bool(e.get("success")) and not refused
     if not args.apply:
         print("(dry run -- nothing written; re-run with --apply)")
     return 0 if ok else 1

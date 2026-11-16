@@ -323,3 +323,52 @@ def test_a_cohort_read_on_a_guess_is_told_to_pin_not_to_look_for_a_broken_sheet(
         "sheet_sync": {"refused": ["NOT SYNCED any table: 2 files match"]}}]},
         log=lines.append)
     assert "pin one" in lines[-1] and "read as broken" not in lines[-1]
+
+
+def test_a_letter_cohorts_kept_odc_tab_fails_the_full_import(invented, monkeypatch, tmp_path):
+    """WHY: the full import's pass over the letter cohorts' ODC tabs ignored a
+    tab kept as it was, so it printed OK and the run succeeded."""
+    import mousedb.animal_records as ar
+    import mousedb.database as dbmod
+    import mousedb.importers as imp
+
+    class Fake:
+        db = None
+
+        def import_cohort_file(self, *a, **k):
+            return {"success": True, "imported": {}, "warnings": [], "errors": []}
+    monkeypatch.setattr(imp, "ExcelImporter", lambda *a, **k: Fake())
+    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda *a, **k: ["K"])
+    monkeypatch.setattr(cs, "find_aspa_sheet", lambda *a, **k: tmp_path / "K.xlsx")
+    monkeypatch.setattr(dbmod, "get_db", lambda *a, **k: "db")
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
+        "records": 0, "warnings": [], "error": None,
+        "kept": [{"tab": "ODC", "why": "the 'ODC' tab read as holding no animal's details"}]})
+    r = ss.import_cohorts(None)
+    lines = []
+    assert ss.print_import_result(r, log=lines.append) is False
+    assert any("[!] NOT SYNCED animal details 'ODC'" in x for x in lines)
+    assert "1 NOT SYNCED (ASPA_11)" in lines[-1]
+
+
+def test_the_letter_cohort_score_import_reports_a_kept_odc_tab(monkeypatch, tmp_path, capsys):
+    import mousedb.animal_records as ar
+    import mousedb.cohort_sheets as sheets
+    import mousedb.database as dbmod
+    from mousedb.cohort_tools import import_aspa_scores as ias
+
+    book = tmp_path / "K.xlsx"
+    book.write_bytes(b"x")
+    monkeypatch.setattr(sheets, "find_aspa_sheet", lambda *a, **k: book)
+    monkeypatch.setattr(sheets, "aspa_data_dir", lambda *a, **k: tmp_path)
+    monkeypatch.setattr(dbmod, "DEFAULT_LOG_PATH", None)   # never the real log folder
+    scratch = dbmod.init_database(tmp_path / "t.db")
+    monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: scratch)
+    monkeypatch.setattr(ias, "parse_workbook", lambda *a, **k: [])
+    monkeypatch.setattr(ar, "sync_cohort", lambda *a, **k: {
+        "records": 0, "warnings": [], "error": None,
+        "kept": [{"tab": "ODC", "why": "the 'ODC' tab read as holding no animal's details"}]})
+    e = ias.import_cohort("K", apply=False)
+    assert any("animal details 'ODC'" in x for x in ss.sync_refused(e))
+    assert ias.main(["--cohort", "K"]) == 1
+    assert "[!] NOT SYNCED animal details 'ODC'" in capsys.readouterr().out

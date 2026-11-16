@@ -598,6 +598,14 @@ with `mousedb-sheets import --cohort <cohort> --allow-large-removal`: a tab
 that reads as empty then has its details replaced by none, and a tab that is
 gone has its stored details removed.
 
+On a letter workbook (the `ODC` tab, refreshed by **Import all sheets** and
+by the ASPA score import) a kept tab is reported the same way -- a
+`[!] NOT SYNCED animal details 'ODC'` line under that cohort's
+`animal_records` line, `N NOT SYNCED (...)` in the closing line, and a failed
+run (`mousedb-import-aspa-scores` exits with 1). Those workbooks are frozen,
+so there is no "on purpose" here: check that the workbook opens and that its
+`ODC` tab still has its `Animal ID` header row; the next import then syncs it.
+
 ### Where the warnings appear, and what "[N warnings]" means
 
 | Where | What you see |
