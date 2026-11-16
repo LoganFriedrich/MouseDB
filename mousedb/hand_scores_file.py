@@ -70,6 +70,18 @@ a temporary name and renamed, so a reader never sees half a file; the scores
 file is renamed first and the manifest, carrying its hash, second. A rename
 that Windows refuses because a reader has the file open at that instant is
 retried for up to ten seconds before the write counts as failed.
+
+ONE WRITER AT A TIME. The whole write -- reading the previous manifest,
+reading the database, both temporary files and both renames -- happens while
+holding a lock file beside the scores file (WRITE_LOCK_NAME, the same kind of
+lock as the database-task lock: a crashed holder's lock is broken, a running
+holder's never). A second writer (a button import finishing while the nightly
+folder import does) waits for it. WHY: several routes write these files. Two
+writes that overlapped could each start from the same previous manifest, and
+the one that finished last dropped the cohorts the other had just added to
+sheets_seen -- the failure sheets_seen exists to prevent; or both wrote the
+same temporary file, leaving a scores file that does not match the hash in the
+manifest beside it, so the reaching pipeline held videos until the next write.
 """
 from __future__ import annotations
 
@@ -85,6 +97,9 @@ from typing import Dict, Optional
 
 FILE_NAME = "hand_pellet_scores.csv"
 MANIFEST_NAME = "hand_pellet_scores.json"
+# The lock one write holds from start to finish (see ONE WRITER AT A TIME);
+# task_mutex names the file ".<name>.task.lock", in the output folder.
+WRITE_LOCK_NAME = "hand_pellet_scores_write"
 COLUMNS = ["video_key", "pellet", "score", "subject_id", "cohort_id", "project",
            "session_date", "tray"]
 
@@ -240,20 +255,41 @@ def _sheets_seen(previous, now) -> Optional[list]:
     return sorted(set(previous or []) | set(now))
 
 
+def write_lock(dest: Path):
+    """The held lock one write keeps from start to finish (see ONE WRITER AT A
+    TIME), as a context manager. It lives in ``dest`` -- beside the files it
+    guards, so every writer of those files finds the same lock whatever its
+    configuration says, and a test writing into a temporary folder locks only
+    that folder."""
+    from .task_mutex import TaskMutex
+    return TaskMutex(WRITE_LOCK_NAME, base_dir=dest,
+                     label="the hand-scores file lock").acquire(
+        waiting_for="another write of the hand-scores file")
+
+
 def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print,
           full_run: bool = False, sheets_seen: Optional[list] = None) -> dict:
-    """Write the scores file and its manifest. Reads the database under the
-    cross-task mutex (a short read). ``full_run``: this follows an import of
-    every sheet in the folder (sets full_import_at; otherwise the previous
-    value is kept). ``sheets_seen``: the cohorts this import found in the
-    configured sheets folder; they are ADDED to the previous list, never
-    replace it (see sheets_seen in the module docstring). None adds nothing.
-    Returns the manifest."""
+    """Write the scores file and its manifest, as the only writer for the
+    whole write (write_lock). Reads the database under the cross-task mutex
+    (a short read). ``full_run``: this follows an import of every sheet in
+    the folder (sets full_import_at; otherwise the previous value is kept).
+    ``sheets_seen``: the cohorts this import found in the configured sheets
+    folder; they are ADDED to the previous list, never replace it (see
+    sheets_seen in the module docstring). None adds nothing. Returns the
+    manifest."""
     from .config import require
-    from .task_mutex import hold
     db_file = Path(db_file) if db_file else require("db_path")
     dest = Path(dest) if dest else out_dir()
     dest.mkdir(parents=True, exist_ok=True)
+    with write_lock(dest):
+        return _write_locked(db_file, dest, log, full_run, sheets_seen)
+
+
+def _write_locked(db_file: Path, dest: Path, log, full_run: bool,
+                  sheets_seen: Optional[list]) -> dict:
+    """write(), with the write lock held: the previous manifest is read under
+    it, so no other write can land between that read and this rename."""
+    from .task_mutex import hold
     # Read first: a manifest that cannot be read stops the write before
     # either file is replaced (see _previous_manifest).
     previous = _previous_manifest(dest / MANIFEST_NAME)

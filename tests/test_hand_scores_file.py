@@ -316,3 +316,60 @@ def test_the_import_records_that_its_scores_were_saved_when_the_details_fail(tmp
     line = json.loads((tmp_path / "ledger.jsonl").read_text().splitlines()[-1])
     assert line["scores_saved"] is True
     assert hsf._last_successful_imports() == {"CNT_77": line["finished"]}
+
+
+def test_two_overlapping_writes_each_keep_the_cohort_the_other_added(tmp_path, monkeypatch):
+    """WHY: several import routes rewrite these files, and two can finish at
+    the same moment (a button import during the nightly folder import). Each
+    write used to read the previous manifest before taking any lock, so the
+    write that finished last started from the list as it was before the other
+    -- and dropped the cohort the other had just added to sheets_seen. The
+    whole write is now one writer at a time.
+
+    Writer A reads the database slowly; writer B starts while A is inside its
+    write. B must wait for A, then start from A's manifest."""
+    import hashlib
+    import threading
+    w = _scratch_writer(tmp_path, monkeypatch)
+    w(sheets_seen=["PROJA_70"])
+    monkeypatch.setattr(task_mutex, "POLL_SECONDS", 0.05)
+
+    a_reading, b_done = threading.Event(), threading.Event()
+    real_read = hsf._read_rows
+
+    def read_rows(db_file, q):
+        if threading.current_thread().name == "writer-a":
+            a_reading.set()
+            # Give B every chance to write while A is inside its write. With
+            # the write lock B cannot, and A goes on after the timeout.
+            b_done.wait(timeout=3)
+        return real_read(db_file, q)
+
+    monkeypatch.setattr(hsf, "_read_rows", read_rows)
+    errors = []
+
+    def run(name, seen, after=None):
+        try:
+            if after is not None:
+                after.wait(timeout=10)
+            w(sheets_seen=seen)
+        except Exception as e:          # pragma: no cover - reported below
+            errors.append((name, e))
+        finally:
+            if name == "writer-b":
+                b_done.set()
+
+    a = threading.Thread(target=run, name="writer-a", args=("writer-a", ["PROJA_71"]))
+    b = threading.Thread(target=run, name="writer-b",
+                         args=("writer-b", ["PROJA_72"], a_reading))
+    a.start()
+    b.start()
+    a.join(30)
+    b.join(30)
+    assert not errors
+    out = tmp_path / "out"
+    m = json.loads((out / hsf.MANIFEST_NAME).read_text(encoding="utf-8"))
+    assert m["sheets_seen"] == ["PROJA_70", "PROJA_71", "PROJA_72"]
+    # And the scores file beside it is the one the manifest names.
+    assert m["scores_sha256"] == hashlib.sha256((out / hsf.FILE_NAME).read_bytes()).hexdigest()
+    assert not list(out.glob("*.tmp"))

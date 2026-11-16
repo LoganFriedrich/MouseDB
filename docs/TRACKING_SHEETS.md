@@ -699,6 +699,16 @@ the replacement; the import tries again for up to ten seconds before it
 reports the write as failed. Close the file if the `FAIL hand scores` line
 below keeps appearing.
 
+Only one import writes the two files at a time. If two imports finish
+together (for example a Cohort Setup button import while the nightly import
+of every sheet is running), the second waits until the first has written
+both files, then starts from what the first left -- so neither drops a cohort
+the other has just added to the list of cohorts with a sheet. While a write
+is under way a small file named `.hand_pellet_scores_write.task.lock` sits
+beside the two files; it is removed when the write ends. Leave it alone: if
+an import was stopped part-way and left it behind, the next write sees that
+the program holding it has gone and takes it over by itself.
+
 The list of cohorts with a sheet is carried over from the `.json` already
 there, so a `.json` that cannot be read is never taken as an empty one (that
 would drop cohorts from the list). A read refused for a moment is retried the

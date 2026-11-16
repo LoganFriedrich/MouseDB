@@ -117,7 +117,11 @@ checked-in code, not what's planned.
     both renames are retried briefly while the file is open elsewhere. A
     manifest that cannot be read (after retries) or is damaged fails the
     write and leaves both files as they were, instead of being taken as
-    empty and shrinking that list.
+    empty and shrinking that list. The whole write (manifest read, database
+    read, both files) is done by one writer at a time, under a lock file
+    beside them, so two imports finishing together cannot drop each other's
+    cohorts from that list or leave a scores file that does not match its
+    manifest's hash.
 - `mousedb import-reaches` reports every video that has rows in the database
   but no results file in the pipeline and is not in a review queue -- in its
   output (before the summary line), in `logs/reach_rows_without_file.json`
