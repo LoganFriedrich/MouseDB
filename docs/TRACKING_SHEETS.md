@@ -632,7 +632,9 @@ never depends on mousedb); it reads one file mousedb writes:
   (an import whose scores were saved counts here even when a later step of
   it failed -- copying the animal details, for example -- because the scores
   are in; each line of the import history says so as `"scores_saved": true`,
-  and the cohort still shows `FAIL` until that step works); which cohorts the
+  and the cohort still shows `FAIL` until that step works -- while an import
+  of a file read on a guess, with several files matching the cohort and none
+  pinned, does NOT count, see "When several files match a cohort"); which cohorts the
   sheets folder has a sheet for; and when the last import of EVERY sheet
   finished. The pipeline uses these to tell "the sheet has not been imported
   since this video was ready" (the video waits) from "it has been, and has no
@@ -761,8 +763,17 @@ The animal details are left as they were. The cohort's line says why:
 The cohort counts as NOT SYNCED, so the scheduled job's run shows as failed
 every night until a file is pinned -- on the machine that runs the scheduled
 import (pins are kept per machine login, see below). The same holds when a
-pin is broken (see "A broken pin"). The pellet scores the newest file adds
-still reach the reaching pipeline's hand-scores file.
+pin is broken (see "A broken pin").
+
+**What this means for the reaching pipeline.** The scores the newest file
+adds are in the database, so they are in the hand-scores file and a video
+whose session they cover is compared with them as usual. But the import does
+NOT count as the cohort's last scores import (its history line says
+`"scores_saved": false`), because the file was a guess: a draft or an old copy
+may lack a session, and the pipeline files a video whose session has no hand
+scores without the comparison once the cohort's scores count as imported --
+for good. So a video whose session is not in that file keeps waiting, listed
+as waiting, until you pin the sheet and the next import has run.
 
 To choose: press **Refresh**, select the row, press **This is the sheet**,
 pick the file from the list. That choice is called a **pin**. It is shown as

@@ -263,8 +263,16 @@ def test_several_files_and_no_pin_import_add_only_until_pinned(invented, monkeyp
     assert built[-1].sync_blocked and "2 files match" in built[-1].sync_blocked
     assert copied == []                                   # animal details left alone
     assert "pin" in c[ss.LEFT_UNCHANGED]
-    assert c["scores_saved"] is True
+    # Not counted as the cohort's scores import: the file was a guess, and the
+    # reaching pipeline would file a video whose session it lacks without the
+    # comparison. Its ledger line says so and the hand-scores file does not
+    # move the cohort's last scores import.
+    from mousedb import hand_scores_file as hsf
+    assert c["scores_saved"] is False
+    assert ss._read_ledger()[-1]["scores_saved"] is False
+    assert "CNT_77" not in hsf._last_successful_imports()
 
     cs.pin_cohort_sheet("CNT_77", rival.name)
     (c,) = ss.import_cohorts(["CNT_77"])["cohorts"]
     assert built[-1].sync_blocked is None and len(copied) == 1
+    assert c["scores_saved"] is True and "CNT_77" in hsf._last_successful_imports()

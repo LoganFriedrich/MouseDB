@@ -420,7 +420,13 @@ LEFT_UNCHANGED = "animal_records_left_unchanged"
 # after it was ready has SAVED the cohort's scores. Counting only successful
 # imports there made a failure in an accessory step (the animal details) hold
 # those videos -- accessory information never holds up pellet scoring. Always
-# False for a dry run. Absent from ledger lines written before it existed;
+# False for a dry run, and False when the workbook was read on a guess (several
+# files match the cohort and none is pinned, see _unpinned_choice), although its
+# new rows were saved. WHY the guess does not count: once the cohort's scores
+# count as imported, the reaching pipeline files a video whose session has no
+# hand score WITHOUT the comparison, and filing is for good -- a draft or an old
+# copy missing that session must not decide it. Those videos wait, listed,
+# until a person pins the sheet and imports again. Absent from ledger lines written before it existed;
 # hand_scores_file then falls back on "success".
 SCORES_SAVED = "scores_saved"
 
@@ -564,7 +570,8 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
                 # The animal details follow the importer's save; they never
                 # replace the cohort's copy from a workbook it did not save.
                 kept = _not_saved_reason(r, False)
-                saved = kept is None
+                # Not when the file was a guess: see SCORES_SAVED.
+                saved = kept is None and not sync_blocked
                 kept = kept or _blocked_reason(sync_blocked, False)
                 copying = not kept
                 rec = (_animal_records(imp, cohort_id, sheet, "cohort", False, r,
