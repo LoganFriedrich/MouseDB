@@ -932,7 +932,14 @@ was edited. Import from the sheets folder when you can.
 ### Import or Replace (Cohort Setup tab)
 
 **1. Cohort Setup** -> **Import from Excel...** -> pick a cohort's workbook.
-A preview comes first and writes nothing: what would be imported, the first
+A file the folder route would never read -- a copy inside a snapshot or
+archive folder, a "Copy of ...", an export written from the sheet -- is
+refused at once with a `REFUSED: ...` box saying why and what to do instead,
+before any preview, for Import and Replace alike (the same rule as
+"Importing one named file" above). WHY Replace too: it deletes what earlier
+imports wrote and imports again from the file you picked, so an old copy
+would put old values back over good ones.
+Otherwise a preview comes first and writes nothing: what would be imported, the first
 warnings, and -- for a cohort already in the database -- what a Replace would
 remove and keep. If the preview shows ERRORS, only *Close* is offered.
 Otherwise choose:

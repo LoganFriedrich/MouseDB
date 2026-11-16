@@ -4682,6 +4682,17 @@ def replace_cohort_from_sheet(db, sheet_path, cohort_id, start_date=None,
         the importer raising). The transaction has been rolled back by then, so
         nothing has changed.
     """
+    # A file the folder route would never read (a snapshot or archive copy, a
+    # "Copy of ...", a lock file, an export written FROM the sheet) is refused
+    # before anything is opened, exactly as Import refuses it
+    # (sheet_sync.refuse_sheet_file). WHY: Replace deletes what earlier imports
+    # wrote and re-imports from this file, so an old copy here would put old
+    # values back over good ones -- the same harm Import's refusal prevents.
+    from ..sheet_sync import refuse_sheet_file
+    refusal = refuse_sheet_file(sheet_path)
+    if refusal:
+        raise ValueError("%s was not used to replace %s: %s. Instead, %s"
+                         % (Path(sheet_path).name, cohort_id, refusal[0], refusal[1]))
     if importer_factory is None:
         from ..importers import ExcelImporter as importer_factory
     if hold is None:
@@ -5361,6 +5372,19 @@ class CohortSetupTab(QWidget):
             "Excel files (*.xlsx *.xls)"
         )
         if not path:
+            return
+
+        # Refused before the preview, for Import and Replace alike: a file
+        # neither button would use must not be previewed as if it could be
+        # (sheet_sync.refuse_sheet_file says why each kind is refused).
+        from ..sheet_sync import refuse_sheet_file
+        refusal = refuse_sheet_file(path)
+        if refusal:
+            QMessageBox.warning(
+                self, "Import",
+                f"REFUSED: {Path(path).name} cannot be imported or used to replace "
+                f"a cohort:\n\n{refusal[0]}.\n\nInstead, {refusal[1]}"
+            )
             return
 
         importer = ExcelImporter(self.db)

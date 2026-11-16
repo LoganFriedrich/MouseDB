@@ -76,6 +76,10 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Cohort Setup's **Replace** refuses an archive or snapshot copy, a "Copy of
+  ..." or an export, as Import already did, and the refusal is shown before the
+  preview. Before, Replace used such a file and put its old values back over the
+  database's.
 - Where Is My Data: an analysis with no approved method is shown as "no approved
   method" instead of every current output counted as stale, and an analysis
   whose record the tool set aside as damaged says so on its line ("[!] N damaged

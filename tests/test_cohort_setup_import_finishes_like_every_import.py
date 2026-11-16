@@ -338,3 +338,37 @@ def test_the_import_button_refuses_an_archive_copy(app_mod, world, monkeypatch, 
     app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
     assert world.details == [] and world.hand_scores == []
     assert any("REFUSED" in text for _title, text in _Box.SHOWN)
+
+
+def test_the_replace_button_refuses_an_archive_copy_before_any_preview(
+        app_mod, world, monkeypatch, tmp_path):
+    """Before: Replace never went through the refusal, so an archive copy was
+    previewed and then replaced the cohort's rows with its old values."""
+    old = tmp_path / "archive" / SHEET
+    old.parent.mkdir()
+    old.write_bytes(b"x")
+    monkeypatch.setattr(app_mod.QFileDialog, "getOpenFileName",
+                        staticmethod(lambda *a, **k: (str(old), "")))
+    replaced = []
+    monkeypatch.setattr(app_mod, "replace_cohort_from_sheet",
+                        lambda *a, **k: replaced.append(a) or {"success": True, "warnings": []})
+    _Box.CHOICE = "Replace"
+    app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
+    assert replaced == []
+    assert world.details == [] and world.hand_scores == []
+    assert len(_Box.SHOWN) == 1 and "REFUSED" in _Box.SHOWN[0][1]
+
+
+def test_replace_itself_refuses_an_archive_copy_and_changes_nothing(app_mod, world, tmp_path):
+    """The refusal sits in replace_cohort_from_sheet too, so no caller can
+    replace a cohort from a copy the folder route would never read."""
+    old = tmp_path / "archive" / SHEET
+    old.parent.mkdir()
+    old.write_bytes(b"x")
+    cleared = []
+    with pytest.raises(ValueError, match="was not used to replace"):
+        app_mod.replace_cohort_from_sheet(
+            world.db, old, COHORT,
+            importer_factory=lambda db: cleared.append("built") or None,
+            hold=lambda **k: cleared.append("locked") or contextlib.nullcontext())
+    assert cleared == []
