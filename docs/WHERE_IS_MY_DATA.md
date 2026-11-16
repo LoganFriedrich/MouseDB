@@ -762,8 +762,8 @@ and `--refresh-approved` need a MouseBrain whose analysis registry keeps
 exist and the date shows as unknown (below) -- update MouseBrain first. Other things you may
 see in that place:
 
-- `approved method as recorded at an unknown date (registry written before
-  the date was kept)` -- the registry was last written by an older MouseBrain
+- `approved method as recorded at an unknown date -- registry written
+  before the date was kept` -- the registry was last written by an older MouseBrain
   that did not keep the date. Treat the count with the same caution;
   refreshing it as above adds the date.
 - `no approved method` -- no approved method is declared for this analysis,

@@ -556,7 +556,7 @@ class TestDataStatusLines:
         assert rows and rows[0]["analysis_name"] == "A"
         line = ds.analysis_lines(rows)[0]
         assert line == ("Analysis A: 5 current, 2 stale vs approved (approved method as recorded "
-                        "at an unknown date (registry written before the date was kept)), "
+                        "at an unknown date -- registry written before the date was kept), "
                         "1 invalidated, imported 2026-08-28T10:00:00")
 
     def test_lines_say_no_approved_method_and_name_set_aside_manifests(self):
@@ -572,7 +572,7 @@ class TestDataStatusLines:
         assert b == "Analysis B: 3 current, no approved method, 0 invalidated, imported t"
         assert "? stale" not in b
         assert c.startswith("Analysis C: 1 current, 0 stale vs approved (approved method as recorded "
-                            "at an unknown date (registry written before the date was kept)), "
+                            "at an unknown date -- registry written before the date was kept), "
                             "0 invalidated, imported t [!] 1 damaged manifest set aside")
 
 
@@ -621,7 +621,7 @@ class TestHeldAnalysisShowsItsReason:
     """WHY: an analysis whose registry.json was not read this run (missing,
     unlistable, unreadable) gets a manifest row with no counts. Its status
     line used to fall through to "approved method as recorded at an unknown
-    date (registry written before the date was kept)", blaming an old
+    date -- registry written before the date was kept", blaming an old
     MouseBrain, while the real reason sat only in the manifest's problems,
     which the Where Is My Data tab never showed."""
 

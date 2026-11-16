@@ -158,7 +158,9 @@ checked-in code, not what's planned.
 - The "stale vs approved" count of a tissue analysis (Where Is My Data tab,
   `mousedb-data-status`, the import's own output) now shows the date the approved
   method it is judged against was recorded in MouseBrain's registry:
-  `... stale vs approved (approved method as recorded <date>)`. The manifest
+  `... stale vs approved (approved method as recorded <date>)`, or `... as
+  recorded at an unknown date -- registry written before the date was kept)`
+  for a registry an older MouseBrain wrote. The manifest
   row carries it as `approved_method_recorded_at`. An analysis with no
   approved method declared shows `no approved method` instead of counting
   every sample as stale.

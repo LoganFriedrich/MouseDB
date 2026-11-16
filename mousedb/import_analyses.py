@@ -474,7 +474,9 @@ def stale_phrase(row: dict) -> str:
     neither the option nor the date). Shown bare, "0 stale" after a
     change of the approved method looked like "all current" when it meant
     "judged against the old method". The date lets a person see which.
-    A registry written before MouseBrain recorded the date says so.
+    A registry written before MouseBrain recorded the date says so, after a
+    dash rather than in a second pair of brackets inside the first, which
+    read as a stray bracket on every line of an older MouseBrain's registry.
 
     A row whose registry.json was NOT read this run (``entries`` is None: the
     folder had no registry.json, could not be listed, or its registry.json
@@ -492,7 +494,7 @@ def stale_phrase(row: dict) -> str:
         return "no approved method"
     recorded = row.get("approved_method_recorded_at")
     when = (str(recorded)[:16].replace("T", " ") if recorded
-            else "at an unknown date (registry written before the date was kept)")
+            else "at an unknown date -- registry written before the date was kept")
     return "%s stale vs approved (approved method as recorded %s)" % (
         "?" if stale is None else stale, when)
 
