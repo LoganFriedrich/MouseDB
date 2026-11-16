@@ -136,14 +136,17 @@ def _write_json_atomically(p: Path, obj: Any) -> None:
     """Write ``obj`` to ``p`` so that ``p`` is always either the old file or the
     whole new one, never half of either.
 
-    WHY: the ledger is now saved DURING the run (see ``LEDGER_SAVE_SECONDS``),
-    and the scheduler ends a run that reaches its time limit wherever it is. A
-    kill in the middle of a plain write_text left a truncated file, which
-    ``load_ledger`` cannot read -- so the next run started a NEW ledger and
-    re-imported every file. The new content goes to a temporary file beside
-    the ledger first and is swapped in whole with os.replace. On Windows the
+    WHY: the scheduler ends a run that reaches its time limit wherever it is,
+    and a state file can be mid-write at that moment (the reach import saves
+    its ledger during the run, see ``import_reaches.LEDGER_SAVE_SECONDS``; the
+    analysis mirror saves its ledger and manifest once, at the end). A kill in
+    the middle of a plain write_text left a truncated file, which the next
+    run cannot read -- the reach import used to start a NEW ledger and
+    re-import every file, and the Where Is My Data tab showed a half-written
+    manifest as unreadable. The new content goes to a temporary file beside
+    the target first and is swapped in whole with os.replace. On Windows the
     swap fails while another program has the file open (the census and the
-    status tab read the ledger for a moment), so it is retried briefly."""
+    status tab read these files for a moment), so it is retried briefly."""
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(".%s.%d.tmp" % (p.name, os.getpid()))
     with open(tmp, "w", encoding="utf-8") as f:

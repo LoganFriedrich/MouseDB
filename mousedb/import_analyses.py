@@ -423,7 +423,8 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     if not (root / "exports").is_dir():
         raise FileNotFoundError(
             "no analysis registry at %s (MouseBrain has not registered any analysis yet, "
-            "or mousebrain_pipeline_root points at the wrong folder)" % root)
+            "or mousebrain_registry_root / mousebrain_pipeline_root points at the wrong "
+            "folder: see mousedb config --show)" % root)
     folders = list_analysis_folders(root)   # raises when exports/ cannot be listed
     ledger = load_ledger()
     now = datetime.now()
