@@ -138,10 +138,23 @@ imports of that cohort's sheet wrote:
 | Table | A row is the same row when it has the same ... | Compared and corrected | Removed when |
 |---|---|---|---|
 | pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
-| weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams | that animal and date has no weight in the sheet any more |
+| weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams, and % of body weight (see below) | that animal and date has no weight in the sheet any more |
 | ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, food put in and taken out, food eaten | the row is gone |
 | surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes; for a tracing injection virus, titre, volume, target, weight, survived) | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
 
+- **The % of body weight on a weight row** is taken from the weight's own tab
+  when that tab has a percentage column (`Weight %` on `1_Weight`,
+  `Weight_Pct_Baseline` on the long `3d`/`3e_Weights` layout, `% body weight`
+  on `3a_Manual_Ramp`), and otherwise from the `Weight %` column of
+  `3b_Manual_Tray` -- the same order the import stores it in. A percentage
+  corrected in the sheet is corrected in the database. `87` and `0.87` are the
+  same value (a number above 2 is read as a percent), so a percentage typed in
+  the other unit is not a change. An emptied percentage cell leaves the stored
+  value as it is, because it may have come from the other tab. Percentages
+  count toward the "more than 25% of the rows overwritten" guard below like
+  any other value: if you correct the percentage on many rows at once, the
+  import refuses the weights sync (`NOT SYNCED weights`) until you import that
+  cohort with `--allow-large-removal` after checking the sheet.
 - A cell that holds something that is not a value (`x`, `?`, `n/a` where a
   score belongs) is **not** an empty cell: the stored value is kept, and the
   usual warning names the cell.

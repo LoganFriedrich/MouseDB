@@ -482,3 +482,68 @@ def test_a_death_copied_in_with_a_removed_contusion_is_undone(tmp_path):
         assert a.is_active == 1 and a.date_of_death is None
     assert r["sheet_sync"]["subjects"]["death_undone"][0]["subject_id"] == ANIMALS[0]
     assert "1 death undone" in sheet_sync.sync_summary(r)
+
+
+# --------------------------------------------------------------------------
+# the weight percentage
+# --------------------------------------------------------------------------
+
+def _with_percent(path, percents):
+    """The 3d_Weights tab with a Weight_Pct_Baseline column: {row number: value}."""
+    wb = openpyxl.load_workbook(path)
+    w = wb["3d_Weights"]
+    w["D1"] = "Weight_Pct_Baseline"
+    for row, value in percents.items():
+        w["D%d" % row] = value
+    wb.save(path)
+    return path
+
+
+def _percent(db, animal, day):
+    with db.session() as s:
+        return s.query(Weight).filter_by(subject_id=animal, date=day).one().weight_percent
+
+
+def test_a_weight_percentage_changed_in_the_sheet_is_changed(tmp_path):
+    """WHY: the sync compared the grams only, so a percentage corrected in the
+    sheet kept its old value in the database and every export."""
+    db = _db(tmp_path)
+    _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 0.91, 3: 0.92}))
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 0.91
+
+    r = _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 0.85, 3: 0.92}))
+
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 0.85
+    assert r["sheet_sync"]["weights"]["changed"] == [{
+        "subject_id": ANIMALS[0], "date": DAYS[0].isoformat(),
+        "values": {"weight_percent": {"old": 0.91, "new": 0.85}}}]
+
+
+def test_a_percentage_typed_as_a_percent_is_the_same_as_its_fraction(tmp_path):
+    """87 and 0.87 are one value in two units: not a change to write."""
+    db = _db(tmp_path)
+    _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 87}))
+    r = _import(db, _with_percent(_workbook(_sheet(tmp_path)), {2: 0.87}))
+    assert "weights" not in (r.get("sheet_sync") or {})
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 87
+
+
+def test_the_tray_tabs_percentage_is_kept_in_step(tmp_path):
+    """The tray tab's 'Weight %' fills a weight its own tab gave no percentage
+    for; a correction there now reaches the stored row too."""
+    def tray_percent(path, value):
+        wb = openpyxl.load_workbook(path)
+        ws = wb["3b_Manual_Tray"]
+        col = ws.max_column + 1
+        ws.cell(row=1, column=col, value="Weight %")
+        for r in range(2, ws.max_row + 1):
+            if ws.cell(row=r, column=1).value is not None:
+                ws.cell(row=r, column=col, value=value)
+        wb.save(path)
+        return path
+
+    db = _db(tmp_path)
+    _import(db, tray_percent(_workbook(_sheet(tmp_path)), 0.9))
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 0.9
+    _import(db, tray_percent(_workbook(_sheet(tmp_path)), 0.8), allow=True)
+    assert _percent(db, ANIMALS[0], DAYS[0]) == 0.8

@@ -621,7 +621,10 @@ class ExcelImporter:
                 self.warnings.append(f"Invalid weight for {subject_id} on {date_val}: {msg}")
                 self._seen('weights', (subject_id, date_val), None)
                 continue
-            self._seen('weights', (subject_id, date_val), {'weight_grams': weight_val})
+            self._seen('weights', (subject_id, date_val), {
+                'weight_grams': weight_val,
+                # The percentage this row stores (see _weights_as_the_sheet_says).
+                'weight_percent': self._parse_float(row.get('Weight %'))})
 
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
@@ -779,8 +782,10 @@ class ExcelImporter:
 
         It UPDATES existing rows rather than inserting: by the time this runs the
         weight row exists, put there by the grid importer. A row that already has
-        a percentage is left alone, so the ramp tab's own numbers are not
-        overwritten.
+        a percentage is left alone here, so the ramp tab's own numbers are not
+        overwritten. A percentage that CHANGES in the sheet is brought in step
+        afterwards by the sheet-wins sync (_sync_table, through
+        _weights_as_the_sheet_says), for which this records the tray's numbers.
         """
         if '3b_Manual_Tray' not in xl.sheet_names:
             return
@@ -837,6 +842,10 @@ class ExcelImporter:
             # is converted rather than stored as an 8700%% animal.
             if pct > 2:
                 pct = pct / 100.0
+            # What the tray tab says, for the sheet-wins sync of this weight's
+            # percentage (_weights_as_the_sheet_says): the tray's number is the
+            # one stored when the row's own tab gave none.
+            self.__dict__.setdefault('_tray_weight_percent', {})[key] = pct
 
             existing = session.query(Weight).filter_by(
                 subject_id=subject_id, date=date_val).first()
@@ -891,7 +900,10 @@ class ExcelImporter:
                 self.warnings.append(f"Invalid weight for {subject_id} on {date_val}: {msg}")
                 self._seen('weights', (subject_id, date_val), None)
                 continue
-            self._seen('weights', (subject_id, date_val), {'weight_grams': weight_val})
+            weight_pct = self._parse_float(row.get('Weight_Pct_Baseline'))
+            # With the percentage this row stores (see _weights_as_the_sheet_says).
+            self._seen('weights', (subject_id, date_val),
+                       {'weight_grams': weight_val, 'weight_percent': weight_pct})
 
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
@@ -905,7 +917,6 @@ class ExcelImporter:
             if existing:
                 continue
 
-            weight_pct = self._parse_float(row.get('Weight_Pct_Baseline'))
             notes_val = row.get('Notes')
             notes_str = str(notes_val) if pd.notna(notes_val) else None
 
@@ -988,7 +999,8 @@ class ExcelImporter:
                     weight_val = float(weight_val)
                     valid, _ = validate_weight(weight_val)
                     self._seen('weights', (subject_id, date_val),
-                               {'weight_grams': weight_val} if valid else None)
+                               {'weight_grams': weight_val, 'weight_percent': weight_pct}
+                               if valid else None)
                     if valid:
                         # Also save to weights table for compatibility
                         existing_weight = session.query(Weight).filter_by(
@@ -1553,6 +1565,60 @@ class ExcelImporter:
         except (TypeError, ValueError):
             return str(a).strip() == str(b).strip()
 
+    @classmethod
+    def _same_field(cls, field: str, a, b) -> bool:
+        """_same_value, except that a weight percentage is compared in one
+        unit. WHY: the tray tab's percentage is stored as a fraction (0.87;
+        a number above 2 is read as a percent and divided by 100), while the
+        weight and ramp tabs' own percentage columns are stored as typed, so
+        the database holds both 0.87 and 87 for the same thing. Compared as
+        typed, every such row would read as changed and be rewritten."""
+        if field in ('weight_percent', 'weight_percent_baseline'):
+            a, b = cls._as_fraction(a), cls._as_fraction(b)
+        return cls._same_value(a, b)
+
+    @staticmethod
+    def _as_fraction(v):
+        """A percentage as a fraction: above 2 it was typed as a percent."""
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return v
+        return x / 100.0 if x > 2 else x
+
+    def _weights_as_the_sheet_says(self, seen: Dict) -> Dict:
+        """The weights the sheet holds, with each one's percentage as the
+        import STORES it, for the sheet-wins sync.
+
+        WHY: until this was added the sync compared the grams only, so a
+        percentage corrected in the sheet kept its old value in the database
+        (and the exports) for good. The percentage reaches a weight row two
+        ways: the tab that writes the row stores its own percentage column
+        when it has one (1_Weight 'Weight %', the long 3d/3e layout's
+        'Weight_Pct_Baseline', the ramp tab's '% body weight'), and when that
+        gives none, the tray tab's 'Weight %' fills it in
+        (_import_weight_percent_from_tray). So the sheet's value for one key
+        is the first reading's own percentage, else the tray's -- the same
+        order. A key for which no tab gives a percentage carries none here,
+        so an emptied percentage cell leaves the stored one as it is (it may
+        have come from the other tab)."""
+        tray = self.__dict__.get('_tray_weight_percent', {})
+        out = {}
+        for key, said in seen.items():
+            if not said:
+                out[key] = said
+                continue
+            said = dict(said)
+            pct = said.get('weight_percent')
+            if pct is None:
+                pct = tray.get(key)
+            if pct is None:
+                said.pop('weight_percent', None)
+            else:
+                said['weight_percent'] = pct
+            out[key] = said
+        return out
+
     # table -> (model, date column, key of a stored row, description of a key)
     _SYNCED_TABLES = {
         'weights': (Weight, 'date',
@@ -1583,9 +1649,12 @@ class ExcelImporter:
         if not ours:
             return
 
+        if table == 'weights':
+            seen = self._weights_as_the_sheet_says(seen)
+
         def fields_of(r):
             if table == 'weights':
-                return ('weight_grams',)
+                return ('weight_grams', 'weight_percent')
             if table == 'ramp_entries':
                 return ('body_weight_grams', 'weight_percent_baseline',
                         'tray_start_grams', 'tray_end_grams', 'food_consumed_grams')
@@ -1595,7 +1664,7 @@ class ExcelImporter:
             if r.entered_by == self.SHEET_IMPORT_MARK:
                 continue
             said = seen.get(key_of(r))
-            if said and any(f in said and not self._same_value(getattr(r, f), said[f])
+            if said and any(f in said and not self._same_field(f, getattr(r, f), said[f])
                             for f in fields_of(r)):
                 self._warn_once(
                     ('hand-kept', table, key_of(r)),
@@ -1614,7 +1683,7 @@ class ExcelImporter:
             if said is None:
                 continue  # present, but unreadable: left as it is
             diff = {f: (getattr(r, f), said[f]) for f in fields_of(r)
-                    if f in said and not self._same_value(getattr(r, f), said[f])}
+                    if f in said and not self._same_field(f, getattr(r, f), said[f])}
             if diff:
                 changed.append((r, diff))
 
