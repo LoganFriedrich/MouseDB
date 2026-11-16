@@ -85,10 +85,21 @@ checked-in code, not what's planned.
     only into the configured sheets folder.
   - With several files matching a cohort and none pinned, the import only
     adds for that cohort and leaves its animal details as they were; the
-    cohort is NOT SYNCED until a file is pinned.
+    cohort is NOT SYNCED until a file is pinned. Nothing stored is changed,
+    moved or removed on such a guess -- the year-typo and weekend re-dating
+    of scores, the removal of a copied virus batch, the replacement of a
+    placeholder note or start, and a death from `Survived` are each HELD
+    BACK and listed -- and the import does not count as the cohort's scores
+    import for the hand-scores file (`scores_saved` false), so videos whose
+    session the guessed file lacks wait instead of being filed unchecked.
+    The closing line tells the person to pin a file.
   - The animal details replace only the tabs really read; a tab that reads as
-    empty while the database holds some of its details, or whose table the
-    import refused, is left as it was and reported with the refusals.
+    empty, or is missing or renamed, while the database holds some of its
+    details, or whose table the import refused, is left as it was and
+    reported with the refusals (with `--allow-large-removal` a gone tab's
+    details are removed). The letter workbooks' `ODC` pass and
+    `mousedb-import-aspa-scores` report a kept tab and fail too, and Cohort
+    Setup's Replace no longer says "Import complete" over one.
   - A weight's percentage of body weight is corrected when the sheet's
     changes (compared in one unit: 87 and 0.87 are the same).
   - Each import-history line records `scores_saved`; the hand-scores file
