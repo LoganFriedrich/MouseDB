@@ -767,8 +767,17 @@ see in that place:
   before the date was kept` -- the registry was last written by an older MouseBrain
   that did not keep the date. Treat the count with the same caution;
   refreshing it as above adds the date.
-- `no approved method` -- no approved method is declared for this analysis,
-  so none of its samples is compared or counted as stale.
+- `no approved method` in place of the stale count -- the analysis is one no
+  method approval judges (MouseBrain records it with no approved method, for
+  example an orientation check). There is nothing for its outputs to be stale
+  against, so none is counted as stale, and no date is shown.
+- `[!] N damaged manifest(s) set aside by the tool ...` at the end of the
+  counts -- MouseBrain found this analysis's record damaged, set the damaged
+  copy aside for a person and started a fresh one. Until a person repairs it,
+  the samples recorded only in the damaged copy are not counted, so the
+  numbers are lower than they should be. Repair it on the MouseBrain side (its
+  registry documentation says how); the note goes away at the next import
+  after that.
 - `? current, ? stale vs approved (registry not read this run), ? invalidated,
   imported ... -- [FAIL] <the reason>` -- this run could not read the
   analysis's `registry.json`, so it has no counts to show. The part after
@@ -811,19 +820,6 @@ see in that place:
   stopped. It never treats that as "no run stopped". Press **Refresh**; if
   the line stays, check the share, then run `mousedb import-analyses` (or
   press **Update the database now**): a run that finishes removes the file.
-
-Two cases read differently on that line:
-
-- **no approved method** in place of the stale count: the analysis is one no
-  method approval judges (MouseBrain records it with no approved method, for
-  example an orientation check). There is nothing for its outputs to be stale
-  against, so none is counted as stale.
-- **[!] N damaged manifest(s) set aside** at the end of the line: MouseBrain
-  found this analysis's record damaged, set the damaged copy aside for a person
-  and started a fresh one. Until a person repairs it, the samples recorded only
-  in the damaged copy are not counted, so the numbers are lower than they
-  should be. Repair it on the MouseBrain side (its registry documentation says
-  how); the line goes away at the next import after that.
 
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).

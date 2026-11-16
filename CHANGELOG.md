@@ -166,8 +166,7 @@ checked-in code, not what's planned.
   recorded at an unknown date -- registry written before the date was kept)`
   for a registry an older MouseBrain wrote. The manifest
   row carries it as `approved_method_recorded_at`. An analysis with no
-  approved method declared shows `no approved method` instead of counting
-  every sample as stale.
+  approved method shows no date, only `no approved method`.
 - `mousedb import-analyses` runs one at a time: it takes its own lock
   (`logs/.import-analyses.task.lock`), so the nightly task and the "Update
   the database now" button on the Where Is My Data tab (`mousedb update`)
