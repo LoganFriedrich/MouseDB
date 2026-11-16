@@ -1301,7 +1301,12 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         shown = shown[:max(show_warnings, 0)]
         for w in shown:
             log(_ascii("       - %s" % w))
-        hidden = n_warn - len(refusals) - len(shown)
+        # Count only the refusals that ARE warnings. A kept animal-details
+        # tab is reported with the refusals without being a warning
+        # (_report_kept_tabs); subtracting it too made "... and N more" too
+        # small by one per kept tab, or left the line out.
+        printed_above = sum(1 for w in (c.get("warnings") or []) if w in refusals)
+        hidden = n_warn - printed_above - len(shown)
         if hidden > 0:
             log(_ascii("       ... and %d more (all of them: mousedb-sheets import --cohort %s "
                        "--dry-run --json)" % (hidden, c.get("cohort_id"))))

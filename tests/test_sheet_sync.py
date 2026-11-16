@@ -372,3 +372,31 @@ def test_the_letter_cohort_score_import_reports_a_kept_odc_tab(monkeypatch, tmp_
     assert any("animal details 'ODC'" in x for x in ss.sync_refused(e))
     assert ias.main(["--cohort", "Z"]) == 1
     assert "[!] NOT SYNCED animal details 'ODC'" in capsys.readouterr().out
+
+
+def test_the_and_n_more_line_counts_only_refusals_that_are_warnings():
+    """WHY: a kept animal-details tab is listed with the refusals without
+    being a warning; subtracting it from the warning count hid one warning
+    per kept tab from the "... and N more" line (or dropped the line)."""
+    lines = []
+    ss.print_import_result({"cohorts": [{
+        "cohort_id": "CNT_77", "sheet_name": "Connectome_77_Animal_Tracking.xlsx",
+        "success": False, "error": "a tab was kept", "imported": {},
+        "warnings": ["NOT SYNCED weights: read as broken", "w1", "w2", "w3"],
+        "sheet_sync": {"refused": [
+            "NOT SYNCED weights: read as broken",
+            "NOT SYNCED animal details '0a_Metadata': not read"]}}]},
+        show_warnings=1, log=lines.append)
+    more = [x for x in lines if "more (all of them" in x]
+    # 4 warnings: one printed as a refusal, one shown, two hidden.
+    assert len(more) == 1 and "and 2 more" in more[0]
+
+    lines = []
+    ss.print_import_result({"cohorts": [{
+        "cohort_id": "CNT_77", "sheet_name": "Connectome_77_Animal_Tracking.xlsx",
+        "success": False, "error": "a tab was kept", "imported": {},
+        "warnings": ["w1", "w2"],
+        "sheet_sync": {"refused": [
+            "NOT SYNCED animal details '0a_Metadata': not read"]}}]},
+        show_warnings=1, log=lines.append)
+    assert any("and 1 more" in x for x in lines)
