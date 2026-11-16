@@ -852,9 +852,15 @@ button on the Where Is My Data tab (`mousedb update`) both start
 running, the second waits for it (its output says what it is waiting for),
 then runs and normally finds nothing left to copy. If it waits longer than
 the lock's usual limit (the same rules as the database jobs' lock: it keeps
-waiting while the first run is still getting somewhere), it stops with
-`[FAIL] import-analyses not run: ...`, changes nothing, and the job fails;
-run it again later. The lock is the file
+waiting while the first run is still getting somewhere; 40 minutes for the
+nightly task and a terminal, 25 for the button, `MOUSEDB_LOCK_WAIT_MINUTES`
+overrides both), it stops with `[FAIL] import-analyses not run: ...`,
+changes nothing, and the job fails; run it again later. The button also stops
+each of its steps after one hour: if `MOUSEDB_LOCK_WAIT_MINUTES` is set above
+60, a step still waiting then is stopped by the button instead, and the
+button shows `step exceeded its limit of 3600 s and was stopped` in place of
+the `[FAIL]` line. Either way nothing was changed; press the button again
+later. The lock is the file
 `<mousedb_root>/logs/.import-analyses.task.lock` while a run holds it. Do not
 delete it by hand: a lock left by a run that crashed is taken over
 automatically. A `--dry-run` writes nothing and does not wait.
