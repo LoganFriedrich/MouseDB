@@ -143,6 +143,13 @@ checked-in code, not what's planned.
     beside them, so two imports finishing together cannot drop each other's
     cohorts from that list or leave a scores file that does not match its
     manifest's hash.
+- `mousedb import-analyses`: its ledger (`logs/analysis_imports.json`) and
+  `exports/ANALYSES_MANIFEST.json` are written whole or not at all, and a
+  ledger that is there but cannot be read stops the run with a `[FAIL]` line
+  naming the file and what to do. It used to be read as empty: the run then
+  started a new ledger and could never archive a file MouseBrain withdrew.
+  The ledger reader and the atomic writer the reach import already used now
+  live in `mousedb/state_files.py`, shared by both imports.
 - `mousedb import-reaches` reports every video that has rows in the database
   but no results file in the pipeline and is not in a review queue -- in its
   output (before the summary line), in `logs/reach_rows_without_file.json`

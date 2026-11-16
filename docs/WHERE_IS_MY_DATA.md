@@ -744,6 +744,27 @@ Two cases read differently on that line:
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 
+**The mirror's ledger.** `<mousedb_root>/logs/analysis_imports.json` is the
+mirror's own record of every file it has copied. It is how the next run knows
+which files are unchanged, and which files MouseBrain has since withdrawn (and
+so must be archived). Do not edit or delete it.
+
+- No ledger at all (a new machine, a first run): the run checks every file
+  and starts a new ledger. That is normal.
+- A ledger that is there but cannot be read (damaged, half written): the run
+  stops before copying or archiving anything. Its last line starts with
+  `[FAIL] import-analyses not run:`, names the file and says what to do, and
+  the job fails (exit code 1). If the network share was only briefly
+  unavailable, run it again. Otherwise rename the file (keep it, for example
+  `analysis_imports.json.damaged`) and run again: the run starts a new
+  ledger, re-checks every file, and copies nothing that is already there. The
+  one thing lost is this: files MouseBrain withdrew BEFORE the rename are not
+  archived automatically; they stay in the mirror until someone moves them.
+- The ledger and `ANALYSES_MANIFEST.json` are written whole or not at all (a
+  temporary file swapped in), so a run that is stopped part-way -- by the
+  scheduler's time limit, or by End in Task Scheduler -- leaves the previous
+  version of each, never half a file.
+
 ## How far a study's list of sessions has got
 
 A study usually needs particular sessions -- one animal's tray run on one

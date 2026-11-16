@@ -230,6 +230,84 @@ class TestMirror:
         assert rows["Alpha_Detection"]["entries"] == 2
 
 
+
+class TestLedgerAndManifestAreSafe:
+    """WHY: the ledger is the only record of what was mirrored. It used to be
+    written with a plain overwrite and read as EMPTY when it could not be
+    parsed -- so a run killed mid-write left half a ledger, the next run
+    treated nothing as mirrored before, and a file MouseBrain withdrew
+    afterwards was never archived (nothing in an empty ledger is "gone")."""
+
+    def test_an_unreadable_ledger_stops_the_run_and_is_left_alone(self, roots, capsys):
+        reg, db = roots
+        ia.run(log=_quiet)
+        ledger = db / "logs" / "analysis_imports.json"
+        ledger.write_text('{"exports/Alpha_Detection/registry.json": {"ha', encoding="utf-8")
+        withdrawn = reg / "logs" / "Beta_ROI.log"
+        withdrawn.unlink()
+        assert ia.main([]) == 1
+        out = capsys.readouterr().out
+        assert "[FAIL]" in out and "analysis_imports.json" in out and "rename" in out
+        # nothing was rewritten: the damaged file is still there for a person
+        # to look at, and the mirror was not touched
+        assert ledger.read_text(encoding="utf-8").endswith('{"ha')
+        assert (db / "logs" / "Beta_ROI.log").is_file()
+
+    def test_a_missing_ledger_is_a_first_run(self, roots):
+        reg, db = roots
+        res = ia.run(log=_quiet)
+        assert res.errors == 0 and res.copied == 2 * FILES_PER_ANALYSIS
+
+    @pytest.mark.parametrize("killed", ["analysis_imports.json", "ANALYSES_MANIFEST.json"])
+    def test_a_write_killed_part_way_leaves_the_previous_file_whole(self, roots, monkeypatch, killed):
+        reg, db = roots
+        ia.run(log=_quiet)
+        ledger = db / "logs" / "analysis_imports.json"
+        manifest = db / "exports" / "ANALYSES_MANIFEST.json"
+        before_ledger, before_manifest = ledger.read_bytes(), manifest.read_bytes()
+        (reg / "logs" / "Beta_ROI.log").unlink()        # this run would change both files
+
+        import builtins
+        import io
+        real_open = io.open
+        targets = (killed,)
+
+        class _Killed(Exception):
+            pass
+
+        class _HalfWriter:
+            """Writes the first half of what it is given, then 'is killed'."""
+            def __init__(self, f):
+                self._f = f
+            def write(self, text):
+                self._f.write(text[: max(1, len(text) // 2)])
+                self._f.flush()
+                raise _Killed()
+            def __getattr__(self, name):
+                return getattr(self._f, name)
+            def __enter__(self):
+                return self
+            def __exit__(self, *exc):
+                self._f.close()
+
+        def fake_open(file, mode="r", *a, **k):
+            f = real_open(file, mode, *a, **k)
+            name = os.path.basename(str(file))
+            if "w" in mode and any(t in name for t in targets):
+                return _HalfWriter(f)
+            return f
+
+        monkeypatch.setattr(io, "open", fake_open)
+        monkeypatch.setattr(builtins, "open", fake_open)
+        with pytest.raises(_Killed):
+            ia.run(log=_quiet)
+        monkeypatch.undo()
+        path, before = ((ledger, before_ledger) if killed == ledger.name
+                        else (manifest, before_manifest))
+        assert path.read_bytes() == before            # the old file, whole
+        json.loads(path.read_text(encoding="utf-8"))
+
+
 class TestCli:
     def test_main_dry_run_returns_zero_and_json(self, roots, capsys):
         reg, db = roots

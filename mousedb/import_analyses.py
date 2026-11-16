@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .config import require
+from .state_files import StateFileUnreadable, _read_state_file, _write_json_atomically
 
 logger = logging.getLogger(__name__)
 
@@ -145,19 +146,32 @@ def ledger_path() -> Path:
 
 
 def load_ledger() -> Dict[str, dict]:
-    p = ledger_path()
-    if p.is_file():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning("ledger %s unreadable; starting a new one", p)
-    return {}
+    """The mirror's ledger; {} when there is none yet (a first run).
+
+    Raises ``StateFileUnreadable`` when the ledger is there but cannot be
+    read. WHY it refuses instead of starting a new ledger: the ledger is the
+    only record of which files were mirrored. Read as empty, nothing mirrored
+    before looks "gone" to the archive step (it archives ledger keys that the
+    source no longer lists), so a file MouseBrain withdrew afterwards stayed
+    in the mirror for good -- and every file was hashed again. "None yet" is
+    believed only from a folder listing (see state_files._read_state_file),
+    because a dropped network share also answers "file not found"."""
+    data = _read_state_file(
+        ledger_path(), "analysis mirror ledger", dict,
+        "otherwise rename that file (keep it) and run again -- the run then "
+        "starts a new ledger, re-checks every file, and cannot archive files "
+        "that MouseBrain withdrew before the rename", "nothing was copied or archived")
+    if data is None:
+        logger.warning("no analysis mirror ledger at %s yet: every file will be checked",
+                       ledger_path())
+        return {}
+    return data
 
 
 def save_ledger(ledger: Dict[str, dict]) -> None:
-    p = ledger_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(ledger, indent=1, sort_keys=True), encoding="utf-8")
+    # Atomic (temporary file + os.replace): a run killed mid-write leaves the
+    # old ledger, never half of one that the next run would refuse to read.
+    _write_json_atomically(ledger_path(), ledger)
 
 
 # ---------------------------------------------------------------------------
@@ -216,10 +230,11 @@ def manifest_path() -> Path:
 
 
 def write_manifest(rows: List[dict], imported_at: str, root: Path) -> Path:
+    # Atomic for the same reason as the ledger: the Where Is My Data tab reads
+    # this file, and a half-written one showed there as "manifest unreadable".
     p = manifest_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"imported_at": imported_at, "source_root": str(root),
-                             "analyses": rows}, indent=1), encoding="utf-8")
+    _write_json_atomically(p, {"imported_at": imported_at, "source_root": str(root),
+                               "analyses": rows})
     return p
 
 
@@ -385,6 +400,9 @@ def main(argv=None) -> int:
     try:
         res = run(all_files=args.all, dry_run=args.dry_run, limit=args.limit,
                   log=(lambda *_: None) if args.json else print)
+    except StateFileUnreadable as e:
+        print("[FAIL] import-analyses not run: %s" % e)
+        return 1
     except Exception as e:
         print("[FAIL] %s" % e)
         return 1
