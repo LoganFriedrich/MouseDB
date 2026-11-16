@@ -761,6 +761,17 @@ see in that place:
   refreshing it as above adds the date.
 - `no approved method` -- no approved method is declared for this analysis,
   so none of its samples is compared or counted as stale.
+- `? current, ? stale vs approved (registry not read this run), ? invalidated,
+  imported ... -- [FAIL] <the reason>` -- this run could not read the
+  analysis's `registry.json`, so it has no counts to show. The part after
+  `[FAIL]` says why, in the same words as the job's own `[FAIL]` line (see
+  the table above): the folder has no `registry.json`, its files could not be
+  listed, or `registry.json` could not be read. When the reason ends "the
+  mirror is kept as it was", the mirrored files of that analysis were left
+  exactly as the last good run left them -- nothing was copied or archived.
+  The line comes back to normal on the first run that can read the registry.
+  If there is more than one problem, the line shows the first and says how
+  many more are listed in `ANALYSES_MANIFEST.json`.
 
 Two cases read differently on that line:
 

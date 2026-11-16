@@ -99,24 +99,41 @@ def read_analyses_manifest(path: Path) -> List[dict]:
 
 
 def analysis_lines(rows: List[dict]) -> List[str]:
-    """One line per analysis, identical in the terminal and the GUI."""
+    """One line per analysis, identical in the terminal and the GUI.
+
+    A row that recorded a problem this run (``problems`` in the manifest: a
+    registry that was not there, could not be listed or could not be read)
+    ends with `` -- [FAIL] <first problem>``. WHY: the mirror then keeps that
+    analysis as it was and its counts show as "?"; without the reason on the
+    line, the tab showed question marks with nothing to say why, and the
+    reason sat only in the manifest file, which nobody opens."""
     def _n(v):
         return "?" if v is None else v
 
     def _set_aside(r):
+        # The tool set a damaged manifest aside: fewer entries are counted
+        # until a person repairs it (import_analyses.summarize_registry).
         n = r.get("set_aside_manifests") or 0
         if not n:
             return ""
         return (" [!] %d damaged manifest%s set aside by the tool -- some entries are not "
                 "counted until a person repairs %s" % (n, "" if n == 1 else "s",
                                                         "it" if n == 1 else "them"))
-    # stale_phrase (import_analyses) says "no approved method" for an analysis
-    # no method approval judges, and otherwise puts the date the approved
-    # method was recorded beside the stale count.
-    return ["Analysis %s: %s current, %s, %s invalidated, imported %s%s" % (
-                r.get("analysis_name"), _n(r.get("current")), stale_phrase(r),
-                _n(r.get("invalidated")), r.get("imported_at") or "?", _set_aside(r))
-            for r in rows]
+    lines = []
+    for r in rows:
+        # stale_phrase (import_analyses) says "no approved method" for an
+        # analysis no method approval judges, and otherwise puts the date the
+        # approved method was recorded beside the stale count.
+        line = "Analysis %s: %s current, %s, %s invalidated, imported %s%s" % (
+            r.get("analysis_name"), _n(r.get("current")), stale_phrase(r),
+            _n(r.get("invalidated")), r.get("imported_at") or "?", _set_aside(r))
+        problems = [p for p in (r.get("problems") or []) if p]
+        if problems:
+            line += " -- [FAIL] %s" % problems[0]
+            if len(problems) > 1:
+                line += " (and %d more problem(s) in ANALYSES_MANIFEST.json)" % (len(problems) - 1)
+        lines.append(line)
+    return lines
 
 
 def _pipeline_root() -> Path:

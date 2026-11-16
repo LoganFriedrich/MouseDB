@@ -313,11 +313,21 @@ def stale_phrase(row: dict) -> str:
     --refresh-approved`` rewrites it on demand). Shown bare, "0 stale" after a
     change of the approved method looked like "all current" when it meant
     "judged against the old method". The date lets a person see which.
-    A registry written before MouseBrain recorded the date says so."""
+    A registry written before MouseBrain recorded the date says so.
+
+    A row whose registry.json was NOT read this run (``entries`` is None: the
+    folder had no registry.json, could not be listed, or its registry.json
+    could not be read) says exactly that. WHY: its approved-method fields are
+    empty because nothing was read, not because an old MouseBrain wrote the
+    registry; falling through to the "unknown date" text blamed the wrong
+    thing. The reason itself is in the row's ``problems`` and is shown by
+    ``data_status.analysis_lines``."""
     stale = row.get("stale_vs_approved")
-    if row.get("no_approved_method") or (
-            stale is None and row.get("entries") is not None
-            and row.get("approved_method_hash") is None):
+    if row.get("no_approved_method"):
+        return "no approved method"
+    if row.get("entries") is None:
+        return "? stale vs approved (registry not read this run)"
+    if stale is None and row.get("approved_method_hash") is None:
         return "no approved method"
     recorded = row.get("approved_method_recorded_at")
     when = (str(recorded)[:16].replace("T", " ") if recorded

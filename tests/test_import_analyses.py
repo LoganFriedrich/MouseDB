@@ -492,8 +492,8 @@ class TestDataStatusLines:
         p = tmp_path / "ANALYSES_MANIFEST.json"
         assert ds.read_analyses_manifest(p) == []
         p.write_text(json.dumps({"analyses": [
-            {"analysis_name": "A", "current": 5, "stale_vs_approved": 2, "invalidated": 1,
-             "imported_at": "2026-08-28T10:00:00"}]}), encoding="utf-8")
+            {"analysis_name": "A", "entries": 6, "current": 5, "stale_vs_approved": 2,
+             "invalidated": 1, "approved_method_hash": "h1", "imported_at": "2026-08-28T10:00:00"}]}), encoding="utf-8")
         rows = ds.read_analyses_manifest(p)
         assert rows and rows[0]["analysis_name"] == "A"
         line = ds.analysis_lines(rows)[0]
@@ -503,9 +503,11 @@ class TestDataStatusLines:
 
     def test_lines_say_no_approved_method_and_name_set_aside_manifests(self):
         from mousedb import data_status as ds
-        rows = [{"analysis_name": "B", "current": 3, "stale_vs_approved": None,
+        # Both rows were read this run (``entries`` set): a row whose registry
+        # was not read says so instead (TestHeldAnalysisShowsItsReason).
+        rows = [{"analysis_name": "B", "entries": 3, "current": 3, "stale_vs_approved": None,
                  "no_approved_method": True, "invalidated": 0, "imported_at": "t"},
-                {"analysis_name": "C", "current": 1, "stale_vs_approved": 0,
+                {"analysis_name": "C", "entries": 1, "current": 1, "stale_vs_approved": 0,
                  "no_approved_method": False, "set_aside_manifests": 1,
                  "invalidated": 0, "imported_at": "t"}]
         b, c = ds.analysis_lines(rows)
@@ -555,6 +557,43 @@ class TestApprovedMethodDateIsShown:
         from mousedb import data_status as ds
         line = ds.analysis_lines([rows["Alpha_Detection"]])[0]
         assert "no approved method" in line and "stale" not in line
+
+
+class TestHeldAnalysisShowsItsReason:
+    """WHY: an analysis whose registry.json was not read this run (missing,
+    unlistable, unreadable) gets a manifest row with no counts. Its status
+    line used to fall through to "approved method as recorded at an unknown
+    date (registry written before the date was kept)", blaming an old
+    MouseBrain, while the real reason sat only in the manifest's problems,
+    which the Where Is My Data tab never showed."""
+
+    def test_a_row_with_problems_names_the_reason(self):
+        from mousedb import data_status as ds
+        row = ia._new_row("Gamma_Test", "2026-01-02T03:04:05", Path("/registry"))
+        row["problems"] = ["Gamma_Test: exports/Gamma_Test has no registry.json; nothing of it "
+                           "was copied or archived -- the mirror is kept as it was",
+                           "second problem"]
+        line = ds.analysis_lines([row])[0]
+        assert "unknown date" not in line
+        assert "? stale vs approved (registry not read this run)" in line
+        assert line.endswith(" -- [FAIL] Gamma_Test: exports/Gamma_Test has no registry.json; "
+                             "nothing of it was copied or archived -- the mirror is kept as it "
+                             "was (and 1 more problem(s) in ANALYSES_MANIFEST.json)")
+
+    def test_a_folder_without_its_registry_shows_why_on_the_status_line(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Beta_ROI" / "registry.json").rename(
+            reg / "exports" / "Beta_ROI" / "registry.json.rebuilding")
+        ia.run(log=_quiet)
+        from mousedb import data_status as ds
+        status = ds.analysis_lines(ds.read_analyses_manifest(db / "exports" / "ANALYSES_MANIFEST.json"))
+        beta = [s for s in status if s.startswith("Analysis Beta_ROI:")]
+        assert beta, status
+        assert "[FAIL]" in beta[0] and "has no registry.json" in beta[0]
+        assert "registry not read this run" in beta[0] and "unknown date" not in beta[0]
+        alpha = [s for s in status if s.startswith("Analysis Alpha_Detection:")][0]
+        assert "[FAIL]" not in alpha
 
 
 class TestImportBrains:
