@@ -390,17 +390,37 @@ def _animal_records(imp, cohort_id, sheet, kind, dry_run, r=None,
                        keep_tabs=_tabs_to_keep(r or {}))
 
 
-def _report_kept_tabs(entry: dict, rec: Optional[dict]) -> None:
+def kept_tab_text(k: dict, frozen: bool = False) -> str:
+    """The sentence for one animal-detail tab left as it was (an item of
+    animal_records.sync_cohort's "kept"). ``frozen``: a letter cohort's
+    workbook, which no route imports with allow_large_removal -- the workbook
+    no longer changes, so a tab that stops reading is a fault to fix, never a
+    deliberate removal."""
+    if frozen:
+        todo = ("This workbook is frozen, so check that it opens and that its '%s' tab "
+                "still has its 'Animal ID' header row; the next import then syncs it" % k["tab"])
+    elif k.get("unread"):
+        todo = ("If the tab was renamed or moved, give it back its name; if it was removed "
+                "on purpose, import this cohort alone with 'mousedb-sheets import --cohort "
+                "<cohort> --allow-large-removal' and its stored details are removed")
+    else:
+        todo = ("If the sheet is wrong, fix it and the next import syncs; if the tab "
+                "really holds nothing now, import this cohort alone with 'mousedb-sheets "
+                "import --cohort <cohort> --allow-large-removal'")
+    return _ascii("NOT SYNCED animal details '%s': %s. That tab's stored animal details "
+                  "were left as they were. %s." % (k["tab"], k["why"], todo))
+
+
+def _report_kept_tabs(entry: dict, rec: Optional[dict], frozen: bool = False) -> None:
     """Each animal-detail tab left as it was is reported WITH the refusals
     (sheet_sync.refused of the cohort's outcome): it is the same kind of
     event -- a part of the database deliberately not brought in step with the
-    sheet -- and it fails the import the same way (import_succeeded)."""
+    sheet -- and it fails the import the same way (import_succeeded). Every
+    route that copies animal details calls this or reports "kept" itself
+    (the letter cohorts' ODC pass: print_import_result), so no tab is kept
+    in silence."""
     for k in (rec or {}).get("kept") or []:
-        text = ("NOT SYNCED animal details '%s': %s. That tab's stored animal details "
-                "were left as they were. If the sheet is wrong, fix it and the next "
-                "import syncs; if the tab really holds nothing now, import this cohort "
-                "alone with 'mousedb-sheets import --cohort <cohort> "
-                "--allow-large-removal'." % (k["tab"], k["why"]))
+        text = kept_tab_text(k, frozen)
         sync = entry.setdefault("sheet_sync", {})
         sync["refused"] = list(sync.get("refused") or []) + [text]
 

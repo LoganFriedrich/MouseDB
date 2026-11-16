@@ -174,3 +174,46 @@ def test_a_dry_run_does_not_create_the_table(tmp_path):
     r = ar.sync_cohort(db, "PROJA_01", p, dry_run=True)
     assert r["error"] is None and r["records"] > 0
     assert not inspect(db.engine).has_table("animal_records")
+
+
+def test_a_tab_that_was_not_read_is_reported_and_removed_only_when_allowed(tmp_path):
+    """WHY: a tab missing from the workbook (renamed, cut) kept its stored
+    details in silence, so its old values stayed in the exports for good while
+    every import said OK. It is now listed under "kept" -- which the sheet
+    import reports as a refusal -- and a person who checked the sheet can have
+    its details removed."""
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    before = _stored_by_tab(db)
+    wb = openpyxl.load_workbook(p)
+    wb["0a_Metadata"].title = "0a_Metadata (renamed)"
+    tray = wb["3b_Manual_Tray"]
+    tray.delete_cols(3)                       # the Sex column is gone
+    wb.save(p)
+
+    r = ar.sync_cohort(db, "PROJA_01", p)
+    after = _stored_by_tab(db)
+    assert after["0a_Metadata"] == before["0a_Metadata"]
+    assert after["3b_Manual_Tray"] == before["3b_Manual_Tray"]
+    kept = {k["tab"]: k for k in r["kept"]}
+    assert set(kept) == {"0a_Metadata", "3b_Manual_Tray"}
+    assert all(k.get("unread") and "not read" in k["why"] for k in kept.values())
+
+    r = ar.sync_cohort(db, "PROJA_01", p, allow_large_removal=True)
+    after = _stored_by_tab(db)
+    assert r["kept"] == [] and "0a_Metadata" not in after and "3b_Manual_Tray" not in after
+
+
+def test_an_odc_tab_without_its_header_is_reported(tmp_path):
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "K.xlsx"
+    _odc_workbook(p)
+    ar.sync_cohort(db, "ASPA_11", p, "odc")
+    assert _stored_by_tab(db).get("ODC")
+    wb = openpyxl.load_workbook(p)
+    wb["ODC"]["B3"] = "Animal"                 # the header cell no longer found
+    wb.save(p)
+    r = ar.sync_cohort(db, "ASPA_11", p, "odc")
+    assert _stored_by_tab(db).get("ODC") and [k["tab"] for k in r["kept"]] == ["ODC"]

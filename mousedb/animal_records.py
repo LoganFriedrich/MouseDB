@@ -74,8 +74,13 @@ A tab's stored rows are left as they were -- not replaced -- when:
     tabs when the importer refused to sync the surgeries, and the tray tab when
     it refused the pellet scores, so the animal details never follow a read
     the rest of the import judged broken.
-Each tab left this way is returned under "kept" with the reason, and the sheet
-import reports it beside the importer's own refusals.
+Each tab left this way while the database holds records from it is returned
+under "kept" with the reason, and the sheet import reports it beside the
+importer's own refusals, which fails the import (sheet_sync.import_succeeded):
+a tab that is missing or renamed is reported just like one that reads as
+empty. With ``allow_large_removal`` (a person checked the sheet) a tab not read
+has its stored records REMOVED, as a tab read as empty has its records
+replaced by none.
 Values are text; dates become YYYY-MM-DD; blanks and "?" are not stored.
 """
 from __future__ import annotations
@@ -737,11 +742,31 @@ def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: 
             records = read_odc_tab(sheet, cohort_id, warnings, tabs_read)
         else:
             records = read_cnt_workbook(sheet, cohort_id, warnings, tabs_read)
-        stored = stored_counts(db, cohort_id, tabs_read)
+        expected = (ODC_TAB,) if kind == "odc" else CNT_TABS + (TRAY_TAB,)
+        stored = stored_counts(db, cohort_id, sorted(set(tabs_read) | set(expected)))
         given = {}
         for r in records:
             given[r["source_tab"]] = given.get(r["source_tab"], 0) + 1
         replace = []
+        # A tab this reader copies that was NOT read this time (missing,
+        # renamed, empty, no animal id column; the tray tab without a Sex
+        # column) while the database holds its records: kept AND reported.
+        # WHY reported: kept in silence, a renamed tab's old details stayed in
+        # the exports for good while every import said OK. A person who checked
+        # the sheet and means the tab to be gone says so with
+        # allow_large_removal, and its records are then removed.
+        for tab in expected:
+            if tab in tabs_read or not stored.get(tab):
+                continue
+            if keep_tabs and tab in keep_tabs:
+                kept.append({"tab": tab, "why": keep_tabs[tab]})
+            elif allow_large_removal:
+                replace.append(tab)
+            else:
+                kept.append({"tab": tab, "unread": True, "why": (
+                    "the '%s' tab was not read (missing from the workbook, renamed, "
+                    "empty, or without the columns this copy needs), while the database "
+                    "holds %d of this cohort's animal details from it" % (tab, stored[tab]))})
         for tab in tabs_read:
             if keep_tabs and tab in keep_tabs:
                 kept.append({"tab": tab, "why": keep_tabs[tab]})

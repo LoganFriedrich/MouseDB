@@ -278,6 +278,43 @@ def test_several_files_and_no_pin_import_add_only_until_pinned(invented, monkeyp
     assert c["scores_saved"] is True and "CNT_77" in hsf._last_successful_imports()
 
 
+def test_a_tab_not_read_this_time_fails_the_import_and_says_so(invented, monkeypatch, tmp_path):
+    """WHY: a tab renamed or cut from the workbook kept its stored animal
+    details in silence -- the import said OK and the old values stayed in the
+    exports for good. The kept tab is now a refusal, and the import fails."""
+    import openpyxl
+    import mousedb.importers as imp
+    from mousedb.database import Database
+
+    sheet = invented / "Connectome_77_Animal_Tracking.xlsx"
+
+    def workbook(with_metadata):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "0a_Metadata" if with_metadata else "0a_Metadata (old)"
+        ws.append(["SubjectID", "Sex"])
+        ws.append(["CNT_77_01", "F"])
+        wb.save(sheet)
+
+    db = Database(tmp_path / "t.db")
+
+    class Saves:
+        def __init__(self, *a, **k):
+            self.db = db
+
+        def import_cohort_file(self, *a, **k):
+            return {"success": True, "imported": {}, "warnings": [], "errors": []}
+
+    monkeypatch.setattr(imp, "ExcelImporter", Saves)
+    workbook(True)
+    assert ss.import_succeeded(ss.import_cohorts(["CNT_77"]))
+    workbook(False)
+    r = ss.import_cohorts(["CNT_77"])
+    (refusal,) = ss.sync_refused(r["cohorts"][0])
+    assert "animal details '0a_Metadata'" in refusal and "not read" in refusal
+    assert not ss.import_succeeded(r)
+
+
 def test_a_cohort_read_on_a_guess_is_told_to_pin_not_to_look_for_a_broken_sheet():
     lines = []
     ss.print_import_result({"cohorts": [{

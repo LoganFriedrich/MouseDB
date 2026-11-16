@@ -579,6 +579,11 @@ details are left exactly as they were when:
   sheet wins"): the two surgery tabs stay as they were when the surgeries were
   refused, the tray tab's `Sex` when the pellet scores were refused.
 
+This holds for a tab that is missing or renamed just as for one that reads as
+empty: a missing tab whose details the database holds is reported too, never
+kept in silence (a renamed tab used to keep its old details in the exports
+for good while every import said OK).
+
 Each such tab is listed with the other refusals, under the cohort's line:
 
 ```
@@ -587,9 +592,11 @@ Each such tab is listed with the other refusals, under the cohort's line:
 
 and it counts as a refusal: the cohort is listed as NOT SYNCED in the
 closing line and the scheduled job's run shows as failed. What to do: if the
-sheet is wrong, fix it and import again. If the tab really is empty now on
-purpose, import that cohort alone with
-`mousedb-sheets import --cohort <cohort> --allow-large-removal`.
+sheet is wrong (a tab renamed, a column moved), fix it and import again. If
+the tab really is empty -- or gone -- now on purpose, import that cohort alone
+with `mousedb-sheets import --cohort <cohort> --allow-large-removal`: a tab
+that reads as empty then has its details replaced by none, and a tab that is
+gone has its stored details removed.
 
 ### Where the warnings appear, and what "[N warnings]" means
 
