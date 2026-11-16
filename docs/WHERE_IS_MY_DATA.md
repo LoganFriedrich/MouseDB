@@ -789,8 +789,9 @@ Two cases read differently on that line:
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 
-**Only one mirror runs at a time.** The nightly task and the **Update
-everything** button both start `mousedb import-analyses`. When one is already
+**Only one mirror runs at a time.** The nightly task and the **Update the database now**
+button on the Where Is My Data tab (`mousedb update`) both start
+`mousedb import-analyses`. When one is already
 running, the second waits for it (its output says what it is waiting for),
 then runs and normally finds nothing left to copy. If it waits longer than
 the lock's usual limit (the same rules as the database jobs' lock: it keeps

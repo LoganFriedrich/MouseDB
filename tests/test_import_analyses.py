@@ -403,8 +403,8 @@ class TestLedgerAndManifestAreSafe:
 
 
 class TestOneMirrorAtATime:
-    """WHY: the nightly task and the Update everything button both start the
-    mirror, and nothing kept two runs apart: each reads the ledger at the
+    """WHY: the nightly task and the "Update the database now" button on the
+    Where Is My Data tab (mousedb update) both start the mirror, and nothing kept two runs apart: each reads the ledger at the
     start and rewrites it at the end, so the second dropped the first's
     entries. A run now takes its own lock; one that cannot get it in time
     says so and changes nothing."""

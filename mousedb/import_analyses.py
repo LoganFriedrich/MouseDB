@@ -42,8 +42,8 @@ It writes NO database rows -- only files under <mousedb_root> -- so, unlike
 ``import-reaches``, it needs no watcher guard and may run at any time. It
 does take a lock of its own (``LOCK_NAME``; ``<mousedb_root>/logs/
 .import-analyses.task.lock``) so that only ONE mirror runs at a time: the
-nightly task and the Update everything button both start it, and two runs
-copying, archiving and rewriting the same ledger at once lose each other's
+nightly task and the "Update the database now" button on the Where Is My
+Data tab (mousedb update) both start it, and two runs copying, archiving and rewriting the same ledger at once lose each other's
 entries (see ``main``). A ``--dry-run`` writes nothing and takes no lock.
 
 Usage:
@@ -593,8 +593,9 @@ def main(argv=None) -> int:
         if args.dry_run:
             res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet)
         else:
-            # One mirror at a time. WHY: the nightly task and the Update
-            # everything button (mousedb update) both run this, and nothing
+            # One mirror at a time. WHY: the nightly task and the "Update
+            # the database now" button on the Where Is My Data tab
+            # (mousedb update) both run this, and nothing
             # kept them apart. Each run reads the ledger at the start and
             # rewrites it at the end, so two at once dropped the other's
             # entries (files then copied and hashed again), and both could

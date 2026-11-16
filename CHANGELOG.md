@@ -151,8 +151,9 @@ checked-in code, not what's planned.
   approved method declared shows `no approved method` instead of counting
   every sample as stale.
 - `mousedb import-analyses` runs one at a time: it takes its own lock
-  (`logs/.import-analyses.task.lock`), so the nightly task and the Update
-  everything button can no longer run it together and drop each other's
+  (`logs/.import-analyses.task.lock`), so the nightly task and the "Update
+  the database now" button on the Where Is My Data tab (`mousedb update`)
+  can no longer run it together and drop each other's
   ledger entries. A run that cannot get the lock in time ends with
   `[FAIL] import-analyses not run: ...` and changes nothing. `--dry-run`
   takes no lock.
