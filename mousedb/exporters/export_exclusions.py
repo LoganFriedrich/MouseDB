@@ -73,9 +73,12 @@ Three inputs live outside the snapshot: the collage names in MouseReach's
 watcher databases (checks 1 and 3), the name-audit record (check 8) and the
 tracking-sheet folder (check 5). Two cases are kept apart:
 
-* the input does not exist (no name-audit record yet, no sheet folder set, no
-  central watcher database): the check cannot run, and says so in a note that
-  the manifest lists as a problem. Nothing is hidden: it is a standing fact.
+* the input does not exist (no name-audit record yet, no sheet folder set):
+  the check cannot run, and says so in a note that the manifest lists as a
+  problem. Nothing is hidden: it is a standing fact. A missing CENTRAL
+  watcher database is the one partial case: the recording checks still run
+  from the local watcher database, and a note says they ran without the
+  central one (a recording known only to it cannot be checked).
 * the input EXISTS but cannot be read tonight (a locked or damaged database, a
   record that does not parse, a sheet folder that is set but cannot be
   reached): compute() raises ExclusionInputUnreadable. Then no per-reach
