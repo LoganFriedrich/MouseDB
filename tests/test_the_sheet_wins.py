@@ -626,6 +626,62 @@ def test_a_workbook_read_on_a_guess_re_dates_no_stored_score(tmp_path):
     assert stored.get(DAYS[3]) == per_day and typo not in stored
 
 
+def test_a_guess_after_the_repair_reads_the_typo_rows_under_the_date_meant(tmp_path):
+    """WHY: the usual case. An earlier import already filed a year-typo day
+    under the date meant; a second matching file then makes the import a
+    guess. Reading the typo rows under the typed date would find nothing
+    stored there and store the same trays again, a year away -- one tray
+    counted twice and the cohort's phases derived around a false gap."""
+    db = _db(tmp_path)
+    typo = DAYS[3].replace(year=DAYS[3].year - 1)
+    days = [typo if d == DAYS[3] else d for d in DAYS]
+    _import(db, _workbook(_sheet(tmp_path), days=days))
+    before = _dates_stored(db)
+    assert typo not in before and before.get(DAYS[3])
+
+    _guess(db, _workbook(_sheet(tmp_path), days=days))
+    assert _dates_stored(db) == before
+
+
+def _with_weekend_island(path, weekend):
+    """The second row of the third day (first animal, tray 2) dated a weekend
+    day: a run inside that weekday's block, as a formula date counting from
+    the wrong row leaves it."""
+    wb = openpyxl.load_workbook(path)
+    ws = wb["3b_Manual_Tray"]
+    for r in range(2, ws.max_row + 1):
+        if (ws.cell(r, 1).value.date() == DAYS[2] and ws.cell(r, 2).value == ANIMALS[0]
+                and ws.cell(r, 3).value == "P2"):
+            ws.cell(r, 1, weekend)
+    wb.save(path)
+    return path
+
+
+def test_a_guess_reads_a_weekend_island_under_its_weekday_and_moves_no_stored_tray(tmp_path):
+    db = _db(tmp_path)
+    weekend = date(2026, 3, 7)
+    assert weekend.weekday() == 5 and DAYS[2] < weekend
+    sheet = lambda: _with_weekend_island(_workbook(_sheet(tmp_path), trays=(1, 2)), weekend)
+    _import(db, sheet())
+    before = _dates_stored(db)
+    assert weekend not in before
+
+    # Read on a guess after the repair: the island is read under its weekday
+    # and matches what is stored -- not stored again under the weekend.
+    _guess(db, sheet())
+    assert _dates_stored(db) == before
+
+    # Stored rows still under the weekend (left from before the repair): on a
+    # guess they are not moved, and the rows read match them where they are.
+    with db.session() as s:
+        s.query(PelletScore).filter_by(subject_id=ANIMALS[0], session_date=DAYS[2],
+                                       tray_number=2).update({"session_date": weekend})
+    stale = _dates_stored(db)
+    r = _guess(db, sheet())
+    assert _dates_stored(db) == stale
+    assert any("HELD BACK" in w and "weekend" in w for w in r["warnings"])
+
+
 def test_a_workbook_read_on_a_guess_replaces_no_note_and_records_no_death(tmp_path):
     db = _db(tmp_path)
     note = "auto-created from video 20260302_PROJA0101_P1 by the reach import"

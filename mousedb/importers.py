@@ -819,8 +819,11 @@ class ExcelImporter:
         # weight % lands on the day its scores are filed under.
         repairs = self._tab_date_repairs(
             cohort_id, '3b_Manual_Tray', [self._parse_date(v) for v in df['Date']])
-        if self.sync_blocked:
-            repairs = {}   # the scores are not re-dated either (see _held_back)
+        if self.sync_blocked and repairs:
+            # On a guess the scores keep a typed date only where stored scores
+            # are still under it (see _import_pellet_scores); the same here.
+            still_typed = self._stored_pellet_dates(session, cohort_id, repairs)
+            repairs = {t: m for t, m in repairs.items() if t not in still_typed}
         for _, row in df.iterrows():
             raw_id = row.get('Animal')
             if self._blank(raw_id):
@@ -1416,18 +1419,28 @@ class ExcelImporter:
         # the typed year are moved to it -- otherwise the phases of the whole
         # cohort are derived around a year-long false gap (date_typos).
         repairs = self._tab_date_repairs(cohort_id, '3b_Manual_Tray', [r[1] for r in rows])
-        if repairs and self._held_back(
-                "re-dating the 3b_Manual_Tray scores typed a year off (%s); the rows "
-                "are read as dated in the file" % ", ".join(
-                    "%s -> %s" % (t, m) for t, m in sorted(repairs.items()))):
-            # WHY not re-dated at all, rather than only the stored rows left
-            # alone: rows read under the corrected date would not match the
-            # stored ones under the typed date and would be stored a second
-            # time -- one tray counted on two days.
-            repairs = {}
+        move_repairs = repairs
+        if repairs and self.sync_blocked:
+            # On a guess (sync_blocked) the rows READ are still re-dated -- the
+            # usual case is a cohort whose stored scores an earlier import
+            # already moved to the date meant, and reading the typo rows under
+            # the typed date would store the same tray a second time, a year
+            # away. Only the MOVE of stored rows is held back. A typed date
+            # that still has stored rows under it (left from before the repair
+            # existed) is read as typed instead, so the read rows match those
+            # stored rows rather than being added beside them.
+            still_typed = self._stored_pellet_dates(session, cohort_id, repairs)
+            if still_typed:
+                self._held_back(
+                    "re-dating the 3b_Manual_Tray scores stored under a date typed a year "
+                    "off (%s); those rows are read as dated in the file" % ", ".join(
+                        "%s -> %s" % (t, repairs[t]) for t in sorted(still_typed)))
+            repairs = {t: m for t, m in repairs.items() if t not in still_typed}
+            move_repairs = {}
         if repairs:
             rows = [(s, repairs.get(d, d), tt, tn, sc) for s, d, tt, tn, sc in rows]
-            self._move_misdated_pellet_rows(session, cohort_id, repairs, dry_run)
+        if move_repairs:
+            self._move_misdated_pellet_rows(session, cohort_id, move_repairs, dry_run)
 
         # A weekend-dated run inside a weekday's block -- a formula date counting
         # from the wrong row after a row was cut -- is read as that weekday, and
@@ -1435,16 +1448,25 @@ class ExcelImporter:
         from .date_typos import block_date_repairs
         islands = block_date_repairs([(s, d, tt, tn) for s, d, tt, tn, _ in rows])
         tray_moves = {}
-        if islands and self._held_back(
-                "re-dating %d weekend-dated 3b_Manual_Tray row%s to the weekday they sit "
-                "among; the rows are read as dated in the file" % (
-                    len(islands), "" if len(islands) == 1 else "s")):
-            islands = {}   # as for the year typos above: never stored twice
         if islands:
             self._report_block_date_repairs(cohort_id, rows, islands)
             tray_moves = {(rows[i][0], rows[i][1], rows[i][2], rows[i][3]): meant
                           for i, meant in islands.items()}
-            self._move_misdated_tray_rows(session, cohort_id, tray_moves, dry_run)
+            if self.sync_blocked:
+                # As for the year typos above: the rows read are re-dated, the
+                # stored rows are not moved, and a tray still stored under the
+                # weekend date is read as dated so it is never stored twice.
+                still = self._stored_tray_keys(session, tray_moves)
+                if still:
+                    self._held_back(
+                        "re-dating %d stored weekend-dated 3b_Manual_Tray tray%s to the "
+                        "weekday they sit among; those rows are read as dated in the "
+                        "file" % (len(still), "" if len(still) == 1 else "s"))
+                islands = {i: meant for i, meant in islands.items()
+                           if (rows[i][0], rows[i][1], rows[i][2], rows[i][3]) not in still}
+                tray_moves = {}
+            else:
+                self._move_misdated_tray_rows(session, cohort_id, tray_moves, dry_run)
             rows = [(s, islands.get(i, d), tt, tn, sc)
                     for i, (s, d, tt, tn, sc) in enumerate(rows)]
 
@@ -1456,7 +1478,7 @@ class ExcelImporter:
         # would have put the stored rows.
         self._sync_pellet_rows(
             session, cohort_id, rows, dry_run,
-            moved=(dict(repairs or {}), tray_moves) if dry_run else None)
+            moved=(dict(move_repairs or {}), tray_moves) if dry_run else None)
 
         self._insert_pellet_rows(session, cohort_id, rows, dry_run)
 
@@ -1510,8 +1532,9 @@ class ExcelImporter:
     # read as a guess). Then NOTHING already stored is changed, moved or
     # removed, in any table, whatever allow_large_removal says: the sheet-wins
     # sync is refused (_sync_guard), and every other step that would change a
-    # stored row is held back (_held_back): re-dating scores typed on a wrong
-    # date, removing a virus prep copied from an earlier cohort's workbook,
+    # stored row is held back (_held_back): moving stored scores typed on a
+    # wrong date (the rows READ are still re-dated, so they match scores an
+    # earlier import already moved), removing a virus prep copied from an earlier cohort's workbook,
     # replacing a placeholder note or start date, recording a death. New rows
     # are still added and EMPTY values filled in (a weight's percentage), as
     # an add-only import always did. WHY: bringing the database in step with
@@ -2032,6 +2055,23 @@ class ExcelImporter:
                 f"typo (every other date on the tab is in {meant.year}, and this one "
                 f"falls among them with its year corrected). Correct it in the sheet.")
         return repairs
+
+    def _stored_pellet_dates(self, session, cohort_id: str, dates) -> set:
+        """Which of ``dates`` this cohort still has pellet scores stored under
+        (by anyone). Used on a guess, when stored rows are not moved: a read
+        row is then kept on such a date so it matches what is stored there."""
+        cohort_subjects = session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
+        return {d for d in dates if session.query(PelletScore.subject_id).filter(
+                PelletScore.session_date == d,
+                PelletScore.subject_id.in_(cohort_subjects)).first() is not None}
+
+    def _stored_tray_keys(self, session, keys) -> set:
+        """Which (animal, date, tray type, tray number) keys have pellet scores
+        stored (by anyone): the tray-level counterpart of _stored_pellet_dates."""
+        return {k for k in keys if session.query(PelletScore.subject_id).filter(
+            PelletScore.subject_id == k[0], PelletScore.session_date == k[1],
+            PelletScore.tray_type == k[2], PelletScore.tray_number == k[3]).first()
+            is not None}
 
     def _move_misdated_pellet_rows(self, session, cohort_id: str, repairs: Dict, dry_run: bool):
         """Re-date this cohort's imported pellet scores filed under a typo'd

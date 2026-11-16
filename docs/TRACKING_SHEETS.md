@@ -390,10 +390,14 @@ When it finds one, the import:
   sheet.
 
 Only the tray-scoring tab is checked this way. While several files match the
-cohort and none is pinned, no date is repaired and nothing is moved (see
-"When several files match a cohort"): the rows are read as dated in the file,
-and the warning `HELD BACK until the cohort's sheet is pinned: re-dating ...`
-says so. The import after you pin the sheet does the repair.
+cohort and none is pinned (see "When several files match a cohort"), the rows
+READ are still repaired -- so a day an earlier import already moved to the
+date meant is matched there, not stored a second time under the typo -- but no
+score already stored is moved. If some scores are still stored under the
+typed date (from an import made before this repair existed), the rows of that
+date are read as typed so they match those scores, and the warning
+`HELD BACK until the cohort's sheet is pinned: re-dating ...` says so. The
+import after you pin the sheet moves them.
 
 ### A weekend date among one day's rows is read as that day
 
@@ -418,7 +422,9 @@ names the rows, for example: `REPAIRED CNT_NN 3b_Manual_Tray: rows CNT_NN_02 P1,
 CNT_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
 2025-10-28, and are read as 2025-10-28.` It shows in the red panel and on the
 cohort's FIX THESE file until the sheet is fixed. **What you do:** type the
-date into those cells (a typed date never moves).
+date into those cells (a typed date never moves). While several files match
+the cohort and none is pinned, the rows read are still read as the weekday,
+but stored scores are not moved: as for a year typo above.
 
 What it leaves alone, on purpose:
 
@@ -763,8 +769,10 @@ more than "The sheet wins": these steps wait for the pin too, and each one
 it held back is listed as a warning starting `HELD BACK until the cohort's
 sheet is pinned:`
 
-- re-dating scores typed a year off or on a weekend (the rows are read as
-  dated in the file, so they are not stored twice);
+- moving scores already STORED under a date typed a year off or on a
+  weekend (the rows read are still re-dated as usual; only where scores are
+  still stored under the wrong date are that date's rows read as typed, so
+  they match those scores and nothing is stored twice);
 - removing an earlier import of a virus batch the file shows as copied from
   another cohort's workbook;
 - replacing the placeholder note of an animal or the placeholder start date
