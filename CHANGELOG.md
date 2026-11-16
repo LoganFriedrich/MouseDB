@@ -76,6 +76,28 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Sheet import follow-ups (docs/TRACKING_SHEETS.md):
+  - Cohort Setup's **Import** and **Replace** end like every other import:
+    the animal details are copied, and the hand-scores file and the FIX THESE
+    files are rewritten (one after-import step for every route, also run by
+    `mousedb import --file`). Import goes through the same route as
+    `--file`, so it now refuses an archive copy. FIX THESE files are written
+    only into the configured sheets folder.
+  - With several files matching a cohort and none pinned, the import only
+    adds for that cohort and leaves its animal details as they were; the
+    cohort is NOT SYNCED until a file is pinned.
+  - The animal details replace only the tabs really read; a tab that reads as
+    empty while the database holds some of its details, or whose table the
+    import refused, is left as it was and reported with the refusals.
+  - A weight's percentage of body weight is corrected when the sheet's
+    changes (compared in one unit: 87 and 0.87 are the same).
+  - Each import-history line records `scores_saved`; the hand-scores file
+    counts an import whose scores were saved even when a later step (the
+    animal details) failed, so those videos no longer wait.
+  - The hand-scores file's list of cohorts with a sheet only grows, and only
+    an import of the configured folder adds to it or counts as an import of
+    every sheet; its manifest carries `scores_sha256` of the scores file, and
+    both renames are retried briefly while the file is open elsewhere.
 - `mousedb import-reaches` reports every video that has rows in the database
   but no results file in the pipeline and is not in a review queue -- in its
   output (before the summary line), in `logs/reach_rows_without_file.json`
