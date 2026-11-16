@@ -111,7 +111,10 @@ checked-in code, not what's planned.
   - The hand-scores file's list of cohorts with a sheet only grows, and only
     an import of the configured folder adds to it or counts as an import of
     every sheet; its manifest carries `scores_sha256` of the scores file, and
-    both renames are retried briefly while the file is open elsewhere.
+    both renames are retried briefly while the file is open elsewhere. A
+    manifest that cannot be read (after retries) or is damaged fails the
+    write and leaves both files as they were, instead of being taken as
+    empty and shrinking that list.
 - `mousedb import-reaches` reports every video that has rows in the database
   but no results file in the pipeline and is not in a review queue -- in its
   output (before the summary line), in `logs/reach_rows_without_file.json`

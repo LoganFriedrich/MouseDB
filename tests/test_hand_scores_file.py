@@ -10,6 +10,8 @@ import csv
 import json
 from datetime import date
 
+import pytest
+
 from mousedb import hand_scores_file as hsf
 from mousedb import sheet_sync, task_mutex
 
@@ -207,6 +209,42 @@ def test_a_cohort_seen_once_stays_on_the_sheets_list(tmp_path, monkeypatch):
     w(full_run=True, sheets_seen=["PROJA_77", "PROJA_78"])
     m = w(full_run=True, sheets_seen=["PROJA_78", "PROJA_79"])   # PROJA_77 missing this time
     assert m["sheets_seen"] == ["PROJA_77", "PROJA_78", "PROJA_79"]
+
+
+def test_a_manifest_that_cannot_be_read_stops_the_write_and_keeps_the_list(
+        tmp_path, monkeypatch):
+    """WHY: an unreadable manifest used to be taken as empty, so one bad read
+    shrank the list of cohorts with a sheet to this import's listing -- and a
+    never-imported cohort missing from it had its videos filed uncompared.
+    A damaged manifest now fails the write and leaves both files as they were;
+    a read refused for a moment is retried."""
+    w = _scratch_writer(tmp_path, monkeypatch)
+    w(full_run=True, sheets_seen=["PROJA_77", "PROJA_78"])
+    out = tmp_path / "out"
+    csv_before = (out / hsf.FILE_NAME).read_bytes()
+    (out / hsf.MANIFEST_NAME).write_text("{not json", encoding="utf-8")
+    with pytest.raises(Exception, match="damaged"):
+        w(full_run=True, sheets_seen=["PROJA_78"])
+    assert (out / hsf.MANIFEST_NAME).read_text(encoding="utf-8") == "{not json"
+    assert (out / hsf.FILE_NAME).read_bytes() == csv_before
+
+    # A read refused once (the file open elsewhere for a moment) is retried
+    # and the list carried on.
+    (out / hsf.MANIFEST_NAME).write_text(json.dumps(
+        {"sheets_seen": ["PROJA_77", "PROJA_78"]}), encoding="utf-8")
+    real = type(out).read_text
+    refused = []
+
+    def busy_once(self, *a, **k):
+        if self.name == hsf.MANIFEST_NAME and not refused:
+            refused.append(self)
+            raise PermissionError(13, "The process cannot access the file")
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(hsf, "REPLACE_WAIT_SECONDS", 0, raising=False)
+    monkeypatch.setattr(type(out), "read_text", busy_once)
+    m = w(full_run=True, sheets_seen=["PROJA_78"])
+    assert refused and m["sheets_seen"] == ["PROJA_77", "PROJA_78"]
 
 
 def test_a_folder_other_than_the_configured_one_settles_nothing(tmp_path, monkeypatch):

@@ -689,6 +689,16 @@ the replacement; the import tries again for up to ten seconds before it
 reports the write as failed. Close the file if the `FAIL hand scores` line
 below keeps appearing.
 
+The list of cohorts with a sheet is carried over from the `.json` already
+there, so a `.json` that cannot be read is never taken as an empty one (that
+would drop cohorts from the list). A read refused for a moment is retried the
+same way; if the `.json` is damaged (not readable as JSON), neither file is
+rewritten and the line says `FAIL hand scores ... is damaged`. What you do:
+restore `hand_pellet_scores.json` from a backup copy and import again. Only if
+there is no backup, delete it: the next import starts the list again from the
+sheets it finds then, so first check that every cohort's sheet is in the
+folder.
+
 Every import that writes (the scheduled job, the Tracking Sheets tab,
 **Update the database now**, `mousedb-sheets import`, `mousedb import
 --all` / `--file`, and Cohort Setup's **Import** and **Replace**) rewrites

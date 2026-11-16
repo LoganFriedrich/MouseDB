@@ -123,6 +123,47 @@ def _replace(tmp: Path, target: Path) -> None:
             time.sleep(REPLACE_WAIT_SECONDS)
 
 
+class ManifestUnreadable(RuntimeError):
+    """The existing manifest is there but cannot be read or understood."""
+
+
+def _previous_manifest(path: Path) -> dict:
+    """The manifest the last write left, or {} when there is none yet.
+
+    WHY it refuses instead of starting from nothing: sheets_seen only grows,
+    and is carried from the previous manifest. Taking an unreadable manifest
+    (a moment's read failure on the share, a damaged file) as empty would
+    shrink the list to this one import's listing -- and a never-imported
+    cohort whose sheet is missing from that listing would drop off it, so
+    its videos would be filed without the hand-score comparison. A read
+    failure is retried like a refused rename; one that persists, or a file
+    that is not a JSON object, raises ManifestUnreadable, which fails the
+    write (the import reports "FAIL hand scores") and leaves both files as
+    they were. Only a manifest that does not EXIST counts as a first write."""
+    for attempt in range(REPLACE_TRIES):
+        try:
+            text = path.read_text(encoding="utf-8")
+            break
+        except FileNotFoundError:
+            return {}
+        except OSError as e:
+            if attempt == REPLACE_TRIES - 1:
+                raise ManifestUnreadable(
+                    "the existing %s could not be read (%s); not rewritten, so its "
+                    "list of cohorts with a sheet is not lost" % (path.name, e)) from e
+            time.sleep(REPLACE_WAIT_SECONDS)
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        data = e
+    if not isinstance(data, dict):
+        raise ManifestUnreadable(
+            "the existing %s is damaged (not a JSON object); not rewritten, so its "
+            "list of cohorts with a sheet is not lost. Restore it from a backup, or "
+            "delete it to start that list again from the next import" % path.name)
+    return data
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -213,6 +254,9 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
     db_file = Path(db_file) if db_file else require("db_path")
     dest = Path(dest) if dest else out_dir()
     dest.mkdir(parents=True, exist_ok=True)
+    # Read first: a manifest that cannot be read stops the write before
+    # either file is replaced (see _previous_manifest).
+    previous = _previous_manifest(dest / MANIFEST_NAME)
     q = """SELECT ps.subject_id, ps.session_date, ps.tray_type, ps.tray_number,
                   ps.pellet_number, ps.score, s.cohort_id, c.project_code
            FROM pellet_scores ps
@@ -234,11 +278,6 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
     # place; the manifest below carries the hash (see scores_sha256 above).
     scores_hash = _sha256(tmp)
     _replace(tmp, dest / FILE_NAME)
-    previous = {}
-    try:
-        previous = json.loads((dest / MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        pass
     now = datetime.now().isoformat(timespec="seconds")
     manifest = {
         "written_at": now,
