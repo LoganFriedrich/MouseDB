@@ -393,11 +393,18 @@ Only the tray-scoring tab is checked this way. While several files match the
 cohort and none is pinned (see "When several files match a cohort"), the rows
 READ are still repaired -- so a day an earlier import already moved to the
 date meant is matched there, not stored a second time under the typo -- but no
-score already stored is moved. If some scores are still stored under the
-typed date (from an import made before this repair existed), the rows of that
-date are read as typed so they match those scores, and the warning
-`HELD BACK until the cohort's sheet is pinned: re-dating ...` says so. The
-import after you pin the sheet moves them.
+score already stored is moved. This is decided tray by tray (one animal's
+tray on one day), never for the whole day at once: a tray that an earlier
+sheet import still has stored under the typed date (an import made before this
+repair existed), and not under the corrected date, is read as typed so it
+matches those scores, and the warning
+`HELD BACK until the cohort's sheet is pinned: re-dating N 3b_Manual_Tray
+trays ...` says so. Every other tray of that day is read under the corrected
+date. A score a person typed in under the typed date does not count: the
+repair never moves it, so it says nothing about where the import filed the
+tray. Each tray is therefore stored once, under one date. The import after
+you pin the sheet moves the held-back trays. The `Weight %` column of the tab
+follows the same tray-by-tray choice.
 
 ### A weekend date among one day's rows is read as that day
 
@@ -424,7 +431,10 @@ CNT_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
 cohort's FIX THESE file until the sheet is fixed. **What you do:** type the
 date into those cells (a typed date never moves). While several files match
 the cohort and none is pinned, the rows read are still read as the weekday,
-but stored scores are not moved: as for a year typo above.
+but stored scores are not moved: as for a year typo above, a tray the import
+still has stored under the weekend date (and not under the weekday) is read
+as dated, and a score a person typed in under the weekend date does not
+count.
 
 What it leaves alone, on purpose:
 
@@ -783,9 +793,11 @@ it held back is listed as a warning starting `HELD BACK until the cohort's
 sheet is pinned:`
 
 - moving scores already STORED under a date typed a year off or on a
-  weekend (the rows read are still re-dated as usual; only where scores are
-  still stored under the wrong date are that date's rows read as typed, so
-  they match those scores and nothing is stored twice);
+  weekend (the rows read are still re-dated as usual, tray by tray; only a
+  tray that an earlier import still has stored under the wrong date, and not
+  under the right one, is read as typed, so it matches those scores. A score
+  a person typed in under the wrong date does not count. Each tray is stored
+  once);
 - removing an earlier import of a virus batch the file shows as copied from
   another cohort's workbook;
 - replacing the placeholder note of an animal or the placeholder start date

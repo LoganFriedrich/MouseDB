@@ -819,11 +819,6 @@ class ExcelImporter:
         # weight % lands on the day its scores are filed under.
         repairs = self._tab_date_repairs(
             cohort_id, '3b_Manual_Tray', [self._parse_date(v) for v in df['Date']])
-        if self.sync_blocked and repairs:
-            # On a guess the scores keep a typed date only where stored scores
-            # are still under it (see _import_pellet_scores); the same here.
-            still_typed = self._stored_pellet_dates(session, cohort_id, repairs)
-            repairs = {t: m for t, m in repairs.items() if t not in still_typed}
         for _, row in df.iterrows():
             raw_id = row.get('Animal')
             if self._blank(raw_id):
@@ -832,7 +827,16 @@ class ExcelImporter:
             # in the percentage of another cohort's animal.
             subject_id = self._resolve_subject_id(raw_id, cohort_id, '3b_Manual_Tray')
             date_val = self._parse_date(row.get('Date'))
-            date_val = repairs.get(date_val, date_val)
+            if subject_id and date_val in repairs:
+                # On a guess a row keeps its typed date only where its own tray
+                # is still stored under it, exactly as the scores on this tab
+                # are decided (_guess_reads_as_typed), so a day's weight %
+                # lands on the day its scores are filed under.
+                tray_key = self._tray_key(subject_id, date_val, row)
+                if not (self.sync_blocked and tray_key is not None
+                        and self._guess_reads_as_typed(session, tray_key,
+                                                       repairs[date_val])):
+                    date_val = repairs[date_val]
             # No id: _resolve_subject_id recorded why. No date: a session not
             # held yet (generated workbooks pre-write the future rows with the
             # animal and no date), so there is no weighing to fill in.
@@ -1425,19 +1429,34 @@ class ExcelImporter:
             # usual case is a cohort whose stored scores an earlier import
             # already moved to the date meant, and reading the typo rows under
             # the typed date would store the same tray a second time, a year
-            # away. Only the MOVE of stored rows is held back. A typed date
-            # that still has stored rows under it (left from before the repair
-            # existed) is read as typed instead, so the read rows match those
-            # stored rows rather than being added beside them.
-            still_typed = self._stored_pellet_dates(session, cohort_id, repairs)
-            if still_typed:
-                self._held_back(
-                    "re-dating the 3b_Manual_Tray scores stored under a date typed a year "
-                    "off (%s); those rows are read as dated in the file" % ", ".join(
-                        "%s -> %s" % (t, repairs[t]) for t in sorted(still_typed)))
-            repairs = {t: m for t, m in repairs.items() if t not in still_typed}
+            # away. Only the MOVE of stored rows is held back. The choice is
+            # made PER TRAY, never per date: a row is read as typed only when
+            # its own tray is still stored under the typed date by an earlier
+            # import, and not under the date meant (_guess_reads_as_typed) --
+            # then the read row matches those stored rows instead of being
+            # added beside them. WHY per tray: one stray score under the typed
+            # date (typed in by a person, or one the move left because the
+            # date meant already had that pellet) used to send the WHOLE day
+            # back to the typed date, storing every other tray of it twice.
             move_repairs = {}
-        if repairs:
+            typed_trays = set()
+            redated = []
+            for s_, d, tt, tn, sc in rows:
+                if d in repairs and self._guess_reads_as_typed(
+                        session, (s_, d, tt, tn), repairs[d]):
+                    typed_trays.add((s_, d, tt, tn))
+                    redated.append((s_, d, tt, tn, sc))
+                else:
+                    redated.append((s_, repairs.get(d, d), tt, tn, sc))
+            if typed_trays:
+                self._held_back(
+                    "re-dating %d 3b_Manual_Tray tray%s stored under a date typed a year "
+                    "off (%s); those rows are read as dated in the file" % (
+                        len(typed_trays), "" if len(typed_trays) == 1 else "s",
+                        ", ".join("%s -> %s" % (t, repairs[t]) for t in
+                                  sorted({k[1] for k in typed_trays}))))
+            rows = redated
+        elif repairs:
             rows = [(s, repairs.get(d, d), tt, tn, sc) for s, d, tt, tn, sc in rows]
         if move_repairs:
             self._move_misdated_pellet_rows(session, cohort_id, move_repairs, dry_run)
@@ -1454,9 +1473,11 @@ class ExcelImporter:
                           for i, meant in islands.items()}
             if self.sync_blocked:
                 # As for the year typos above: the rows read are re-dated, the
-                # stored rows are not moved, and a tray still stored under the
-                # weekend date is read as dated so it is never stored twice.
-                still = self._stored_tray_keys(session, tray_moves)
+                # stored rows are not moved, and a tray an earlier import still
+                # has under the weekend date (and not under the weekday) is
+                # read as dated so it is never stored twice.
+                still = {k for k, meant in tray_moves.items()
+                         if self._guess_reads_as_typed(session, k, meant)}
                 if still:
                     self._held_back(
                         "re-dating %d stored weekend-dated 3b_Manual_Tray tray%s to the "
@@ -2056,22 +2077,47 @@ class ExcelImporter:
                 f"falls among them with its year corrected). Correct it in the sheet.")
         return repairs
 
-    def _stored_pellet_dates(self, session, cohort_id: str, dates) -> set:
-        """Which of ``dates`` this cohort still has pellet scores stored under
-        (by anyone). Used on a guess, when stored rows are not moved: a read
-        row is then kept on such a date so it matches what is stored there."""
-        cohort_subjects = session.query(Subject.subject_id).filter_by(cohort_id=cohort_id)
-        return {d for d in dates if session.query(PelletScore.subject_id).filter(
-                PelletScore.session_date == d,
-                PelletScore.subject_id.in_(cohort_subjects)).first() is not None}
+    def _guess_reads_as_typed(self, session, key, meant) -> bool:
+        """On a guess (sync_blocked), whether a read row of the tray ``key`` --
+        (animal, date as typed, tray type, tray number) -- keeps its typed date
+        instead of being re-dated to ``meant``.
 
-    def _stored_tray_keys(self, session, keys) -> set:
-        """Which (animal, date, tray type, tray number) keys have pellet scores
-        stored (by anyone): the tray-level counterpart of _stored_pellet_dates."""
-        return {k for k in keys if session.query(PelletScore.subject_id).filter(
-            PelletScore.subject_id == k[0], PelletScore.session_date == k[1],
-            PelletScore.tray_type == k[2], PelletScore.tray_number == k[3]).first()
-            is not None}
+        True only when an earlier sheet import (entered_by = SHEET_IMPORT_MARK)
+        still has this tray stored under the typed date AND has none of it
+        under the date meant: the stored rows are not moved on a guess, so the
+        read row is kept beside them, where it matches them. Every other row
+        is re-dated to the date meant, where an earlier import's move put it.
+
+        WHY only the import's own rows: those are the only rows the repair
+        ever moves, so they are the only sign of where the import filed this
+        tray. A score a person typed in under the typed date is never moved
+        and says nothing about it; counting it read the whole tray as typed
+        and stored its other pellets a second time, a year away. WHY "none
+        under the date meant": a tray whose move left one pellet behind (the
+        date meant already had that pellet) is filed under the date meant;
+        the leftover must not pull the rest of the tray back."""
+        subject_id, typed, tray_type, tray_number = key
+
+        def stored(day):
+            return session.query(PelletScore.subject_id).filter(
+                PelletScore.subject_id == subject_id, PelletScore.session_date == day,
+                PelletScore.tray_type == tray_type, PelletScore.tray_number == tray_number,
+                PelletScore.entered_by == self.SHEET_IMPORT_MARK).first() is not None
+
+        return stored(typed) and not stored(meant)
+
+    def _tray_key(self, subject_id, date_val, row):
+        """(animal, date, tray type, tray number) for one 3b_Manual_Tray row,
+        parsed as _import_pellet_scores parses it; None when the tray cell
+        cannot be read."""
+        tray_info = row.get('Tray Type/Number') or row.get('Tray')
+        if tray_info is None or pd.isna(tray_info):
+            return None
+        tray_str = str(tray_info).strip()
+        try:
+            return (subject_id, date_val, tray_str[0].upper(), int(tray_str[1:]))
+        except (IndexError, ValueError):
+            return None
 
     def _move_misdated_pellet_rows(self, session, cohort_id: str, repairs: Dict, dry_run: bool):
         """Re-date this cohort's imported pellet scores filed under a typo'd

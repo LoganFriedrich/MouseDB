@@ -87,8 +87,11 @@ checked-in code, not what's planned.
     adds for that cohort and leaves its animal details as they were; the
     cohort is NOT SYNCED until a file is pinned. Nothing stored is changed,
     moved or removed on such a guess -- the move of scores stored under a
-    year-typo or weekend date (the rows read are still re-dated, so a day
-    already moved is not stored twice), the removal of a copied virus batch, the replacement of a
+    year-typo or weekend date (the rows read are still re-dated, decided
+    tray by tray: only a tray the import still has stored under the wrong
+    date, and not under the right one, is read as typed -- a score typed in
+    by a person under that date does not count -- so no tray is stored
+    twice), the removal of a copied virus batch, the replacement of a
     placeholder note or start, and a death from `Survived` are each HELD
     BACK and listed -- and the import does not count as the cohort's scores
     import for the hand-scores file (`scores_saved` false), so videos whose

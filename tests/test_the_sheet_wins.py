@@ -682,6 +682,96 @@ def test_a_guess_reads_a_weekend_island_under_its_weekday_and_moves_no_stored_tr
     assert any("HELD BACK" in w and "weekend" in w for w in r["warnings"])
 
 
+def _hand_score(db, animal, day, tray, pellet=1):
+    """One score a person typed in (not the sheet import's)."""
+    with db.session() as s:
+        s.add(PelletScore(subject_id=animal, session_date=day, tray_type="P",
+                          tray_number=tray, pellet_number=pellet, score=1,
+                          test_phase="Pillar", entered_by="manual"))
+
+
+def test_a_score_typed_in_by_hand_under_a_typo_date_pulls_nothing_back_on_a_guess(tmp_path):
+    """WHY: on a guess the import used to read a whole year-typo DAY as typed
+    when anything at all was stored under it. One score a person had typed in
+    under that date (which the repair never moves) sent every tray of the day
+    back to the typed date and stored them all a second time, a year away.
+    The choice is per tray, and only the import's own rows count."""
+    db = _db(tmp_path)
+    typo = DAYS[3].replace(year=DAYS[3].year - 1)
+    days = [typo if d == DAYS[3] else d for d in DAYS]
+    _import(db, _workbook(_sheet(tmp_path), days=days))       # moved to the date meant
+    _hand_score(db, ANIMALS[0], typo, tray=1)
+    before = _dates_stored(db)
+    assert before[typo] == 1
+
+    _guess(db, _workbook(_sheet(tmp_path), days=days))
+    assert _dates_stored(db) == before
+
+
+def test_a_pellet_the_move_left_behind_does_not_pull_its_tray_back_on_a_guess(tmp_path):
+    """A stored score the move could not take (the date meant already had that
+    pellet) stays under the typed date until a sync clears it; the rest of its
+    tray is filed under the date meant, and a guess reads the tray there --
+    not all of it again under the typed date."""
+    db = _db(tmp_path)
+    typo = DAYS[3].replace(year=DAYS[3].year - 1)
+    days = [typo if d == DAYS[3] else d for d in DAYS]
+    _import(db, _workbook(_sheet(tmp_path), days=days))       # moved to the date meant
+    with db.session() as s:      # the import's own pellet the move left behind
+        s.add(PelletScore(subject_id=ANIMALS[0], session_date=typo, tray_type="P",
+                          tray_number=1, pellet_number=1, score=1, test_phase="Pillar",
+                          entered_by="excel_import"))
+    before = _dates_stored(db)
+    assert before[typo] == 1
+
+    _guess(db, _workbook(_sheet(tmp_path), days=days))
+    assert _dates_stored(db) == before
+
+
+def test_a_score_typed_in_by_hand_under_a_weekend_date_pulls_no_tray_back_on_a_guess(tmp_path):
+    db = _db(tmp_path)
+    weekend = date(2026, 3, 7)
+    sheet = lambda: _with_weekend_island(_workbook(_sheet(tmp_path), trays=(1, 2)), weekend)
+    _import(db, sheet())
+    _hand_score(db, ANIMALS[0], weekend, tray=2)
+    before = _dates_stored(db)
+
+    _guess(db, sheet())
+    assert _dates_stored(db) == before
+
+
+def test_a_guess_fills_the_tray_tabs_percentage_on_the_date_meant(tmp_path):
+    """The weight % on the tray tab follows the same per-tray choice as the
+    scores: a score typed in by hand under the typo date does not send the
+    percentage to a date no weight is stored under."""
+    typo = DAYS[1].replace(year=DAYS[1].year - 1)
+
+    def sheet():
+        """The weights typed right; the tray tab's day typed a year off,
+        with a 'Weight %' column."""
+        wb = openpyxl.load_workbook(_workbook(_sheet(tmp_path)))
+        ws = wb["3b_Manual_Tray"]
+        col = ws.max_column + 1
+        ws.cell(row=1, column=col, value="Weight %")
+        for r in range(2, ws.max_row + 1):
+            ws.cell(row=r, column=col, value=0.9)
+            if ws.cell(row=r, column=1).value.date() == DAYS[1]:
+                ws.cell(row=r, column=1, value=typo)
+        wb.save(_sheet(tmp_path))
+        return _sheet(tmp_path)
+
+    db = _db(tmp_path)
+    _import(db, sheet())
+    assert _percent(db, ANIMALS[0], DAYS[1]) == 0.9
+    with db.session() as s:
+        s.query(Weight).filter_by(subject_id=ANIMALS[0], date=DAYS[1]).update(
+            {"weight_percent": None})
+    _hand_score(db, ANIMALS[0], typo, tray=1)
+
+    _guess(db, sheet())
+    assert _percent(db, ANIMALS[0], DAYS[1]) == 0.9
+
+
 def test_a_workbook_read_on_a_guess_replaces_no_note_and_records_no_death(tmp_path):
     db = _db(tmp_path)
     note = "auto-created from video 20260302_PROJA0101_P1 by the reach import"
