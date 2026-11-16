@@ -27,7 +27,13 @@ WHAT IT DOES
      is unchanged; ``--all`` ignores the ledger and re-checks every file.
   3. Files mirrored on an earlier run that no longer exist at the source are
      MOVED to ``<mousedb_root>/_archived/analyses/<YYYYmmdd_HHMMSS>/<relative path>``.
-     Nothing is ever deleted: the lab archives, it does not delete.
+     Nothing is ever deleted: the lab archives, it does not delete. A file is
+     archived only when the run is SURE it is gone: its analysis was listed
+     completely this run (registry.json included), or its analysis folder is
+     confirmed gone. An analysis that could not be listed, or whose folder has
+     no registry.json, keeps its mirror as it is and is reported as an error;
+     a run that lists no registry at all while the ledger holds files
+     archives nothing (see ``archivable_keys``).
   4. Writes ``<mousedb_root>/exports/ANALYSES_MANIFEST.json``: one row per
      analysis with its entry counts (current, invalidated, stale against the
      approved method) and what this run copied, skipped and archived.
@@ -48,6 +54,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -55,7 +62,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .config import require
-from .state_files import StateFileUnreadable, _read_state_file, _write_json_atomically
+from .state_files import (StateFileUnreadable, _confirmed_absent, _read_state_file,
+                          _write_json_atomically)
 
 logger = logging.getLogger(__name__)
 
@@ -104,24 +112,85 @@ def registry_root() -> Path:
     return require("mousebrain_registry_root")
 
 
-def find_registries(root: Path) -> List[Path]:
-    """Every exports/<analysis>/registry.json under the registry root, sorted."""
-    exports = root / "exports"
-    if not exports.is_dir():
+# WHY LISTING ERRORS MUST RAISE HERE
+# ---------------------------------
+# A mirrored file is archived when the ledger holds it but this run's listing
+# of the source does not. So a listing that QUIETLY comes back short -- a
+# share that drops for a moment, a folder that cannot be opened -- reads as
+# "MouseBrain withdrew all of this", and every mirrored file of the analysis
+# was moved to the archive. Path.glob / rglob / is_dir / is_file all swallow
+# errors (is_dir() is False for a folder that cannot be read), which is how the
+# old listing worked. Everything below lists with os.scandir, so an error is an
+# error, and "not there" is believed only from a folder listing that answers
+# (state_files._confirmed_absent), never from a FileNotFoundError alone.
+
+def _scan(folder: Path) -> Optional[List[os.DirEntry]]:
+    """The entries of ``folder``; None when it is confirmed absent. Any other
+    listing failure raises."""
+    try:
+        with os.scandir(folder) as it:
+            return list(it)
+    except FileNotFoundError:
+        if _confirmed_absent(folder):
+            return None
+        raise
+
+
+def _files_under(top: Path) -> List[Path]:
+    """Every file below ``top`` ([] when ``top`` is confirmed absent). A folder
+    that cannot be listed raises instead of being skipped."""
+    first = _scan(top)
+    if first is None:
         return []
-    return sorted(p for p in exports.glob("*/" + REGISTRY_FILE) if p.is_file())
+    found: List[Path] = []
+    stack = [(top, first)]
+    while stack:
+        folder, entries = stack.pop()
+        for e in entries:
+            path = folder / e.name
+            if e.is_dir():
+                sub = _scan(path)
+                if sub is not None:      # removed between the two listings: nothing in it
+                    stack.append((path, sub))
+            elif e.is_file():
+                found.append(path)
+    return found
+
+
+def list_analysis_folders(root: Path) -> List[str]:
+    """The names of the folders under ``<root>/exports`` (one per analysis),
+    sorted. Raises when the folder cannot be listed; [] when it is confirmed
+    absent."""
+    entries = _scan(root / "exports")
+    return sorted(e.name for e in entries or () if e.is_dir())
+
+
+def find_registries(root: Path) -> List[Path]:
+    """Every exports/<analysis>/registry.json under the registry root, sorted.
+    Raises when a folder cannot be listed (see above)."""
+    found = []
+    for analysis in list_analysis_folders(root):
+        entries = _scan(root / "exports" / analysis) or ()
+        if any(e.name == REGISTRY_FILE and e.is_file() for e in entries):
+            found.append(root / "exports" / analysis / REGISTRY_FILE)
+    return found
 
 
 def analysis_files(root: Path, analysis: str) -> List[Path]:
     """All files that belong to one analysis: its exports tree (registry.json
-    included -- it IS the provenance), its figures tree and its log."""
+    included -- it IS the provenance), its figures tree and its log. Raises
+    when any of them cannot be listed (see above): a short list would archive
+    the files it left out."""
     found: List[Path] = []
     for d in (root / "exports" / analysis, root / "figures" / analysis):
-        if d.is_dir():
-            found.extend(p for p in d.rglob("*") if p.is_file())
+        found.extend(_files_under(d))
     log_file = root / "logs" / ("%s.log" % analysis)
-    if log_file.is_file():
-        found.append(log_file)
+    try:
+        if stat.S_ISREG(os.stat(log_file).st_mode):
+            found.append(log_file)
+    except FileNotFoundError:
+        if not _confirmed_absent(log_file):
+            raise
     return sorted(set(found))
 
 
@@ -262,6 +331,40 @@ def archive_dir(dest: Path, stamp_dir: str) -> Path:
     return dest.joinpath(*ARCHIVE_SUBDIR) / stamp_dir
 
 
+def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
+                    folders: List[str], root: Path) -> Tuple[List[str], List[str]]:
+    """Split the ledger keys this run did not see into (archive, keep).
+
+    A key is archived only when its analysis was listed COMPLETELY this run
+    (its folders listed without error, its registry.json among them), or
+    when the analysis's exports folder is confirmed gone -- missing from the
+    listing of exports/ and confirmed absent by a listing of its own.
+    Everything else (an analysis that could not be listed, a folder without
+    its registry.json, a key that names no analysis) is kept: its mirror
+    stays as it is and its ledger entry stays, so a later run can decide.
+
+    WHY: archiving moves the mirror's copy away. Deciding "withdrawn" from a
+    listing that failed or came back short moved every mirrored file of an
+    analysis to the archive because its registry.json was not seen once."""
+    gone: List[str] = []
+    kept: List[str] = []
+    folder_names = set(folders)
+    absent: Dict[str, bool] = {}
+    for key in sorted(k for k in ledger if k not in present):
+        analysis = analysis_of_key(key)
+        if analysis in listed:
+            gone.append(key)
+            continue
+        if analysis is not None and analysis not in folder_names:
+            if analysis not in absent:
+                absent[analysis] = _confirmed_absent(root / "exports" / analysis)
+            if absent[analysis]:
+                gone.append(key)
+                continue
+        kept.append(key)
+    return gone, kept
+
+
 def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = None,
         log=print) -> ImportResult:
     res = ImportResult()
@@ -271,8 +374,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         raise FileNotFoundError(
             "no analysis registry at %s (MouseBrain has not registered any analysis yet, "
             "or mousebrain_pipeline_root points at the wrong folder)" % root)
-    registries = find_registries(root)
-    res.analyses = len(registries)
+    folders = list_analysis_folders(root)   # raises when exports/ cannot be listed
     ledger = load_ledger()
     now = datetime.now()
     imported_at = now.isoformat(timespec="seconds")
@@ -280,20 +382,42 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     rows: Dict[str, dict] = {}
     present = set()
     todo: List[Tuple[Path, str, str, Optional[str]]] = []  # (src, key, stamp, hash-if-known)
+    # Analyses whose files were listed completely this run (registry.json
+    # among them). Only these -- and analyses whose folder is confirmed gone
+    # -- may have mirrored files archived; see archivable_keys.
+    listed: set = set()
 
-    for reg_path in registries:
-        analysis = reg_path.parent.name
+    def problem(row: dict, msg: str) -> None:
+        res.errors += 1
+        row["problems"].append(msg)
+        res.messages.append(msg)
+        log("  [FAIL] %s" % msg)
+
+    for analysis in folders:
         row = _new_row(analysis, imported_at, root)
+        rows[analysis] = row
+        try:
+            files = analysis_files(root, analysis)
+        except OSError as e:
+            problem(row, "%s: its files could not be listed (%s); nothing of it was copied "
+                         "or archived -- the mirror is kept as it was" % (analysis, e))
+            continue
+        reg_path = root / "exports" / analysis / REGISTRY_FILE
+        if reg_path not in files:
+            # A folder without its registry.json is not something MouseBrain
+            # withdrew (that removes the folder): it is a registry being
+            # rebuilt, or a share that answered short. Archiving on it moved
+            # every mirrored file of the analysis away.
+            problem(row, "%s: exports/%s has no %s; nothing of it was copied or archived "
+                         "-- the mirror is kept as it was" % (analysis, analysis, REGISTRY_FILE))
+            continue
+        res.analyses += 1
+        listed.add(analysis)
         try:
             row.update(summarize_registry(read_registry(reg_path)))
         except Exception as e:
-            res.errors += 1
-            msg = "%s: %s unreadable: %s" % (analysis, REGISTRY_FILE, e)
-            row["problems"].append(msg)
-            res.messages.append(msg)
-            log("  [FAIL] %s" % msg)
-        rows[analysis] = row
-        for src in analysis_files(root, analysis):
+            problem(row, "%s: %s unreadable: %s" % (analysis, REGISTRY_FILE, e))
+        for src in files:
             key = rel_key(root, src)
             present.add(key)
             res.scanned += 1
@@ -332,10 +456,25 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
 
     if limit:
         todo = todo[:limit]
-    # Mirrored before, gone from the source now: to be archived (never deleted).
-    gone = sorted(k for k in ledger if k not in present)
-    log("import-analyses: %d analyses under %s; %d files: %d to copy, %d unchanged, %d to archive%s" %
-        (res.analyses, root, res.scanned, len(todo), res.skipped, len(gone),
+    # Mirrored before, gone from the source now: to be archived (never deleted)
+    # -- but only when the run can be sure it is gone (see archivable_keys).
+    gone, kept = archivable_keys(ledger, present, listed, folders, root)
+    if gone and not listed:
+        # Not one registry was listed, yet the ledger holds mirrored files:
+        # far more likely an empty or wrong listing (a share that answered
+        # with nothing, a pipeline root pointing at a new, empty folder) than
+        # every analysis withdrawn at once. Archive nothing.
+        kept, gone = sorted(kept + gone), []
+        msg = ("no analysis registry was listed under %s, but the ledger holds %d mirrored "
+               "files; nothing was archived. If every analysis really was withdrawn, move "
+               "the mirrored files to _archived by hand and rename the ledger (keep it)"
+               % (root / "exports", len(kept)))
+        res.errors += 1
+        res.messages.append(msg)
+        log("  [FAIL] %s" % msg)
+    log("import-analyses: %d analyses under %s; %d files: %d to copy, %d unchanged, %d to archive, "
+        "%d kept (not listed this run)%s" %
+        (res.analyses, root, res.scanned, len(todo), res.skipped, len(gone), len(kept),
          " [dry run]" if dry_run else ""))
 
     for src, key, stamp, h in todo:

@@ -143,6 +143,13 @@ checked-in code, not what's planned.
     beside them, so two imports finishing together cannot drop each other's
     cohorts from that list or leave a scores file that does not match its
     manifest's hash.
+- `mousedb import-analyses` archives a mirrored file only when it is sure the
+  file was withdrawn: its analysis was listed in full this run, or the
+  analysis folder is gone. It used to archive every mirrored file of an
+  analysis whose `registry.json` was not seen on one run, and listing errors
+  read as "no files". Now an analysis folder without `registry.json`, a
+  folder that cannot be listed, or a run that lists no registry at all while
+  the mirror holds files, archives nothing and fails with a `[FAIL]` line.
 - `mousedb import-analyses`: its ledger (`logs/analysis_imports.json`) and
   `exports/ANALYSES_MANIFEST.json` are written whole or not at all, and a
   ledger that is there but cannot be read stops the run with a `[FAIL]` line

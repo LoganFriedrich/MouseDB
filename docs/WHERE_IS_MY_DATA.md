@@ -721,6 +721,19 @@ under `<mousedb_root>` exactly as it does in MouseBrain's registry. Only new
 or changed files are copied. A file MouseBrain withdraws is not deleted here:
 it is moved to `<mousedb_root>/_archived/analyses/<date_time>/`.
 
+A file is moved to the archive only when the run is sure MouseBrain withdrew
+it. When it cannot be sure, it leaves the mirror exactly as it is, prints a
+`[FAIL]` line and the job fails (exit code 1), so the problem is seen; the
+next run that can see the files carries on as normal. The cases:
+
+| what the run finds | what it does |
+|---|---|
+| the analysis is listed in full (its `registry.json` is there) and a file it mirrored before is no longer there | archives that file |
+| the whole analysis folder `exports/<analysis>` is gone, and other analyses are still there | archives every mirrored file of that analysis (MouseBrain withdrew it) |
+| the folder `exports/<analysis>` is there but has no `registry.json` | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If the analysis really was withdrawn, MouseBrain removes the whole folder. |
+| a folder of the analysis cannot be opened (a network error, no permission) | archives nothing of it: `[FAIL] <analysis>: its files could not be listed ...`. The other analyses are mirrored as usual. |
+| no analysis at all is listed, yet the mirror holds files | archives nothing: `[FAIL] no analysis registry was listed ...`. Check that `mousebrain_pipeline_root` (`mousedb config --show`) points at the right folder and that the share is reachable. If every analysis really was withdrawn, move the mirrored files under `_archived/analyses/` by hand and rename `logs/analysis_imports.json` (keep it). |
+
 `ANALYSES_MANIFEST.json` has one row per analysis: how many samples are
 registered, how many are **current**, how many are **stale vs approved**
 (current, but produced with a method other than the one the analysis now

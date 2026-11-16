@@ -231,6 +231,90 @@ class TestMirror:
 
 
 
+
+class TestNoArchiveOnAShortListing:
+    """WHY: a mirrored file is archived when the ledger has it and this run's
+    listing of the source does not. A listing that came back short -- one
+    registry.json not seen once, a folder that could not be opened, a share
+    that answered with nothing -- used to move every mirrored file of the
+    analysis (or of all of them) to the archive. Archiving needs proof that
+    the files are gone: the analysis listed completely, or its folder gone."""
+
+    def _mirrored(self, db, rel):
+        return (db / rel).is_file()
+
+    def test_a_folder_without_its_registry_keeps_its_mirror_and_is_an_error(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        res = ia.run(log=_quiet)
+        assert res.archived == 0
+        assert res.errors == 1
+        assert any("Alpha_Detection" in m and "registry.json" in m for m in res.messages)
+        for rel in ("exports/Alpha_Detection/registry.json",
+                    "exports/Alpha_Detection/S1/measurements.csv",
+                    "figures/Alpha_Detection/A1/R1/S1.png", "logs/Alpha_Detection.log"):
+            assert self._mirrored(db, rel), rel
+        assert not (db / "_archived").exists()
+        ledger = json.loads((db / "logs" / "analysis_imports.json").read_text())
+        assert "exports/Alpha_Detection/registry.json" in ledger     # kept for a later run
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert rows["Alpha_Detection"]["problems"]
+        assert ia.main([]) == 1                                       # the job fails, visibly
+
+    def test_once_the_registry_is_back_nothing_was_lost(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        regfile = reg / "exports" / "Alpha_Detection" / "registry.json"
+        content = regfile.read_bytes()
+        regfile.unlink()
+        ia.run(log=_quiet)
+        regfile.write_bytes(content)
+        res = ia.run(log=_quiet)
+        assert res.errors == 0 and res.archived == 0
+
+    def test_an_empty_listing_with_a_full_ledger_archives_nothing(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        for a in ("Alpha_Detection", "Beta_ROI"):
+            shutil.rmtree(str(reg / "exports" / a))
+        res = ia.run(log=_quiet)
+        assert res.archived == 0 and res.errors == 1
+        assert any("nothing was archived" in m for m in res.messages)
+        assert self._mirrored(db, "exports/Beta_ROI/S1/measurements.csv")
+        assert not (db / "_archived").exists()
+
+    def test_a_withdrawn_analysis_is_archived_when_another_is_still_listed(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
+        shutil.rmtree(str(reg / "figures" / "Alpha_Detection"))
+        (reg / "logs" / "Alpha_Detection.log").unlink()
+        res = ia.run(log=_quiet)
+        assert res.errors == 0 and res.archived == FILES_PER_ANALYSIS
+        assert not self._mirrored(db, "exports/Alpha_Detection/registry.json")
+        assert self._mirrored(db, "exports/Beta_ROI/registry.json")
+
+    def test_a_folder_that_cannot_be_listed_keeps_its_mirror(self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        real_scandir = os.scandir
+        blocked = os.path.normcase(str(reg / "figures" / "Alpha_Detection" / "A1"))
+
+        def scandir(path="."):
+            if os.path.normcase(str(path)) == blocked:
+                raise PermissionError(13, "Access is denied", str(path))
+            return real_scandir(path)
+        monkeypatch.setattr(os, "scandir", scandir)
+        res = ia.run(log=_quiet)
+        assert res.archived == 0 and res.errors == 1
+        assert self._mirrored(db, "figures/Alpha_Detection/A1/R1/S1.png")
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert rows["Beta_ROI"]["files_skipped"] == FILES_PER_ANALYSIS   # the others still run
+
+
 class TestLedgerAndManifestAreSafe:
     """WHY: the ledger is the only record of what was mirrored. It used to be
     written with a plain overwrite and read as EMPTY when it could not be
