@@ -126,7 +126,11 @@ desktop. Guide: docs/DATA_BROWSER.md. Terminal: mousedb-data-browser
 TISSUE ANALYSES: below the export files, one line per MouseBrain analysis
 says how many samples are current, how many were produced with a method
 other than the one now approved (stale -- re-run before use), how many were
-invalidated, and when the mirror was last taken.
+invalidated, and when the mirror was last taken. A line ending "[FAIL] ..."
+is an analysis the last mirror run kept as it was, with the reason; an
+"[!] analysis mirror: ..." line at the bottom is a problem of the whole run
+(for example, no analysis listed at all). Guide: docs/WHERE_IS_MY_DATA.md,
+"How tissue analysis outputs get here".
 """
 
 

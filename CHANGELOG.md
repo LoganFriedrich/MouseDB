@@ -157,13 +157,30 @@ checked-in code, not what's planned.
   ledger entries. A run that cannot get the lock in time ends with
   `[FAIL] import-analyses not run: ...` and changes nothing. `--dry-run`
   takes no lock.
+- `mousedb import-analyses`: an analysis it keeps back instead of archiving is
+  now an error with its reason, and the Where Is My Data tab says why, when it
+  is held because its folder has no `registry.json` while the mirror holds its
+  files, its folder cannot be listed, its missing folder could not be confirmed
+  gone, no analysis was listed at all, or a ledger line names no analysis. A
+  mirror copy that cannot itself be looked at when it is due to be archived is
+  kept too, but that shows only in the job's output, as a `[FAIL] archive
+  <path>` line and exit code 1, not on the tab. A run
+  that listed no analysis at all used to leave the tab with no analysis lines
+  and no reason; it now shows a `[FAIL]` line per analysis the mirror holds and
+  an `[!] analysis mirror: ...` line (the manifest's new top-level `problems`).
+  An analysis folder missing from the listing whose absence could not be
+  confirmed was kept with exit code 0 and no message; it is now an error naming
+  the analysis.
 - `mousedb import-analyses` archives a mirrored file only when it is sure the
   file was withdrawn: its analysis was listed in full this run, or the
   analysis folder is gone. It used to archive every mirrored file of an
   analysis whose `registry.json` was not seen on one run, and listing errors
-  read as "no files". Now an analysis folder without `registry.json`, a
-  folder that cannot be listed, or a run that lists no registry at all while
-  the mirror holds files, archives nothing and fails with a `[FAIL]` line.
+  read as "no files". Now an analysis folder without `registry.json` whose
+  files the mirror holds, a folder that cannot be listed, or a run that lists
+  no registry at all while the mirror holds files, archives nothing and fails
+  with a `[FAIL]` line. A folder without `registry.json` that nothing was ever
+  mirrored from (MouseBrain makes the folder before anything is registered in
+  it) is a `[note]`, not an error.
 - `mousedb import-analyses`: its ledger (`logs/analysis_imports.json`) and
   `exports/ANALYSES_MANIFEST.json` are written whole or not at all, and a
   ledger that is there but cannot be read stops the run with a `[FAIL]` line

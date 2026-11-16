@@ -98,6 +98,22 @@ def read_analyses_manifest(path: Path) -> List[dict]:
     return [r for r in rows if isinstance(r, dict)]
 
 
+def read_analyses_manifest_problems(path: Path) -> List[str]:
+    """The run-level ``problems`` of exports/ANALYSES_MANIFEST.json (ones
+    that belong to no single analysis, e.g. "no analysis registry was listed
+    ... nothing was archived"); [] when there are none or no import has run.
+
+    WHY: the mirror can hold every file back for a reason no analysis row
+    carries; written only into the manifest, it reached nobody, and the tab
+    showed no analysis lines and no reason. ``status`` puts these into its
+    ``problems``, which the tab and the terminal show as ``[!]`` lines."""
+    if not path.is_file():
+        return []
+    m = json.loads(path.read_text(encoding="utf-8"))
+    probs = m.get("problems", []) if isinstance(m, dict) else []
+    return ["analysis mirror: %s" % p for p in probs if p]
+
+
 def analysis_lines(rows: List[dict]) -> List[str]:
     """One line per analysis, identical in the terminal and the GUI.
 
@@ -628,8 +644,9 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
 
     # Tissue analyses mirrored from MouseBrain's registry (mousedb import-analyses)
     try:
-        out["analyses"] = read_analyses_manifest(
-            require("mousedb_root") / "exports" / ANALYSES_MANIFEST_NAME)
+        amp = require("mousedb_root") / "exports" / ANALYSES_MANIFEST_NAME
+        out["analyses"] = read_analyses_manifest(amp)
+        out["problems"].extend(read_analyses_manifest_problems(amp))
     except Exception as e:
         out["problems"].append("analyses manifest unreadable: %s" % e)
 

@@ -614,6 +614,119 @@ class TestHeldAnalysisShowsItsReason:
         assert "[FAIL]" not in alpha
 
 
+
+class TestHeldFilesAreNeverSilent:
+    """WHY: when the mirror keeps files back instead of archiving them, the
+    reason must reach the Where Is My Data tab. A run that listed no analysis
+    at all wrote a manifest with no rows ({"analyses": []}), so the tab showed
+    no analysis and no reason while the mirror still held every file; and a
+    folder missing from the listing whose absence could not be confirmed was
+    kept with only a count in the summary line and exit code 0."""
+
+    def test_an_empty_listing_names_its_reason_on_the_status_lines(self, roots, tmp_path,
+                                                                   monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        for a in ("Alpha_Detection", "Beta_ROI"):
+            shutil.rmtree(str(reg / "exports" / a))
+        res = ia.run(log=_quiet)
+        assert res.archived == 0 and res.errors >= 1
+        from mousedb import data_status as ds
+        manifest = db / "exports" / "ANALYSES_MANIFEST.json"
+        lines = ds.analysis_lines(ds.read_analyses_manifest(manifest))
+        for a in ("Alpha_Detection", "Beta_ROI"):
+            mine = [s for s in lines if s.startswith("Analysis %s:" % a)]
+            assert mine, lines
+            assert "[FAIL]" in mine[0] and "kept, not archived" in mine[0]
+        run_level = ds.read_analyses_manifest_problems(manifest)
+        assert any("no analysis registry was listed" in p for p in run_level), run_level
+        # status() is what the tab and mousedb-data-status show. Give it an
+        # empty snapshot (status() shows nothing below an unreadable one) and
+        # empty review queues of the test's own, never the live ones.
+        import pandas as pd
+        from mousedb import snapshot_generation
+        empty = (pd.DataFrame(columns=["subject_id", "video_name", "outcome_source",
+                                       "segment_num"]),
+                 pd.DataFrame(columns=["subject_id", "session_date"]), None, None)
+        monkeypatch.setattr(snapshot_generation, "read_consistent",
+                            lambda folder, read: (empty, "test"))
+        monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path / "reach_pipeline"))
+        from mousedb import sheet_sync
+        monkeypatch.setattr(sheet_sync, "status", lambda *a, **k: {"cohorts": []})
+        st = ds.status(tmp_path / "snapshot")
+        assert any(p.startswith("analysis mirror: no analysis registry was listed")
+                   for p in st["problems"]), st["problems"]
+
+    def test_an_absence_that_cannot_be_confirmed_is_an_error_naming_the_analysis(
+            self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
+        # the folder is missing from the listing, but a second look cannot
+        # confirm it is gone (a share that answered short, a listing that failed)
+        monkeypatch.setattr(ia, "_confirmed_absent", lambda path: False, raising=False)
+        res = ia.run(log=_quiet)
+        assert res.archived == 0
+        assert res.errors == 1
+        assert any("Alpha_Detection" in m and "could not be confirmed gone" in m
+                   for m in res.messages), res.messages
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert rows["Alpha_Detection"]["problems"]
+        assert not rows["Beta_ROI"]["problems"]
+        assert ia.main([]) == 1                                    # the job fails, visibly
+
+    def test_a_clean_run_has_no_run_level_problems(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        from mousedb import data_status as ds
+        assert ds.read_analyses_manifest_problems(
+            db / "exports" / "ANALYSES_MANIFEST.json") == []
+
+
+class TestAFolderWithNothingRegisteredIsNoError:
+    """WHY: MouseBrain creates exports/<analysis> as soon as anything opens
+    that analysis's registry, before anything is registered in it (a new
+    analysis, a mistyped name given to its registry command). Nothing of such
+    a folder was ever mirrored, so there is nothing to keep safe: counting it
+    as an error failed the nightly job every night, and no later run could
+    clear it. Only a folder whose files the mirror already holds is kept
+    back as an error."""
+
+    def test_an_empty_analysis_folder_is_not_an_error(self, roots, capsys):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Gamma_New").mkdir()
+        res = ia.run(log=_quiet)
+        assert res.errors == 0 and res.archived == 0
+        assert "Gamma_New" not in {r["analysis_name"] for r in res.manifest}
+        capsys.readouterr()
+        assert ia.main([]) == 0
+        assert "[FAIL]" not in capsys.readouterr().out
+
+    def test_on_a_first_run_too(self, roots, capsys):
+        reg, db = roots
+        (reg / "exports" / "Gamma_New").mkdir()
+        assert ia.main([]) == 0
+        assert "[FAIL]" not in capsys.readouterr().out
+
+    def test_files_without_a_registry_and_nothing_mirrored_are_not_an_error(self, roots):
+        reg, db = roots
+        _write(reg / "exports" / "Gamma_New" / "S1" / "measurements.csv", "id\n1\n")
+        res = ia.run(log=_quiet)
+        assert res.errors == 0
+        assert not (db / "exports" / "Gamma_New").exists()       # nothing copied of it
+
+    def test_a_folder_whose_files_are_mirrored_is_still_an_error(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        res = ia.run(log=_quiet)
+        assert res.errors == 1 and res.archived == 0
+
+
 class TestImportBrains:
     def test_without_summary_dir_and_without_config_raises_config_error(self, monkeypatch):
         """cli.py used to reference a module constant that no longer existed:

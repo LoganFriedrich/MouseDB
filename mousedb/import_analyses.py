@@ -31,12 +31,18 @@ WHAT IT DOES
      archived only when the run is SURE it is gone: its analysis was listed
      completely this run (registry.json included), or its analysis folder is
      confirmed gone. An analysis that could not be listed, or whose folder has
-     no registry.json, keeps its mirror as it is and is reported as an error;
-     a run that lists no registry at all while the ledger holds files
-     archives nothing (see ``archivable_keys``).
+     no registry.json while the mirror holds files of it, keeps its mirror as
+     it is and is reported as an error; a run that lists no registry at all
+     while the ledger holds files archives nothing (see ``archivable_keys``).
+     Every file kept back this way is an error of the run with its reason,
+     and shows on the Where Is My Data tab (see ``held_problems``). A folder
+     with no registry.json and nothing mirrored from it (MouseBrain creates
+     the folder before anything is registered in it) is not an error: there
+     is nothing to copy and nothing to protect.
   4. Writes ``<mousedb_root>/exports/ANALYSES_MANIFEST.json``: one row per
      analysis with its entry counts (current, invalidated, stale against the
-     approved method) and what this run copied, skipped and archived.
+     approved method) and what this run copied, skipped and archived, plus
+     ``problems``: the run's problems that belong to no single analysis.
 
 It writes NO database rows -- only files under <mousedb_root> -- so, unlike
 ``import-reaches``, it needs no watcher guard and may run at any time. It
@@ -350,12 +356,22 @@ def manifest_path() -> Path:
     return require("mousedb_root") / "exports" / MANIFEST_NAME
 
 
-def write_manifest(rows: List[dict], imported_at: str, root: Path) -> Path:
+def write_manifest(rows: List[dict], imported_at: str, root: Path,
+                   problems: Optional[List[str]] = None) -> Path:
+    """Write the manifest: one row per analysis, plus ``problems``, the
+    run-level problems (ones that belong to no single analysis's row).
+
+    WHY the run-level list: a run that held mirrored files back without
+    archiving them (see ``held_problems``) can have no row to hang the reason
+    on -- when the source listed no analysis at all, the rows were empty and
+    the manifest said only ``{"analyses": []}``, so the Where Is My Data tab
+    showed no analysis and no reason while the mirror still held every file.
+    data_status shows these problems as ``[!]`` lines."""
     # Atomic for the same reason as the ledger: the Where Is My Data tab reads
     # this file, and a half-written one showed there as "manifest unreadable".
     p = manifest_path()
     _write_json_atomically(p, {"imported_at": imported_at, "source_root": str(root),
-                               "analyses": rows})
+                               "problems": list(problems or []), "analyses": rows})
     return p
 
 
@@ -417,6 +433,59 @@ def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
     return gone, kept
 
 
+def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root: Path,
+                  reason: Optional[str] = None) -> List[str]:
+    """Make every kept ledger key visible. Returns the run-level problems
+    to report (each one an error of the run); adds a row, with its reason,
+    for every analysis that has kept keys but no row yet.
+
+    Keys of an analysis that already has a row need nothing more: that row
+    already carries the problem that kept them (no registry.json, a folder
+    that could not be listed). The others were kept for a reason no row
+    shows: the analysis was missing from the listing of exports/ but its
+    absence could not be confirmed (the share answered short, or a second
+    listing failed), the run listed no analysis at all (``reason`` is then
+    that run-level message), or the key names no analysis.
+
+    WHY: such keys used to be kept silently -- only a "N kept" count in the
+    summary line, exit code 0, and nothing on the Where Is My Data tab --
+    so a mirror frozen for a reason nobody could see looked current."""
+    held: Dict[str, int] = {}
+    unnamed: List[str] = []
+    for key in kept:
+        a = analysis_of_key(key)
+        if a is None:
+            unnamed.append(key)
+        elif a not in rows:
+            held[a] = held.get(a, 0) + 1
+    out: List[str] = []
+    for a in sorted(held):
+        row = _new_row(a, imported_at, root)
+        if reason is not None:
+            row["problems"].append(
+                "%s: not listed this run (no analysis registry was listed at all); its %d "
+                "mirrored file(s) were kept, not archived" % (a, held[a]))
+        else:
+            row["problems"].append(
+                "%s: its folder was missing from the listing of exports/ but could not be "
+                "confirmed gone; its %d mirrored file(s) were kept, not archived -- the "
+                "mirror is kept as it was" % (a, held[a]))
+        rows[a] = row
+    if held and reason is None:
+        out.append("%d analysis folder(s) missing from the listing of %s could not be "
+                   "confirmed gone, so their mirrored files were kept, not archived: %s. "
+                   "Check that the share is reachable and run again; if the analysis was "
+                   "withdrawn, the next run that can confirm it archives its mirror"
+                   % (len(held), root / "exports", ", ".join(sorted(held))))
+    if unnamed:
+        out.append("%d ledger entr%s name%s no analysis (for example %s) and were kept, not "
+                   "archived; they do not belong in the analysis mirror's ledger -- rename "
+                   "logs/%s (keep it) so the next run starts a new one"
+                   % (len(unnamed), "y" if len(unnamed) == 1 else "ies",
+                      "s" if len(unnamed) == 1 else "", unnamed[0], LEDGER_NAME))
+    return out
+
+
 def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = None,
         log=print) -> ImportResult:
     res = ImportResult()
@@ -429,6 +498,8 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             "folder: see mousedb config --show)" % root)
     folders = list_analysis_folders(root)   # raises when exports/ cannot be listed
     ledger = load_ledger()
+    # Analyses of which the ledger records mirrored files.
+    mirrored = {analysis_of_key(k) for k in ledger}
     now = datetime.now()
     imported_at = now.isoformat(timespec="seconds")
     stamp_dir = now.strftime("%Y%m%d_%H%M%S")
@@ -440,9 +511,17 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # -- may have mirrored files archived; see archivable_keys.
     listed: set = set()
 
+    run_problems: List[str] = []   # problems no single row carries (manifest "problems")
+
     def problem(row: dict, msg: str) -> None:
         res.errors += 1
         row["problems"].append(msg)
+        res.messages.append(msg)
+        log("  [FAIL] %s" % msg)
+
+    def run_problem(msg: str) -> None:
+        res.errors += 1
+        run_problems.append(msg)
         res.messages.append(msg)
         log("  [FAIL] %s" % msg)
 
@@ -457,11 +536,25 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             continue
         reg_path = root / "exports" / analysis / REGISTRY_FILE
         if reg_path not in files:
-            # A folder without its registry.json is not a withdrawn analysis
-            # (a person withdraws one by removing its whole folder; MouseBrain
-            # never removes it): it is a registry being rebuilt or set aside
-            # as damaged, or a share that answered short. Archiving on it
-            # moved every mirrored file of the analysis away.
+            if analysis not in mirrored:
+                # Nothing of it was ever mirrored, so there is nothing to keep
+                # safe and nothing to copy: no error. WHY: MouseBrain creates
+                # exports/<analysis> as soon as anything opens that analysis's
+                # registry -- before anything is registered in it (a new
+                # analysis, a mistyped name given to its registry command).
+                # Counted as an error, that empty folder failed this job every
+                # night and no later run could clear it.
+                del rows[analysis]
+                log("  [note] %s: exports/%s has no %s and nothing of it has been mirrored; "
+                    "nothing to do (an analysis with nothing registered yet)"
+                    % (analysis, analysis, REGISTRY_FILE))
+                continue
+            # A folder without its registry.json, while the mirror holds files
+            # of it, is not proof of a withdrawal (a person withdraws an
+            # analysis by removing its whole folder; MouseBrain never removes
+            # one): it is a registry being rebuilt or set aside as damaged, or
+            # a share that answered short. Archiving on it moved every
+            # mirrored file of the analysis away.
             problem(row, "%s: exports/%s has no %s; nothing of it was copied or archived "
                          "-- the mirror is kept as it was" % (analysis, analysis, REGISTRY_FILE))
             continue
@@ -513,6 +606,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # Mirrored before, gone from the source now: to be archived (never deleted)
     # -- but only when the run can be sure it is gone (see archivable_keys).
     gone, kept = archivable_keys(ledger, present, listed, folders, root)
+    guard = None
     if gone and not listed:
         # Not one registry was listed, yet the ledger holds mirrored files:
         # far more likely an empty or wrong listing (a share that answered
@@ -523,9 +617,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                "files; nothing was archived. If every analysis really was withdrawn, move "
                "the mirrored files to _archived by hand and rename the ledger (keep it)"
                % (root / "exports", len(kept)))
-        res.errors += 1
-        res.messages.append(msg)
-        log("  [FAIL] %s" % msg)
+        run_problem(msg)
+        guard = msg
+    for msg in held_problems(kept, rows, imported_at, root, reason=guard):
+        run_problem(msg)
     log("import-analyses: %d analyses under %s; %d files: %d to copy, %d unchanged, %d to archive, "
         "%d kept (not listed this run)%s" %
         (res.analyses, root, res.scanned, len(todo), res.skipped, len(gone), len(kept),
@@ -570,7 +665,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     res.manifest = [rows[a] for a in sorted(rows)]
     if not dry_run:
         save_ledger(ledger)  # also persists refreshed stamps for unchanged files
-        write_manifest(res.manifest, imported_at, root)
+        write_manifest(res.manifest, imported_at, root, problems=run_problems)
     for row in res.manifest:
         if row.get("entries") is not None:
             log("  %s: %d entries, %d current, %s, %d invalidated; "
