@@ -37,10 +37,12 @@ WHAT IT DOES
      Every file kept back this way is an error of the run with its reason,
      and shows on the Where Is My Data tab (see ``held_problems``). A folder
      with no registry.json and nothing of it in the mirror -- neither in the
-     ledger nor in the mirror's own folders, which are listed too because a
-     new or set-aside ledger knows nothing of earlier copies -- is not an
+     ledger nor in the mirror's own folders, which are looked at too because
+     a new or set-aside ledger knows nothing of earlier copies -- is not an
      error (MouseBrain creates the folder before anything is registered in
-     it): there is nothing to copy and nothing to protect.
+     it): there is nothing to copy and nothing to protect. "Of it" means
+     marked as that analysis, not merely kept under the same name (see
+     ``held_as_analysis``): this tool keeps other folders in the same places.
   3a. When a person confirms that MouseBrain withdrew an analysis (or files of
      it) -- ``--confirm-withdrawn <analysis>`` -- the run archives every
      mirrored file of that analysis MouseBrain no longer has, through the same
@@ -52,7 +54,11 @@ WHAT IT DOES
      analysis still registered, only the files MouseBrain dropped are
      archived. WHY a supported command: nothing but this
      tool writes into the mirror, so the remedy for "everything really was
-     withdrawn" cannot be "move the files by hand".
+     withdrawn" cannot be "move the files by hand". The name must be one
+     something identifies as an analysis -- the ledger, a folder at the
+     source the mirror holds copies from, or the mirror's own registry.json
+     copy (``held_as_analysis``); any other name is refused and nothing
+     moves, because the same places hold this tool's non-mirror folders.
   4. Writes ``<mousedb_root>/exports/ANALYSES_MANIFEST.json``: one row per
      analysis with its entry counts (current, invalidated, stale against the
      approved method) and what this run copied, skipped and archived, plus
@@ -588,9 +594,50 @@ def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
     return gone, kept
 
 
+def held_as_analysis(analysis: str, mirrored: set, mirror_files: List[Path], dest: Path,
+                     root: Path, source_files: Optional[List[Path]]) -> bool:
+    """Is what the mirror holds under this name the mirror of an ANALYSIS?
+    True when at least one of these marks it as one:
+
+    (a) the ledger records files of it (``mirrored``: this tool copied them);
+    (b) the source lists ``exports/<name>`` this run (``source_files``: the
+        files of that analysis there, None when it lists no such folder) and
+        the mirror has a copy of one of them -- same relative path, size and
+        modification time, the mark this tool's own copies carry (see
+        ``same_file``). A source folder that still has its registry.json
+        never gets here: ``run`` takes it as an analysis outright;
+    (c) the mirror holds ``exports/<name>/registry.json``, the copy of
+        MouseBrain's own record that only a mirrored analysis has.
+
+    WHY a name alone is not enough: ``<mousedb_root>/exports``, ``figures``
+    and ``logs`` are not the mirror's alone. This tool keeps its own export
+    folders and its other jobs' log files in the same places, under names
+    that are no analysis. Judged by "is there any file under
+    exports/<name>", ``--confirm-withdrawn <name>`` moved such a folder --
+    live files other tools read -- into the archive, with exit code 0. So
+    the confirmation, and the hold that points a person at it, act only on
+    a name one of the marks above identifies.
+
+    WHY (b) asks for a copied file and not just for the source folder:
+    MouseBrain creates ``exports/<name>`` for any name its registry is
+    opened with, a mistyped or unrelated one included, so an empty source
+    folder says nothing about what the mirror keeps under that name."""
+    if analysis in mirrored:
+        return True
+    if any(f == dest / "exports" / analysis / REGISTRY_FILE for f in mirror_files):
+        return True
+    if source_files and mirror_files:
+        for src in source_files:
+            try:
+                if same_file(os.stat(src), dest / rel_key(root, src)):
+                    return True
+            except OSError:
+                continue            # cannot be looked at: no mark from this file
+    return False
+
 
 def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present: set,
-                         unlistable: set, mirrored: set, dest: Path, run_problem,
+                         unlistable: set, recognized: set, dest: Path, run_problem,
                          mirror_listing: Dict[str, List[Path]]) -> Dict[str, dict]:
     """For each analysis a person confirmed withdrawn (``--confirm-withdrawn``),
     the mirror's files of it that neither the ledger nor this run's listing of
@@ -601,14 +648,34 @@ def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present:
     mirror folders could not be listed -- held whole by ``run``, which reports
     it, so it gets no extra keys here.
 
+    ``recognized``: the confirmed names that ``held_as_analysis`` identifies
+    as an analysis (worked out by ``run``, which has the listings).
+
     WHY the mirror is listed too: the ledger is the usual record of what was
     mirrored, but a ledger set aside (``--set-aside-ledger``) forgot every
     file mirrored before it, so a file MouseBrain withdrew before that would
     otherwise stay in the mirror for good. Refused, as an error of the run:
-    a name that is not a single folder name; a name the mirror holds nothing
-    of (no ``exports/<a>/registry.json`` and nothing in the ledger -- a
-    mistyped name); an analysis whose source or mirror folders could not be
-    listed this run."""
+    a name that is not a single folder name; a name nothing identifies as an
+    analysis (see ``held_as_analysis`` -- a mistyped name, or the name of a
+    folder or log this tool keeps for another purpose); an analysis whose
+    source or mirror folders could not be listed this run.
+
+    WHY a name is not accepted just because the mirror's folders hold files
+    under it: those folders also hold this tool's own, non-mirror folders
+    and logs, and accepting any name with files archived them whole. WHY it
+    is not judged by the mirror's copy of registry.json alone either: a
+    mirror can hold files of an analysis without that one file (the copy
+    was archived or never made) while the ledger no longer knows the
+    analysis; the nightly run holds such an analysis and names this command
+    as the remedy, so the command has to accept it -- which it does through
+    the copies the mirror shares with the source folder. Both sides use the
+    one rule, so every hold that names this command can be settled by it.
+
+    The corner that stays refused: the ledger knows nothing of the name, the
+    mirror has no registry.json copy of it, and the source has no folder
+    ``exports/<name>`` holding a file the mirror has a copy of (the source
+    folder wholly gone, or emptied). Nothing then tells those files from
+    files kept for another purpose, so they stay where they are."""
     extra: Dict[str, dict] = {}
     for a in confirmed:
         if not _plain_name(a):
@@ -619,13 +686,24 @@ def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present:
             run_problem("--confirm-withdrawn %s: its folders at the source could not be "
                         "listed this run, so nothing of it was archived; run again" % a)
             continue
-        if a not in mirrored and not (dest / "exports" / a / REGISTRY_FILE).is_file():
-            run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name "
-                        "(no exports/%s/%s and nothing in the ledger); nothing was archived "
-                        "-- check the name" % (a, a, REGISTRY_FILE))
-            continue
         if a not in mirror_listing:
             continue                    # its mirror could not be listed: held and reported by run
+        if a not in recognized:
+            n = len(mirror_listing[a])
+            if n:
+                run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name. "
+                            "%d file(s) sit under exports/%s, figures/%s or logs/%s.log, but "
+                            "nothing marks them as a mirrored analysis (nothing in the ledger, "
+                            "no exports/%s/%s in the mirror, and no file of theirs is a copy "
+                            "of one in a folder exports/%s at the source); they were left "
+                            "where they are and nothing was archived -- check the name"
+                            % (a, n, a, a, a, a, REGISTRY_FILE, a))
+            else:
+                run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name "
+                            "(no file under exports/%s or figures/%s, no logs/%s.log, and "
+                            "nothing in the ledger); nothing was archived -- check the name"
+                            % (a, a, a, a))
+            continue
         for f in mirror_listing[a]:
             k = rel_key(dest, f)
             if k not in ledger and k not in present:
@@ -689,7 +767,11 @@ def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root
 
 def _plain_name(name: str) -> bool:
     """An analysis name as MouseBrain makes one: a single folder name, never
-    a path (so ``--confirm-withdrawn`` cannot reach outside the mirror)."""
+    a path, so ``--confirm-withdrawn`` cannot reach outside the three places
+    the mirror writes to (``exports/<name>``, ``figures/<name>``,
+    ``logs/<name>.log``). That alone does not make the name an analysis:
+    other folders and logs of this tool sit in the same places, which is
+    what ``held_as_analysis`` is for."""
     return bool(name) and name not in (".", "..") and not any(c in name for c in ("/", "\\", ":"))
 
 
@@ -755,6 +837,9 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # was not.
     mirror_listing: Dict[str, List[Path]] = {}
     mirror_unlistable: Dict[str, str] = {}
+    # The confirmed names something identifies as an analysis (see
+    # held_as_analysis); only these are archived on a person's word.
+    recognized: set = set()
     for a in confirmed:
         if not _plain_name(a):
             continue
@@ -795,7 +880,27 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                 # reason is added to its row below. Nothing of it is listed
                 # this run, so none of its ledger keys can be archived.
                 continue
-            if analysis in confirmed:
+            # Does the mirror hold this ANALYSIS? The ledger answers for
+            # what this ledger copied, but the MIRROR itself is asked too.
+            # WHY: a ledger set aside (--set-aside-ledger), lost, or new on a
+            # machine whose mirror already exists knows nothing of earlier
+            # copies; deciding from it alone read "nothing to keep safe"
+            # while the mirror still held the analysis, and the analysis
+            # dropped off the Where Is My Data tab with no reason given.
+            # WHY not "any file under that name": see held_as_analysis.
+            others: List[Path] = []     # files under the name that mark no analysis
+            in_mirror = analysis in mirrored
+            if not in_mirror:
+                try:
+                    others = (mirror_listing[analysis] if analysis in mirror_listing
+                              else mirror_files_of(dest, analysis))
+                except OSError as e:
+                    problem(row, "%s: exports/%s has no %s, and the mirror's folders of it "
+                                 "could not be listed (%s); nothing of it was copied or "
+                                 "archived -- run again" % (analysis, analysis, REGISTRY_FILE, e))
+                    continue
+                in_mirror = held_as_analysis(analysis, mirrored, others, dest, root, files)
+            if in_mirror and analysis in confirmed:
                 # A person confirmed the withdrawal: archive its WHOLE mirror
                 # (below) -- files still in the source folder included, since
                 # none of them is added to ``present``. WHY whole: without its
@@ -805,25 +910,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                 # settle it. Its source files are not touched.
                 del rows[analysis]
                 withdrawn.add(analysis)
+                recognized.add(analysis)
                 log("  [note] %s: no %s at the source and confirmed withdrawn; its mirror "
                     "is archived" % (analysis, REGISTRY_FILE))
                 continue
-            # Does the mirror hold anything of it? The ledger answers for
-            # what this ledger copied, but the MIRROR itself is asked too.
-            # WHY: a ledger set aside (--set-aside-ledger), lost, or new on a
-            # machine whose mirror already exists knows nothing of earlier
-            # copies; deciding from it alone read "nothing to keep safe"
-            # while the mirror still held the analysis, and the analysis
-            # dropped off the Where Is My Data tab with no reason given.
-            in_mirror = analysis in mirrored
-            if not in_mirror:
-                try:
-                    in_mirror = bool(mirror_files_of(dest, analysis))
-                except OSError as e:
-                    problem(row, "%s: exports/%s has no %s, and the mirror's folders of it "
-                                 "could not be listed (%s); nothing of it was copied or "
-                                 "archived -- run again" % (analysis, analysis, REGISTRY_FILE, e))
-                    continue
             if not in_mirror:
                 # Nothing of it is in the mirror, so there is nothing to keep
                 # safe and nothing to copy: no error. WHY: MouseBrain creates
@@ -833,9 +923,25 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
                 # Counted as an error, that empty folder failed this job every
                 # night and no later run could clear it.
                 del rows[analysis]
-                log("  [note] %s: exports/%s has no %s and nothing of it is in the mirror; "
-                    "nothing to do (an analysis with nothing registered yet)"
-                    % (analysis, analysis, REGISTRY_FILE))
+                if others:
+                    # Files sit under this name on the mousedb side, but
+                    # nothing marks them as the mirror of this folder: they
+                    # are left alone, and NO remedy is offered. WHY no
+                    # "--confirm-withdrawn": that would point a person at
+                    # archiving files that are, as far as anything shows,
+                    # kept there for another purpose (a source folder made
+                    # by opening the registry with the name of one of this
+                    # tool's own folders). --confirm-withdrawn refuses the
+                    # name for the same reason.
+                    log("  [note] %s: exports/%s has no %s, and the %d file(s) kept under "
+                        "that name on the mousedb side are not copies of anything in it "
+                        "(nothing in the ledger, no %s copy); they are left as they are -- "
+                        "nothing to do" % (analysis, analysis, REGISTRY_FILE, len(others),
+                                           REGISTRY_FILE))
+                else:
+                    log("  [note] %s: exports/%s has no %s and nothing of it is in the "
+                        "mirror; nothing to do (an analysis with nothing registered yet)"
+                        % (analysis, analysis, REGISTRY_FILE))
                 continue
             # A folder without its registry.json, while the mirror holds files
             # of it, is not proof of a withdrawal (a person withdraws an
@@ -851,6 +957,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             continue
         res.analyses += 1
         listed.add(analysis)
+        recognized.add(analysis)        # registered at the source: an analysis
         try:
             row.update(summarize_registry(read_registry(reg_path)))
         except Exception as e:
@@ -898,7 +1005,13 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # -- but only when the run can be sure it is gone (see archivable_keys).
     # Files of an analysis a person confirmed withdrawn that the mirror holds
     # but the ledger does not (a ledger set aside or started anew) join them.
-    extra = confirmed_extra_keys(confirmed, ledger, present, unlistable, mirrored, dest,
+    for a in mirror_listing:
+        # A confirmed name with no folder at the source this run: an analysis
+        # only by the ledger or by the mirror's own registry.json copy.
+        if a not in recognized and held_as_analysis(a, mirrored, mirror_listing[a],
+                                                    dest, root, None):
+            recognized.add(a)
+    extra = confirmed_extra_keys(confirmed, ledger, present, unlistable, recognized, dest,
                                  run_problem, mirror_listing)
     pool = dict(ledger)
     pool.update(extra)
@@ -939,7 +1052,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     for msg in held_problems(kept, rows, imported_at, root, reason=guard):
         run_problem(msg)
     for a in confirmed:
-        if a not in unlistable and a in mirror_listing and not any(
+        if a not in unlistable and a in recognized and a in mirror_listing and not any(
                 analysis_of_key(k) == a for k in gone + kept):
             log("  [note] --confirm-withdrawn %s: the mirror holds no file of it that "
                 "MouseBrain no longer has; nothing to archive" % a)
@@ -1029,7 +1142,10 @@ def main(argv=None) -> int:
                          "archive every mirrored file of it that MouseBrain no longer has, "
                          "even when the run would otherwise keep them back; for a folder "
                          "left without registry.json, everything the mirror holds of it, "
-                         "even files still at the source (repeatable)")
+                         "even files still at the source (repeatable). Refused, with "
+                         "nothing moved, for a name nothing identifies as an analysis: "
+                         "not in the ledger, no registry.json copy in the mirror, and no "
+                         "folder at the source the mirror holds copies from")
     ap.add_argument("--set-aside-ledger", action="store_true",
                     help="If the ledger cannot be used (not JSON, or entries that name no "
                          "analysis), keep it beside the new one as "

@@ -731,7 +731,8 @@ next run that can see the files carries on as normal. The cases:
 | the analysis is listed in full (its `registry.json` is there) and a file it mirrored before is no longer there | archives that file |
 | the whole analysis folder `exports/<analysis>` is gone, and other analyses are still there | archives every mirrored file of that analysis (MouseBrain withdrew it) |
 | the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror holds nothing of that analysis (neither the ledger nor the mirror's own folders) | nothing to do, and not an error: a line `[note] <analysis>: exports/<analysis> has no registry.json and nothing of it is in the mirror ...`. MouseBrain makes this folder as soon as anything opens that analysis's registry, before anything is registered in it -- a new analysis, or a mistyped name given to `mousebrain-registry --name ...`. Once MouseBrain registers something in it, the next run mirrors it. A folder made by a mistyped name can be left alone; it costs nothing here. |
-| the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror already holds files of that analysis | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`, and the Where Is My Data tab shows the analysis's line ending with that reason. The run looks in the mirror's own folders as well as the ledger, so this holds after `--set-aside-ledger` or on a machine whose ledger is new too. If the mirror's folders of it cannot be opened, the line says so instead and nothing is archived. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If MouseBrain set a damaged `registry.json` aside (MouseBrain's `logs` folder then holds `<analysis>.registry.json.unreadable-<time>`) and no new one has been written yet, this job keeps failing every night until the next registration in that analysis writes a new `registry.json` or MouseBrain's registry is repaired (see MouseBrain's registry guide). If the analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
+| the folder `exports/<name>` is there but has no `registry.json`, and files ARE kept under that name on the mousedb side, but nothing marks them as the mirror of an analysis (see "How the mirror tells an analysis from another folder" below) | nothing to do, and not an error: a line `[note] <name>: exports/<name> has no registry.json, and the N file(s) kept under that name on the mousedb side are not copies of anything in it ...; they are left as they are`. This is what happens when MouseBrain's registry was opened with a name that mousedb already uses for a folder of its own. Those files are not touched, and the run does not suggest `--confirm-withdrawn` for them (that option refuses the name too). |
+| the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror already holds files of that analysis | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`, and the Where Is My Data tab shows the analysis's line ending with that reason. The run looks in the mirror's own folders as well as the ledger, so this holds after `--set-aside-ledger` or on a machine whose ledger is new too ("holds files of that analysis" is judged by the three marks listed under "How the mirror tells an analysis from another folder" below). If the mirror's folders of it cannot be opened, the line says so instead and nothing is archived. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If MouseBrain set a damaged `registry.json` aside (MouseBrain's `logs` folder then holds `<analysis>.registry.json.unreadable-<time>`) and no new one has been written yet, this job keeps failing every night until the next registration in that analysis writes a new `registry.json` or MouseBrain's registry is repaired (see MouseBrain's registry guide). If the analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
 | a folder of the analysis cannot be opened (a network error, no permission) | archives nothing of it: `[FAIL] <analysis>: its files could not be listed ...`. The other analyses are mirrored as usual. |
 | a file is to be archived, but the mirror's own copy of it cannot be looked at (a network error, no permission) | leaves that copy where it is and keeps it in the ledger: `[FAIL] archive <path>: ...`. The next run that can see the copy archives it. |
 | an analysis folder is missing from the listing, but a second look cannot confirm it is gone (the share answered short, or the second listing failed) | archives nothing of it: `[FAIL] 1 analysis folder(s) missing from the listing of ... could not be confirmed gone ...`, naming the analyses. The Where Is My Data tab shows that analysis's line ending `[FAIL] <analysis>: its folder was missing from the listing of exports/ but could not be confirmed gone ...`. Check that the share is reachable and run again; if the analysis really was withdrawn, the next run that can confirm it archives its mirror. |
@@ -849,6 +850,26 @@ Which files that is depends on what MouseBrain still has of the analysis:
   MouseBrain registers the analysis again, the next run mirrors it afresh;
 - the whole analysis folder is gone: everything of it is archived.
 
+**How the mirror tells an analysis from another folder.** The three places
+the mirror writes to -- `<mousedb_root>/exports/<name>/`,
+`<mousedb_root>/figures/<name>/` and `<mousedb_root>/logs/<name>.log` -- also
+hold things that are NOT mirrored analyses: mousedb's own export folders, and
+the log files of its other jobs. So a name is treated as an analysis only when
+at least one of these is true:
+
+1. the ledger has lines for it (this job copied files of it and recorded
+   them);
+2. MouseBrain's registry has a folder `exports/<name>` right now, and either
+   its `registry.json` is there, or the mirror holds a copy of at least one
+   file of it (same place, same size, same modification time -- which is how
+   this job's own copies look);
+3. the mirror holds `exports/<name>/registry.json` -- the copy of MouseBrain's
+   own record, which only a mirrored analysis has.
+
+`--confirm-withdrawn <name>` archives nothing for a name that meets none of
+the three, however many files sit under it, and the nightly run never tells
+you to use the option for such a name.
+
 What it does NOT do:
 
 - change anything in MouseBrain's folders: it only moves the mirror's
@@ -864,10 +885,33 @@ What it does NOT do:
   of that analysis is moved -- not even files the run would archive without
   the option -- because the run cannot tell what the mirror holds of it.
   Check the share and run the same command again;
-- accept a name the mirror holds nothing of: `[FAIL] --confirm-withdrawn
+- accept a name that is not an analysis: `[FAIL] --confirm-withdrawn
   <name>: the mirror holds no analysis by that name ... -- check the name`,
-  and nothing is archived. A path (anything with `/`, `\` or `:`) is
-  refused the same way.
+  the command ends with exit code 1, and nothing is archived or moved. That
+  covers a mistyped name (no file under the mirror's `exports/<name>/` or
+  `figures/<name>/`, no `logs/<name>.log`, no line in the ledger) AND a name
+  that has files under it but meets none of the three marks above -- for
+  example one of mousedb's own export folders, or the log of another job.
+  The message then also says how many files sit under the name and that
+  they were left where they are. A path (anything with `/`, `\` or `:`) is
+  refused the same way as a wrong name.
+  Every analysis a run reports as held with "run `mousedb import-analyses
+  --confirm-withdrawn <analysis>`" meets one of the three marks, so it can
+  be settled with exactly that command -- also when the mirror's own copy of
+  its `registry.json` is gone and the ledger is new, as long as MouseBrain's
+  folder of it still holds a file the mirror has a copy of.
+  One case stays refused on purpose: the ledger is new (or was set aside),
+  the mirror has no `registry.json` copy of the analysis, AND MouseBrain's
+  folder `exports/<analysis>` is gone altogether or holds no file the mirror
+  has a copy of. Nothing then tells those mirrored files from files kept for
+  another purpose, so the command leaves them where they are (the nightly
+  run does not report them either). They do no harm there; do not move them
+  by hand;
+- protect a folder of mousedb's own that carries the SAME name as a real
+  analysis in MouseBrain's registry: the mirror would copy that analysis
+  into the folder, the ledger would then list the name, and the name would
+  count as an analysis. Do not give an analysis the name of a folder that
+  already exists under `<mousedb_root>/exports/` or `figures/`.
 
 The option is for a run a person starts on purpose; the nightly task never
 uses it.

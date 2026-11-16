@@ -196,6 +196,9 @@ checked-in code, not what's planned.
   holds nothing -- judged from the mirror's own folders as well as the
   ledger, so a new or set-aside ledger cannot hide it (MouseBrain makes the
   folder before anything is registered in it) -- is a `[note]`, not an error.
+  Files kept under the same name on the mousedb side that nothing marks as
+  the mirror of that folder do not count as "of it": they are left alone and
+  the `[note]` says so.
 - `mousedb import-analyses --confirm-withdrawn <analysis>` (repeatable):
   archives, through the usual archive step, every mirrored file of an
   analysis that MouseBrain no longer has, where the run would otherwise hold
@@ -203,8 +206,15 @@ checked-in code, not what's planned.
   `registry.json`, files withdrawn before a new ledger was started). For an
   analysis still registered only the files MouseBrain dropped are archived;
   for a folder left without its `registry.json`, everything the mirror holds
-  of it, even files still at the source. Refuses a name the mirror holds
-  nothing of, a path, and a source it cannot list. An analysis whose mirror
+  of it, even files still at the source. Refuses, with nothing moved, a
+  name nothing identifies as an analysis -- a mistyped name, or the name of
+  a folder or log mousedb keeps for another purpose in the same places. A
+  name counts as an analysis when the ledger lists it, when MouseBrain's
+  registry has a folder of that name that is registered or that the mirror
+  holds a copy from, or when the mirror holds its `registry.json` copy; the
+  nightly run holds a folder without `registry.json`, and names this option,
+  by the same rule. Also refuses a path and a source it cannot list. An
+  analysis whose mirror
   folders cannot be listed is held whole -- nothing of it is archived -- with a
   `[FAIL]` line that says so.
 - `mousedb import-analyses --set-aside-ledger`: keeps an unusable ledger

@@ -1730,7 +1730,10 @@ def main():
                     help='Confirm MouseBrain withdrew this analysis (or files of it): archive '
                          'every mirrored file of it MouseBrain no longer has; for a folder '
                          'left without registry.json, all of it, even files still at the '
-                         'source (repeatable)')
+                         'source (repeatable). A name nothing identifies as an analysis '
+                         '(not in the ledger, no registry.json copy in the mirror, no '
+                         'source folder the mirror holds copies from) is refused and '
+                         'nothing is moved')
     ia.add_argument('--set-aside-ledger', action='store_true',
                     help='Keep an unusable ledger aside and start a new one')
     ia.set_defaults(func=cmd_import_analyses)

@@ -958,6 +958,35 @@ class TestConfirmWithdrawn:
         assert "check the name" in capsys.readouterr().out
         assert not (db / "_archived").exists()
 
+    def test_a_held_mirror_without_its_registry_copy_is_settled_by_the_confirm(self, roots):
+        # WHY: the nightly run holds a folder that lost its registry.json for
+        # as long as the mirror holds files of that analysis, and names this
+        # command as the way out. The command used to look only for the
+        # mirror's copy of registry.json (and the ledger); with that one copy
+        # gone and a new ledger it answered "check the name", archived
+        # nothing, and the analysis failed every later run with no way to
+        # clear it. Here the mirror's files are known as that analysis's by
+        # being copies of files still in the source folder.
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        (db / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        (db / "logs" / "analysis_imports.json").unlink()        # a new ledger
+        nightly = ia.run(log=_quiet)
+        assert nightly.errors == 1 and nightly.archived == 0
+        assert "--confirm-withdrawn Alpha_Detection" in nightly.messages[0]
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0, res.messages
+        assert res.archived == FILES_PER_ANALYSIS - 1
+        assert sorted(a.split("/", 1)[1] for a in self._archived(db)) == [
+            "exports/Alpha_Detection/S1/measurements.csv",
+            "figures/Alpha_Detection/A1/R1/S1.png", "logs/Alpha_Detection.log"]
+        assert not (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").exists()
+        # the source is never touched, and the hold is over
+        assert (reg / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        after = ia.run(log=_quiet)
+        assert after.errors == 0 and after.archived == 0, after.messages
+
     @pytest.mark.parametrize("name", ["..", "../exports", "a/b", "a\\b", ""])
     def test_a_path_is_not_an_analysis_name(self, roots, name):
         reg, db = roots
@@ -983,6 +1012,116 @@ class TestConfirmWithdrawn:
         res = ia.run(log=_quiet, dry_run=True, confirm_withdrawn=["Alpha_Detection"])
         assert res.archived == FILES_PER_ANALYSIS
         assert not (db / "_archived").exists()
+
+
+class TestConfirmWithdrawnOnlyTouchesAnAnalysis:
+    """WHY: the mirror's three places (exports/<name>, figures/<name>,
+    logs/<name>.log under the mousedb root) are not the mirror's alone --
+    this tool keeps export folders and log files of its own there, under
+    names that are no analysis. --confirm-withdrawn accepted any name with a
+    file in those places and moved the whole folder into the archive, exit
+    code 0. A name is now accepted only when something identifies it as an
+    analysis: the ledger, a source folder the mirror holds copies from, or
+    the mirror's own registry.json copy."""
+
+    OTHER = "other_exports"
+
+    def _other(self, db):
+        """Files this tool keeps under a name that is no analysis."""
+        return [_write(db / "exports" / self.OTHER / "table.csv", "id\n1\n"),
+                _write(db / "exports" / self.OTHER / "sub" / "MANIFEST.json", "{}"),
+                _write(db / "figures" / self.OTHER / "plot.png", b"\x89PNG other"),
+                _write(db / "logs" / ("%s.log" % self.OTHER), "a job's own log\n")]
+
+    def _untouched(self, db, files):
+        assert not (db / "_archived").exists()
+        for f in files:
+            assert f.is_file(), f
+
+    def test_a_folder_that_is_no_analysis_is_refused_and_left_in_place(self, roots, capsys):
+        reg, db = roots
+        ia.run(log=_quiet)
+        files = self._other(db)
+        capsys.readouterr()
+        assert ia.main(["--confirm-withdrawn", self.OTHER]) == 1
+        out = capsys.readouterr().out
+        assert "[FAIL] --confirm-withdrawn %s" % self.OTHER in out and "check the name" in out
+        assert "nothing to archive" not in out
+        self._untouched(db, files)
+        res = ia.run(log=_quiet, dry_run=True, confirm_withdrawn=[self.OTHER])
+        assert res.archived == 0 and res.errors == 1
+
+    def test_on_a_first_run_with_no_ledger_too(self, roots):
+        reg, db = roots
+        files = self._other(db)
+        assert ia.main(["--confirm-withdrawn", self.OTHER]) == 1
+        self._untouched(db, files)
+
+    def test_an_empty_source_folder_of_that_name_changes_nothing(self, roots, capsys):
+        # MouseBrain creates exports/<name> for any name its registry is
+        # opened with; that says nothing about what is kept under the name
+        # on the mousedb side. The nightly run must not hold it either, or
+        # it would fail every night and point a person at this command.
+        reg, db = roots
+        ia.run(log=_quiet)
+        files = self._other(db)
+        (reg / "exports" / self.OTHER).mkdir()
+        nightly = ia.run(log=_quiet)
+        assert nightly.errors == 0 and nightly.archived == 0, nightly.messages
+        assert self.OTHER not in {r["analysis_name"] for r in nightly.manifest}
+        capsys.readouterr()
+        assert ia.main([]) == 0
+        out = capsys.readouterr().out
+        assert "--confirm-withdrawn" not in out
+        assert "are left as they are" in out          # said, not passed over in silence
+        assert ia.main(["--confirm-withdrawn", self.OTHER]) == 1
+        assert "check the name" in capsys.readouterr().out
+        self._untouched(db, files)
+
+    def test_nor_does_a_source_folder_with_files_the_mirror_has_no_copy_of(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        files = self._other(db)
+        _write(reg / "exports" / self.OTHER / "S1" / "measurements.csv", "id\n1\n")
+        # same relative path as a file on the mousedb side, but not a copy of it
+        _write(reg / "exports" / self.OTHER / "table.csv", "id,area,more\n1,10,2\n")
+        os.utime(str(reg / "exports" / self.OTHER / "table.csv"), (1, 1))
+        res = ia.run(log=_quiet, confirm_withdrawn=[self.OTHER])
+        assert res.errors == 1 and res.archived == 0
+        assert any("check the name" in m for m in res.messages)
+        self._untouched(db, files)
+        assert ia.run(log=_quiet).errors == 0
+
+    def test_the_mirrors_registry_copy_identifies_an_analysis_the_ledger_forgot(self, roots):
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
+        shutil.rmtree(str(reg / "figures" / "Alpha_Detection"))
+        (reg / "logs" / "Alpha_Detection.log").unlink()
+        (db / "logs" / "analysis_imports.json").unlink()        # a new ledger
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0, res.messages
+        assert res.archived == FILES_PER_ANALYSIS
+        assert not (db / "exports" / "Alpha_Detection" / "registry.json").exists()
+        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()
+
+    def test_with_no_mark_at_all_the_files_stay(self, roots, capsys):
+        # The documented corner: the source folder wholly gone, a new
+        # ledger, and no registry.json copy in the mirror. Nothing tells
+        # these files from files kept for another purpose: refused.
+        reg, db = roots
+        ia.run(log=_quiet)
+        import shutil
+        shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
+        (db / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        (db / "logs" / "analysis_imports.json").unlink()
+        capsys.readouterr()
+        assert ia.main(["--confirm-withdrawn", "Alpha_Detection"]) == 1
+        assert "check the name" in capsys.readouterr().out
+        assert not (db / "_archived").exists()
+        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (db / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").is_file()
 
 
 class TestSetAsideLedger:
