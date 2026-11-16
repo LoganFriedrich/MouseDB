@@ -936,8 +936,16 @@ and the cohort's archived summary values (only the sheet import writes those).
 entry tabs (Surgery Entry, Weight Entry, Ramp Entry, Testing Entry, Virus
 Prep, ...) record the name of the person who saved each row, and a Replace
 never removes a row that carries a person's name -- nor one with no record of
-who entered it. Animals, the cohort (apart from its start date, below), the
-animal-details copy, video data and tissue data are not touched.
+who entered it. Animals, the cohort (apart from its start date, below), video
+data and tissue data are not touched.
+
+The removal step does not delete the animal details either. But once the
+Replace is saved, they are copied again from the sheet, one tab at a time,
+like after every import (see "Every way to start an import" above, the
+paragraph on Replace). That copy takes a tab that is there
+but now holds no animal as empty, so its stored details are removed. A tab
+that is missing or renamed is kept as it was and reported
+(`NOT SYNCED animal details '<tab>'`), and the Replace is not called complete.
 
 - Where a kept row and the sheet have the same thing (the same animal on the
   same date; for a pellet score, also the same tray and pellet; for a
