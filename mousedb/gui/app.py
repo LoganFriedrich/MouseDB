@@ -5346,6 +5346,13 @@ class CohortSetupTab(QWidget):
             at all.
         Both write only while holding the cross-task database lock, the one the
         scheduled imports take, so neither can write while one of them does.
+        Both end the way every sheet import ends (sheet_sync): the animal
+        details are copied, the hand-scores file the reaching pipeline reads
+        and the FIX THESE files beside the sheets are rewritten, and ONE line
+        goes into the import ledger. Import is sheet_sync.import_sheet_file
+        itself; Replace finishes through sheet_sync.after_gui_replace. WHY:
+        both used to stop after the importer, so the pipeline compared
+        videos against the previous scores until the nightly import.
         """
         from ..importers import ExcelImporter
 
@@ -5465,32 +5472,30 @@ class CohortSetupTab(QWidget):
         if not self._may_wait_for_database_lock():
             return
 
-        # Real import. Record it in the sheet-import ledger either way: the
+        if not replacing:
+            # Import: the very route `mousedb import --file` takes, which
+            # writes its own ledger line (see _import_through_sheet_sync).
+            self._import_through_sheet_sync(path, cohort_id)
+            return
+
+        # Replace. Record it in the sheet-import ledger either way: the
         # Tracking Sheets tab's status verdicts read the LEDGER, not the
         # database, so an unrecorded button-import would show the cohort as
         # never-imported/stale -- a silent misreport.
         from datetime import datetime as _dt
-        from .. import task_mutex
         _entry = {"cohort_id": cohort_id, "sheet_name": Path(path).name,
                   "sheet_path": str(path),
                   "started": _dt.now().isoformat(timespec="seconds"),
                   "triggered_by": "gui_cohort_setup", "dry_run": False,
-                  "mode": "replace" if replacing else "import"}
+                  "mode": "replace"}
+
         result, failure = None, None
         # The wait for the lock and the import both run on this window's
         # thread; the busy cursor says so.
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            if replacing:
-                result = replace_cohort_from_sheet(
-                    self.db, Path(path), cohort_id, start_date=new_start)
-            else:
-                # The same lock the scheduled sheet import takes around this
-                # very call (sheet_sync): without it a button import could
-                # write while a scheduled import does, and one of them fails
-                # with "database is locked".
-                with task_mutex.hold(waiting_for="another database task"):
-                    result = importer.import_cohort_file(Path(path), dry_run=False)
+            result = replace_cohort_from_sheet(
+                self.db, Path(path), cohort_id, start_date=new_start)
         except Exception as e:
             failure = e
         finally:
@@ -5503,43 +5508,107 @@ class CohortSetupTab(QWidget):
             self._append_sheet_ledger(_entry, path)
             # replace_cohort_from_sheet rolls back whatever stopped it, so for
             # a Replace this sentence is a guarantee, not a hope.
-            prefix = "Nothing in the database was changed.\n\n" if replacing else ""
-            QMessageBox.critical(self, "Import failed", f"{prefix}{failure}")
+            QMessageBox.critical(self, "Import failed",
+                                 f"Nothing in the database was changed.\n\n{failure}")
             self._refresh_all_cohort_lists()
             return
         result_warnings = result.get('warnings', [])
         _entry.update(success=not result.get('errors'),
                       imported=result.get('imported'),
-                      warnings=result_warnings[:50],
-                      # The ledger keeps 50 warnings; the count says whether
-                      # that was all of them.
+                      # All of them here; the ledger copy is cut to 50 with
+                      # the count kept (sheet_sync._for_ledger).
+                      warnings=list(result_warnings),
                       warning_count=len(result_warnings),
                       error="; ".join(result.get('errors', [])) or None,
                       finished=_dt.now().isoformat(timespec="seconds"))
-        if replacing:
-            _entry["replace"] = result.get('replace')
+        _entry["replace"] = result.get('replace')
         # What the sheet changed or removed, and the phase re-derivation it
         # caused -- the same keys the scheduled import's ledger lines carry.
         for _k in ('sheet_sync', 'phases_rederived'):
             if result.get(_k):
                 _entry[_k] = result[_k]
         mark_failed_phase_refresh(_entry, cohort_id)
-        self._append_sheet_ledger(_entry, path)
+        # The animal details, the ledger line, then the hand-scores and FIX
+        # THESE files -- the end every sheet import has (sheet_sync).
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            from .. import sheet_sync
+            after = sheet_sync.after_gui_replace(
+                self.db, cohort_id, path, result, _entry,
+                record=lambda e: self._append_sheet_ledger(e, path))
+        finally:
+            QApplication.restoreOverrideCursor()
 
         if result.get('errors'):
             QMessageBox.critical(
-                self, "Replace undone" if replacing else "Import finished with errors",
+                self, "Replace undone",
                 "\n".join(result['errors'][:12])
             )
         else:
             done = "\n".join(f"   {k}: {v}"
-                             for k, v in result.get('imported', {}).items() if v)
-            if replacing:
-                text = self._replace_summary(cohort_id, result, done)
+                             for k, v in _entry.get('imported', {}).items() if v)
+            text = self._replace_summary(cohort_id, result, done)
+            extra = self._after_import_lines(after)
+            if extra:
+                text += "\n\n" + "\n".join(extra)
+            if _entry.get('success') and not after.get('hand_scores_error'):
+                QMessageBox.information(self, "Import complete", text)
             else:
-                text = f"Imported {cohort_id}:\n{done or '   (nothing)'}"
-            QMessageBox.information(self, "Import complete", text)
+                QMessageBox.warning(self, "Replace saved, with problems", text)
         self._refresh_all_cohort_lists()
+
+    def _import_through_sheet_sync(self, path, cohort_id):
+        """The Import button's real import: sheet_sync.import_sheet_file, the
+        same route as ``mousedb import --file`` -- the importer under the
+        cross-task lock, the animal details, ONE ledger line
+        (triggered_by "gui_cohort_setup"), then the hand-scores file and the
+        FIX THESE files. A workbook the folder route would never read (a copy
+        in an archive or snapshot folder, a "Copy of ...") is refused with the
+        reason and what to do instead. The result is shown as the terminal
+        prints it (sheet_sync.print_import_result), so the two never differ."""
+        from .. import sheet_sync
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            results = sheet_sync.import_sheet_file(
+                path, triggered_by="gui_cohort_setup", db=self.db)
+        except Exception as e:      # import_sheet_file never raises; belt and braces
+            results = {"problem": "%s: %s" % (type(e).__name__, e), "cohorts": []}
+        finally:
+            QApplication.restoreOverrideCursor()
+        lines = []
+        ok = sheet_sync.print_import_result(results, show_warnings=8, log=lines.append)
+        text = "\n".join(lines) or "(nothing to report)"
+        if ok:
+            QMessageBox.information(self, "Import complete", text)
+        elif results.get("problem"):
+            QMessageBox.warning(self, "Not imported", text)
+        else:
+            QMessageBox.critical(self, "Import finished with problems", text)
+        self._refresh_all_cohort_lists()
+
+    @staticmethod
+    def _after_import_lines(after):
+        """What the after-import step did, in the words the terminal uses."""
+        from .. import sheet_sync
+        lines = []
+        for c in after.get("cohorts") or []:
+            for refusal in sheet_sync.sync_refused(c):
+                if refusal.startswith("NOT SYNCED animal details"):
+                    lines.append("[!] " + refusal)
+            if c.get("error") and "animal records not imported" in (c.get("error") or ""):
+                lines.append("[!] " + c["error"])
+        if after.get("ledger_error"):
+            lines.append("[!] import history not written: %s" % after["ledger_error"])
+        if after.get("hand_scores_error"):
+            lines.append("FAIL hand scores for the reaching pipeline NOT rewritten: %s"
+                         % after["hand_scores_error"])
+        elif after.get("hand_scores"):
+            lines.append("OK   hand scores for the reaching pipeline: %d pellets of %d sessions"
+                         % (after["hand_scores"]["rows"], after["hand_scores"]["videos"]))
+        for cid, what in sorted((after.get("fix_these") or {}).items()):
+            if what.startswith("FAILED"):
+                lines.append("[!] %s's FIX THESE file not updated: %s" % (cid, what))
+        return lines
 
     @staticmethod
     def _replace_summary(cohort_id, result, done):
@@ -5589,7 +5658,7 @@ class CohortSetupTab(QWidget):
             from mousedb import sheet_sync
             if "sheet_mtime" not in entry:
                 entry["sheet_mtime"] = sheet_sync._iso(Path(path).stat().st_mtime)
-            sheet_sync._append_ledger(entry)
+            sheet_sync._append_ledger(sheet_sync._for_ledger(entry))
         except Exception:
             pass
 

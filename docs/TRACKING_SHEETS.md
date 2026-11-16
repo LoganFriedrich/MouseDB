@@ -491,23 +491,30 @@ with such a row is named.
 | `mousedb import --file <workbook>` | `mousedb-import --file` | yes | exit code 1 |
 | `mousedb-refresh-snapshot --import-sheets` | `hourly-refresh` | yes | a `[warn] ... FAILED` line; the snapshot carries on with what the database already holds |
 | `python manual_setup_check.py`, the install check in the repository's top folder (step 4: it offers an import only into a database that holds no animals yet, a dry run first) | `manual_setup_check` | yes | `FAIL` lines, then `[!] Import finished with failures` |
-| **Import from Excel...** (1. Cohort Setup tab) | `gui_cohort_setup` | yes, and asks you first | an error box |
+| **Import from Excel...** (1. Cohort Setup tab) | `gui_cohort_setup` | yes, and asks you first | a box with the same lines the terminal prints, `FAIL` among them |
 
-**All of these except the last are one and the same import.** They choose the
-file the same way (see "Which file is read"; `--file` reads the file you name,
-but refuses the files the folder route never reads), import it the same way,
-refresh each animal's details (only after an import that saved -- see "When
-an import fails"), write one line per cohort into the import history, wait
-for the same lock, and report a failure as a failure. Only the label in the
-history differs. (The install check used to read every matching file itself,
-outside all of this; it now goes through the same import.)
+**All of these are one and the same import.** They choose the file the same
+way (see "Which file is read"; `--file` and **Import from Excel...** read the
+file you name, but refuse the files the folder route never reads, such as a
+copy in an archive folder), import it the same way, refresh each animal's
+details (only after an import that saved -- see "When an import fails"),
+write one line per cohort into the import history, wait for the same lock,
+rewrite the hand-scores file for the reaching pipeline and the FIX THESE
+files (see "After every import"), and report a failure as a failure. Only the
+label in the history differs. (The install check used to read every matching
+file itself, outside all of this; it now goes through the same import.)
 
-**Import from Excel... (Cohort Setup) differs in three ways:** it reads the
-one file you pick (any file whose name says which cohort -- it does not apply
-the naming rule below and does not refuse an archive copy, so pick the
-cohort's live sheet from the sheets folder); it does not refresh each
-animal's details (the next import from the Tracking Sheets tab, or the
-scheduled one, does); and it offers Replace.
+**Import from Excel... (Cohort Setup)** also offers **Replace**, which deletes
+what earlier imports of the sheet wrote and imports it again in one step it
+can undo whole. A Replace that went through ends like every other import:
+the animal details are copied (a tab that now reads as empty is taken as
+empty, because a Replace rebuilds the cohort from the sheet on purpose; a
+tab that is missing, or whose table the import refused, is still left as it
+was), one line goes into the import history (marked `"mode": "replace"`),
+and the hand-scores and FIX THESE files are rewritten. A Replace that was
+undone changed nothing, and nothing else runs. (Neither button used to
+copy the animal details or rewrite those two files, so the reaching
+pipeline compared videos with the previous scores until the nightly import.)
 
 **The lock** is one file under `<mousedb_root>/logs` that every job writing
 the database takes in turn (INSTALL.md, "What happens when another program
@@ -649,8 +656,9 @@ reports the write as failed. Close the file if the `FAIL hand scores` line
 below keeps appearing.
 
 Every import that writes (the scheduled job, the Tracking Sheets tab,
-**Update the database now**, `mousedb-sheets import`) rewrites the file when
-it finishes, and says so in its result: `OK   hand scores for the reaching
+**Update the database now**, `mousedb-sheets import`, `mousedb import
+--all` / `--file`, and Cohort Setup's **Import** and **Replace**) rewrites
+the file when it finishes, and says so in its result: `OK   hand scores for the reaching
 pipeline: N pellets of M sessions`. If the file could not be written, the
 line starts `FAIL`, and the import counts as failed (the scheduled job's run
 shows as failed), because the pipeline would go on reading the old scores.
@@ -674,9 +682,14 @@ They are shown in two places:
 - **Where Is My Data**: a red **Needs your attention (N)** box at the top,
   one line each (hidden when there is nothing). It is gathered again each
   time the tab refreshes.
-- **Beside the sheet**: after every import that writes, each cohort with
-  anything listed gets `!! <cohort> - FIX THESE.xlsx` in the sheets folder,
-  next to its workbook, with one line per thing to fix. It is rewritten after
+- **Beside the sheet**: after every import that writes (any route, Cohort
+  Setup's buttons included), each cohort with anything listed gets
+  `!! <cohort> - FIX THESE.xlsx` in the configured sheets folder, next to its
+  workbook, with one line per thing to fix. Every cohort of that folder is
+  brought up to date, whichever cohort was imported. They are written only
+  into the configured sheets folder -- never beside a workbook you imported
+  from somewhere else -- and not at all on a computer with no sheets folder
+  configured. It is rewritten after
   every import and **removed by itself once nothing is left**. Do not edit
   it; it is not read. The import's output names it (`[!] CNT_05: things to fix
   in the sheet -- see '!! CNT_05 - FIX THESE.xlsx' ...`), and says so if the

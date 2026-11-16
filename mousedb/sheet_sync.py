@@ -24,15 +24,25 @@ Sheets tab, the hourly snapshot refresh, ``mousedb import --all`` /
 three went straight to the importer, so their errors and warnings were
 thrown away, nothing was recorded, they did not wait for the cross-task
 database lock, and the command reported success whatever happened.
-One route does NOT come through here: the cohort-setup tab's Import /
-Replace button (mousedb.gui.app) calls the importer itself, but it takes the
-same lock and writes its own line to this ledger, in this shape, with
-triggered_by "gui_cohort_setup". It does not refresh animal_records.
+The cohort-setup tab's buttons (mousedb.gui.app) come through here too:
+Import is import_sheet_file with triggered_by "gui_cohort_setup"; Replace runs
+its own delete-and-reimport (it must undo both together) and then
+after_gui_replace, which copies the animal details and does the after-import
+step below, and its ledger line carries "mode": "replace". Both used to
+call the importer and write a ledger line only: the animal details,
+the hand-scores file and the FIX THESE files stayed as the previous import
+left them until the next scheduled one.
+
+After every import that writes, whatever the route, ONE step (_after_import)
+rewrites the hand-scores file the reaching pipeline reads and each cohort's
+FIX THESE file beside its sheet. It runs after the ledger lines are written
+(both read the ledger) and never raises: a failure is reported in the result.
 
 One cohort's import is two steps on one workbook: the importer (the sheet's
 tables: animals, weights, scores, surgeries ...), then animal_records (each
 animal's details copied column for column, REPLACING the cohort's previous
-copy). The second runs only when the first SAVED. The importer saves a
+copy of each tab it read -- see mousedb.animal_records for the tabs it leaves
+as they were). The second runs only when the first SAVED. The importer saves a
 workbook whole or not at all -- an import that records an error undoes the
 whole workbook -- and until 2026-10 the animal details were replaced anyway,
 so after a failed import they described a workbook the rest of the database
@@ -821,32 +831,59 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     # the ledger (the ledger tracks score imports of those workbooks).
     if cohorts is None:
         results["aspa_animal_records"] = _aspa_animal_records(dry_run)
-    # Only an import of the CONFIGURED folder speaks for the sheets folder in
-    # the hand-scores file. WHY: a folder named by hand (--directory) is not
-    # the one the pipeline's sheets live in, so its listing must neither add
-    # cohorts to sheets_seen nor count as the import of every sheet that
-    # settles a cohort with no sheet (hand_scores_file: full_import_at).
-    configured = _is_configured_folder(d)
-    if not dry_run and WRITE_HAND_SCORES:
-        # The reaching pipeline compares each video with its hand scores before
-        # it files it, reading them from this file (hand_scores_file), so the
-        # file is rewritten after every import that may have changed them.
+    if not dry_run:
+        _after_import(results, d, folder_ids, full_run=cohorts is None)
+    return results
+
+
+def _after_import(results: dict, sheets_dir=None, folder_ids=None,
+                  full_run: bool = False) -> None:
+    """The step every import route that wrote ends with: rewrite the
+    hand-scores file and each cohort's FIX THESE file, recording the outcome in
+    ``results`` ("hand_scores" or "hand_scores_error", "fix_these"). Never
+    raises. Call it AFTER the import's ledger lines are written: both files
+    read the ledger. Not for a dry run (it writes).
+
+    WHY one step for every route: the reaching pipeline compares each video
+    with the hand scores in that file before filing it, and the FIX THESE
+    files are how a person learns what in the sheet blocks the pipeline. Each
+    used to be rewritten only by the folder import, so after a button import
+    or ``mousedb import --file`` the pipeline compared against the previous
+    scores and the FIX THESE files were up to a day behind.
+
+    ``sheets_dir`` / ``folder_ids``: the folder this import listed and the
+    cohorts it found there; ``full_run``: it imported every sheet in it. Only
+    an import of the CONFIGURED folder speaks for the sheets folder: a folder
+    named by hand (--directory) or a single named workbook neither adds
+    cohorts to the hand-scores file's sheets_seen nor counts as the import of
+    every sheet that settles a cohort with no sheet (hand_scores_file:
+    full_import_at). Routes that read no folder pass None, None, False.
+
+    The FIX THESE files are written only into the configured sheets folder,
+    for every cohort it holds -- never into the folder of a workbook named by
+    hand, which may be a copy anywhere. With no configured folder there is
+    nowhere to put them and nothing is written."""
+    configured = sheets_dir is not None and _is_configured_folder(sheets_dir)
+    if WRITE_HAND_SCORES:
         try:
             from .hand_scores_file import write as write_hand_scores
             results["hand_scores"] = write_hand_scores(
-                log=lambda *_: None, full_run=cohorts is None and configured,
-                sheets_seen=sorted(folder_ids) if configured else None)
+                log=lambda *_: None, full_run=bool(full_run and configured),
+                sheets_seen=(sorted(folder_ids) if configured and folder_ids is not None
+                             else None))
         except Exception as e:
             results["hand_scores_error"] = "%s: %s" % (type(e).__name__, e)
-    if not dry_run and WRITE_FIX_THESE and folder_ids:
+    if WRITE_FIX_THESE:
         # What a person must fix in each cohort's sheet, in a file beside it
-        # (attention.py). After the ledger entries above, which it reads.
+        # (attention.py).
         try:
-            from .attention import write_all_fix_these
-            results["fix_these"] = write_all_fix_these(d, sorted(folder_ids))
+            target = cohort_sheets_dir()
+            ids = sorted(available_cohorts(target)) if target is not None else []
+            if ids:
+                from .attention import write_all_fix_these
+                results["fix_these"] = write_all_fix_these(target, ids)
         except Exception as e:
             results["fix_these"] = {"all cohorts": "FAILED: %s: %s" % (type(e).__name__, e)}
-    return results
 
 
 def _is_configured_folder(d) -> bool:
@@ -944,13 +981,17 @@ def _importer_cohort_id(imp, path) -> Optional[str]:
     return pick(Path(path).name) if callable(pick) else None
 
 
-def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual") -> dict:
-    """Import ONE named workbook (``mousedb import --file``) exactly as a cohort
-    of the sheets folder is imported: same mutex, same animal records, same
-    ledger line, same result shape as import_cohorts. WHY: this route used to
-    call the importer directly, so nothing recorded it, it did not wait for
-    the database lock, and a failure still exited 0. A file the folder route
-    would never read is refused, not imported -- see refuse_sheet_file."""
+def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual",
+                      db=None) -> dict:
+    """Import ONE named workbook (``mousedb import --file``, and the cohort-setup
+    tab's Import button) exactly as a cohort of the sheets folder is imported:
+    same mutex, same animal records, same ledger line, same after-import step
+    (hand-scores file, FIX THESE files), same result shape as import_cohorts.
+    WHY: this route used to call the importer directly, so nothing recorded
+    it, it did not wait for the database lock, and a failure still exited 0.
+    A file the folder route would never read is refused, not imported -- see
+    refuse_sheet_file. ``db``: the database to import into (the GUI passes
+    its own); None = the configured one."""
     from .importers import ExcelImporter
     # Absolute, so the ledger line says where the workbook was: a name typed
     # relative to where the command ran would be recorded as "." otherwise.
@@ -969,7 +1010,7 @@ def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual")
             path.name, refusal[0], refusal[1])
         return results
     try:
-        imp = ExcelImporter()
+        imp = ExcelImporter(db) if db is not None else ExcelImporter()
         cohort_id = _importer_cohort_id(imp, path)
     except Exception as e:
         entry = _new_entry(path.name, path, triggered_by, dry_run)
@@ -988,7 +1029,71 @@ def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual")
         _finish(entry, results, dry_run, record=False)
         return results
     _finish(_import_one(cohort_id, path, dry_run, triggered_by, imp=imp), results, dry_run)
+    if not dry_run:
+        # A named workbook is not a listing of the sheets folder: it adds no
+        # cohort to sheets_seen and is not an import of every sheet.
+        _after_import(results, None, None, full_run=False)
     return results
+
+
+def after_gui_replace(db, cohort_id: str, sheet, result: dict, entry: dict,
+                      record=None, hold=None) -> dict:
+    """Finish a cohort-setup Replace the way every other import finishes.
+
+    A Replace (gui.app.replace_cohort_from_sheet) deletes what earlier imports
+    of the sheet wrote and imports it again, as one transaction it commits or
+    undoes itself, so it cannot go through _import_one. Once it has COMMITTED,
+    this copies the sheet's animal details (under the cross-task lock, like
+    every import; a Replace is a deliberate rebuild from the sheet, so a tab
+    that reads as empty is taken as empty -- allow_large_removal -- while a tab
+    not read at all, or one whose table the importer refused, is still left as
+    it was), adds the outcome to ``entry`` (the Replace's ledger line), records
+    the line with ``record`` (default: the ledger), and then -- after the lock
+    is released and the line is written, both of which the files read -- runs
+    _after_import as a route that read no folder. A Replace that was undone
+    changed nothing: its line is recorded and nothing else runs.
+
+    Never raises. Returns the after-import outcome ({"cohorts": [entry],
+    "hand_scores" ..., "fix_these" ...}) for the window to report; WHY the
+    lock is not held around _after_import: the hand-scores write takes the
+    same lock itself, and that lock is not re-entrant."""
+    record = record or (lambda e: _append_ledger(_for_ledger(e)))
+    if hold is None:
+        from .task_mutex import hold
+    out = {"cohorts": [entry]}
+    committed = bool((result.get("replace") or {}).get("committed"))
+    entry[SCORES_SAVED] = committed
+    if not committed:
+        entry.setdefault(LEFT_UNCHANGED, _not_saved_reason({"success": False}, False))
+        record(entry)
+        return out
+    from .animal_records import sync_cohort
+    try:
+        with hold(waiting_for="another database task"):
+            rec = sync_cohort(db, cohort_id, Path(sheet), "cohort", dry_run=False,
+                              allow_large_removal=True, keep_tabs=_tabs_to_keep(result))
+    except Exception as e:
+        rec = {"records": 0, "warnings": [], "kept": [],
+               "error": "%s: %s" % (type(e).__name__, e)}
+    imported = dict(entry.get("imported") or {})
+    imported["animal_records"] = rec["records"]
+    entry["imported"] = imported
+    entry["warnings"] = list(entry.get("warnings") or []) + list(rec["warnings"])
+    entry["warning_count"] = entry.get("warning_count", 0) + len(rec["warnings"])
+    if rec["error"]:
+        entry["success"] = False
+        entry["error"] = "; ".join(filter(None, [
+            entry.get("error"), "animal records not imported: %s" % rec["error"]]))
+    _report_kept_tabs(entry, rec)
+    # Finished once the animal details are in: the hand-scores file reads this
+    # time as when the cohort's scores were last imported.
+    entry["finished"] = datetime.now().isoformat(timespec="seconds")
+    try:
+        record(entry)
+    except Exception as e:      # the files below must still be rewritten
+        out["ledger_error"] = "%s: %s" % (type(e).__name__, e)
+    _after_import(out, None, None, full_run=False)
+    return out
 
 
 def _aspa_animal_records(dry_run: bool) -> List[dict]:
