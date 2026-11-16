@@ -1072,9 +1072,11 @@ def after_gui_replace(db, cohort_id: str, sheet, result: dict, entry: dict,
     undoes itself, so it cannot go through _import_one. Once it has COMMITTED,
     this copies the sheet's animal details (under the cross-task lock, like
     every import; a Replace is a deliberate rebuild from the sheet, so a tab
-    that reads as empty is taken as empty -- allow_large_removal -- while a tab
-    not read at all, or one whose table the importer refused, is still left as
-    it was), adds the outcome to ``entry`` (the Replace's ledger line), records
+    that was read and holds no animal is taken as empty -- allow_empty_tabs --
+    while a tab not read at all (missing, renamed), or one whose table the
+    importer refused, is still left as it was AND reported, so the Replace is
+    not called complete; NOT allow_large_removal, which would remove an unread
+    tab's details without a word), adds the outcome to ``entry`` (the Replace's ledger line), records
     the line with ``record`` (default: the ledger), and then -- after the lock
     is released and the line is written, both of which the files read -- runs
     _after_import as a route that read no folder. A Replace that was undone
@@ -1098,7 +1100,7 @@ def after_gui_replace(db, cohort_id: str, sheet, result: dict, entry: dict,
     try:
         with hold(waiting_for="another database task"):
             rec = sync_cohort(db, cohort_id, Path(sheet), "cohort", dry_run=False,
-                              allow_large_removal=True, keep_tabs=_tabs_to_keep(result))
+                              allow_empty_tabs=True, keep_tabs=_tabs_to_keep(result))
     except Exception as e:
         rec = {"records": 0, "warnings": [], "kept": [],
                "error": "%s: %s" % (type(e).__name__, e)}

@@ -80,7 +80,10 @@ importer's own refusals, which fails the import (sheet_sync.import_succeeded):
 a tab that is missing or renamed is reported just like one that reads as
 empty. With ``allow_large_removal`` (a person checked the sheet) a tab not read
 has its stored records REMOVED, as a tab read as empty has its records
-replaced by none.
+replaced by none. With ``allow_empty_tabs`` (the cohort-setup Replace) only the
+second happens: a tab read as empty is replaced by none, while a tab not read
+is still kept and reported -- a Replace rebuilds from what the sheet SAYS, and
+a renamed tab says nothing.
 Values are text; dates become YYYY-MM-DD; blanks and "?" are not stored.
 """
 from __future__ import annotations
@@ -724,7 +727,8 @@ def stored_counts(db, cohort_id: str, tabs) -> Dict[str, int]:
 
 def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: bool = False,
                 allow_large_removal: bool = False,
-                keep_tabs: Optional[Dict[str, str]] = None) -> dict:
+                keep_tabs: Optional[Dict[str, str]] = None,
+                allow_empty_tabs: bool = False) -> dict:
     """Read and (unless dry_run) store one cohort's animal records. Never raises:
     returns {"records": n, "warnings": [...], "error": text-or-None,
     "kept": [{"tab": name, "why": sentence}, ...]}.
@@ -732,8 +736,18 @@ def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: 
     Only the tabs actually READ are replaced, and of those not a tab the caller
     asks to keep (``keep_tabs``: {tab: why}) nor one that reads as holding no
     record while the database holds some for this cohort, unless
-    ``allow_large_removal`` (see the module docstring for why). ``records`` is
-    the number of records stored (or, in a dry run, that would be)."""
+    ``allow_large_removal`` or ``allow_empty_tabs`` (see the module docstring
+    for why). A tab this reader copies that was NOT read is kept and reported,
+    unless ``allow_large_removal``.
+
+    The two permissions differ on purpose. ``allow_large_removal`` (a person
+    who checked the sheet, ``--allow-large-removal``) also removes the details
+    of a tab that is gone. ``allow_empty_tabs`` (the cohort-setup Replace, a
+    rebuild from the sheet) takes a tab that WAS read and holds no animal as
+    empty, but still keeps and reports a tab that was not read at all: a
+    renamed tab says nothing about what the sheet holds, and its details must
+    not vanish behind an "Import complete". ``records`` is the number of
+    records stored (or, in a dry run, that would be)."""
     warnings: List[str] = []
     kept: List[dict] = []
     try:
@@ -770,7 +784,8 @@ def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: 
         for tab in tabs_read:
             if keep_tabs and tab in keep_tabs:
                 kept.append({"tab": tab, "why": keep_tabs[tab]})
-            elif not given.get(tab) and stored.get(tab) and not allow_large_removal:
+            elif (not given.get(tab) and stored.get(tab)
+                  and not (allow_large_removal or allow_empty_tabs)):
                 kept.append({"tab": tab, "why": (
                     "the '%s' tab read as holding no animal's details, while the database "
                     "holds %d of this cohort's from it; that looks like a broken read "

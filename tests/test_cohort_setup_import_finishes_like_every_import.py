@@ -22,6 +22,7 @@ import pytest  # noqa: E402
 from mousedb import hand_scores_file as hsf  # noqa: E402
 from mousedb import sheet_sync as ss  # noqa: E402
 from mousedb import task_mutex  # noqa: E402
+from mousedb.animal_records import sync_cohort as _REAL_SYNC  # noqa: E402
 
 COHORT = "CNT_77"
 SHEET = "Connectome_77_Animal_Tracking.xlsx"
@@ -184,7 +185,10 @@ def test_a_committed_replace_copies_details_and_rewrites_both_files(app_mod, wor
     app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
 
     assert len(world.details) == 1
-    assert world.details[0][2].get("allow_large_removal") is True   # a deliberate rebuild
+    # A deliberate rebuild: a tab read as empty is taken as empty, but never
+    # the removal permission, which would also delete an unread tab's details.
+    assert world.details[0][2].get("allow_empty_tabs") is True
+    assert not world.details[0][2].get("allow_large_removal")
     assert len(world.hand_scores) == 1 and world.fix_these
     (line,) = _ledger()
     assert line["mode"] == "replace" and line["imported"]["animal_records"] == 4
@@ -208,6 +212,49 @@ def test_a_replace_that_kept_an_animal_detail_tab_is_not_reported_complete(
     titles = [t for t, _text in _Box.SHOWN]
     assert "Import complete" not in titles
     assert any("NOT SYNCED animal details '0a_Metadata'" in text for _t, text in _Box.SHOWN)
+
+
+def test_a_replace_keeps_and_reports_the_details_of_a_renamed_tab(app_mod, world, monkeypatch):
+    """WHY: Replace copied the animal details with the removal permission, so
+    a tab renamed in the workbook had its stored details deleted, nothing said
+    so, and the box read "Import complete". The real copy now keeps them and
+    the Replace is reported as not complete."""
+    import openpyxl
+    import mousedb.animal_records as ar
+    wb = openpyxl.Workbook()
+    wb.active.title = "0a_Metadata"
+    wb.active.append(["SubjectID", "Sex"])
+    wb.active.append([COHORT + "_01", "F"])
+    wb.save(world.sheet)
+    _REAL_SYNC(world.db, COHORT, world.sheet)
+    assert _stored_tabs(world.db) == {"0a_Metadata": 1}
+    wb = openpyxl.load_workbook(world.sheet)
+    wb["0a_Metadata"].title = "0a_Metadata (renamed)"
+    wb.save(world.sheet)
+
+    monkeypatch.setattr(ar, "sync_cohort", _REAL_SYNC)
+    monkeypatch.setattr(app_mod, "replace_cohort_from_sheet", lambda *a, **k: {
+        "success": True, "imported": {"pellet_scores": 20}, "warnings": [], "errors": [],
+        "replace": {"committed": True, "removed": {}, "kept": 0, "kept_rows": [],
+                    "start_date": None}})
+    _Box.CHOICE = "Replace"
+    app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
+
+    assert _stored_tabs(world.db) == {"0a_Metadata": 1}
+    titles = [t for t, _text in _Box.SHOWN]
+    assert "Import complete" not in titles
+    assert any("NOT SYNCED animal details '0a_Metadata'" in text for _t, text in _Box.SHOWN)
+    (line,) = _ledger()
+    assert ss.sync_refused(line)
+
+
+def _stored_tabs(db):
+    from mousedb.schema import AnimalRecord
+    with db.session() as s:
+        out = {}
+        for r in s.query(AnimalRecord):
+            out[r.source_tab] = out.get(r.source_tab, 0) + 1
+        return out
 
 
 def test_an_undone_replace_changes_nothing_else(app_mod, world, monkeypatch):

@@ -517,10 +517,13 @@ file itself, outside all of this; it now goes through the same import.)
 **Import from Excel... (Cohort Setup)** also offers **Replace**, which deletes
 what earlier imports of the sheet wrote and imports it again in one step it
 can undo whole. A Replace that went through ends like every other import:
-the animal details are copied (a tab that now reads as empty is taken as
-empty, because a Replace rebuilds the cohort from the sheet on purpose; a
-tab that is missing, or whose table the import refused, is still left as it
-was), one line goes into the import history (marked `"mode": "replace"`),
+the animal details are copied (a tab that is there but now holds no animal
+is taken as empty, because a Replace rebuilds the cohort from the sheet on
+purpose; a tab that is missing or renamed, or whose table the import refused,
+is still left as it was and reported as `NOT SYNCED animal details '<tab>'`,
+so the Replace is not called complete -- rename the tab back, or, if it is
+meant to be gone, import the cohort with `--allow-large-removal`), one line
+goes into the import history (marked `"mode": "replace"`),
 and the hand-scores and FIX THESE files are rewritten. A Replace that was
 undone changed nothing, and nothing else runs. The box that closes a Replace
 says **Import complete** only when the import counts as succeeded the same

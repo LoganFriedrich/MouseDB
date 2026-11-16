@@ -98,7 +98,9 @@ checked-in code, not what's planned.
     empty, or is missing or renamed, while the database holds some of its
     details, or whose table the import refused, is left as it was and
     reported with the refusals (with `--allow-large-removal` a gone tab's
-    details are removed). The letter workbooks' `ODC` pass and
+    details are removed; Cohort Setup's Replace takes a tab that is there
+    but empty as empty, and still keeps and reports a missing one). The
+    letter workbooks' `ODC` pass and
     `mousedb-import-aspa-scores` report a kept tab and fail too, and Cohort
     Setup's Replace no longer says "Import complete" over one.
   - A weight's percentage of body weight is corrected when the sheet's

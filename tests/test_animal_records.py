@@ -206,6 +206,29 @@ def test_a_tab_that_was_not_read_is_reported_and_removed_only_when_allowed(tmp_p
     assert r["kept"] == [] and "0a_Metadata" not in after and "3b_Manual_Tray" not in after
 
 
+def test_a_rebuild_takes_an_empty_tab_as_empty_but_keeps_an_unread_one(tmp_path):
+    """WHY: the cohort-setup Replace used the removal permission, which also
+    deleted the details of a tab that was not read (renamed, missing) and said
+    nothing. allow_empty_tabs takes a tab READ as holding no animal as empty,
+    and still keeps and reports a tab that was not read."""
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    _cnt_workbook(p)
+    ar.sync_cohort(db, "PROJA_01", p)
+    before = _stored_by_tab(db)
+    wb = openpyxl.load_workbook(p)
+    wb["0a_Metadata"].title = "0a_Metadata (renamed)"
+    ws = wb["5_SC_Injection_Details"]
+    ws.delete_rows(2, ws.max_row)                # read, and no animal in it
+    wb.save(p)
+
+    r = ar.sync_cohort(db, "PROJA_01", p, allow_empty_tabs=True)
+    after = _stored_by_tab(db)
+    assert after["0a_Metadata"] == before["0a_Metadata"]
+    assert "5_SC_Injection_Details" not in after
+    assert [(k["tab"], k.get("unread")) for k in r["kept"]] == [("0a_Metadata", True)]
+
+
 def test_an_odc_tab_without_its_header_is_reported(tmp_path):
     db = _scratch_db(tmp_path)
     p = tmp_path / "Z.xlsx"                    # an invented letter cohort
