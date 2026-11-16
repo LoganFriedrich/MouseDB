@@ -483,15 +483,27 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
     the command line, where waiting turns an overlap into a short delay.
     0: do not wait; raise ExportsBusy at once -- right for a button, where a
     person is better told now than kept waiting behind an hour-long job.
-    A wait that runs out raises task_mutex.LockWaitTimeout (holder named)."""
-    from ..task_mutex import TaskMutex
+    A wait that runs out raises task_mutex.LockWaitTimeout (holder named).
+    A lock folder this login cannot write raises task_mutex.LockFolderNotWritable
+    at once, waiting or not: it is not "busy", and waiting would not help."""
+    from ..task_mutex import PENDING_DELETE_GRACE_SECONDS, TaskMutex
     # Labelled at construction, so a dead holder's lock broken while waiting
     # (task_mutex._record_break) is logged under this lock's name too.
     mutex = TaskMutex(EXPORTS_LOCK, base_dir=Path(lock_dir) if lock_dir else _lock_dir(),
                       label=EXPORTS_LOCK_LABEL)
     if lock_wait_seconds is not None and lock_wait_seconds <= 0:
-        if not mutex.try_acquire(heartbeat=True):
-            raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
+        started = mutex._clock()
+        while not mutex.try_acquire(heartbeat=True):
+            # "Busy" only when there is a holder to name. With no lockfile at
+            # all, the lock was released a moment ago (or its delete is still
+            # pending): try again, briefly. A folder that refuses writes is
+            # raised by try_acquire (LockFolderNotWritable) within the grace
+            # period, so this never tells a person "already being written"
+            # while nothing is writing.
+            if (mutex.holder()[0] != "absent"
+                    or mutex._clock() - started > PENDING_DELETE_GRACE_SECONDS + 5):
+                raise ExportsBusy("%s (holder: %s)" % (BUSY_MESSAGE, mutex.holder()[1]))
+            mutex._sleep(0.2)
         return mutex
     return mutex.acquire(wait_seconds=lock_wait_seconds,
                          waiting_for="another export refresh")
@@ -605,6 +617,17 @@ EXIT_BUSY = 3
 # (its budget used up, or the other refresh showed no progress for
 # task_mutex.STALL_MINUTES). Nothing was changed; distinct from 1 and 3.
 EXIT_LOCK_TIMEOUT = 4
+# The exit code when the lock folder cannot be written by this login
+# (task_mutex.LockFolderNotWritable): nobody is writing the exports, and running
+# again will fail the same way until the folder's permissions are fixed.
+EXIT_LOCK_FOLDER = 5
+
+
+def lock_folder_message(e: Exception) -> str:
+    """The plain line a person sees when the lock folder refuses writes."""
+    return ("[!] the lock folder cannot be written by this login, so the exports were "
+            "not rewritten. Nobody else is writing them; waiting or pressing again will "
+            "not help. Nothing was changed. Details: %s" % e)
 
 
 def lock_timeout_message(e: Exception) -> str:
@@ -618,7 +641,7 @@ def lock_timeout_message(e: Exception) -> str:
 
 def main(argv=None) -> int:
     import argparse
-    from ..task_mutex import LockWaitTimeout
+    from ..task_mutex import LockFolderNotWritable, LockWaitTimeout
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR)
@@ -641,6 +664,9 @@ def main(argv=None) -> int:
     except LockWaitTimeout as e:
         print(lock_timeout_message(e), flush=True)
         return EXIT_LOCK_TIMEOUT
+    except LockFolderNotWritable as e:
+        print(lock_folder_message(e), flush=True)
+        return EXIT_LOCK_FOLDER
     if args.json:
         print(json.dumps(m, indent=1, default=str))
     else:

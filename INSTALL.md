@@ -421,6 +421,12 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   `[FAIL]` line or a `LockWaitTimeout` naming the holder, nothing was changed,
   and the job exits 1. A job that takes the lock once per item (the sheet import:
   once per cohort) does not wait again for a holder it already gave up on.
+  A job whose login cannot WRITE in the lock folder does not wait at all: it
+  stops at once with an error starting `the lock folder cannot be written`
+  that names the folder -- no job holds the lock, so fix that login's write
+  access to the folder. (On Windows a just-deleted lockfile can refuse to be
+  re-created for a moment; that refusal is waited out for up to 30 seconds,
+  and only while something is still at the lock's path.)
 
   | job | wait budget | set with |
   |---|---|---|

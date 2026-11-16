@@ -144,11 +144,14 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
 
     --no-wait: if another refresh (usually the nightly job) is writing the
     exports, the program stops at once with exit code EXIT_BUSY instead of
-    keeping the button busy for an hour; ``busy`` is then True.
-    Returns {"returncode", "busy", "output"}."""
+    keeping the button busy for an hour; ``busy`` is then True. If the lock
+    folder cannot be written by this login, it stops with EXIT_LOCK_FOLDER and
+    ``lock_folder`` is True -- a different message: nobody is writing, and
+    pressing again will not help until the folder's permissions are fixed.
+    Returns {"returncode", "busy", "lock_folder", "output"}."""
     import subprocess
     import sys
-    from ..exporters.current import EXIT_BUSY
+    from ..exporters.current import EXIT_BUSY, EXIT_LOCK_FOLDER
     exe = Path(sys.executable)
     # The window runs under pythonw (no console); its python.exe sits beside it.
     if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
@@ -160,7 +163,7 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
                           timeout=timeout_seconds)
     out = proc.stdout.decode("utf-8", errors="replace")
     return {"returncode": proc.returncode, "busy": proc.returncode == EXIT_BUSY,
-            "output": out}
+            "lock_folder": proc.returncode == EXIT_LOCK_FOLDER, "output": out}
 
 
 class _Worker(QThread):
@@ -629,6 +632,14 @@ class DataStatusTab(QWidget):
                 self, "Refresh exports now",
                 "The exports are already being written -- try again when it finishes. "
                 "Nothing was changed.")
+        elif r.get("lock_folder"):
+            QMessageBox.warning(
+                self, "Refresh exports now",
+                "The exports were not rewritten: your login cannot write to the folder "
+                "that holds mousedb's lock files. Nobody else is writing the exports, "
+                "and pressing again will not help. Nothing was changed. Ask whoever "
+                "manages the computer to give your login write access to that folder.\n\n"
+                + r.get("output", "")[-1500:])
         elif r.get("returncode") not in (0, None) or r.get("problems"):
             QMessageBox.warning(
                 self, "Refresh exports now",

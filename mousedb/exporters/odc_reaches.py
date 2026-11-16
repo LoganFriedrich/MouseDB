@@ -1106,13 +1106,17 @@ def main(argv=None) -> int:
         # at exporters.current.EXPORTS_LOCK). Decided by WHERE the files go,
         # not by whether --out-dir was typed: an --out-dir that names the live
         # folder used to skip the lock and write beside a running refresh.
-        from .current import EXIT_LOCK_TIMEOUT, hold_exports_lock, lock_timeout_message
-        from ..task_mutex import LockWaitTimeout
+        from .current import (EXIT_LOCK_FOLDER, EXIT_LOCK_TIMEOUT, hold_exports_lock,
+                              lock_folder_message, lock_timeout_message)
+        from ..task_mutex import LockFolderNotWritable, LockWaitTimeout
         try:
             lock = hold_exports_lock()
         except LockWaitTimeout as e:
             print(lock_timeout_message(e), flush=True)
             return EXIT_LOCK_TIMEOUT
+        except LockFolderNotWritable as e:
+            print(lock_folder_message(e), flush=True)
+            return EXIT_LOCK_FOLDER
         with lock:
             m = export(snap, out, args.cohort)
     else:

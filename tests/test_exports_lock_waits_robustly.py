@@ -61,6 +61,17 @@ def test_a_lockfile_whose_delete_is_pending_is_waited_for_not_raised(tmp_path, m
         return real_open(path, flags, *a, **kw)
 
     monkeypatch.setattr(task_mutex.os, "open", pending_delete)
+    # A delete-pending file still has its directory entry, and refuses even to
+    # be looked at (this is how the lock tells it from a folder it cannot
+    # write -- see test_lock_folder_not_writable).
+    real_stat = os.stat
+
+    def stat_pending(path, *a, **kw):
+        # Pending until the create finally goes through (the 4th open).
+        if str(path) == str(m.path) and not m._held:
+            raise PermissionError(13, "Access is denied", str(path))
+        return real_stat(path, *a, **kw)
+    monkeypatch.setattr(task_mutex.os, "stat", stat_pending)
     slept = []
     m._sleep = slept.append
     m.acquire(wait_seconds=60, log=lambda *_: None, waiting_for="another export refresh")

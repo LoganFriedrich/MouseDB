@@ -378,6 +378,19 @@ already writing:
   for a stuck one.
 - `mousedb-current-exports --no-wait` does not wait either: it stops at once
   with exit code 3.
+- **"Busy" is said only when someone really is writing.** If the lock file
+  cannot be created because your login is not allowed to write in the lock
+  folder (wrong permissions, a read-only share), that is NOT reported as busy
+  and nothing waits for it. The button shows a warning: "your login cannot
+  write to the folder that holds mousedb's lock files. Nobody else is writing
+  the exports, and pressing again will not help." A terminal command prints a
+  line starting `[!] the lock folder cannot be written` and exits with code 5;
+  a scheduled job stops at once with an error that starts `the lock folder
+  cannot be written` and names the folder. Fix: give that login write access
+  to the folder named (normally `<mousedb_root>/logs`). (A lock file that was
+  deleted a moment ago can, on Windows, refuse to be re-created for a second
+  or two while the delete finishes; that short refusal is waited out, for up
+  to 30 seconds.)
 
 While the nightly job waits for a button-started export, it still holds the
 database-task lock it took for the snapshot, so the other scheduled database

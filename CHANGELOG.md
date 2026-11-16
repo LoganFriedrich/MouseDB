@@ -134,7 +134,12 @@ checked-in code, not what's planned.
   the old unlocked export.
 - Task locks: a lockfile that Windows refuses to create because the previous
   one's delete is still pending is "not free yet", and the waiter tries again
-  (it used to end the wait with an error). A broken or released lock is
+  (it used to end the wait with an error) -- but only for up to 30 seconds and
+  only while something is still at the lock's path. A lock folder this login
+  cannot write is an error at once (`the lock folder cannot be written`,
+  naming the folder), never "busy" and never a full wait;
+  `mousedb-current-exports` exits 5 for it, and the button says the folder
+  cannot be written instead of "already being written". A broken or released lock is
   logged under its own name (a broken current-exports lock was logged as the
   database-task lock).
 - Current exports: when the per-reach skip record

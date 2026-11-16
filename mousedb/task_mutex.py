@@ -78,6 +78,15 @@ from typing import Callable, Optional, Tuple
 # be cleared.
 BREAK_TOKEN_STALE_SECONDS = 60
 
+# Windows refuses (access denied) to create a file whose delete is still
+# pending: the holder released a moment ago and something (an antivirus scan,
+# a reader) still has the old file open. That refusal lasts milliseconds to
+# seconds and means "not free yet". A refusal that lasts longer than this --
+# or one where nothing at all sits at the lock's path -- is the folder itself
+# refusing writes (no write rights for this login, a read-only share), which
+# no amount of waiting fixes. See TaskMutex._refused.
+PENDING_DELETE_GRACE_SECONDS = 30
+
 # -- how long a job waits for the lock ----------------------------------------
 #
 # A scheduled job waits while the holder is running and getting somewhere, up
@@ -114,6 +123,13 @@ _gave_up_on: dict = {}
 class LockWaitTimeout(RuntimeError):
     """The lock did not come free within this job's wait budget, or its holder
     stopped making progress. Nothing was changed; the message says what to do."""
+
+
+class LockFolderNotWritable(PermissionError):
+    """The lock folder refuses to let this process create its lockfile, and it
+    is not a delete that is still pending: waiting will not help. Nothing was
+    changed. A PermissionError, so a caller that does not know this class still
+    stops at once, as it always did, instead of waiting or reporting "busy"."""
 
 
 def set_wait_minutes(minutes: Optional[float]) -> None:
@@ -189,6 +205,8 @@ class TaskMutex:
         self.label = label
         self._held = False
         self._identity: Optional[str] = None
+        # path -> when (self._clock) creating it was first refused; see _refused.
+        self._refused_since: dict = {}
         self._heartbeat_stop = None
         # Injected so the waiting rules can be tested without waiting.
         self._clock = time.monotonic
@@ -276,11 +294,13 @@ class TaskMutex:
         token = self._token_path
         try:
             fd = os.open(str(token), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except PermissionError:
-            # Windows: the token was just deleted and the delete is still
-            # pending; it is not free yet (see _create).
-            return False
+        except PermissionError as refused:
+            # Windows: the token may have just been deleted with the delete
+            # still pending -- not free yet. Or the folder refuses writes, which
+            # _refused raises (see there).
+            return self._refused(token, refused)
         except FileExistsError:
+            self._refused_since.pop(token, None)
             # Someone is breaking or releasing right now -- or died doing it.
             # The token lives for milliseconds, so an old one is an orphan.
             try:
@@ -289,11 +309,54 @@ class TaskMutex:
             except OSError:
                 pass
             return False
+        self._refused_since.pop(token, None)
         try:
             os.write(fd, ("%d %s" % (os.getpid(), _this_host())).encode())
         finally:
             os.close(fd)
         return True
+
+    def _refused(self, path: Path, refused: PermissionError) -> bool:
+        """Creating ``path`` was refused (PermissionError). Return False ("not
+        free yet, poll again") only while that can be a delete still pending;
+        otherwise raise LockFolderNotWritable naming the path and the error.
+
+        WHY two tests: on Windows a just-deleted file whose delete is pending
+        refuses creation with "access denied" for a moment -- treating that as
+        an error ended waits that were about to succeed. But a folder that
+        refuses writes (no write rights for this login, a read-only share)
+        gives the same error forever, and read as "not free yet" it looked like
+        a busy lock: a button said "already being written" with nothing
+        running, and every scheduled job waited out its whole budget and then
+        blamed a holder that did not exist. So:
+          * nothing at all at the path (no directory entry): there is no
+            pending delete to wait for -- raise at once;
+          * an entry is there (a pending-delete file cannot even be looked at,
+            so a refused look counts as "there"): wait, but only for
+            PENDING_DELETE_GRACE_SECONDS from the first refusal in a row."""
+        try:
+            os.stat(str(path))
+            present = True
+        except FileNotFoundError:
+            present = False
+        except OSError:
+            present = True          # a delete-pending file refuses to be looked at
+        now = self._clock()
+        first = self._refused_since.setdefault(path, now)
+        if present and now - first < PENDING_DELETE_GRACE_SECONDS:
+            return False
+        self._refused_since.pop(path, None)
+        why = ("nothing is at that path, so it is not a delete still pending"
+               if not present else
+               "refused for %d seconds in a row, longer than a pending delete lasts"
+               % (now - first))
+        raise LockFolderNotWritable(
+            "the lock folder cannot be written: creating %s for %s was refused (%s: %s; "
+            "%s). This is not another job holding the lock, and waiting will not help. "
+            "Nothing was changed. Give this login write access to %s (or point "
+            "mousedb at a folder it can write), then run it again."
+            % (path, self.label, type(refused).__name__, refused, why, path.parent)
+        ) from refused
 
     def _drop_token(self) -> None:
         try:
@@ -342,14 +405,16 @@ class TaskMutex:
         try:
             fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
+            self._refused_since.pop(self.path, None)
             return False
-        except PermissionError:
+        except PermissionError as refused:
             # Windows refuses (access denied) to create a file whose delete is
-            # still pending -- the holder released a moment ago and something
-            # (an antivirus scan, a reader) still has the old file open. That
-            # is "not free yet", exactly like FileExistsError: the waiter polls
-            # again. Raising here used to end a wait that was about to succeed.
-            return False
+            # still pending -- "not free yet", and the waiter polls again;
+            # raising used to end a wait that was about to succeed. But the
+            # same error from a folder this login cannot write never clears:
+            # _refused tells the two apart and raises for the second.
+            return self._refused(self.path, refused)
+        self._refused_since.pop(self.path, None)
         try:
             os.write(fd, identity.encode())
         finally:
@@ -571,10 +636,18 @@ class TaskMutex:
             return
         self._held = False
         deadline = time.monotonic() + 10
-        have_token = self._take_token()
+
+        def take():
+            # A folder that refuses the token must not stop this holder
+            # removing its own lock (see above): go on without the token.
+            try:
+                return self._take_token()
+            except OSError:
+                return False
+        have_token = take()
         while not have_token and time.monotonic() < deadline:
             time.sleep(0.05)
-            have_token = self._take_token()
+            have_token = take()
         try:
             now = self._read()
             if now == self._identity:
