@@ -383,6 +383,15 @@ class TestLedgerAndManifestAreSafe:
 
         monkeypatch.setattr(io, "open", fake_open)
         monkeypatch.setattr(builtins, "open", fake_open)
+        # Path.write_text does not go through io.open/builtins.open on every
+        # Python: up to 3.10 pathlib opens through _NormalAccessor.open, a
+        # reference to io.open taken when pathlib was imported. Patch that
+        # route too, so a plain write_text is "killed" as well and the test
+        # shows what a non-atomic write leaves behind.
+        import pathlib
+        accessor = getattr(pathlib, "_NormalAccessor", None)
+        if accessor is not None and hasattr(accessor, "open"):
+            monkeypatch.setattr(accessor, "open", staticmethod(fake_open))
         with pytest.raises(_Killed):
             ia.run(log=_quiet)
         monkeypatch.undo()
