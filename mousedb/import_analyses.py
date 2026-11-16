@@ -590,11 +590,16 @@ def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
 
 
 def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present: set,
-                         unlistable: set, mirrored: set, dest: Path, run_problem) -> Dict[str, dict]:
+                         unlistable: set, mirrored: set, dest: Path, run_problem,
+                         mirror_listing: Dict[str, List[Path]]) -> Dict[str, dict]:
     """For each analysis a person confirmed withdrawn (``--confirm-withdrawn``),
     the mirror's files of it that neither the ledger nor this run's listing of
     the source holds -- as extra keys for ``archivable_keys``, which still
     decides, as for any ledger key, whether the run may archive them.
+    ``mirror_listing``: the mirror's files of each confirmed analysis, listed
+    once at the start of the run; an analysis missing from it is one whose
+    mirror folders could not be listed -- held whole by ``run``, which reports
+    it, so it gets no extra keys here.
 
     WHY the mirror is listed too: the ledger is the usual record of what was
     mirrored, but a ledger set aside (``--set-aside-ledger``) forgot every
@@ -619,13 +624,9 @@ def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present:
                         "(no exports/%s/%s and nothing in the ledger); nothing was archived "
                         "-- check the name" % (a, a, REGISTRY_FILE))
             continue
-        try:
-            files = mirror_files_of(dest, a)
-        except OSError as e:
-            run_problem("--confirm-withdrawn %s: the mirror's folders of it could not be "
-                        "listed (%s); nothing of it was archived; run again" % (a, e))
-            continue
-        for f in files:
+        if a not in mirror_listing:
+            continue                    # its mirror could not be listed: held and reported by run
+        for f in mirror_listing[a]:
             k = rel_key(dest, f)
             if k not in ledger and k not in present:
                 extra[k] = {}
@@ -744,6 +745,23 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # confirmed withdrawn (--confirm-withdrawn): archived like a listed one.
     withdrawn: set = set()
     unlistable: set = set()        # analyses whose source folders could not be listed
+    # The mirror's files of each analysis a person confirmed withdrawn, listed
+    # once, up front. One whose mirror folders cannot be listed is held WHOLE
+    # this run -- not treated as withdrawn, and none of its files archived,
+    # not even those the ledger knows of. WHY: the confirmation archives what
+    # the mirror holds; with the mirror unlistable the run cannot know what
+    # that is, and archiving the ledger's part of it while reporting "nothing
+    # of it was archived" told the person the mirror was left alone when it
+    # was not.
+    mirror_listing: Dict[str, List[Path]] = {}
+    mirror_unlistable: Dict[str, str] = {}
+    for a in confirmed:
+        if not _plain_name(a):
+            continue
+        try:
+            mirror_listing[a] = mirror_files_of(dest, a)
+        except OSError as e:
+            mirror_unlistable[a] = "%s" % e
 
     run_problems: List[str] = []   # problems no single row carries (manifest "problems")
 
@@ -771,6 +789,12 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             continue
         reg_path = root / "exports" / analysis / REGISTRY_FILE
         if reg_path not in files:
+            if analysis in mirror_unlistable:
+                # Confirmed withdrawn, but the mirror's folders of it could not
+                # be listed: held whole (see mirror_listing above); the
+                # reason is added to its row below. Nothing of it is listed
+                # this run, so none of its ledger keys can be archived.
+                continue
             if analysis in confirmed:
                 # A person confirmed the withdrawal: archive its WHOLE mirror
                 # (below) -- files still in the source folder included, since
@@ -875,10 +899,23 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     # Files of an analysis a person confirmed withdrawn that the mirror holds
     # but the ledger does not (a ledger set aside or started anew) join them.
     extra = confirmed_extra_keys(confirmed, ledger, present, unlistable, mirrored, dest,
-                                 run_problem)
+                                 run_problem, mirror_listing)
     pool = dict(ledger)
     pool.update(extra)
     gone, kept = archivable_keys(pool, present, listed | withdrawn, folders, root)
+    for a in sorted(mirror_unlistable):
+        if a in unlistable:
+            continue                    # its source could not be listed either: reported already
+        # Held whole (see mirror_listing): even the files the ledger knows
+        # MouseBrain dropped stay, so the message below is true as written.
+        gone, held_now = ([k for k in gone if analysis_of_key(k) != a],
+                          [k for k in gone if analysis_of_key(k) == a])
+        kept = sorted(kept + held_now)
+        if a not in rows:
+            rows[a] = _new_row(a, imported_at, root)
+        problem(rows[a], "--confirm-withdrawn %s: the mirror's folders of it could not be "
+                         "listed (%s); nothing of it was archived -- the mirror is kept as it "
+                         "was; run again" % (a, mirror_unlistable[a]))
     guard = None
     held_back = [k for k in gone if analysis_of_key(k) not in confirmed]
     if held_back and not listed:
@@ -902,7 +939,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     for msg in held_problems(kept, rows, imported_at, root, reason=guard):
         run_problem(msg)
     for a in confirmed:
-        if a not in unlistable and _plain_name(a) and not any(
+        if a not in unlistable and a in mirror_listing and not any(
                 analysis_of_key(k) == a for k in gone + kept):
             log("  [note] --confirm-withdrawn %s: the mirror holds no file of it that "
                 "MouseBrain no longer has; nothing to archive" % a)

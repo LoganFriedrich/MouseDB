@@ -832,6 +832,61 @@ class TestConfirmWithdrawn:
             return []
         return sorted(p.relative_to(base).as_posix() for p in base.rglob("*") if p.is_file())
 
+    # WHY the next two: a confirmed analysis whose MIRROR folders cannot be
+    # listed used to be reported "nothing of it was archived" while the run
+    # went on to archive every file of it the ledger knew of -- the output
+    # contradicted itself, and the person was told the mirror was left alone
+    # when it was not. It is now held whole: the message is true as written.
+
+    def _mirror_unlistable(self, monkeypatch):
+        def unlistable(dest, analysis):
+            raise PermissionError(13, "Access is denied", str(dest / "exports" / analysis))
+        monkeypatch.setattr(ia, "mirror_files_of", unlistable)
+
+    def _all_mirrored(self, db):
+        for rel in ("exports/Alpha_Detection/registry.json",
+                    "exports/Alpha_Detection/S1/measurements.csv",
+                    "figures/Alpha_Detection/A1/R1/S1.png", "logs/Alpha_Detection.log"):
+            assert (db / rel).is_file(), rel
+
+    def test_a_confirmed_folder_without_registry_is_held_when_the_mirror_cannot_be_listed(
+            self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        with monkeypatch.context() as mp:
+            self._mirror_unlistable(mp)
+            res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        said = [m for m in res.messages if "--confirm-withdrawn Alpha_Detection" in m]
+        assert said and "nothing of it was archived" in said[0], res.messages
+        assert res.archived == 0 and self._archived(db) == []
+        self._all_mirrored(db)
+        ledger = json.loads((db / "logs" / "analysis_imports.json").read_text())
+        assert "exports/Alpha_Detection/registry.json" in ledger         # kept for a later run
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert any("could not be listed" in p for p in rows["Alpha_Detection"]["problems"])
+        # once the mirror can be listed, the confirmation does what it says
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0 and res.archived == FILES_PER_ANALYSIS
+
+    def test_a_confirmed_registered_analysis_is_held_when_the_mirror_cannot_be_listed(
+            self, roots, monkeypatch):
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").unlink()
+        with monkeypatch.context() as mp:
+            self._mirror_unlistable(mp)
+            res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        said = [m for m in res.messages if "--confirm-withdrawn Alpha_Detection" in m]
+        assert said and "nothing of it was archived" in said[0], res.messages
+        assert res.archived == 0 and self._archived(db) == []
+        self._all_mirrored(db)
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert rows["Alpha_Detection"]["problems"]
+        assert not rows["Beta_ROI"]["problems"]
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.errors == 0 and res.archived == 1
+
     def test_every_analysis_withdrawn_is_archived_when_confirmed(self, roots):
         reg, db = roots
         ia.run(log=_quiet)

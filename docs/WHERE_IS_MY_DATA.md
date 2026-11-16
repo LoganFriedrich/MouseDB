@@ -857,6 +857,13 @@ What it does NOT do:
   listed, or a folder missing from the listing that a second look cannot
   confirm is gone, still keeps its mirror and fails the run -- check the
   share and run again;
+- archive anything of the analysis when the MIRROR's own folders of it
+  cannot be listed: `[FAIL] --confirm-withdrawn <analysis>: the mirror's
+  folders of it could not be listed ...; nothing of it was archived`, and the
+  analysis's line on the Where Is My Data tab ends with that reason. Nothing
+  of that analysis is moved -- not even files the run would archive without
+  the option -- because the run cannot tell what the mirror holds of it.
+  Check the share and run the same command again;
 - accept a name the mirror holds nothing of: `[FAIL] --confirm-withdrawn
   <name>: the mirror holds no analysis by that name ... -- check the name`,
   and nothing is archived. A path (anything with `/`, `\` or `:`) is

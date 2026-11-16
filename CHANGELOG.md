@@ -204,7 +204,9 @@ checked-in code, not what's planned.
   analysis still registered only the files MouseBrain dropped are archived;
   for a folder left without its `registry.json`, everything the mirror holds
   of it, even files still at the source. Refuses a name the mirror holds
-  nothing of, a path, and a source it cannot list.
+  nothing of, a path, and a source it cannot list. An analysis whose mirror
+  folders cannot be listed is held whole -- nothing of it is archived -- with a
+  `[FAIL]` line that says so.
 - `mousedb import-analyses --set-aside-ledger`: keeps an unusable ledger
   (not JSON, or lines that name no analysis) beside the new one as
   `analysis_imports.json.set-aside-<time>` and starts a new ledger. The
