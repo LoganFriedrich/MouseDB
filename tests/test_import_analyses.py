@@ -464,7 +464,8 @@ class TestHelpers:
                            "c": {"is_current": False, "method_hash": "old"}}}
         s = ia.summarize_registry(reg)
         assert s == {"analysis_name": "X", "entries": 3, "current": 2, "invalidated": 1,
-                     "last_updated": "t", "approved_method_hash": "h", "stale_vs_approved": 1,
+                     "last_updated": "t", "approved_method_hash": "h",
+                     "approved_method_recorded_at": None, "stale_vs_approved": 1,
                      "no_approved_method": False, "set_aside_manifests": 0}
 
     def test_an_analysis_with_no_approved_method_is_not_called_stale(self):
@@ -496,7 +497,9 @@ class TestDataStatusLines:
         rows = ds.read_analyses_manifest(p)
         assert rows and rows[0]["analysis_name"] == "A"
         line = ds.analysis_lines(rows)[0]
-        assert line == "Analysis A: 5 current, 2 stale vs approved, 1 invalidated, imported 2026-08-28T10:00:00"
+        assert line == ("Analysis A: 5 current, 2 stale vs approved (approved method as recorded "
+                        "at an unknown date (registry written before the date was kept)), "
+                        "1 invalidated, imported 2026-08-28T10:00:00")
 
     def test_lines_say_no_approved_method_and_name_set_aside_manifests(self):
         from mousedb import data_status as ds
@@ -508,7 +511,50 @@ class TestDataStatusLines:
         b, c = ds.analysis_lines(rows)
         assert b == "Analysis B: 3 current, no approved method, 0 invalidated, imported t"
         assert "? stale" not in b
-        assert c.startswith("Analysis C: 1 current, 0 stale vs approved, 0 invalidated, imported t [!] 1 damaged manifest set aside")
+        assert c.startswith("Analysis C: 1 current, 0 stale vs approved (approved method as recorded "
+                            "at an unknown date (registry written before the date was kept)), "
+                            "0 invalidated, imported t [!] 1 damaged manifest set aside")
+
+
+class TestApprovedMethodDateIsShown:
+    """WHY: "stale vs approved" is judged against the approved method recorded
+    in MouseBrain's registry.json, which is only as new as MouseBrain's last
+    write of it. After the approved method changed, the count read "0 stale"
+    with nothing to show it was judged against the old one. The manifest
+    carries the date the header was recorded, and every line shows it."""
+
+    def test_the_recorded_date_reaches_the_manifest_and_the_status_line(self, roots):
+        reg, db = roots
+        f = reg / "exports" / "Alpha_Detection" / "registry.json"
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data["approved_method_recorded_at"] = "2026-03-01T09:30:12.123456"
+        f.write_text(json.dumps(data), encoding="utf-8")
+        lines = []
+        ia.run(log=lines.append)
+        m = json.loads((db / "exports" / "ANALYSES_MANIFEST.json").read_text())
+        rows = {r["analysis_name"]: r for r in m["analyses"]}
+        assert rows["Alpha_Detection"]["approved_method_recorded_at"] == "2026-03-01T09:30:12.123456"
+        assert rows["Beta_ROI"]["approved_method_recorded_at"] is None
+        from mousedb import data_status as ds
+        status = ds.analysis_lines(ds.read_analyses_manifest(db / "exports" / "ANALYSES_MANIFEST.json"))
+        alpha = [s for s in status if s.startswith("Analysis Alpha_Detection:")][0]
+        assert "1 stale vs approved (approved method as recorded 2026-03-01 09:30)" in alpha
+        beta = [s for s in status if s.startswith("Analysis Beta_ROI:")][0]
+        assert "approved method as recorded at an unknown date" in beta
+        assert any("Alpha_Detection" in s and "as recorded 2026-03-01 09:30" in s for s in lines)
+
+    def test_no_approved_method_is_not_counted_as_stale(self, roots):
+        reg, db = roots
+        f = reg / "exports" / "Alpha_Detection" / "registry.json"
+        data = json.loads(f.read_text(encoding="utf-8"))
+        data["approved_method_hash"] = None
+        f.write_text(json.dumps(data), encoding="utf-8")
+        res = ia.run(log=_quiet)
+        rows = {r["analysis_name"]: r for r in res.manifest}
+        assert rows["Alpha_Detection"]["stale_vs_approved"] is None
+        from mousedb import data_status as ds
+        line = ds.analysis_lines([rows["Alpha_Detection"]])[0]
+        assert "no approved method" in line and "stale" not in line
 
 
 class TestImportBrains:

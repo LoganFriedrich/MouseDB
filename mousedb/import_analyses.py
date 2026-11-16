@@ -80,9 +80,9 @@ ARCHIVE_SUBDIR = ("_archived", "analyses")  # <mousedb_root>/_archived/analyses/
 LOCK_NAME = "import-analyses"          # <mousedb_root>/logs/.import-analyses.task.lock (see main)
 
 MANIFEST_FIELDS = ("analysis_name", "entries", "current", "invalidated", "last_updated",
-                   "approved_method_hash", "stale_vs_approved", "no_approved_method",
-                   "set_aside_manifests", "files_copied", "files_skipped",
-                   "files_archived", "imported_at", "source_root")
+                   "approved_method_hash", "approved_method_recorded_at", "stale_vs_approved",
+                   "no_approved_method", "set_aside_manifests", "files_copied",
+                   "files_skipped", "files_archived", "imported_at", "source_root")
 
 
 @dataclass
@@ -273,7 +273,17 @@ def summarize_registry(reg: dict) -> dict:
     ``set_aside_manifests`` is how many damaged manifests the tool has set
     aside for a person to repair (the header's ``set_aside_manifests`` list).
     WHY: while one is set aside the analysis shows FEWER entries, and without
-    this a person sees only a smaller number and no reason."""
+    this a person sees only a smaller number and no reason.
+
+    The approved method is the one RECORDED in registry.json's header, not
+    the one MouseBrain would approve today: this tool never reads MouseBrain's
+    approved-method settings (it only mirrors). So the count is only as fresh
+    as that header, and the row carries ``approved_method_recorded_at`` (when
+    MouseBrain last wrote it; None in a registry written before MouseBrain
+    recorded it) so every place that shows the count shows that date beside
+    it. WHY: the header used to be written once, when the registry was
+    created, and a later change of the approved method showed "0 stale" with
+    nothing to say the comparison was against an old method."""
     entries = reg.get("entries") or {}
     approved = reg.get("approved_method_hash") or None
     current = [e for e in entries.values() if isinstance(e, dict) and e.get("is_current")]
@@ -285,11 +295,35 @@ def summarize_registry(reg: dict) -> dict:
         "invalidated": len(entries) - len(current),
         "last_updated": reg.get("last_updated"),
         "approved_method_hash": approved,
+        "approved_method_recorded_at": reg.get("approved_method_recorded_at"),
         "stale_vs_approved": (None if approved is None else
                               sum(1 for e in current if e.get("method_hash") != approved)),
         "no_approved_method": approved is None,
         "set_aside_manifests": len(set_aside) if isinstance(set_aside, list) else 1,
     }
+
+
+def stale_phrase(row: dict) -> str:
+    """'N stale vs approved (approved method as recorded <date>)' for one
+    manifest row, or 'no approved method'.
+
+    WHY the date: the count compares each entry with the approved method
+    RECORDED in MouseBrain's registry.json, which is only as new as the last
+    time MouseBrain wrote that file (``mousebrain-registry --name <analysis>
+    --refresh-approved`` rewrites it on demand). Shown bare, "0 stale" after a
+    change of the approved method looked like "all current" when it meant
+    "judged against the old method". The date lets a person see which.
+    A registry written before MouseBrain recorded the date says so."""
+    stale = row.get("stale_vs_approved")
+    if row.get("no_approved_method") or (
+            stale is None and row.get("entries") is not None
+            and row.get("approved_method_hash") is None):
+        return "no approved method"
+    recorded = row.get("approved_method_recorded_at")
+    when = (str(recorded)[:16].replace("T", " ") if recorded
+            else "at an unknown date (registry written before the date was kept)")
+    return "%s stale vs approved (approved method as recorded %s)" % (
+        "?" if stale is None else stale, when)
 
 
 def _new_row(analysis: str, imported_at: str, root: Path) -> dict:
@@ -525,9 +559,9 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         write_manifest(res.manifest, imported_at, root)
     for row in res.manifest:
         if row.get("entries") is not None:
-            log("  %s: %d entries, %d current, %d stale vs approved, %d invalidated; "
+            log("  %s: %d entries, %d current, %s, %d invalidated; "
                 "%d copied, %d unchanged, %d archived" % (
-                    row["analysis_name"], row["entries"], row["current"], row["stale_vs_approved"],
+                    row["analysis_name"], row["entries"], row["current"], stale_phrase(row),
                     row["invalidated"], row["files_copied"], row["files_skipped"], row["files_archived"]))
     log("import-analyses: %d files copied, %d unchanged, %d archived, %d errors%s" % (
         res.copied, res.skipped, res.archived, res.errors, " [dry run]" if dry_run else ""))

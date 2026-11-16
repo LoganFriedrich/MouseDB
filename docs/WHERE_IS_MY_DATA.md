@@ -739,7 +739,28 @@ registered, how many are **current**, how many are **stale vs approved**
 (current, but produced with a method other than the one the analysis now
 approves -- re-run them before using them), how many were **invalidated**,
 and when the mirror was taken. The Where Is My Data tab shows the same
-numbers as one line per analysis under the export files.
+numbers as one line per analysis under the export files, for example:
+
+    Analysis <analysis>: 40 current, 3 stale vs approved (approved method as recorded 2026-01-31 14:05), 2 invalidated, imported ...
+
+**Read the date in brackets.** "Stale vs approved" compares each sample
+with the approved method written in MouseBrain's `registry.json`, as
+MouseBrain last recorded it -- this tool never looks at MouseBrain's
+approved-method settings itself. MouseBrain rewrites that record every time
+it registers a sample in the analysis. So if the approved method was changed
+AFTER the date shown, the count is still judged against the old method and
+can say 0 while samples need re-running. To bring it up to date, have
+MouseBrain rewrite the record (`mousebrain-registry --name <analysis>
+--refresh-approved`, see MouseBrain's registry guide), then run
+`mousedb import-analyses` (or wait for the nightly run). Other things you may
+see in that place:
+
+- `approved method as recorded at an unknown date (registry written before
+  the date was kept)` -- the registry was last written by an older MouseBrain
+  that did not keep the date. Treat the count with the same caution;
+  refreshing it as above adds the date.
+- `no approved method` -- no approved method is declared for this analysis,
+  so none of its samples is compared or counted as stale.
 
 Two cases read differently on that line:
 

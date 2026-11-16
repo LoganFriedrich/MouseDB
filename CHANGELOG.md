@@ -143,6 +143,13 @@ checked-in code, not what's planned.
     beside them, so two imports finishing together cannot drop each other's
     cohorts from that list or leave a scores file that does not match its
     manifest's hash.
+- The "stale vs approved" count of a tissue analysis (Where Is My Data tab,
+  `mousedb-data-status`, the import's own output) now shows the date the approved
+  method it is judged against was recorded in MouseBrain's registry:
+  `... stale vs approved (approved method as recorded <date>)`. The manifest
+  row carries it as `approved_method_recorded_at`. An analysis with no
+  approved method declared shows `no approved method` instead of counting
+  every sample as stale.
 - `mousedb import-analyses` runs one at a time: it takes its own lock
   (`logs/.import-analyses.task.lock`), so the nightly task and the Update
   everything button can no longer run it together and drop each other's
