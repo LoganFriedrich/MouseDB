@@ -323,6 +323,46 @@ class TestNoArchiveOnAShortListing:
         rows = {r["analysis_name"]: r for r in res.manifest}
         assert rows["Beta_ROI"]["files_skipped"] == FILES_PER_ANALYSIS   # the others still run
 
+    def test_a_mirror_copy_that_cannot_be_looked_at_is_not_forgotten(self, roots, monkeypatch):
+        # WHY: the archive step asked Path.is_file() whether the mirror's copy
+        # was still there. A share that drops for a moment answers "not found"
+        # too, is_file() said False, and the ledger forgot the file without
+        # archiving it: a withdrawn file left in the mirror for good, no error.
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").unlink()
+        copy = db / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png"
+        blocked = os.path.normcase(str(copy))
+        real_stat = os.stat
+
+        def flaky_stat(path, *a, **k):
+            if os.path.normcase(os.fspath(path)) == blocked:
+                raise FileNotFoundError(2, "The network path was not found", str(path))
+            return real_stat(path, *a, **k)
+        with monkeypatch.context() as mp:
+            mp.setattr(os, "stat", flaky_stat)
+            # Up to Python 3.10 Path.stat (and so Path.is_file) goes through
+            # _NormalAccessor.stat, a reference to os.stat taken when pathlib
+            # was imported. Patch that route too, so code that asks pathlib
+            # meets the same unreachable copy.
+            import pathlib
+            accessor = getattr(pathlib, "_NormalAccessor", None)
+            if accessor is not None and hasattr(accessor, "stat"):
+                mp.setattr(accessor, "stat", staticmethod(flaky_stat))
+            # the folder listing cannot confirm it either: the share is not answering
+            mp.setattr(ia, "_confirmed_absent", lambda path: False, raising=False)
+            res = ia.run(log=_quiet)
+        assert res.archived == 0
+        assert res.errors >= 1
+        assert any("figures/Alpha_Detection/A1/R1/S1.png" in m for m in res.messages), res.messages
+        assert copy.is_file()
+        ledger = json.loads((db / "logs" / "analysis_imports.json").read_text())
+        assert "figures/Alpha_Detection/A1/R1/S1.png" in ledger          # kept for the next run
+        # the next run that can see the copy archives it
+        res = ia.run(log=_quiet)
+        assert res.archived == 1 and res.errors == 0
+        assert not copy.exists()
+
 
 class TestLedgerAndManifestAreSafe:
     """WHY: the ledger is the only record of what was mirrored. It used to be

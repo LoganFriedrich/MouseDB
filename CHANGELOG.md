@@ -151,6 +151,10 @@ checked-in code, not what's planned.
   the last good analysis lines with the reason only in the task log. The stop
   is kept in `logs/analysis_import_last_failure.json`, written whole or not at
   all, and removed by the next run that finishes.
+- `mousedb import-analyses`: when a file is to be archived but the mirror's own
+  copy cannot be looked at (a share or permission error), the run now reports
+  an error and keeps the file in its ledger. It used to read that as "already
+  gone" and drop it from the ledger, so the copy was never archived.
 - The "stale vs approved" count of a tissue analysis (Where Is My Data tab,
   `mousedb-data-status`, the import's own output) now shows the date the approved
   method it is judged against was recorded in MouseBrain's registry:

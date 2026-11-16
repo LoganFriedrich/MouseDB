@@ -929,7 +929,23 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         row = rows.get(analysis_of_key(key) or "")
         old = dest / key
         try:
-            if old.is_file():
+            # Is the mirror's copy still there? Asked with os.stat, and "gone"
+            # believed only from a folder listing that answers. WHY:
+            # Path.is_file() answers False for a copy that could not be
+            # looked at (a share that dropped for a moment), and the ledger
+            # entry was then dropped below without the copy being archived --
+            # a withdrawn file left in the mirror for good, with no error.
+            # Any other failure raises here: an error of the run, and the
+            # ledger keeps the key for the next run.
+            try:
+                old_mode: Optional[int] = os.stat(old).st_mode
+            except FileNotFoundError:
+                if not _confirmed_absent(old):
+                    raise
+                old_mode = None          # already gone from the mirror: nothing to move
+            if old_mode is not None and not stat.S_ISREG(old_mode):
+                raise OSError("%s is not a file" % old)
+            if old_mode is not None:
                 # The lab archives, it never deletes: the mirrored copy is
                 # MOVED under _archived/analyses/<stamp>/ so a result that was
                 # withdrawn upstream is still there to be looked at.
