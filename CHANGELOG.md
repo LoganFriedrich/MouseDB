@@ -76,6 +76,10 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Where Is My Data: an analysis with no approved method is shown as "no approved
+  method" instead of every current output counted as stale, and an analysis
+  whose record the tool set aside as damaged says so on its line ("[!] N damaged
+  manifest(s) set aside") instead of just showing fewer entries.
 - A read of the database no longer fails right after another program was
   stopped part-way through saving (`attempt to write a readonly database`):
   the hand-scores file and the bench disagreement scan now undo the stopped

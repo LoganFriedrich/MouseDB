@@ -728,6 +728,19 @@ approves -- re-run them before using them), how many were **invalidated**,
 and when the mirror was taken. The Where Is My Data tab shows the same
 numbers as one line per analysis under the export files.
 
+Two cases read differently on that line:
+
+- **no approved method** in place of the stale count: the analysis is one no
+  method approval judges (MouseBrain records it with no approved method, for
+  example an orientation check). There is nothing for its outputs to be stale
+  against, so none is counted as stale.
+- **[!] N damaged manifest(s) set aside** at the end of the line: MouseBrain
+  found this analysis's record damaged, set the damaged copy aside for a person
+  and started a fresh one. Until a person repairs it, the samples recorded only
+  in the damaged copy are not counted, so the numbers are lower than they
+  should be. Repair it on the MouseBrain side (its registry documentation says
+  how); the line goes away at the next import after that.
+
 `mousedb import-analyses --dry-run` says what would be copied or archived
 without writing anything (no files, no ledger, no manifest).
 

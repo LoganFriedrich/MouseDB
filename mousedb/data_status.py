@@ -101,9 +101,24 @@ def analysis_lines(rows: List[dict]) -> List[str]:
     """One line per analysis, identical in the terminal and the GUI."""
     def _n(v):
         return "?" if v is None else v
-    return ["Analysis %s: %s current, %s stale vs approved, %s invalidated, imported %s" % (
-                r.get("analysis_name"), _n(r.get("current")), _n(r.get("stale_vs_approved")),
-                _n(r.get("invalidated")), r.get("imported_at") or "?")
+
+    def _stale(r):
+        # An analysis no method approval judges has nothing to be stale
+        # against (import_analyses.summarize_registry).
+        if r.get("no_approved_method"):
+            return "no approved method"
+        return "%s stale vs approved" % _n(r.get("stale_vs_approved"))
+
+    def _set_aside(r):
+        n = r.get("set_aside_manifests") or 0
+        if not n:
+            return ""
+        return (" [!] %d damaged manifest%s set aside by the tool -- some entries are not "
+                "counted until a person repairs %s" % (n, "" if n == 1 else "s",
+                                                        "it" if n == 1 else "them"))
+    return ["Analysis %s: %s current, %s, %s invalidated, imported %s%s" % (
+                r.get("analysis_name"), _n(r.get("current")), _stale(r),
+                _n(r.get("invalidated")), r.get("imported_at") or "?", _set_aside(r))
             for r in rows]
 
 

@@ -265,7 +265,25 @@ class TestHelpers:
                            "c": {"is_current": False, "method_hash": "old"}}}
         s = ia.summarize_registry(reg)
         assert s == {"analysis_name": "X", "entries": 3, "current": 2, "invalidated": 1,
-                     "last_updated": "t", "approved_method_hash": "h", "stale_vs_approved": 1}
+                     "last_updated": "t", "approved_method_hash": "h", "stale_vs_approved": 1,
+                     "no_approved_method": False, "set_aside_manifests": 0}
+
+    def test_an_analysis_with_no_approved_method_is_not_called_stale(self):
+        """Before: an empty approved hash made every current entry 'stale'."""
+        for empty in (None, ""):
+            reg = {"analysis_name": "X", "approved_method_hash": empty,
+                   "entries": {"a": {"is_current": True, "method_hash": "h1"},
+                               "b": {"is_current": True, "method_hash": "h2"}}}
+            s = ia.summarize_registry(reg)
+            assert s.get("stale_vs_approved") is None
+            assert s.get("no_approved_method") is True
+            assert s["current"] == 2
+
+    def test_set_aside_manifests_are_counted(self):
+        reg = {"analysis_name": "X", "approved_method_hash": "h", "entries": {},
+               "set_aside_manifests": [{"file": "registry.json.set_aside_1"},
+                                       {"file": "registry.json.set_aside_2"}]}
+        assert ia.summarize_registry(reg).get("set_aside_manifests") == 2
 
 
 class TestDataStatusLines:
@@ -280,6 +298,18 @@ class TestDataStatusLines:
         assert rows and rows[0]["analysis_name"] == "A"
         line = ds.analysis_lines(rows)[0]
         assert line == "Analysis A: 5 current, 2 stale vs approved, 1 invalidated, imported 2026-08-28T10:00:00"
+
+    def test_lines_say_no_approved_method_and_name_set_aside_manifests(self):
+        from mousedb import data_status as ds
+        rows = [{"analysis_name": "B", "current": 3, "stale_vs_approved": None,
+                 "no_approved_method": True, "invalidated": 0, "imported_at": "t"},
+                {"analysis_name": "C", "current": 1, "stale_vs_approved": 0,
+                 "no_approved_method": False, "set_aside_manifests": 1,
+                 "invalidated": 0, "imported_at": "t"}]
+        b, c = ds.analysis_lines(rows)
+        assert b == "Analysis B: 3 current, no approved method, 0 invalidated, imported t"
+        assert "? stale" not in b
+        assert c.startswith("Analysis C: 1 current, 0 stale vs approved, 0 invalidated, imported t [!] 1 damaged manifest set aside")
 
 
 class TestImportBrains:

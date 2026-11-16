@@ -65,7 +65,8 @@ MANIFEST_NAME = "ANALYSES_MANIFEST.json"  # <mousedb_root>/exports/ANALYSES_MANI
 ARCHIVE_SUBDIR = ("_archived", "analyses")  # <mousedb_root>/_archived/analyses/<stamp>/...
 
 MANIFEST_FIELDS = ("analysis_name", "entries", "current", "invalidated", "last_updated",
-                   "approved_method_hash", "stale_vs_approved", "files_copied", "files_skipped",
+                   "approved_method_hash", "stale_vs_approved", "no_approved_method",
+                   "set_aside_manifests", "files_copied", "files_skipped",
                    "files_archived", "imported_at", "source_root")
 
 
@@ -171,10 +172,23 @@ def summarize_registry(reg: dict) -> dict:
     """The provenance counts one manifest row carries. ``stale_vs_approved``
     is the number of CURRENT entries whose method hash is not the approved
     one -- outputs that exist but were produced with a method the analysis no
-    longer approves, and so need re-running before they are used."""
+    longer approves, and so need re-running before they are used.
+
+    An analysis with NO approved method (the registry header's
+    ``approved_method_hash`` is empty -- MouseBrain writes that for analyses
+    whose outputs no method approval judges) has nothing to be stale against:
+    ``stale_vs_approved`` is None and ``no_approved_method`` True. WHY: counting
+    every current entry as stale there (what a comparison with an empty hash
+    gives) told a person that perfectly current outputs needed re-running.
+
+    ``set_aside_manifests`` is how many damaged manifests the tool has set
+    aside for a person to repair (the header's ``set_aside_manifests`` list).
+    WHY: while one is set aside the analysis shows FEWER entries, and without
+    this a person sees only a smaller number and no reason."""
     entries = reg.get("entries") or {}
-    approved = reg.get("approved_method_hash")
+    approved = reg.get("approved_method_hash") or None
     current = [e for e in entries.values() if isinstance(e, dict) and e.get("is_current")]
+    set_aside = reg.get("set_aside_manifests") or []
     return {
         "analysis_name": reg.get("analysis_name"),
         "entries": len(entries),
@@ -182,7 +196,10 @@ def summarize_registry(reg: dict) -> dict:
         "invalidated": len(entries) - len(current),
         "last_updated": reg.get("last_updated"),
         "approved_method_hash": approved,
-        "stale_vs_approved": sum(1 for e in current if e.get("method_hash") != approved),
+        "stale_vs_approved": (None if approved is None else
+                              sum(1 for e in current if e.get("method_hash") != approved)),
+        "no_approved_method": approved is None,
+        "set_aside_manifests": len(set_aside) if isinstance(set_aside, list) else 1,
     }
 
 
