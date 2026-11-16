@@ -133,7 +133,9 @@ is an analysis the last mirror run kept as it was, with the reason; an
 stopped before mirroring anything" means the last run changed nothing (a
 damaged ledger, or another run held the lock too long): the analysis lines
 are still those of the last run that finished, and the line goes when a run
-finishes. Guide: docs/WHERE_IS_MY_DATA.md,
+finishes. "[!] analysis mirror: the record of its last stopped run cannot be
+read" means the tab could not look at that record, so it cannot say whether
+the last run stopped: press Refresh, and check the share if it stays. Guide: docs/WHERE_IS_MY_DATA.md,
 "How tissue analysis outputs get here".
 """
 

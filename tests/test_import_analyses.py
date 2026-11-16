@@ -1265,6 +1265,66 @@ class TestAStoppedRunIsShown:
         assert self._stopped_lines(self._status(tmp_path, monkeypatch)) == []
 
 
+    def test_the_record_is_written_and_removed_only_while_the_lock_is_held(self, roots,
+                                                                           monkeypatch):
+        # WHY: cleared after the lock was released, a run that had just
+        # finished could remove the record a run waiting behind it had
+        # already written, and that second stop never showed on the tab.
+        reg, db = roots
+        lockfile = db / "logs" / ".import-analyses.task.lock"
+        seen = []
+        real_clear, real_record = ia.clear_stop, ia.record_stop
+
+        def clear():
+            seen.append(("clear", lockfile.exists()))
+            return real_clear()
+
+        def record(reason, before_mirroring):
+            seen.append(("record", lockfile.exists()))
+            return real_record(reason, before_mirroring)
+
+        monkeypatch.setattr(ia, "clear_stop", clear)
+        monkeypatch.setattr(ia, "record_stop", record)
+        assert ia.main([]) == 0
+        (db / "logs" / "analysis_imports.json").write_text("{", encoding="utf-8")
+        assert ia.main([]) == 1
+        assert seen == [("clear", True), ("record", True)]
+        assert not lockfile.exists()                # and the lock is given back both times
+
+    def test_a_record_that_cannot_be_looked_at_is_not_read_as_no_record(self, roots, tmp_path,
+                                                                        monkeypatch):
+        # WHY: Path.is_file() answers False for a file on a share that did
+        # not answer, so the record of a stopped run read as "no record" and
+        # the tab showed nothing at all -- no stop, and no word that it could
+        # not tell.
+        reg, db = roots
+        assert ia.main([]) == 0
+        (db / "logs" / "analysis_imports.json").write_text("{", encoding="utf-8")
+        assert ia.main([]) == 1
+        record = db / "logs" / ia.STOP_RECORD_NAME
+        assert record.is_file()
+        real_read, real_is_file = Path.read_text, Path.is_file
+
+        def read_text(self, *a, **k):
+            if self.name == ia.STOP_RECORD_NAME:
+                raise PermissionError(13, "the share did not answer", str(self))
+            return real_read(self, *a, **k)
+
+        def is_file(self):
+            return False if self.name == ia.STOP_RECORD_NAME else real_is_file(self)
+
+        monkeypatch.setattr(Path, "read_text", read_text)
+        monkeypatch.setattr(Path, "is_file", is_file)
+        st = self._status(tmp_path, monkeypatch)
+        told = [p for p in st["problems"] if p.startswith("analysis mirror: the record of "
+                                                          "its last stopped run cannot be read")]
+        assert len(told) == 1, st["problems"]
+
+    def test_a_record_that_is_truly_absent_is_no_record(self, roots):
+        reg, db = roots
+        assert ia.read_stop(db / "logs" / ia.STOP_RECORD_NAME) is None
+
+
 class TestImportBrains:
     def test_without_summary_dir_and_without_config_raises_config_error(self, monkeypatch):
         """cli.py used to reference a module constant that no longer existed:

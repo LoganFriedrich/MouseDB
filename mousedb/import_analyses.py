@@ -394,10 +394,20 @@ def clear_stop() -> Optional[str]:
 
 def read_stop(path: Path) -> Optional[dict]:
     """The record of the last run that stopped before it finished; None when
-    there is none (the last run finished). Raises when it cannot be read."""
-    if not path.is_file():
-        return None
-    data = json.loads(path.read_text(encoding="utf-8"))
+    there is none (the last run finished). Raises when it cannot be read.
+
+    WHY "none" is believed only from a folder listing that answers:
+    Path.is_file() is False for a file that could not be looked at (a share
+    that dropped for a moment), and the status tab then showed no stop line
+    and no reason -- the one message this record exists to deliver, hidden
+    by the kind of fault it reports."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        if _confirmed_absent(path):
+            return None
+        raise
+    data = json.loads(text)
     return data if isinstance(data, dict) else {"reason": repr(data)}
 
 
@@ -1153,46 +1163,79 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     quiet = (lambda *_: None) if args.json else print
     from .task_mutex import LockWaitTimeout, TaskMutex
-    progress: dict = {}
-    try:
-        if args.dry_run:
+    if args.dry_run:
+        # Writes nothing, so it takes no lock and neither records nor clears
+        # a stop (see _stopped).
+        try:
             res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet,
                       confirm_withdrawn=args.confirm_withdrawn, set_aside=args.set_aside_ledger)
-        else:
-            # One mirror at a time. WHY: the nightly task and the "Update
-            # the database now" button on the Where Is My Data tab
-            # (mousedb update) both run this, and nothing
-            # kept them apart. Each run reads the ledger at the start and
-            # rewrites it at the end, so two at once dropped the other's
-            # entries (files then copied and hashed again), and both could
-            # move the same withdrawn file. A second run waits for the first
-            # (task_mutex's usual wait: as long as the holder is working) and
-            # then finds nothing left to do. Its own lock, not the database
-            # lock: this import writes files only, and must not queue behind
-            # the hours-long database jobs. It sits beside the ledger it
-            # protects (<mousedb_root>/logs), named explicitly so it never
-            # depends on which settings point the database lock elsewhere.
-            lock = TaskMutex(LOCK_NAME, base_dir=ledger_path().parent,
-                             label="the analysis-import lock")
-            with lock.acquire(log=(quiet if args.json else print),
-                              waiting_for="another analysis import"):
+        except StateFileUnreadable as e:
+            return _stopped(args, "import-analyses not run: %s" % e, before_mirroring=True)
+        except Exception as e:
+            return _stopped(args, "%s" % e, before_mirroring=True)
+        if args.json:
+            print(json.dumps(res.as_dict(), indent=1))
+        return 1 if res.errors else 0
+    # One mirror at a time. WHY: the nightly task and the "Update the
+    # database now" button on the Where Is My Data tab (mousedb update) both
+    # run this, and nothing kept them apart. Each run reads the ledger at the
+    # start and rewrites it at the end, so two at once dropped the other's
+    # entries (files then copied and hashed again), and both could move the
+    # same withdrawn file. A second run waits for the first (task_mutex's
+    # usual wait: as long as the holder is working) and then finds nothing
+    # left to do. Its own lock, not the database lock: this import writes
+    # files only, and must not queue behind the hours-long database jobs. It
+    # sits beside the ledger it protects (<mousedb_root>/logs), named
+    # explicitly so it never depends on which settings point the database
+    # lock elsewhere.
+    #
+    # The record of a stopped run (record_stop / clear_stop) is written and
+    # removed WHILE THE LOCK IS HELD. WHY: done after the lock was released,
+    # a run that had just finished could remove the record that the run
+    # waiting behind it had already written (that run takes the lock, stops
+    # at once on an unreadable ledger, records it -- and the first run's
+    # late clear deletes it), so the tab showed nothing until the next
+    # failure. Only the lock holder touches the record, with one exception:
+    # a run that never got the lock (LockWaitTimeout) has to record that
+    # itself, outside it.
+    progress: dict = {}
+    rc: Optional[int] = None
+    res: Optional[ImportResult] = None
+    try:
+        lock = TaskMutex(LOCK_NAME, base_dir=ledger_path().parent,
+                         label="the analysis-import lock")
+        with lock.acquire(log=(quiet if args.json else print),
+                          waiting_for="another analysis import"):
+            try:
                 res = run(all_files=args.all, dry_run=False, limit=args.limit, log=quiet,
                           confirm_withdrawn=args.confirm_withdrawn,
                           set_aside=args.set_aside_ledger, progress=progress)
-    except (LockWaitTimeout, StateFileUnreadable) as e:
+            except StateFileUnreadable as e:
+                rc = _stopped(args, "import-analyses not run: %s" % e, before_mirroring=True)
+            except Exception as e:
+                rc = _stopped(args, "%s" % e, before_mirroring=not progress.get("mirroring"))
+            else:
+                rc = 1 if res.errors else 0
+                # The run finished: its manifest now says what holds, so the
+                # record of an earlier stop goes (see record_stop).
+                err = clear_stop()
+                if err:
+                    print("[!] the record of an earlier stopped run (%s) could not be "
+                          "removed (%s); the Where Is My Data tab still shows it -- run again"
+                          % (stop_record_path(), err))
+                    rc = 1
+    except LockWaitTimeout as e:
         return _stopped(args, "import-analyses not run: %s" % e, before_mirroring=True)
     except Exception as e:
-        return _stopped(args, "%s" % e, before_mirroring=not progress.get("mirroring"))
-    rc = 1 if res.errors else 0
-    if not args.dry_run:
-        # The run finished: its manifest now says what holds, so the record
-        # of an earlier stop goes (see record_stop).
-        err = clear_stop()
-        if err:
-            print("[!] the record of an earlier stopped run (%s) could not be removed (%s); "
-                  "the Where Is My Data tab still shows it -- run again"
-                  % (stop_record_path(), err))
-            rc = 1
+        # The lock itself failed (its folder cannot be written, or it could
+        # not be released). If the run inside had already ended, its result
+        # stands and only the lock fault is reported; otherwise nothing ran.
+        if rc is None:
+            return _stopped(args, "import-analyses not run: %s" % e, before_mirroring=True)
+        print("[!] the analysis-import lock could not be released cleanly (%s)" % e)
+        rc = 1
+    if res is None:
+        return rc
     if args.json:
         print(json.dumps(res.as_dict(), indent=1))
     return rc

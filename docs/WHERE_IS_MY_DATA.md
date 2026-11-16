@@ -801,7 +801,16 @@ see in that place:
   may not have been rewritten; run it again. The stop is kept in
   `<mousedb_root>/logs/analysis_import_last_failure.json`; do not edit or
   delete it by hand (only this job writes it, and a run that finishes
-  removes it). A `--dry-run` that stops records nothing.
+  removes it). A `--dry-run` that stops records nothing. Only the run that
+  holds the mirror's lock writes or removes it (a run that gave up waiting
+  for the lock writes it too), so a run that finishes can never wipe out
+  the stop of a run that started after it.
+- `[!] analysis mirror: the record of its last stopped run cannot be read:
+  <error>` -- the tab could not look at that file (the share did not answer,
+  or the file is damaged), so it cannot tell you whether the last run
+  stopped. It never treats that as "no run stopped". Press **Refresh**; if
+  the line stays, check the share, then run `mousedb import-analyses` (or
+  press **Update the database now**): a run that finishes removes the file.
 
 Two cases read differently on that line:
 

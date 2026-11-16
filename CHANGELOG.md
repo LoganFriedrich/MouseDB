@@ -150,7 +150,11 @@ checked-in code, not what's planned.
   until a run finishes. Such a run writes no manifest, so the tab used to show
   the last good analysis lines with the reason only in the task log. The stop
   is kept in `logs/analysis_import_last_failure.json`, written whole or not at
-  all, and removed by the next run that finishes.
+  all, and removed by the next run that finishes. It is written and removed
+  only while the mirror's lock is held (a run that gave up waiting for the
+  lock records that itself), and a record the tab cannot look at shows as
+  `[!] analysis mirror: the record of its last stopped run cannot be read`,
+  never as "no run stopped".
 - `mousedb import-analyses`: when a file is to be archived but the mirror's own
   copy cannot be looked at (a share or permission error), the run now reports
   an error and keeps the file in its ledger. It used to read that as "already
