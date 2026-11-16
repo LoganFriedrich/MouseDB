@@ -116,7 +116,9 @@ checked-in code, not what's planned.
     was undone) instead of losing the line in silence.
   - The hand-scores file's list of cohorts with a sheet only grows, and only
     an import of the configured folder adds to it or counts as an import of
-    every sheet; its manifest carries `scores_sha256` of the scores file, and
+    every sheet; its manifest carries `scores_sha256` of the scores file (so
+    a reader can check the pair belongs together; a reader that does not look
+    at it detects nothing new), and
     both renames are retried briefly while the file is open elsewhere. A
     manifest that cannot be read (after retries) or is damaged fails the
     write and leaves both files as they were, instead of being taken as

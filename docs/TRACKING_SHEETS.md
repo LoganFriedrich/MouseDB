@@ -692,9 +692,14 @@ never depends on mousedb); it reads one file mousedb writes:
   --directory <folder>`) does not touch this list or the "import of every
   sheet" time: only the configured sheets folder speaks for the sheets. It also
   carries `scores_sha256`, a fingerprint of the exact `.csv` it was written
-  with: the two files are replaced one after the other, and the pipeline uses
-  the fingerprint to notice when it has read a new `.csv` with the old `.json`
-  (or the reverse) and reads both again.
+  with: the two files are replaced one after the other, so a program reading
+  them at that instant can catch a new `.csv` beside the old `.json` (or the
+  reverse). The fingerprint is there so that the reading program CAN check
+  that the two belong together and read both again when they do not. mousedb
+  only writes it: whether a mismatched pair is actually noticed depends on the
+  version of the reaching pipeline you run. A pipeline version that does not
+  look at `scores_sha256` does not detect a mismatched pair (it simply ignores
+  the extra entry); check that tool's own documentation for whether it does.
 
 If a program (the pipeline, or a spreadsheet program you opened the file in)
 has one of the two files open at the moment it is replaced, Windows refuses

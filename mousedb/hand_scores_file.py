@@ -58,11 +58,15 @@ hand_pellet_scores.json  beside it:
     scores_sha256           the SHA-256 of hand_pellet_scores.csv as written with
                             this manifest. WHY: the two files are two renames,
                             not one, so a reader can catch the new scores file
-                            beside the old manifest (or the reverse). The reader
-                            compares this hash with the scores file it read and,
-                            when they differ, reads both again instead of
-                            keeping a mismatched pair. A manifest written before
-                            this key existed has none; a reader accepts it.
+                            beside the old manifest (or the reverse). The hash
+                            is what lets a reader tell: it CAN compare it with
+                            the scores file it read and, when they differ, read
+                            both again instead of keeping a mismatched pair.
+                            Writing the hash does not by itself make any reader
+                            do that -- a reader that does not look at this key
+                            still cannot detect a mismatched pair. A manifest
+                            written before this key existed has none, so a
+                            reader that checks must accept a missing hash.
 
 The file is rewritten after every sheet import (any route: the nightly job,
 the GUI, mousedb-sheets) and by `mousedb hand-scores`. Each file is written to
