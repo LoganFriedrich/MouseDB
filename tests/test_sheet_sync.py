@@ -414,3 +414,34 @@ def test_a_reused_importer_forgets_the_last_workbooks_weight_percent_and_pin_war
     importer._reset_run_state()
     assert "_tray_weight_percent" not in importer.__dict__
     assert "_blocked_said" not in importer.__dict__
+
+
+def test_the_planning_note_waits_for_the_pin(tmp_path):
+    """While several files match a cohort and none is pinned (sync_blocked),
+    the planning tab's note is held back like every other change to a stored
+    row. Before: it was written on the guess, and a later import never
+    replaces a planning note, so a draft's plan stayed."""
+    import pandas as pd
+    from datetime import date
+    from mousedb.database import init_database
+    from mousedb.importers import ExcelImporter
+    from mousedb.schema import Cohort
+    book = tmp_path / "plan.xlsx"
+    pd.DataFrame([["Phase", "Start_Day"], ["Training", 0]]).to_excel(
+        book, sheet_name="1_Experiment_Planning", header=False, index=False)
+    db = init_database(tmp_path / "scratch.db")
+    with db.session() as s:
+        s.add(Cohort(cohort_id="CNT_77", project_code="CNT", start_date=date(2099, 1, 1),
+                     notes="kept text"))
+    for blocked, expect_note in (("2 files match", False), (None, True)):
+        imp = ExcelImporter(db)
+        imp.sync_blocked = blocked
+        imp.imported_counts = __import__("collections").defaultdict(int)
+        with db.session() as s:
+            imp._import_experiment_planning(pd.ExcelFile(book), "CNT_77", s, dry_run=False)
+        with db.session() as s:
+            notes = s.query(Cohort).filter_by(cohort_id="CNT_77").one().notes
+        assert ("[PLANNING]" in notes) is expect_note, (blocked, notes)
+        assert notes.startswith("kept text")
+        if blocked:
+            assert any("HELD BACK" in w and "planning" in w for w in imp.warnings)

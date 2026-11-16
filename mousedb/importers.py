@@ -2887,7 +2887,12 @@ class ExcelImporter:
             if cohort:
                 existing_notes = cohort.notes or ''
                 planning_json = json.dumps(planning_data, default=str)
-                if '[PLANNING]' not in existing_notes:
+                # Held back like every other change to a stored row while the
+                # workbook may not be the cohort's sheet (_held_back): a draft
+                # or an old copy's plan, once written, would stay -- a note
+                # already there is never replaced by a later import.
+                if '[PLANNING]' not in existing_notes and not self._held_back(
+                        "adding the planning tab's note to %s's cohort notes" % cohort_id):
                     cohort.notes = (existing_notes + '\n[PLANNING] ' + planning_json).strip()
 
         self.imported_counts['planning_notes'] += 1
