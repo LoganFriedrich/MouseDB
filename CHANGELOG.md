@@ -186,8 +186,11 @@ checked-in code, not what's planned.
   archives, through the usual archive step, every mirrored file of an
   analysis that MouseBrain no longer has, where the run would otherwise hold
   it back (every analysis gone at once, a folder left without its
-  `registry.json`, files withdrawn before a new ledger was started). Refuses
-  a name the mirror holds nothing of, a path, and a source it cannot list.
+  `registry.json`, files withdrawn before a new ledger was started). For an
+  analysis still registered only the files MouseBrain dropped are archived;
+  for a folder left without its `registry.json`, everything the mirror holds
+  of it, even files still at the source. Refuses a name the mirror holds
+  nothing of, a path, and a source it cannot list.
 - `mousedb import-analyses --set-aside-ledger`: keeps an unusable ledger
   (not JSON, or lines that name no analysis) beside the new one as
   `analysis_imports.json.set-aside-<time>` and starts a new ledger. The

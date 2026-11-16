@@ -1728,7 +1728,9 @@ def main():
     ia.add_argument('--limit', type=int, help='Copy at most this many files')
     ia.add_argument('--confirm-withdrawn', action='append', metavar='ANALYSIS',
                     help='Confirm MouseBrain withdrew this analysis (or files of it): archive '
-                         'every mirrored file of it MouseBrain no longer has (repeatable)')
+                         'every mirrored file of it MouseBrain no longer has; for a folder '
+                         'left without registry.json, all of it, even files still at the '
+                         'source (repeatable)')
     ia.add_argument('--set-aside-ledger', action='store_true',
                     help='Keep an unusable ledger aside and start a new one')
     ia.set_defaults(func=cmd_import_analyses)

@@ -45,7 +45,12 @@ WHAT IT DOES
      it) -- ``--confirm-withdrawn <analysis>`` -- the run archives every
      mirrored file of that analysis MouseBrain no longer has, through the same
      archive step, even where it would otherwise hold back (see
-     ``confirmed_extra_keys``). WHY a supported command: nothing but this
+     ``confirmed_extra_keys``). For a folder left WITHOUT its registry.json
+     that is everything the mirror holds of the analysis, even files still in
+     the source folder: without registry.json it is no analysis this job can
+     mirror, and keeping part of it would fail every later run. For an
+     analysis still registered, only the files MouseBrain dropped are
+     archived. WHY a supported command: nothing but this
      tool writes into the mirror, so the remedy for "everything really was
      withdrawn" cannot be "move the files by hand".
   4. Writes ``<mousedb_root>/exports/ANALYSES_MANIFEST.json``: one row per
@@ -615,9 +620,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         set_aside: bool = False) -> ImportResult:
     """One mirror run. ``confirm_withdrawn``: analyses a person confirms
     MouseBrain withdrew (wholly or in part) -- every mirrored file of them
-    that MouseBrain no longer has is archived, see ``--confirm-withdrawn`` in
-    main. ``set_aside``: an unusable ledger is moved aside first and the run
-    starts a new one, see ``set_aside_ledger``."""
+    that MouseBrain no longer has is archived (all of it, for a folder left
+    without registry.json), see ``--confirm-withdrawn`` in main.
+    ``set_aside``: an unusable ledger is moved aside first and the run starts
+    a new one, see ``set_aside_ledger``."""
     res = ImportResult()
     root = registry_root()
     dest = require("mousedb_root")
@@ -687,7 +693,13 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         reg_path = root / "exports" / analysis / REGISTRY_FILE
         if reg_path not in files:
             if analysis in confirmed:
-                # A person confirmed the withdrawal: archive its mirror (below).
+                # A person confirmed the withdrawal: archive its WHOLE mirror
+                # (below) -- files still in the source folder included, since
+                # none of them is added to ``present``. WHY whole: without its
+                # registry.json the folder is no analysis this job can mirror;
+                # keeping some of its files would leave the analysis held, and
+                # failing, on every later run, so the confirmation would never
+                # settle it. Its source files are not touched.
                 del rows[analysis]
                 withdrawn.add(analysis)
                 log("  [note] %s: no %s at the source and confirmed withdrawn; its mirror "
@@ -881,7 +893,9 @@ def main(argv=None) -> int:
     ap.add_argument("--confirm-withdrawn", action="append", metavar="ANALYSIS", default=[],
                     help="Confirm that MouseBrain withdrew this analysis (or files of it): "
                          "archive every mirrored file of it that MouseBrain no longer has, "
-                         "even when the run would otherwise keep them back (repeatable)")
+                         "even when the run would otherwise keep them back; for a folder "
+                         "left without registry.json, everything the mirror holds of it, "
+                         "even files still at the source (repeatable)")
     ap.add_argument("--set-aside-ledger", action="store_true",
                     help="If the ledger cannot be used (not JSON, or entries that name no "
                          "analysis), keep it beside the new one as "

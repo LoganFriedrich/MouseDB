@@ -829,6 +829,25 @@ class TestConfirmWithdrawn:
         assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()
         assert "Alpha_Detection" not in {r["analysis_name"] for r in res.manifest}
 
+    def test_without_its_registry_the_whole_mirror_goes_even_files_still_at_the_source(
+            self, roots):
+        # Documented: a folder left without registry.json is no analysis the
+        # mirror can copy, so confirming it archives everything the mirror
+        # holds of it -- files MouseBrain still has included -- and the next
+        # run is clean instead of failing on what was kept. The source is
+        # never touched.
+        reg, db = roots
+        ia.run(log=_quiet)
+        (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        src_figure = reg / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png"
+        res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
+        assert res.archived == FILES_PER_ANALYSIS
+        assert src_figure.is_file()                                      # source untouched
+        assert not (db / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").exists()
+        assert any(k.endswith("figures/Alpha_Detection/A1/R1/S1.png") for k in self._archived(db))
+        again = ia.run(log=_quiet)
+        assert again.errors == 0 and again.archived == 0
+
     def test_a_still_registered_analysis_keeps_what_it_still_has(self, roots):
         reg, db = roots
         ia.run(log=_quiet)

@@ -817,10 +817,23 @@ for example `--confirm-withdrawn <analysis_1> --confirm-withdrawn
 MouseBrain no longer has -- moved to
 `<mousedb_root>/_archived/analyses/<date_time>/`, never deleted -- including
 files the ledger no longer knows of (after `--set-aside-ledger`, below).
+Which files that is depends on what MouseBrain still has of the analysis:
+
+- the analysis is still registered (its `registry.json` is there): only the
+  files MouseBrain has dropped are archived; everything it still has stays
+  in the mirror;
+- the folder `exports/<analysis>` is there but has no `registry.json`:
+  EVERYTHING the mirror holds of that analysis is archived, even files still
+  in MouseBrain's folders. Without its `registry.json` the folder is no
+  analysis the mirror can copy, and keeping part of it would make every
+  later run fail on it again. Nothing in MouseBrain's folders is touched; if
+  MouseBrain registers the analysis again, the next run mirrors it afresh;
+- the whole analysis folder is gone: everything of it is archived.
+
 What it does NOT do:
 
-- archive anything MouseBrain still has: for an analysis MouseBrain still
-  registers, only the files it has dropped are archived;
+- change anything in MouseBrain's folders: it only moves the mirror's
+  copies into the archive;
 - archive when the source could not be read: a folder that could not be
   listed, or a folder missing from the listing that a second look cannot
   confirm is gone, still keeps its mirror and fails the run -- check the
