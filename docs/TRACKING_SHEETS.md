@@ -539,7 +539,10 @@ undone changed nothing, and nothing else runs. The box that closes a Replace
 says **Import complete** only when the import counts as succeeded the same
 way the terminal counts it: a kept animal-details tab or a hand-scores file
 not rewritten gives the **Replace saved, with problems** box instead, with
-the reason in it. (Neither button used to
+the reason in it. So does an import-history line that could not be written
+(`[!] import history not written: ...`): the hand-scores file reads that
+line to know the cohort's scores were saved, so until a later import of the
+cohort writes one, videos waiting for those scores keep waiting. (Neither button used to
 copy the animal details or rewrite those two files, so the reaching
 pipeline compared videos with the previous scores until the nightly import.)
 
@@ -1024,6 +1027,8 @@ animal-details copy, video data and tissue data are not touched.
 | `Replace kept N ... rows for <animal> ...` | If the sheet's value is the right one, correct the kept row by hand in the entry tab it came from. |
 | `Replace removed N ... rows ..., and the sheet gave back M ...` | Nothing, if you removed rows from the sheet; otherwise read the other warnings for why rows were skipped. |
 | `Replace of <cohort> undone -- nothing in the database was changed ...` | Fix the error listed under it and Replace again. |
+| `[!] import history not written: ...` (in the box after a Replace) | The Replace is saved, but its line in the import history is missing, so the reaching pipeline's videos for that cohort keep waiting for its scores. Make sure the import history folder (`<mousedb_root>/logs`) can be reached and written, then import the cohort again (any route); that import writes the line. |
+| `[!] import history not written: ...` (in the **Replace undone** box) | Nothing was changed by the Replace, and its failed attempt is not in the import history either. Fix the error listed above it, make sure the import history folder (`<mousedb_root>/logs`) can be reached and written, and Replace again. |
 
 ## Which projects' sheets are read (once for the whole lab)
 

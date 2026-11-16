@@ -110,7 +110,10 @@ checked-in code, not what's planned.
     changes (compared in one unit: 87 and 0.87 are the same).
   - Each import-history line records `scores_saved`; the hand-scores file
     counts an import whose scores were saved even when a later step (the
-    animal details) failed, so those videos no longer wait.
+    animal details) failed, so those videos no longer wait. A Replace whose
+    import-history line could not be written now says so in its box
+    (**Replace saved, with problems**, or **Replace undone** for one that
+    was undone) instead of losing the line in silence.
   - The hand-scores file's list of cohorts with a sheet only grows, and only
     an import of the configured folder adds to it or counts as an import of
     every sheet; its manifest carries `scores_sha256` of the scores file, and

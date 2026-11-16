@@ -1082,7 +1082,8 @@ def after_gui_replace(db, cohort_id: str, sheet, result: dict, entry: dict,
     _after_import as a route that read no folder. A Replace that was undone
     changed nothing: its line is recorded and nothing else runs.
 
-    Never raises. Returns the after-import outcome ({"cohorts": [entry],
+    Never raises: on either path a line ``record`` could not write is
+    returned as ``ledger_error`` for the window to show. Returns the after-import outcome ({"cohorts": [entry],
     "hand_scores" ..., "fix_these" ...}) for the window to report; WHY the
     lock is not held around _after_import: the hand-scores write takes the
     same lock itself, and that lock is not re-entrant."""
@@ -1094,7 +1095,16 @@ def after_gui_replace(db, cohort_id: str, sheet, result: dict, entry: dict,
     entry[SCORES_SAVED] = committed
     if not committed:
         entry.setdefault(LEFT_UNCHANGED, _not_saved_reason({"success": False}, False))
-        record(entry)
+        # Caught here too, not only on the committed path. WHY: the window
+        # passes a record() that raises (so a lost history line is shown),
+        # and this function runs inside a window button; an error escaping
+        # it would abort the whole program before the "Replace undone" box
+        # appears, losing every open tab. The undone Replace changed nothing,
+        # so a lost line is reported and nothing else is affected.
+        try:
+            record(entry)
+        except Exception as e:
+            out["ledger_error"] = "%s: %s" % (type(e).__name__, e)
         return out
     from .animal_records import sync_cohort
     try:

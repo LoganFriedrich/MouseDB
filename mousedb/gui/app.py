@@ -5535,15 +5535,18 @@ class CohortSetupTab(QWidget):
             from .. import sheet_sync
             after = sheet_sync.after_gui_replace(
                 self.db, cohort_id, path, result, _entry,
-                record=lambda e: self._append_sheet_ledger(e, path))
+                record=lambda e: self._append_sheet_ledger(e, path, raise_errors=True))
         finally:
             QApplication.restoreOverrideCursor()
 
         if result.get('errors'):
-            QMessageBox.critical(
-                self, "Replace undone",
-                "\n".join(result['errors'][:12])
-            )
+            undone = list(result['errors'][:12])
+            # The undone Replace's history line can fail to write too; say so
+            # in the same box rather than lose it (after_gui_replace never
+            # raises, it returns the failure).
+            if after.get("ledger_error"):
+                undone.append("[!] import history not written: %s" % after["ledger_error"])
+            QMessageBox.critical(self, "Replace undone", "\n".join(undone))
         else:
             done = "\n".join(f"   {k}: {v}"
                              for k, v in _entry.get('imported', {}).items() if v)
@@ -5554,8 +5557,11 @@ class CohortSetupTab(QWidget):
             # The verdict every import route uses (sheet_sync.import_succeeded):
             # a kept animal-detail tab is a refusal and counts against it, as
             # a failed hand-scores rewrite does. WHY: this box said "Import
-            # complete" over a refusal printed in its own text.
-            if sheet_sync.import_succeeded(after):
+            # complete" over a refusal printed in its own text. An import
+            # history line that could not be written counts against it too:
+            # the hand-scores file reads that line, so until it is there the
+            # videos waiting for this cohort's scores stay waiting.
+            if sheet_sync.import_succeeded(after) and not after.get("ledger_error"):
                 QMessageBox.information(self, "Import complete", text)
             else:
                 QMessageBox.warning(self, "Replace saved, with problems", text)
@@ -5653,18 +5659,27 @@ class CohortSetupTab(QWidget):
                 except Exception:
                     pass
 
-    def _append_sheet_ledger(self, entry, path):
+    def _append_sheet_ledger(self, entry, path, raise_errors=False):
         """Append one entry to sheet_sync's import ledger (same shape its own
         import_cohorts writes), so ledger-driven status displays stay truthful
-        for imports made through this button. A ledger failure must never break
-        the import itself, so this swallows exceptions."""
+        for imports made through this button.
+
+        ``raise_errors`` False (an import that FAILED, whose box already says
+        so): a ledger failure is swallowed, so it never hides the import's own
+        error. True (the record step of a committed Replace,
+        sheet_sync.after_gui_replace): the failure is raised to that step,
+        which puts "import history not written" in the box. WHY: the
+        hand-scores file reads this line (scores_saved) to decide whether
+        videos waiting for the cohort's scores may go on; a line lost in
+        silence held those videos with no reason shown anywhere."""
         try:
             from mousedb import sheet_sync
             if "sheet_mtime" not in entry:
                 entry["sheet_mtime"] = sheet_sync._iso(Path(path).stat().st_mtime)
             sheet_sync._append_ledger(sheet_sync._for_ledger(entry))
         except Exception:
-            pass
+            if raise_errors:
+                raise
 
     # What a Replace clears, keeps and commits lives in the module-level
     # replace_cohort_from_sheet / clear_cohort_sheet_rows (above this class),

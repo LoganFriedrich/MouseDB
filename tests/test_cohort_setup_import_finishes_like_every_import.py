@@ -270,6 +270,64 @@ def test_an_undone_replace_changes_nothing_else(app_mod, world, monkeypatch):
     assert line["success"] is False and line["scores_saved"] is False
 
 
+def test_a_replace_whose_history_line_was_not_written_says_so(app_mod, world, monkeypatch):
+    """WHY: the hand-scores file reads the Replace's import-history line to
+    decide whether videos waiting for the cohort's scores may go on. The
+    window's ledger write swallowed every failure, so a lost line held those
+    videos and the person was never told."""
+    monkeypatch.setattr(app_mod, "replace_cohort_from_sheet", lambda *a, **k: {
+        "success": True, "imported": {"pellet_scores": 20}, "warnings": [], "errors": [],
+        "replace": {"committed": True, "removed": {}, "kept": 0, "kept_rows": [],
+                    "start_date": None}})
+
+    def unwritable(entry):
+        raise OSError("history file unreachable")
+
+    monkeypatch.setattr(ss, "_append_ledger", unwritable)
+    _Box.CHOICE = "Replace"
+    app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
+
+    assert len(world.hand_scores) == 1                  # the files are still rewritten
+    assert any(title == "Replace saved, with problems"
+               and "import history not written" in text and "unreachable" in text
+               for title, text in _Box.SHOWN)
+
+
+def test_an_undone_replace_whose_history_line_was_not_written_still_shows_its_box(
+        app_mod, world, monkeypatch):
+    """WHY: the window's record() raises so a lost history line is shown. On
+    the undone path that error escaped after_gui_replace and the window
+    button, and an error escaping a button aborts the whole program before
+    the "Replace undone" box appears."""
+    monkeypatch.setattr(app_mod, "replace_cohort_from_sheet", lambda *a, **k: {
+        "success": False, "imported": {"pellet_scores": 0}, "warnings": [],
+        "errors": ["Replace of %s undone -- nothing changed" % COHORT],
+        "replace": {"committed": False, "removed": {}, "kept": 0, "kept_rows": [],
+                    "start_date": None}})
+
+    def unwritable(entry):
+        raise OSError("history file unreachable")
+
+    monkeypatch.setattr(ss, "_append_ledger", unwritable)
+    _Box.CHOICE = "Replace"
+    app_mod.CohortSetupTab._import_from_excel(_tab(app_mod, world.db))
+
+    assert world.details == [] and world.hand_scores == []
+    assert any(title == "Replace undone" and "undone -- nothing changed" in text
+               and "import history not written" in text and "unreachable" in text
+               for title, text in _Box.SHOWN)
+
+
+def test_after_gui_replace_never_raises_on_an_undone_replace():
+    def unwritable(entry):
+        raise OSError("history file unreachable")
+
+    out = ss.after_gui_replace(None, COHORT, SHEET, {"replace": {"committed": False}},
+                               {"cohort_id": COHORT}, record=unwritable)
+    assert "unreachable" in out["ledger_error"]
+    assert out["cohorts"][0]["scores_saved"] is False
+
+
 def test_the_import_button_refuses_an_archive_copy(app_mod, world, monkeypatch, tmp_path):
     old = tmp_path / "archive" / SHEET
     old.parent.mkdir()
