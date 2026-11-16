@@ -236,7 +236,8 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
                 "leaves inconsistent output behind. Read the snapshot instead "
                 "(--cache), or stop the watcher first.")
         load_paired_pellets.snapshot_taken = None
-        con = sqlite3.connect("file:%s?mode=ro" % db_path, uri=True, timeout=600)
+        from .db_read import connect_for_reading
+        con = connect_for_reading(db_path)
         try:
             rd = pd.read_sql(
                 "SELECT subject_id, session_date, tray_type, run_number, segment_num, "
@@ -281,8 +282,8 @@ def load_video_pellets(db_path=None, cache_dir=None):
                 "the snapshot was replaced between reading the reaches and reading "
                 "the per-pellet table; run the check again")
     else:
-        con = sqlite3.connect("file:%s?mode=ro" % (db_path or DEFAULT_DB or require("db_path")),
-                              uri=True, timeout=600)
+        from .db_read import connect_for_reading
+        con = connect_for_reading(db_path or DEFAULT_DB or require("db_path"))
         try:
             vp = pd.read_sql("SELECT video_name, segment_num, subject_id, session_date, "
                              "tray_type, run_number, outcome, n_reaches FROM video_pellets", con)

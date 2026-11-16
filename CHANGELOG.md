@@ -76,6 +76,12 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- A read of the database no longer fails right after another program was
+  stopped part-way through saving (`attempt to write a readonly database`):
+  the hand-scores file and the bench disagreement scan now undo the stopped
+  save and then read, without being able to change anything (mousedb/db_read.py).
+  The bench scan used to take that failure for 'this database has no
+  per-pellet table' and go on without those rows, saying nothing.
 - Sheet import follow-ups (docs/TRACKING_SHEETS.md):
   - Cohort Setup's **Import** and **Replace** end like every other import:
     the animal details are copied, and the hand-scores file and the FIX THESE

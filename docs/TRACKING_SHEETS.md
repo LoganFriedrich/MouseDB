@@ -701,6 +701,15 @@ never depends on mousedb); it reads one file mousedb writes:
   look at `scores_sha256` does not detect a mismatched pair (it simply ignores
   the extra entry); check that tool's own documentation for whether it does.
 
+The scores are read from the database after the import has saved. If some
+other program was stopped part-way through saving to the database (a job
+ended at its time limit, a window closed mid-save), it leaves its unfinished
+save beside the database. This read gets past it: it undoes the unfinished
+save the way the next program to save would, and changes nothing else. Before
+this, the line read `FAIL hand scores ... attempt to write a readonly database`
+and the file stayed as it was until the next night. The nightly bench
+disagreement scan reads the database the same way.
+
 If a program (the pipeline, or a spreadsheet program you opened the file in)
 has one of the two files open at the moment it is replaced, Windows refuses
 the replacement; the import tries again for up to ten seconds before it
