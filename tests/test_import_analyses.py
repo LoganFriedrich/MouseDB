@@ -308,6 +308,15 @@ class TestNoArchiveOnAShortListing:
                 raise PermissionError(13, "Access is denied", str(path))
             return real_scandir(path)
         monkeypatch.setattr(os, "scandir", scandir)
+        # Up to Python 3.10 pathlib lists folders (glob, rglob, iterdir)
+        # through _NormalAccessor.scandir, a reference to os.scandir taken
+        # when pathlib was imported. Patch that route too, so a listing done
+        # with pathlib meets the same blocked folder; otherwise the test
+        # would pass for code that never sees the error.
+        import pathlib
+        accessor = getattr(pathlib, "_NormalAccessor", None)
+        if accessor is not None and hasattr(accessor, "scandir"):
+            monkeypatch.setattr(accessor, "scandir", staticmethod(scandir))
         res = ia.run(log=_quiet)
         assert res.archived == 0 and res.errors == 1
         assert self._mirrored(db, "figures/Alpha_Detection/A1/R1/S1.png")
