@@ -276,3 +276,13 @@ def test_several_files_and_no_pin_import_add_only_until_pinned(invented, monkeyp
     (c,) = ss.import_cohorts(["CNT_77"])["cohorts"]
     assert built[-1].sync_blocked is None and len(copied) == 1
     assert c["scores_saved"] is True and "CNT_77" in hsf._last_successful_imports()
+
+
+def test_a_cohort_read_on_a_guess_is_told_to_pin_not_to_look_for_a_broken_sheet():
+    lines = []
+    ss.print_import_result({"cohorts": [{
+        "cohort_id": "CNT_77", "sheet_name": "Connectome_77_Animal_Tracking (2).xlsx",
+        "success": True, "imported": {}, "warnings": [], "sync_blocked": "2 files match",
+        "sheet_sync": {"refused": ["NOT SYNCED any table: 2 files match"]}}]},
+        log=lines.append)
+    assert "pin one" in lines[-1] and "read as broken" not in lines[-1]

@@ -763,7 +763,9 @@ The animal details are left as they were. The cohort's line says why:
 The cohort counts as NOT SYNCED, so the scheduled job's run shows as failed
 every night until a file is pinned -- on the machine that runs the scheduled
 import (pins are kept per machine login, see below). The same holds when a
-pin is broken (see "A broken pin").
+pin is broken (see "A broken pin"). The closing line names such a cohort
+apart: `N NOT SYNCED with the sheet -- several files match, pin one with
+'mousedb-sheets pin <cohort> <file>' (CNT_NN)`.
 
 **What this means for the reaching pipeline.** The scores the newest file
 adds are in the database, so they are in the hand-scores file and a video

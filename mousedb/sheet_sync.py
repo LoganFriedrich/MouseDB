@@ -1300,7 +1300,12 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         log(_ascii("Sheets: NOTHING IMPORTED -- %s" % r["problem"]))
         return ok
     failed = [str(c.get("cohort_id")) for c in cohorts if not c.get("success")]
-    refused = [str(c.get("cohort_id")) for c in cohorts if sync_refused(c)]
+    # A cohort read on a guess (several files match, none pinned) is named
+    # apart: its fix is to pin a file, and "it read as broken" sent a person
+    # looking for a fault in a sheet that has none.
+    unpinned = [str(c.get("cohort_id")) for c in cohorts if c.get("sync_blocked")]
+    refused = [str(c.get("cohort_id")) for c in cohorts
+               if sync_refused(c) and not c.get("sync_blocked")]
     total_warn = sum(c.get("warning_count", len(c.get("warnings") or [])) for c in cohorts)
     line = "Sheets%s: %d of %d cohort%s %s, %s, %d warning%s" % (
         " (dry run, nothing written)" if r.get("dry_run") else "",
@@ -1308,6 +1313,9 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
         "checked" if r.get("dry_run") else "imported",
         ("%d FAILED (%s)" % (len(failed), ", ".join(failed))) if failed else "0 failed",
         total_warn, "" if total_warn == 1 else "s")
+    if unpinned:
+        line += ("; %d NOT SYNCED with the sheet -- several files match, pin one with "
+                 "'mousedb-sheets pin <cohort> <file>' (%s)" % (len(unpinned), ", ".join(unpinned)))
     if refused:
         line += "; %d NOT SYNCED with the sheet -- it read as broken (%s)" % (
             len(refused), ", ".join(refused))
