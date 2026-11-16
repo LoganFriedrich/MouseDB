@@ -953,6 +953,84 @@ class TestSetAsideLedger:
         assert seen["argv"] == ["--confirm-withdrawn", "A_X", "--set-aside-ledger"]
 
 
+class TestAStoppedRunIsShown:
+    """WHY: some runs stop before they write anything -- a ledger they refuse
+    to read, a lock that does not come free in time, a registry folder that
+    cannot be reached. ANALYSES_MANIFEST.json then stays as the last good run
+    wrote it, so the Where Is My Data tab went on showing normal analysis
+    lines, with the reason only in the scheduler's task log. A damaged ledger
+    fails every night until a person acts, so that silence could last. The
+    stop must show on the tab, with its reason, until a run finishes."""
+
+    def _status(self, tmp_path, monkeypatch):
+        # status() is what the tab and mousedb-data-status show. Give it an
+        # empty snapshot and review queues of the test's own, never the live ones.
+        import pandas as pd
+        from mousedb import data_status as ds
+        from mousedb import sheet_sync, snapshot_generation
+        empty = (pd.DataFrame(columns=["subject_id", "video_name", "outcome_source",
+                                       "segment_num"]),
+                 pd.DataFrame(columns=["subject_id", "session_date"]), None, None)
+        monkeypatch.setattr(snapshot_generation, "read_consistent",
+                            lambda folder, read: (empty, "test"))
+        monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path / "reach_pipeline"))
+        monkeypatch.setattr(sheet_sync, "status", lambda *a, **k: {"cohorts": []})
+        return ds.status(tmp_path / "snapshot")
+
+    def _stopped_lines(self, st):
+        return [p for p in st["problems"]
+                if p.startswith("analysis mirror: the last run stopped")]
+
+    def test_a_damaged_ledger_shows_on_the_tab_until_a_run_finishes(self, roots, tmp_path,
+                                                                    monkeypatch):
+        reg, db = roots
+        assert ia.main([]) == 0
+        assert self._stopped_lines(self._status(tmp_path, monkeypatch)) == []
+        ledger = db / "logs" / "analysis_imports.json"
+        ledger.write_text('{"exports/Alpha_Detection/registry.json": {"ha', encoding="utf-8")
+        assert ia.main([]) == 1
+        lines = self._stopped_lines(self._status(tmp_path, monkeypatch))
+        assert len(lines) == 1, lines
+        assert "before mirroring anything" in lines[0]
+        assert "analysis_imports.json" in lines[0] and "--set-aside-ledger" in lines[0]
+        # the person follows the advice; the run finishes and the line goes
+        assert ia.main(["--set-aside-ledger"]) == 0
+        assert self._stopped_lines(self._status(tmp_path, monkeypatch)) == []
+
+    def test_a_lock_that_does_not_come_free_shows_on_the_tab(self, roots, tmp_path,
+                                                             monkeypatch):
+        reg, db = roots
+        assert ia.main([]) == 0
+        from mousedb import task_mutex
+        monkeypatch.setenv(task_mutex.WAIT_ENV, "0.002")     # about 0.1 s
+        m = task_mutex.TaskMutex("import-analyses", base_dir=db / "logs")
+        assert m.try_acquire()
+        try:
+            assert ia.main([]) == 1
+        finally:
+            m.release()
+        lines = self._stopped_lines(self._status(tmp_path, monkeypatch))
+        assert len(lines) == 1, lines
+        assert "before mirroring anything" in lines[0] and "not run" in lines[0]
+        assert ia.main([]) == 0
+        assert self._stopped_lines(self._status(tmp_path, monkeypatch)) == []
+
+    def test_an_unreachable_registry_shows_on_the_tab(self, roots, tmp_path, monkeypatch):
+        reg, db = roots
+        assert ia.main([]) == 0
+        monkeypatch.setenv("MOUSEBRAIN_PIPELINE_ROOT", str(tmp_path / "nowhere"))
+        assert ia.main([]) == 1
+        lines = self._stopped_lines(self._status(tmp_path, monkeypatch))
+        assert len(lines) == 1 and "no analysis registry" in lines[0], lines
+
+    def test_a_dry_run_that_stops_records_nothing(self, roots, tmp_path, monkeypatch):
+        reg, db = roots
+        assert ia.main([]) == 0
+        (db / "logs" / "analysis_imports.json").write_text("{", encoding="utf-8")
+        assert ia.main(["--dry-run"]) == 1
+        assert self._stopped_lines(self._status(tmp_path, monkeypatch)) == []
+
+
 class TestImportBrains:
     def test_without_summary_dir_and_without_config_raises_config_error(self, monkeypatch):
         """cli.py used to reference a module constant that no longer existed:

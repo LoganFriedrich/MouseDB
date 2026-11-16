@@ -57,6 +57,11 @@ WHAT IT DOES
      analysis with its entry counts (current, invalidated, stale against the
      approved method) and what this run copied, skipped and archived, plus
      ``problems``: the run's problems that belong to no single analysis.
+  5. A run that stops before it finishes (an unreadable ledger, a lock that
+     did not come free in time, a registry it cannot reach) writes no
+     manifest; it records the stop in ``<mousedb_root>/logs/
+     analysis_import_last_failure.json`` instead, which the Where Is My Data
+     tab shows until a run finishes and removes it (see ``record_stop``).
 
 It writes NO database rows -- only files under <mousedb_root> -- so, unlike
 ``import-reaches``, it needs no watcher guard and may run at any time. It
@@ -100,6 +105,7 @@ LEDGER_NAME = "analysis_imports.json"  # <mousedb_root>/logs/analysis_imports.js
 MANIFEST_NAME = "ANALYSES_MANIFEST.json"  # <mousedb_root>/exports/ANALYSES_MANIFEST.json
 ARCHIVE_SUBDIR = ("_archived", "analyses")  # <mousedb_root>/_archived/analyses/<stamp>/...
 LOCK_NAME = "import-analyses"          # <mousedb_root>/logs/.import-analyses.task.lock (see main)
+STOP_RECORD_NAME = "analysis_import_last_failure.json"  # <mousedb_root>/logs/... (see record_stop)
 
 MANIFEST_FIELDS = ("analysis_name", "entries", "current", "invalidated", "last_updated",
                    "approved_method_hash", "approved_method_recorded_at", "stale_vs_approved",
@@ -331,6 +337,75 @@ def mirror_files_of(dest: Path, analysis: str) -> List[Path]:
         if not _confirmed_absent(log_file):
             raise
     return sorted(set(found))
+
+
+# ---------------------------------------------------------------------------
+# a run that stopped before it finished
+# ---------------------------------------------------------------------------
+#
+# WHY A RECORD OF ITS OWN: some stops happen before the run writes anything
+# -- a ledger it refuses to read, a lock it could not get in time, a registry
+# folder it cannot reach. ANALYSES_MANIFEST.json is then left as the last
+# good run wrote it, so the Where Is My Data tab went on showing normal
+# analysis lines with no reason anywhere but the scheduler's task log, which
+# nobody opens -- and a damaged ledger fails every night until a person acts.
+# The stop is therefore written to a small file of this tool's own, which the
+# tab shows as an "[!] analysis mirror: ..." line. Not into the manifest: when
+# the lock wait runs out, the run holding the lock is the one writing the
+# manifest. The next run that finishes removes the record.
+
+def stop_record_path() -> Path:
+    return require("mousedb_root") / "logs" / STOP_RECORD_NAME
+
+
+def record_stop(reason: str, before_mirroring: bool) -> Optional[str]:
+    """Write the record of a run that stopped (atomically, like the ledger).
+    ``before_mirroring``: True when the run stopped before it copied or
+    archived anything. Returns None, or why the record could not be written
+    (the caller prints that -- the stop itself is already an error)."""
+    try:
+        _write_json_atomically(stop_record_path(), {
+            "stopped_at": datetime.now().isoformat(timespec="seconds"),
+            "before_mirroring": bool(before_mirroring),
+            "reason": reason,
+        })
+    except Exception as e:
+        return "%s: %s" % (type(e).__name__, e)
+    return None
+
+
+def clear_stop() -> Optional[str]:
+    """Remove the record once a run has finished. Returns None, or why it
+    could not be removed."""
+    try:
+        os.remove(str(stop_record_path()))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        return "%s: %s" % (type(e).__name__, e)
+    return None
+
+
+def read_stop(path: Path) -> Optional[dict]:
+    """The record of the last run that stopped before it finished; None when
+    there is none (the last run finished). Raises when it cannot be read."""
+    if not path.is_file():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {"reason": repr(data)}
+
+
+def stop_line(rec: dict) -> str:
+    """The Where Is My Data line for a stopped run (shown with ``[!]``)."""
+    when = str(rec.get("stopped_at") or "?").replace("T", " ")
+    if rec.get("before_mirroring", True):
+        head = "the last run stopped before mirroring anything (%s)" % when
+    else:
+        head = ("the last run stopped part-way (%s); files may have been copied or "
+                "archived, but its ledger and ANALYSES_MANIFEST.json may not have been "
+                "written" % when)
+    return ("analysis mirror: %s: %s -- the analysis lines shown are from the last run "
+            "that finished" % (head, rec.get("reason") or "no reason recorded"))
 
 
 # ---------------------------------------------------------------------------
@@ -617,13 +692,15 @@ def _plain_name(name: str) -> bool:
 
 def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = None,
         log=print, confirm_withdrawn: Optional[List[str]] = None,
-        set_aside: bool = False) -> ImportResult:
+        set_aside: bool = False, progress: Optional[dict] = None) -> ImportResult:
     """One mirror run. ``confirm_withdrawn``: analyses a person confirms
     MouseBrain withdrew (wholly or in part) -- every mirrored file of them
     that MouseBrain no longer has is archived (all of it, for a folder left
     without registry.json), see ``--confirm-withdrawn`` in main.
     ``set_aside``: an unusable ledger is moved aside first and the run starts
-    a new one, see ``set_aside_ledger``."""
+    a new one, see ``set_aside_ledger``. ``progress``: when given, its
+    ``"mirroring"`` is set True as the run starts copying and archiving, so
+    a caller whose run stops can say whether anything had been changed."""
     res = ImportResult()
     root = registry_root()
     dest = require("mousedb_root")
@@ -832,6 +909,8 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         (res.analyses, root, res.scanned, len(todo), res.skipped, len(gone), len(kept),
          " [dry run]" if dry_run else ""))
 
+    if progress is not None and not dry_run:
+        progress["mirroring"] = True
     for src, key, stamp, h in todo:
         row = rows.get(analysis_of_key(key) or "")
         try:
@@ -903,6 +982,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     quiet = (lambda *_: None) if args.json else print
     from .task_mutex import LockWaitTimeout, TaskMutex
+    progress: dict = {}
     try:
         if args.dry_run:
             res = run(all_files=args.all, dry_run=True, limit=args.limit, log=quiet,
@@ -927,19 +1007,36 @@ def main(argv=None) -> int:
                               waiting_for="another analysis import"):
                 res = run(all_files=args.all, dry_run=False, limit=args.limit, log=quiet,
                           confirm_withdrawn=args.confirm_withdrawn,
-                          set_aside=args.set_aside_ledger)
-    except LockWaitTimeout as e:
-        print("[FAIL] import-analyses not run: %s" % e)
-        return 1
-    except StateFileUnreadable as e:
-        print("[FAIL] import-analyses not run: %s" % e)
-        return 1
+                          set_aside=args.set_aside_ledger, progress=progress)
+    except (LockWaitTimeout, StateFileUnreadable) as e:
+        return _stopped(args, "import-analyses not run: %s" % e, before_mirroring=True)
     except Exception as e:
-        print("[FAIL] %s" % e)
-        return 1
+        return _stopped(args, "%s" % e, before_mirroring=not progress.get("mirroring"))
+    rc = 1 if res.errors else 0
+    if not args.dry_run:
+        # The run finished: its manifest now says what holds, so the record
+        # of an earlier stop goes (see record_stop).
+        err = clear_stop()
+        if err:
+            print("[!] the record of an earlier stopped run (%s) could not be removed (%s); "
+                  "the Where Is My Data tab still shows it -- run again"
+                  % (stop_record_path(), err))
+            rc = 1
     if args.json:
         print(json.dumps(res.as_dict(), indent=1))
-    return 1 if res.errors else 0
+    return rc
+
+
+def _stopped(args, msg: str, before_mirroring: bool) -> int:
+    """Report a run that stopped before it finished: the [FAIL] line, and --
+    unless it was a dry run, which writes nothing -- the record the Where Is
+    My Data tab shows (see record_stop)."""
+    print("[FAIL] %s" % msg)
+    if not args.dry_run:
+        err = record_stop(msg, before_mirroring)
+        if err:
+            print("[!] this stop could not be recorded for the Where Is My Data tab (%s)" % err)
+    return 1
 
 
 if __name__ == "__main__":

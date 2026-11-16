@@ -40,7 +40,8 @@ from . import DEFAULT_EXPORT_PATH
 
 from .config import require, snapshot_dir as _snapshot_dir
 from .import_analyses import MANIFEST_NAME as ANALYSES_MANIFEST_NAME
-from .import_analyses import stale_phrase
+from .import_analyses import STOP_RECORD_NAME as ANALYSES_STOP_RECORD_NAME
+from .import_analyses import read_stop, stale_phrase, stop_line
 
 SNAPSHOT_DIR = _snapshot_dir()  # None until configured (mousedb config --set snapshot_dir ...)
 
@@ -649,6 +650,16 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         out["problems"].extend(read_analyses_manifest_problems(amp))
     except Exception as e:
         out["problems"].append("analyses manifest unreadable: %s" % e)
+    # A mirror run that stopped before it finished leaves the manifest as the
+    # last good run wrote it, so the lines above would look current; its own
+    # record says it stopped and why (see import_analyses.record_stop).
+    try:
+        stop = read_stop(require("mousedb_root") / "logs" / ANALYSES_STOP_RECORD_NAME)
+        if stop is not None:
+            out["problems"].append(stop_line(stop))
+    except Exception as e:
+        out["problems"].append("analysis mirror: the record of its last stopped run "
+                               "cannot be read: %s" % e)
 
     # How far each study's list of sessions has got (MouseReach coverage report)
     try:

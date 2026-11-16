@@ -129,7 +129,11 @@ other than the one now approved (stale -- re-run before use), how many were
 invalidated, and when the mirror was last taken. A line ending "[FAIL] ..."
 is an analysis the last mirror run kept as it was, with the reason; an
 "[!] analysis mirror: ..." line at the bottom is a problem of the whole run
-(for example, no analysis listed at all). Guide: docs/WHERE_IS_MY_DATA.md,
+(for example, no analysis listed at all). "[!] analysis mirror: the last run
+stopped before mirroring anything" means the last run changed nothing (a
+damaged ledger, or another run held the lock too long): the analysis lines
+are still those of the last run that finished, and the line goes when a run
+finishes. Guide: docs/WHERE_IS_MY_DATA.md,
 "How tissue analysis outputs get here".
 """
 

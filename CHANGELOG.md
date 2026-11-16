@@ -143,6 +143,14 @@ checked-in code, not what's planned.
     beside them, so two imports finishing together cannot drop each other's
     cohorts from that list or leave a scores file that does not match its
     manifest's hash.
+- `mousedb import-analyses`: a run that stops before it finishes -- an
+  unreadable ledger, a lock that did not come free in time, a registry folder
+  it cannot reach -- now shows on the Where Is My Data tab as `[!] analysis
+  mirror: the last run stopped before mirroring anything (<time>): <reason>`
+  until a run finishes. Such a run writes no manifest, so the tab used to show
+  the last good analysis lines with the reason only in the task log. The stop
+  is kept in `logs/analysis_import_last_failure.json`, written whole or not at
+  all, and removed by the next run that finishes.
 - The "stale vs approved" count of a tissue analysis (Where Is My Data tab,
   `mousedb-data-status`, the import's own output) now shows the date the approved
   method it is judged against was recorded in MouseBrain's registry:

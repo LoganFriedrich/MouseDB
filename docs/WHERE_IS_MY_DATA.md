@@ -782,6 +782,24 @@ see in that place:
   the tab) -- a problem of the whole run rather than of one analysis, such
   as no analysis registry listed at all. It is the same text as the job's
   `[FAIL]` line, and it goes away on the first run that does not have it.
+- `[!] analysis mirror: the last run stopped before mirroring anything
+  (<date time>): <reason> -- the analysis lines shown are from the last run
+  that finished` -- the last run stopped before it copied or archived
+  anything, so it wrote no new `ANALYSES_MANIFEST.json`, and every analysis
+  line on the tab is still the one from the last run that finished. The
+  reason is the job's own `[FAIL]` line: a ledger it cannot read (see "The
+  mirror's ledger" below), another run that held the lock for too long (see
+  "Only one mirror runs at a time" below), or a registry folder it could not
+  reach (check `mousedb config --show` and the share). The line stays until
+  a run finishes -- the next nightly run, the **Update the database now**
+  button, or `mousedb import-analyses` in a terminal -- and then goes by
+  itself. If it says instead `the last run stopped part-way`, the run had
+  started copying when it stopped (a write that failed, for example): some
+  files may have been copied or archived, but the ledger and the manifest
+  may not have been rewritten; run it again. The stop is kept in
+  `<mousedb_root>/logs/analysis_import_last_failure.json`; do not edit or
+  delete it by hand (only this job writes it, and a run that finishes
+  removes it). A `--dry-run` that stops records nothing.
 
 Two cases read differently on that line:
 
@@ -855,7 +873,11 @@ the lock's usual limit (the same rules as the database jobs' lock: it keeps
 waiting while the first run is still getting somewhere; 40 minutes for the
 nightly task and a terminal, 25 for the button, `MOUSEDB_LOCK_WAIT_MINUTES`
 overrides both), it stops with `[FAIL] import-analyses not run: ...`,
-changes nothing, and the job fails; run it again later. The button also stops
+changes nothing, and the job fails; run it again later. The Where Is My
+Data tab then shows `[!] analysis mirror: the last run stopped before
+mirroring anything ...` with that message until a run finishes (see above).
+The run that held the lock is not affected and finishes normally; when it
+finishes before the waiting one gives up, there is nothing to show. The button also stops
 each of its steps after one hour: if `MOUSEDB_LOCK_WAIT_MINUTES` is set above
 60, a step still waiting then is stopped by the button instead, and the
 button shows `step exceeded its limit of 3600 s and was stopped` in place of
@@ -875,7 +897,11 @@ so must be archived). Do not edit or delete it.
 - A ledger that is there but cannot be read (damaged, half written): the run
   stops before copying or archiving anything. Its last line starts with
   `[FAIL] import-analyses not run:`, names the file and says what to do, and
-  the job fails (exit code 1). If the network share was only briefly
+  the job fails (exit code 1). The Where Is My Data tab shows the same
+  message as `[!] analysis mirror: the last run stopped before mirroring
+  anything ...` until a run finishes, so the stop is seen without opening
+  the task log; every nightly run fails the same way until the ledger is
+  dealt with. If the network share was only briefly
   unavailable, run it again. Otherwise run (in the MouseDB environment, as
   above) `mousedb import-analyses --set-aside-ledger`: it keeps the damaged
   file beside the new one as `analysis_imports.json.set-aside-<date_time>`,
