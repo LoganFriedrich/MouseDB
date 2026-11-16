@@ -581,7 +581,16 @@ never depends on mousedb); it reads one file mousedb writes:
   since this video was ready" (the video waits) from "it has been, and has no
   scores for this session" (the session was never scored by hand: there is
   nothing to compare, so the video is filed without the comparison). A cohort
-  with no sheet at all is settled by the next import of every sheet. It also
+  with no sheet at all is settled by the next import of every sheet. The list
+  of cohorts with a sheet only ever GROWS: once a cohort's sheet has been seen
+  in the sheets folder, the cohort stays on it, so a sheet that is missing
+  from the folder for a moment (the sync program updating it, a rename) can
+  never make a not-yet-imported cohort look like one with no sheet. If a
+  never-imported cohort's sheet is really gone, its videos keep waiting --
+  and are listed as waiting -- until a person puts the sheet back or sees to
+  them. An import of a folder you name by hand (`mousedb import --all
+  --directory <folder>`) does not touch this list or the "import of every
+  sheet" time: only the configured sheets folder speaks for the sheets. It also
   carries `scores_sha256`, a fingerprint of the exact `.csv` it was written
   with: the two files are replaced one after the other, and the pipeline uses
   the fingerprint to notice when it has read a new `.csv` with the old `.json`

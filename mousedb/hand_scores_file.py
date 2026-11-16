@@ -28,8 +28,21 @@ hand_pellet_scores.json  beside it:
                             not been imported since this video was ready"
                             (wait) from "it was, and has no scores for it"
                             (never scored by hand: filed without comparing)
-    sheets_seen             the cohorts the sheets folder has a sheet for, as
-                            of the last import that read the folder
+    sheets_seen             every cohort the sheets folder has EVER been seen
+                            to hold a sheet for (each import that reads the
+                            configured folder adds the cohorts it found; none is
+                            ever taken off). WHY never taken off: a cohort that
+                            is on this list waits for its first import, and one
+                            that is not is settled by full_import_at as having
+                            no sheet -- so its videos are filed without the
+                            hand-score comparison. A sheet that drops out of one
+                            folder listing (the sync program mid-update, the
+                            file open elsewhere, renamed for a moment) used to
+                            take its cohort off the list, and a cohort never
+                            imported yet then had its videos filed uncompared.
+                            A cohort whose sheet is really gone and was never
+                            imported keeps its videos waiting, listed, until a
+                            person sees to it.
     full_import_at          when the last import of EVERY sheet in the folder
                             ended. With sheets_seen it answers the one case
                             last_successful_import cannot: a cohort with no
@@ -158,13 +171,23 @@ def _read_rows(db_file, q: str) -> list:
         con.close()
 
 
+def _sheets_seen(previous, now) -> Optional[list]:
+    """The previous list with this import's cohorts added (see sheets_seen).
+    None while no import has ever named any, as before."""
+    if now is None:
+        return previous
+    return sorted(set(previous or []) | set(now))
+
+
 def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print,
           full_run: bool = False, sheets_seen: Optional[list] = None) -> dict:
     """Write the scores file and its manifest. Reads the database under the
     cross-task mutex (a short read). ``full_run``: this follows an import of
     every sheet in the folder (sets full_import_at; otherwise the previous
-    value is kept). ``sheets_seen``: the folder's cohorts (otherwise the
-    previous list is kept). Returns the manifest."""
+    value is kept). ``sheets_seen``: the cohorts this import found in the
+    configured sheets folder; they are ADDED to the previous list, never
+    replace it (see sheets_seen in the module docstring). None adds nothing.
+    Returns the manifest."""
     from .config import require
     from .task_mutex import hold
     db_file = Path(db_file) if db_file else require("db_path")
@@ -202,7 +225,7 @@ def write(db_file: Optional[Path] = None, dest: Optional[Path] = None, log=print
         "rows": len(out),
         "videos": len({r[0] for r in out}),
         "last_successful_import": _last_successful_imports(),
-        "sheets_seen": sorted(sheets_seen) if sheets_seen is not None else previous.get("sheets_seen"),
+        "sheets_seen": _sheets_seen(previous.get("sheets_seen"), sheets_seen),
         "full_import_at": now if full_run else previous.get("full_import_at"),
         "scores_sha256": scores_hash,
     }

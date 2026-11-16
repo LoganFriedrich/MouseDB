@@ -709,6 +709,12 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     # the ledger (the ledger tracks score imports of those workbooks).
     if cohorts is None:
         results["aspa_animal_records"] = _aspa_animal_records(dry_run)
+    # Only an import of the CONFIGURED folder speaks for the sheets folder in
+    # the hand-scores file. WHY: a folder named by hand (--directory) is not
+    # the one the pipeline's sheets live in, so its listing must neither add
+    # cohorts to sheets_seen nor count as the import of every sheet that
+    # settles a cohort with no sheet (hand_scores_file: full_import_at).
+    configured = _is_configured_folder(d)
     if not dry_run and WRITE_HAND_SCORES:
         # The reaching pipeline compares each video with its hand scores before
         # it files it, reading them from this file (hand_scores_file), so the
@@ -716,7 +722,8 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         try:
             from .hand_scores_file import write as write_hand_scores
             results["hand_scores"] = write_hand_scores(
-                log=lambda *_: None, full_run=cohorts is None, sheets_seen=sorted(folder_ids))
+                log=lambda *_: None, full_run=cohorts is None and configured,
+                sheets_seen=sorted(folder_ids) if configured else None)
         except Exception as e:
             results["hand_scores_error"] = "%s: %s" % (type(e).__name__, e)
     if not dry_run and WRITE_FIX_THESE and folder_ids:
@@ -728,6 +735,19 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
         except Exception as e:
             results["fix_these"] = {"all cohorts": "FAILED: %s: %s" % (type(e).__name__, e)}
     return results
+
+
+def _is_configured_folder(d) -> bool:
+    """True when ``d`` is the configured tracking-sheet folder (the one
+    cohort_sheets_dir names), compared as absolute, case-folded paths."""
+    try:
+        conf = cohort_sheets_dir()
+    except Exception:
+        return False
+    if conf is None or d is None:
+        return False
+    norm = lambda p: os.path.normcase(os.path.abspath(str(p)))
+    return norm(conf) == norm(d)
 
 
 def snapshot_folder_of(path) -> Optional[str]:

@@ -197,3 +197,37 @@ def test_a_rename_refused_while_a_reader_has_the_file_open_is_retried(tmp_path, 
     m = w()
     assert refused                                    # the first try was refused
     assert json.loads((tmp_path / "out" / hsf.MANIFEST_NAME).read_text()) == m
+
+
+def test_a_cohort_seen_once_stays_on_the_sheets_list(tmp_path, monkeypatch):
+    """WHY: a cohort with a sheet waits for its first import; one with none is
+    settled as having no hand scores and its videos are filed uncompared. A
+    sheet missing from ONE folder listing used to take its cohort off the list."""
+    w = _scratch_writer(tmp_path, monkeypatch)
+    w(full_run=True, sheets_seen=["PROJA_77", "PROJA_78"])
+    m = w(full_run=True, sheets_seen=["PROJA_78", "PROJA_79"])   # PROJA_77 missing this time
+    assert m["sheets_seen"] == ["PROJA_77", "PROJA_78", "PROJA_79"]
+
+
+def test_a_folder_other_than_the_configured_one_settles_nothing(tmp_path, monkeypatch):
+    """WHY: an import of a folder named by hand is not an import of the sheets
+    folder: it must not add to sheets_seen nor move full_import_at."""
+    import mousedb.cohort_sheets as cs
+    configured = tmp_path / "sheets"
+    configured.mkdir()
+    (configured / "Connectome_77_Animal_Tracking.xlsx").write_bytes(b"x")
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    (other / "Connectome_78_Animal_Tracking.xlsx").write_bytes(b"x")
+    monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setenv(cs.ENV_VAR, str(configured))
+    monkeypatch.setattr(sheet_sync, "LEDGER", tmp_path / "ledger.jsonl")
+    monkeypatch.setattr(sheet_sync, "WRITE_HAND_SCORES", True)
+    monkeypatch.setattr(sheet_sync, "_import_one", lambda cid, sheet, *a, **k: {
+        "cohort_id": cid, "success": True, "imported": {}, "warnings": []})
+    calls = []
+    monkeypatch.setattr(hsf, "write", lambda **k: calls.append(k) or {"rows": 0, "videos": 0})
+    sheet_sync.import_cohorts(None, sheets_dir=other)
+    assert calls[-1]["full_run"] is False and calls[-1]["sheets_seen"] is None
+    sheet_sync.import_cohorts(None)
+    assert calls[-1]["full_run"] is True and calls[-1]["sheets_seen"] == ["CNT_77"]
