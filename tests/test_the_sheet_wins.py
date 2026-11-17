@@ -790,3 +790,83 @@ def test_a_workbook_read_on_a_guess_replaces_no_note_and_records_no_death(tmp_pa
     held = r["sheet_sync"]["held_back"]
     assert any("placeholder note" in h for h in held)
     assert any("not survived" in h for h in held)
+
+
+# --------------------------------------------------------------------------
+# the contusion tab's Survived column
+# --------------------------------------------------------------------------
+
+def _survived_cells(path, values):
+    """Type ``values`` (one per animal, in ANIMALS order) into the contusion
+    tab's Survived column (F)."""
+    wb = openpyxl.load_workbook(path)
+    for i, v in enumerate(values):
+        # Assigned, not passed to cell(): cell(value=None) leaves the cell as it was.
+        wb["4_Contusion_Injury_Details"].cell(row=2 + i, column=6).value = v
+    wb.save(path)
+    return path
+
+
+def _survived(db):
+    with db.session() as s:
+        return {x.subject_id: x.survived
+                for x in s.query(Surgery).filter_by(surgery_type="contusion")}
+
+
+def test_a_contusion_the_animal_did_not_survive_is_stored_as_not_survived(tmp_path):
+    """The contusion reader marked the animal dead from Survived = N but never
+    stored the flag on the surgery row itself, so every contusion read as
+    survived (the column's default) -- in the database and in every count of
+    surgical deaths built from it."""
+    db = _db(tmp_path)
+
+    _import(db, _survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"]))
+
+    assert _survived(db) == {ANIMALS[0]: 0, ANIMALS[1]: 1}
+
+
+def test_a_survived_flag_corrected_in_the_sheet_is_corrected_in_the_database(tmp_path):
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}
+
+    r = _import(db, _survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"]))
+
+    assert _survived(db) == {ANIMALS[0]: 0, ANIMALS[1]: 1}
+    assert r["sheet_sync"]["surgeries"]["changed"][0]["values"] == {
+        "survived": {"old": 1, "new": 0}}
+
+
+def test_a_blank_or_unreadable_survived_cell_leaves_the_stored_flag_alone(tmp_path):
+    """A blank cell says nothing, and '?' is not an answer: neither may turn a
+    stored flag into 'unknown' or count as a change."""
+    db = _db(tmp_path)
+    _import(db, _survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"]))
+
+    r = _import(db, _survived_cells(_workbook(_sheet(tmp_path)), [None, "?"]))
+
+    assert _survived(db) == {ANIMALS[0]: 0, ANIMALS[1]: 1}
+    assert "surgeries" not in r.get("sheet_sync", {})
+
+
+def test_survived_flags_overwritten_on_too_many_rows_are_refused(tmp_path):
+    """A survived flag turned from 1 to 0 overwrites a stored value, so it
+    counts toward the shifted-column guard like any other. Both sides of the
+    line, with the line moved so two animals can show them."""
+    def imp(path):
+        i = ExcelImporter(db)
+        i.SYNC_SMALL = 0
+        i.SYNC_MAX_CHANGED_FRACTION = 0.5
+        return i.import_cohort_file(path)
+
+    db = _db(tmp_path)
+    imp(_workbook(_sheet(tmp_path)))
+
+    r = imp(_survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"]))   # 1 of 2: allowed
+    assert "refused" not in r["sheet_sync"]
+    assert _survived(db) == {ANIMALS[0]: 0, ANIMALS[1]: 1}
+
+    imp(_workbook(_sheet(tmp_path)))                                    # back to Y, Y
+    r = imp(_survived_cells(_workbook(_sheet(tmp_path)), ["N", "N"]))   # 2 of 2: refused
+    assert any(x.startswith("NOT SYNCED surgeries") for x in r["sheet_sync"]["refused"])
+    assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}

@@ -170,7 +170,7 @@ imports of that cohort's sheet wrote:
 | pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
 | weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams, and % of body weight (see below) | that animal and date has no weight in the sheet any more |
 | ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, food put in and taken out, food eaten | the row is gone |
-| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes; for a tracing injection virus, titre, volume, target, weight, survived) | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
+| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes, survived; for a tracing injection virus, titre, volume, target, weight, survived) -- see "Survived" below | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
 
 - **The % of body weight on a weight row** is taken from the weight's own tab
   when that tab has a percentage column (`Weight %` on `1_Weight`,
@@ -185,6 +185,21 @@ imports of that cohort's sheet wrote:
   any other value: if you correct the percentage on many rows at once, the
   import refuses the weights sync (`NOT SYNCED weights`) until you import that
   cohort with `--allow-large-removal` after checking the sheet.
+- **Survived on a surgery row** (`Survived` on `4_Contusion_Injury_Details`
+  and `5_SC_Injection_Details`) is stored on that surgery as 1 (survived) or
+  0 (did not). `Y`, `Yes`, `True` or `1` mean survived; `N`, `No`, `False`
+  or `0` mean it did not. On the contusion tab a blank cell, or anything
+  else (`?`), says nothing: a surgery first imported from such a row is
+  stored as survived (the database's default), and a stored flag is left
+  as it is. Until 2026-11 the contusion tab's `Survived` cell only marked
+  the animal dead and was never stored on the contusion itself, so every
+  contusion read as survived. The first import after that was fixed turns
+  each contusion whose row says `N` from 1 to 0. That is an overwrite, so it
+  counts toward the "more than 25% of the rows overwritten" guard below: a
+  cohort in which more than 5 and more than a quarter of its surgery rows
+  are deaths gets `NOT SYNCED surgeries` once. Check the `Survived` column,
+  then import that cohort with `--allow-large-removal` (dry run first), as
+  described below.
 - A cell that holds something that is not a value (`x`, `?`, `n/a` where a
   score belongs) is **not** an empty cell: the stored value is kept, and the
   usual warning names the cell.

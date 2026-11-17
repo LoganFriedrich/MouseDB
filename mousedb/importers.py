@@ -1305,6 +1305,17 @@ class ExcelImporter:
                 anesthesia=row.get('Anesthetic') if pd.notna(row.get('Anesthetic')) else None,
                 notes=self._build_surgery_notes(row),
             )
+            # The Survived cell is stored on the surgery row as well as marking
+            # the animal dead above. WHY: it used to do only the second, so
+            # every contusion row kept the column's default of 1 ("survived")
+            # and the database disagreed with the sheet about which surgeries
+            # an animal died in. Only a readable yes or no is stored: a blank
+            # or unreadable cell is left out of ``values``, so it neither turns
+            # a stored flag into "unknown" nor counts as a change (_sync_table
+            # compares only the fields the sheet gives).
+            flag = self._survived_flag(row.get('Survived'))
+            if flag is not None:
+                values['survived'] = flag
             self._seen('surgeries', (subject_id, date_val, 'contusion'), values)
 
             # Check for duplicate
@@ -1327,6 +1338,23 @@ class ExcelImporter:
             if not dry_run:
                 session.add(surgery)
             self.imported_counts['surgeries'] += 1
+
+    @classmethod
+    def _survived_flag(cls, value) -> Optional[int]:
+        """A Survived cell as 1 (Y, Yes, True, 1) or 0 (N, No, False, 0);
+        None for a blank cell or anything else, which says nothing."""
+        if cls._blank(value):
+            return None
+        text = str(value).strip().upper()
+        try:
+            text = str(int(float(text)))   # 1, 1.0 or 0 typed as numbers
+        except ValueError:
+            pass
+        if text in ('Y', 'YES', 'TRUE', '1'):
+            return 1
+        if text in ('N', 'NO', 'FALSE', '0'):
+            return 0
+        return None
 
     def _build_surgery_notes(self, row) -> Optional[str]:
         """Build surgery notes from additional columns."""
@@ -1568,7 +1596,7 @@ class ExcelImporter:
     # with the sheet when the import syncs (_sync_table).
     _SURGERY_FIELDS = {
         'contusion': ('force_kdyn', 'displacement_um', 'velocity_mm_s', 'dwell_time_s',
-                      'surgeon', 'anesthesia', 'notes'),
+                      'surgeon', 'anesthesia', 'notes', 'survived'),
         'tracing': ('virus_name', 'virus_lot', 'volume_nl', 'injection_site',
                     'pre_surgery_weight_grams', 'anesthesia', 'notes', 'survived'),
     }

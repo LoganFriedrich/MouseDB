@@ -76,6 +76,13 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Sheet import: a contusion's `Survived` cell is stored on the contusion
+  (`surgeries.survived`), and kept in step with the sheet like its other
+  readings. It used to only mark the animal dead, so every contusion read as
+  survived. A blank or unreadable cell leaves the stored flag alone. The
+  first import after this turns each `N` contusion from 1 to 0; that counts
+  as an overwrite, so a cohort with many deaths can be refused once
+  (`NOT SYNCED surgeries`) and then needs `--allow-large-removal`.
 - A damaged settings file (`~/.mousedb/config.json` or the machine file, not
   valid JSON) is no longer read as empty and then written back holding one
   value: anything that needs a setting stops with a message naming the file,
