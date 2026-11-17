@@ -1039,8 +1039,15 @@ Rules that keep a replacement safe:
   between two rows in that same moment is NOT caught. If step 6 ever stops
   part-way for a brain, run it again for that brain.
   The other way round, a `region_counts.csv` rewritten later for ANOTHER
-  brain, while this brain's row is still from its earlier count, refuses a
-  good file; running step 6 again for the brain clears that too.
+  brain, while this brain's row is still from its earlier count, holds back
+  a good recount of this brain; running step 6 again for the brain clears
+  that too.
+  This check only refuses a file that would CHANGE what the database holds
+  (a new brain, or a recount). When the database already holds exactly the
+  file's counts, nothing would be written, so the brain's line says
+  `unchanged [OK]` and the disagreement is printed under it as a `[!]` line
+  instead -- an unchanged brain never fails the nightly job. If you see that
+  `[!]` line, run step 6 for the brain again so both files agree.
 - Two counts files that name the same brain (for example an old
   `<brain>_counts.csv` left beside step 6's `<mouse>_<brain>_counts.csv`):
   neither is imported, the brain keeps the counts it has, and the run ends

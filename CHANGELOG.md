@@ -118,7 +118,11 @@ checked-in code, not what's planned.
   its end, a region row without a readable count, or -- for a file cut off
   between two rows -- another total or other regions than MouseBrain's
   `region_counts.csv` written after it) is left for the next run with the
-  stored counts kept; a file that is gone removes nothing. Two counts files
+  stored counts kept; a file that is gone removes nothing. The
+  `region_counts.csv` comparison refuses only a file that would change what
+  the database holds: for a brain whose stored counts already equal the
+  file it prints a `[!]` line instead, so an unchanged brain never fails the
+  run. Two counts files
   naming one brain are neither imported (`[FAIL]` names both). When a
   recounted brain's groups cannot be had -- its row is missing from
   `elife_counts.csv`, that file looks cut off, or it was last written before

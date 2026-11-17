@@ -4366,8 +4366,10 @@ class BrainGlobeImporter:
     def _disagrees_with_region_summary(self, csv_path: Path, brain_id: str, df: pd.DataFrame,
                                        region_summary_csv: Optional[Path]) -> Optional[str]:
         """Why one per-brain counts file disagrees with MouseBrain's own
-        region_counts.csv written AFTER it; None when it agrees, or when there
-        is nothing to compare it with.
+        region_counts.csv written AFTER it ('<file>: <what differs>'); None
+        when it agrees, or when there is nothing to compare it with.
+        sync_brain_counts refuses the file only when it would change what the
+        database holds; otherwise it says so as a warning.
 
         WHY: a counts file cut off exactly at a row boundary ends with a line
         break and every row it still has is complete, so
@@ -4384,8 +4386,9 @@ class BrainGlobeImporter:
         writing region_counts.csv (that file is then older, and holds the
         previous count, so it proves nothing). A region_counts.csv rewritten
         later for ANOTHER brain while this brain's row is still from an
-        earlier count makes this refuse a whole file; the message says to
-        re-run step 6, which writes both again.
+        earlier count makes this hold back a real recount of the brain (an
+        unchanged brain only gets a warning); the message says to re-run
+        step 6, which writes both again.
         """
         import csv as csv_mod
         if region_summary_csv is None or not Path(region_summary_csv).is_file():
@@ -4433,9 +4436,7 @@ class BrainGlobeImporter:
                                    f"{' ...' if len(missing) > 5 else ''})" if missing else ""))
         if not problems:
             return None
-        return (f"{csv_path.name}: {'; '.join(problems)}. The file looks cut off, so "
-                f"{brain_id} is left as it is and the counts the database holds for it are "
-                f"kept; re-run MouseBrain's step 6 (count regions) for the brain")
+        return f"{csv_path.name}: {'; '.join(problems)}"
 
     def sync_brain_counts(self, csv_path: Path, brain_id: Optional[str] = None,
                           elife_summary_csv: Optional[Path] = None,
@@ -4465,7 +4466,10 @@ class BrainGlobeImporter:
             MouseBrain's region_counts.csv, written AFTER the counts file,
             gives the brain another total or other regions -- a file cut off
             exactly at a row boundary) is refused with an error, and the
-            stored counts are kept. The next run takes it.
+            stored counts are kept. The next run takes it. (That last check
+            refuses only a file that would change what the database holds;
+            when the database already holds exactly the file's counts it is
+            a warning, so an unchanged brain never fails the nightly job.)
           - It never stores groups read from an elife_counts.csv last written
             before the counts file (more than ELIFE_BEFORE_COUNTS_ALLOWANCE_S
             earlier): MouseBrain writes the counts file first and the groups
@@ -4563,11 +4567,10 @@ class BrainGlobeImporter:
                                f"holds for it are kept; re-run MouseBrain's step 6 "
                                f"(count regions) for the brain")
             return done()
+        # Checked here, acted on below: it only matters when the file would
+        # change what the database holds (see the region-count block).
         disagrees = self._disagrees_with_region_summary(csv_path, brain_id, df,
                                                         region_summary_csv)
-        if disagrees:
-            self.errors.append(disagrees)
-            return done()
 
         # The eLife groups, read BEFORE the database is opened. Their failure
         # is collected apart from self.errors: it must not undo the region
@@ -4611,9 +4614,34 @@ class BrainGlobeImporter:
             stored_rc = (session.query(RegionCount).filter_by(
                 brain_sample_id=brain_sample.id).all() if brain_sample.id else [])
             new_rc = [dict(row, is_final=1) for row in rows]
+            content_changes = (not stored_rc
+                               or _content(stored_rc, _RC_FIELDS) != _content(new_rc, _RC_FIELDS))
+            if disagrees:
+                if content_changes:
+                    # The file would add or replace counts, and it looks cut
+                    # off: refuse it, keeping what is stored (the error rolls
+                    # the session back, so not even a new brain row stays).
+                    self.errors.append(
+                        f"{disagrees}. The file looks cut off, so {brain_id} is left as it "
+                        f"is and the counts the database holds for it are kept; re-run "
+                        f"MouseBrain's step 6 (count regions) for the brain")
+                    return done()
+                # WHY not an error here: the database already holds exactly
+                # this file's counts, so nothing would be written and nothing
+                # can be lost. Failing it would fail the nightly job (exit 1)
+                # every night for a brain the import does not change -- e.g.
+                # when region_counts.csv was rewritten for another brain while
+                # this brain's row in it is from an earlier count. It is still
+                # shown, as a [!] line, because it may also mean an earlier
+                # import stored a cut-off file.
+                self.warnings.append(
+                    f"{disagrees}. The database "
+                    f"already holds exactly this file's counts, so nothing was changed; "
+                    f"if the file was cut off, re-run MouseBrain's step 6 (count "
+                    f"regions) for {brain_id}")
             if not stored_rc:
                 outcome['region_action'] = 'new'
-            elif force or _content(stored_rc, _RC_FIELDS) != _content(new_rc, _RC_FIELDS):
+            elif force or content_changes:
                 outcome['region_action'] = 'replaced'
             else:
                 outcome['region_action'] = 'unchanged'

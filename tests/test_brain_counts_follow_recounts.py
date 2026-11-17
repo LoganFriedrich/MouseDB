@@ -357,6 +357,39 @@ def test_an_older_region_counts_file_proves_nothing(env, capsys):
     assert stored(env)[0][(1, 'both')] == 130
 
 
+def test_an_unchanged_brain_never_fails_on_a_stale_region_counts_row(env, capsys):
+    """region_counts.csv was rewritten (for another brain) after this brain's
+    counts file, but its row for this brain is from an earlier count. The
+    database already holds exactly this brain's file, so nothing would be
+    written: the brain is unchanged and the run succeeds, with the
+    disagreement shown as a [!] line instead of failing every night."""
+    write_counts(env["summary"], 100, 60, 40)
+    write_elife(env["summary"], 100, 60, 40)
+    assert run(env, capsys)[0] == 0
+    before = stored(env)
+    write_region_summary(env["summary"], 80, ['RN', 'XX'], age=OLD + 5)
+    rc, out = run(env, capsys)
+    assert rc == 0, out
+    assert stored(env) == before
+    assert 'region counts unchanged' in out and '[OK]' in out
+    assert '[!] %s:' % BRAIN in out and 'region_counts.csv' in out
+    assert '[FAIL]' not in out
+
+
+def test_a_new_brain_disagreeing_with_region_counts_is_not_added(env, capsys):
+    """The same disagreement on a brain the database does not hold yet would
+    ADD counts from a file that may be cut off: refused, nothing written."""
+    _cut_off(env["summary"], HEADER + '1,RN,Red Nucleus,130,70,60\n')
+    write_elife(env["summary"], 130, 70, 60)
+    write_region_summary(env["summary"], 135, ['RN', 'XX'], age=OLD + 5)
+    rc, out = run(env, capsys)
+    assert rc == 1 and 'cut off' in out, out
+    rc_rows, ec_rows, _ = stored(env)
+    assert rc_rows == {} and ec_rows == {}
+    with env["db"].session() as s:
+        assert s.query(BrainSample).count() == 0
+
+
 # --- warnings are printed -----------------------------------------------------
 
 def test_a_region_left_out_is_printed(env, capsys, monkeypatch):
