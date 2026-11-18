@@ -14,8 +14,15 @@ nothing to compare and nothing to fix -- Logan, 2026-10-26.)
 WHAT IS GATHERED
 ----------------
 1. The reaching pipeline's own lists (<mousereach_pipeline_root>/attention/,
-   items marked needs_person): today, a video it cannot file because its
-   check against the hand scores could not run (a setting or file to fix).
+   items marked needs_person): a video it cannot file because its check
+   against the hand scores could not run (a setting or file to fix), and a
+   LABEL MISMATCH -- a video whose results match another tray's hand scores
+   of the same animal and day, not its own, so the sheet or the video's name
+   has the trays swapped. The pipeline holds such a video outside every
+   review queue (no review can settle it); its line here is written by
+   mousedb from the item's fields (label_mismatch_says), names both trays,
+   and asks a person to decide whether the name or the sheet is wrong (a
+   sheet error is kept as it is and recorded, never edited). mousedb only reads the lists; it never imports the pipeline.
 2. The tracking-sheet imports (the import ledger): for each cohort in the
    sheets folder, its last import if it failed, every date that import
    had to repair (its REPAIRED warnings) -- correct those in the sheet --
@@ -67,9 +74,65 @@ def mousereach_items(pipeline_root: Optional[Path] = None) -> List[dict]:
             continue
         for i in data.get("items") or []:
             if i.get("needs_person"):
+                says = i.get("says") or str(i)
+                if i.get("kind") == LABEL_MISMATCH_KIND:
+                    says = label_mismatch_says(i) or says
                 out.append({"cohort_id": i.get("cohort_id"), "source": "reaching pipeline",
-                            "says": i.get("says") or str(i)})
+                            "kind": i.get("kind"), "says": says})
     return out
+
+
+# The reaching pipeline's attention kind for a video whose results match
+# ANOTHER tray's hand scores, not its own (a label mismatch).
+LABEL_MISMATCH_KIND = "label_mismatch"
+
+
+def _tray(key) -> str:
+    return str(key or "?").rsplit("_", 1)[-1]
+
+
+def label_mismatch_says(item: dict) -> Optional[str]:
+    """The FIX THESE line for a label mismatch, written from the item's own
+    fields (video_id, own_row, matched_rows, partner_back), or None when they
+    are not there (an older pipeline): the caller then shows the pipeline's
+    own text.
+
+    WHY written here and not copied: the line must name BOTH trays and BOTH
+    fixes in words the person at the sheet acts on, whichever version of the
+    pipeline wrote the list. Such a video is held outside every review queue
+    -- no review can fix a swapped tray -- so this line and the Where Is My
+    Data tab are where a person learns of it. Which fix is right is a
+    question about what happened at the bench, so both are named. The lab's
+    rule: a sheet error is kept as it is and recorded (the bench's error rate
+    is itself measured), so the line never tells anyone to edit the sheet."""
+    vid = item.get("video_id")
+    own = item.get("own_row") or {}
+    matched = [m for m in (item.get("matched_rows") or []) if isinstance(m, dict)]
+    if not vid or not matched or not own:
+        return None
+    parts = str(vid).split("_")
+    who = "%s on %s" % (parts[1], parts[0]) if len(parts) >= 3 else str(vid)
+    mine = _tray(vid)
+    others = " / ".join(_tray(m.get("key")) for m in matched)
+    scores = " and ".join("%s's (%s/%s pellets)" % (_tray(m.get("key")), m.get("agree"),
+                                                    m.get("compared")) for m in matched)
+    line = ("LABEL MISMATCH: video %s (%s, tray %s) matches the hand scores of tray %s, "
+            "not its own: %s against %s's %s/%s." % (
+                vid, who, mine, others, scores, mine, own.get("agree"), own.get("compared")))
+    back = item.get("partner_back") or {}
+    if back.get("video_id"):
+        line += (" The other way round agrees: video %s matches %s's scores (%s/%s)." % (
+            back.get("video_id"), mine, back.get("agree"), back.get("compared")))
+    line += (" Decide whether the recording's NAME or the SHEET is wrong. A wrong name is "
+             "corrected the documented way (original and a record kept in "
+             "Archive/manual_corrections). A sheet error is kept as it is and recorded -- "
+             "the sheet is never edited -- and the video is filed with the disagreement. "
+             "Record the decision with mousereach-label-mismatch (--name-wrong or "
+             "--sheet-error; --labels-right if neither is wrong). Until then the video is held, not sent to review." )
+    if item.get("answers_kept"):
+        line += (" Answers already given on pellet(s) %s are kept."
+                 % ", ".join(str(x) for x in item["answers_kept"]))
+    return line
 
 
 def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
