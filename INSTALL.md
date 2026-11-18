@@ -132,6 +132,92 @@ against the bundled database and is slower than the unit tests; if you
 just want fast feedback while editing the core package, run
 `pytest tests/`.
 
+### The tests never touch your real data (the live-folder guard)
+
+The tests run on whatever computer you start them on, and that computer may
+hold the lab's real database, exports and pipeline folders. So the suite
+does two things before any test runs (in `tests/conftest.py`):
+
+1. **It hides this computer's settings from the code under test.** Every
+   test gets its own empty home folder and empty settings files, and every
+   `MOUSEDB_*` / `MOUSEREACH_*` variable is removed, so the code never finds
+   the real folders on its own.
+2. **It guards the real folders anyway.** It finds out where the real folders
+   are (see "Where the guard learns the real folders" below) and watches
+   every file the tests touch:
+   - a **write** into a real folder is **refused on the spot**: opening a
+     file to write or append, creating a file or folder (including temporary
+     ones), renaming or replacing a file there, copying onto it, removing
+     it, connecting to a database there, writing a parquet file there. The
+     call fails with `LiveFolderRefused` and **nothing is written**;
+   - a **read** or a folder listing there is recorded;
+   - either way the test that did it **fails**, and pytest's report lists
+     every path, for example:
+
+     ```
+     this test reached this computer's live folders (it must use synthetic
+     inputs under tmp_path; REFUSED = a write the guard stopped, read = a
+     read it recorded):
+       REFUSED open('w') <the real folder>\exports\new.csv
+     ```
+
+     A test like that is wrong: it must build its own inputs in pytest's
+     `tmp_path` folder. Fix the test, never the guard.
+
+The guard recognizes a real folder **however it is written**: upper or lower
+case, `/` or `\`, the Windows short name of any part of it (`PROGRA~1`), the
+server path of a mapped network drive (`\\server\share\...` for a drive
+letter), or the path a shortcut/link resolves to. All of these are worked
+out once, when the tests start.
+
+**The code's own folder is not lab data.** If you run the tests from a
+working copy that sits *inside* a real folder (for example a copy kept inside
+the database folder), the files of that working copy are allowed -- the
+tests read them and Python writes its `__pycache__` there -- while
+everything *beside* it (the exports, the logs, the database file) stays
+guarded. The working copy is the folder that holds `tests/`.
+
+pytest's own cache is switched off for this repo (`-p no:cacheprovider` in
+`pyproject.toml`), so running the tests leaves no `.pytest_cache` or
+`pytest-cache-files-*` folder in the working copy.
+
+#### Where the guard learns the real folders
+
+You normally do nothing: the guard reads the same places the tools do, on a
+normal login of this computer, **even when the person or script running the
+tests has pointed HOME, USERPROFILE, APPDATA, LOCALAPPDATA and PROGRAMDATA
+at a scratch folder and unset every tool variable** first:
+
+- `.mousedb\config.json` and `.mousereach\config.json` in your real home
+  folder and in the (possibly redirected) home folder, every value in them,
+  sections inside sections included;
+- the machine settings file `mousedb\config.json` in the real program-data
+  folder (`%ProgramData%`) and in the redirected one;
+- the variables of this process and the variables **saved** for your login
+  and for the machine (on Windows: what "Edit environment variables" shows),
+  whose names start with `MOUSEDB_`, `MOUSEREACH_`, `MOUSEBRAIN_` or
+  `CONNECTOME_ROOT` (in any upper/lower case) or are the OneDrive folders;
+- **your own list**, if you want to add folders the settings do not name:
+  - `TEST_GUARD_REAL_ROOTS`: folders separated by `;` (Windows) or `:`; or
+  - `TEST_GUARD_REAL_ROOTS_FILE`: the path of a text file with one folder per
+    line (`#` starts a comment). A file named here that cannot be read stops
+    the test run.
+
+  These two names deliberately contain neither tool's name, so a runner that
+  checks "no tool variable is set" before starting is not tripped by them.
+  Example (placeholders): `set TEST_GUARD_REAL_ROOTS=<your data drive>\<lab folder>`
+  before `pytest`.
+
+Never write a real folder into the test code itself.
+
+#### Running mousedb outside pytest during development
+
+The guard exists only inside pytest. If you run any mousedb command or
+`python -c "import mousedb ..."` by hand while developing, point
+`PROGRAMDATA` (as well as HOME/USERPROFILE/APPDATA/LOCALAPPDATA) at a scratch
+folder first: the machine settings file in `%ProgramData%\mousedb\config.json`
+names the real database folder, and mousedb reads it when imported.
+
 `manual_setup_check.py`, in the repo root, is an interactive check of an
 install, not a test: `python manual_setup_check.py`. It opens the configured
 database, shows its row counts, lists the tracking sheets the way

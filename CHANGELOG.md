@@ -5,6 +5,21 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Changed
+- **Test suite's live-folder guard refuses writes and knows every spelling**
+  (`tests/conftest.py`). A write into a real lab folder during a test (open
+  for writing, file or folder creation, rename, replace, copy onto, remove,
+  database connect, parquet write) now raises `LiveFolderRefused` and nothing
+  is written; before, it was only reported after the file had been written.
+  A real folder is recognized under every spelling (case, slashes, Windows
+  short names, the server path of a mapped drive, realpath). The real folders
+  are found even when the runner has redirected HOME/PROGRAMDATA and unset
+  the tool variables (real home and program-data folders, saved environment
+  variables in any case, and a runner list: `TEST_GUARD_REAL_ROOTS` /
+  `TEST_GUARD_REAL_ROOTS_FILE`). The working copy's own files are exempt even
+  when the copy sits inside a real folder; the folders beside it stay
+  guarded. Guide: INSTALL.md, "The tests never touch your real data".
+
 ### Added
 - **Limited exports** (`mousedb export-subset`, and the **Make a limited
   export...** button on the Where Is My Data tab): a filtered copy of part of

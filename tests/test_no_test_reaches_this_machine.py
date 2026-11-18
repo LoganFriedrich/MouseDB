@@ -2,8 +2,9 @@
 any test that reaches the live folders (tests/conftest.py says why).
 
 These pin both halves, so neither can quietly stop working: mousedb sees no
-configuration at all, and the guard really does notice a file opened, written
-or listed under a live location.
+configuration at all, and the guard really does notice a file opened or
+listed under a live location, and refuses one written there (the full set of
+refused writes and spellings: test_guard_refuses_writes_under_every_spelling).
 """
 import os
 import sqlite3
@@ -11,6 +12,9 @@ import sqlite3
 import pytest
 
 from tests import conftest as suite
+
+# The guard's refusal (any exception where the guard cannot refuse at all).
+REFUSED = getattr(suite, "LiveFolderRefused", Exception)
 
 
 def test_nothing_is_configured_inside_a_test():
@@ -43,19 +47,28 @@ def pretend_live(tmp_path, monkeypatch):
     suite._GUARD["hits"].clear()
 
 
-def test_the_guard_sees_a_file_written_read_or_listed(pretend_live):
-    (pretend_live / "a.txt").write_text("x")
-    (pretend_live / "a.txt").read_text()
+def test_the_guard_refuses_a_write_and_sees_a_read_or_listing(pretend_live):
+    with pytest.raises(REFUSED):
+        (pretend_live / "b.txt").write_text("x")
+    assert not (pretend_live / "b.txt").exists()
+    # The read is recorded before the file is found missing.
+    with pytest.raises(FileNotFoundError):
+        (pretend_live / "a.txt").read_text()
     os.listdir(pretend_live)
     hits = " ".join(suite._GUARD["hits"])
     assert "open('w')" in hits and "open('r')" in hits and "os.listdir" in hits
 
 
-def test_the_guard_sees_a_database_and_a_parquet_file(pretend_live):
+def test_the_guard_refuses_a_database_and_a_parquet_file(pretend_live):
     import pandas as pd
-    sqlite3.connect(str(pretend_live / "x.db")).close()
-    pd.DataFrame({"a": [1]}).to_parquet(pretend_live / "t.parquet")
-    pd.read_parquet(pretend_live / "t.parquet")
+    with pytest.raises(REFUSED):
+        sqlite3.connect(str(pretend_live / "x.db")).close()
+    with pytest.raises(REFUSED):
+        pd.DataFrame({"a": [1]}).to_parquet(pretend_live / "t.parquet")
+    assert not os.path.exists(pretend_live / "x.db")
+    assert not os.path.exists(pretend_live / "t.parquet")
+    with pytest.raises(Exception):
+        pd.read_parquet(pretend_live / "t.parquet")
     hits = " ".join(suite._GUARD["hits"])
     assert "sqlite3.connect" in hits
     assert "DataFrame.to_parquet" in hits and "pandas.read_parquet" in hits
