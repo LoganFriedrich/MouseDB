@@ -128,3 +128,63 @@ def test_the_window_asks_before_replacing_a_saved_definition(qt, lab, monkeypatc
     from mousedb import sheet_projects
     kept = json.loads(sheet_projects.config_path().read_text())[subsets.REPLACED_KEY]["pre"]
     assert kept[-1]["definition"] == before
+
+
+ROUND_TRIP = {
+    # every cohort of a project, future ones included, with a description
+    "whole": {"project": "PROJA", "kinds": ["ODC_reaches"], "description": "for one analysis"},
+    # a column the full export has since renamed, and a cohort no longer exported
+    "stale": {"cohorts": ["PROJA_01", "PROJA_09"], "kinds": ["ODC_reaches"],
+              "columns": {"ODC_reaches": ["subject_id", "old_column_name"]}},
+    # a fixed list naming every column there is today, in its own order
+    "fixed": {"cohorts": ["PROJA_02"], "kinds": ["ODC_reaches"],
+              "columns": {"ODC_reaches": ["start_frame", "subject_id", "video_name"]}},
+}
+
+
+@pytest.mark.parametrize("name", sorted(ROUND_TRIP))
+def test_a_saved_definition_opened_and_saved_again_is_unchanged(qt, lab, monkeypatch, name):
+    """Open a saved definition and press Save without touching anything: the
+    window must not rewrite it (drop a column it does not show, turn a project
+    into a cohort list, lose the description)."""
+    from PyQt5.QtWidgets import QMessageBox
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    subsets.save_profile(name, ROUND_TRIP[name])
+    before = subsets.profiles()[name]
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: asked.append(a) or QMessageBox.No)
+    d = LimitedExportDialog()
+    d.saved.setCurrentText(name)
+    assert d.save() is True
+    assert subsets.profiles()[name] == before
+    assert not asked                     # nothing changed, so nothing to confirm
+
+
+def test_a_column_choice_survives_an_unreadable_dictionary(qt, lab, monkeypatch):
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"], "kinds": ["ODC_reaches"],
+                                 "columns": {"ODC_reaches": ["video_name"]}})
+    before = subsets.profiles()["pre"]
+    (lab / "exports" / "current" / "ODC_reaches_DATA_DICTIONARY.csv").unlink()
+    d = LimitedExportDialog()
+    d.saved.setCurrentText("pre")
+    assert d.save() is True
+    assert subsets.profiles()["pre"] == before
+
+
+def test_a_column_the_exports_lack_is_shown_and_can_be_taken_out(qt, lab, monkeypatch):
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QMessageBox
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"], "kinds": ["ODC_reaches"],
+                                 "columns": {"ODC_reaches": ["video_name", "old_column_name"]}})
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    d = LimitedExportDialog()
+    d.saved.setCurrentText("pre")
+    texts = [d.col_list.item(i).text() for i in range(d.col_list.count())]
+    assert texts[-1].startswith("old_column_name") and "not in the current exports" in texts[-1]
+    d.col_list.item(d.col_list.count() - 1).setCheckState(Qt.Unchecked)   # taken out
+    d.col_list.item(2).setCheckState(Qt.Checked)                          # start_frame added
+    assert d.save() is True
+    assert subsets.profiles()["pre"]["columns"] == {"ODC_reaches": ["video_name", "start_frame"]}

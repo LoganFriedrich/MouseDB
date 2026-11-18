@@ -170,6 +170,15 @@ checked-in code, not what's planned.
   counts used to stay in the database and every brain export unnoticed (a
   renamed brain twice). Report only: nothing is removed and the exit code is
   unchanged.
+- Limited-export window: a saved definition opened and saved again comes
+  back as it was. A column or cohort the current exports no longer have is
+  listed (marked "not in the current exports") instead of being dropped; a
+  column choice whose ticks were not changed is kept exactly, order
+  included, and an unreadable dictionary no longer turns it into "every
+  column"; a project definition stays one while its cohort ticks are left
+  as they were (and a definition naming both a project and cohorts ticks
+  only its cohorts); the description is kept; a rule missing from the lab
+  settings is shown, not swapped for blank.
 - Limited exports: saving under a name that already holds a different
   definition is refused unless replacing is asked for (the window asks;
   the command needs `--replace`), and a replaced or forgotten definition is

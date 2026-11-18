@@ -15,6 +15,20 @@ cohorts are the cohort folders there, the columns are the entries of each
 kind's data dictionary. A column that is not in the full export cannot be
 picked, and one typed into a saved definition by hand is refused by name when
 the slice is made.
+
+A SAVED DEFINITION OPENED AND SAVED AGAIN COMES BACK AS IT WAS, except for what
+the person changed. WHY: the window shows only what the current exports hold,
+and a definition can say more than that -- a column the full export has since
+renamed, a cohort no longer in the exports, "every cohort of a project, future
+ones included", a description written by hand. Rebuilt from the boxes alone,
+such a definition was silently rewritten on Save (the stale column dropped, or
+the column list turned into "every column"; the project turned into a fixed
+cohort list; the description lost) while the person was told "Saved". So a
+column or cohort the exports no longer show is listed, ticked and marked "(not
+in the current exports)" -- untick it to drop it, and the slice refuses it by
+name until then -- a column choice whose ticks were not changed is kept exactly
+(order included), a project definition stays a project definition while its
+cohort ticks are left as they were, and the description is carried through.
 """
 from __future__ import annotations
 
@@ -43,6 +57,11 @@ KIND_WORDS = {
 TRAYS = (("P", "Pillar"), ("E", "Easy"), ("F", "Flat"))
 NEW = "(a new limited export)"
 BLANK_RULE = "(none -- leave it blank)"
+# Shown after a column or cohort a saved definition names that the current
+# exports do not have (see the module notes).
+NOT_THERE = "  (not in the current exports)"
+NAME_ROLE = Qt.UserRole            # the real column or cohort name of a list item
+NOT_THERE_ROLE = Qt.UserRole + 1   # True on such an item
 
 QUICK_GUIDE = """\
 A LIMITED EXPORT is a copy of part of the current exports: the cohorts, sessions,
@@ -57,7 +76,9 @@ export -- nothing is calculated again -- so it always agrees with the full expor
    with hand scores for that tray, before the earliest injury date of its
    cohort); or a range of dates.
 4. Tick the kinds of file you want. For each kind you can untick columns
-   ("Columns of" picks the kind); all ticked = every column.
+   ("Columns of" picks the kind); all ticked = every column. A column or
+   cohort marked "(not in the current exports)" is one the saved definition
+   names that the exports no longer have: untick it to take it out.
 5. Optional: a yes/no column per animal. Give it a name; pick a rule, or leave
    it blank to fill in later.
 6. "Save" keeps the definition (in the lab settings, for everyone). If another
@@ -120,7 +141,28 @@ def profile_from_form(form: dict) -> dict:
         p["columns"] = cols
     if (form.get("flag_column") or "").strip():
         p["flag"] = {"column": form["flag_column"].strip(), "rule": form.get("flag_rule") or None}
+    # Carried from the definition the window opened (LimitedExportDialog._form):
+    # "every cohort of this project, future ones included", and the description.
+    if form.get("project"):
+        p["project"] = form["project"]
+    if form.get("description"):
+        p["description"] = form["description"]
     return p
+
+
+def _item(name: str, checked: bool, not_there: bool = False) -> QListWidgetItem:
+    """A tickable list item carrying its real name; one the current exports do
+    not have says so in its text and tooltip."""
+    it = QListWidgetItem(name + (NOT_THERE if not_there else ""))
+    it.setData(NAME_ROLE, name)
+    it.setData(NOT_THERE_ROLE, bool(not_there))
+    if not_there:
+        it.setToolTip("The saved definition names this, but the current exports do not have "
+                      "it. Untick it to take it out of the definition; while it is in, making "
+                      "the limited export says so.")
+    it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+    it.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+    return it
 
 
 def _dictionary_columns(current: Path, kind: str) -> List[str]:
@@ -159,6 +201,10 @@ class LimitedExportDialog(QDialog):
             self.current = None
         self._columns: Dict[str, Optional[List[str]]] = {}   # kind -> kept (None: all)
         self._shown_kind: Optional[str] = None
+        # The saved definition the window opened, and the cohorts it ticked: a
+        # project or description is carried from it on Save (see module notes).
+        self._loaded: dict = {}
+        self._loaded_ticks: set = set()
         self._build()
         self._load_names()
 
@@ -184,10 +230,7 @@ class LimitedExportDialog(QDialog):
         cl = QVBoxLayout(cbox)
         self.cohorts = QListWidget()
         for c in self._cohorts_on_disk():
-            it = QListWidgetItem(c)
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Unchecked)
-            self.cohorts.addItem(it)
+            self.cohorts.addItem(_item(c, False))
         cl.addWidget(self.cohorts)
         grid.addWidget(cbox, 0, 0, 2, 1)
 
@@ -322,12 +365,30 @@ class LimitedExportDialog(QDialog):
 
     # ------------------------------------------------------------- columns
     def _store_shown_columns(self):
+        """Read the ticks of the kind on show back into the choice.
+
+        A choice whose ticks are as they were is kept exactly, order included;
+        every column of the dictionary ticked (and no column the exports lack)
+        means every column; otherwise the ticked columns, in the saved order
+        first, then newly ticked ones. With nothing on show (the dictionary
+        could not be read) the choice is left as it was: zero boxes ticked out
+        of zero is not "all ticked"."""
         if self._shown_kind is None:
             return
-        ticked = [self.col_list.item(i).text() for i in range(self.col_list.count())
-                  if self.col_list.item(i).checkState() == Qt.Checked]
-        every = self.col_list.count()
-        self._columns[self._shown_kind] = None if len(ticked) == every else ticked
+        items = [self.col_list.item(i) for i in range(self.col_list.count())]
+        if not items:
+            return
+        known = [it.data(NAME_ROLE) for it in items if not it.data(NOT_THERE_ROLE)]
+        ticked = [it.data(NAME_ROLE) for it in items if it.checkState() == Qt.Checked]
+        prev = self._columns.get(self._shown_kind)
+        if prev is not None and set(ticked) == set(prev):
+            return
+        if known and set(ticked) == set(known):
+            self._columns[self._shown_kind] = None
+            return
+        prev = prev or []
+        self._columns[self._shown_kind] = ([c for c in prev if c in ticked]
+                                           + [c for c in ticked if c not in prev])
 
     def _show_columns(self, *_):
         self._store_shown_columns()
@@ -335,11 +396,12 @@ class LimitedExportDialog(QDialog):
         self._shown_kind = kind
         self.col_list.clear()
         kept = self._columns.get(kind)
-        for c in _dictionary_columns(self.current, kind) if self.current else []:
-            it = QListWidgetItem(c)
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked if kept is None or c in kept else Qt.Unchecked)
-            self.col_list.addItem(it)
+        known = _dictionary_columns(self.current, kind) if self.current else []
+        for c in known:
+            self.col_list.addItem(_item(c, kept is None or c in kept))
+        for c in kept or []:
+            if c not in known:
+                self.col_list.addItem(_item(c, True, not_there=True))
 
     def _tick_all(self, state):
         for i in range(self.col_list.count()):
@@ -353,17 +415,37 @@ class LimitedExportDialog(QDialog):
             self.name.setText(name)
         else:
             self.name.clear()
-        want = set(p.get("cohorts") or [])
+        # Cohorts a previously opened definition added (not in the exports) go.
+        for i in reversed(range(self.cohorts.count())):
+            if self.cohorts.item(i).data(NOT_THERE_ROLE):
+                self.cohorts.takeItem(i)
+        want = list(p.get("cohorts") or [])
+        shown = {self.cohorts.item(i).data(NAME_ROLE) for i in range(self.cohorts.count())}
+        for c in want:
+            if c not in shown:
+                self.cohorts.addItem(_item(c, True, not_there=True))
+        # Named cohorts decide when there are any (the slice is made from them,
+        # subsets._cohorts_of); otherwise every cohort of the project.
         for i in range(self.cohorts.count()):
             it = self.cohorts.item(i)
-            on = it.text() in want or (p.get("project") and layout.project_of(it.text()) == p["project"])
+            c = it.data(NAME_ROLE)
+            on = (c in want) if want else bool(
+                p.get("project") and layout.project_of(c) == p["project"])
             it.setCheckState(Qt.Checked if on else Qt.Unchecked)
+        self._loaded = dict(p)
+        self._loaded_ticks = set(self._ticked_cohorts())
+        if p.get("project") and not want:
+            self.out.append("'%s' takes every cohort of project %s, including cohorts added "
+                            "later. Saved with these ticks left as they are, it stays that way; "
+                            "change the ticks and it becomes a fixed list of cohorts."
+                            % (name, p["project"]))
         for code, cb in self.trays.items():
             cb.setChecked(code in (p.get("tray_types") or []))
         w = p.get("window") or {"type": "all"}
         {"all": self.w_all, "last_before_injury": self.w_last, "dates": self.w_dates}.get(
             w.get("type"), self.w_all).setChecked(True)
         if w.get("type") == "last_before_injury":
+            self.n.setMaximum(max(self.n.maximum(), int(w.get("n", 3))))
             self.n.setValue(int(w.get("n", 3)))
             self.w_tray.setCurrentIndex(max(0, self.w_tray.findData(w.get("tray_type"))))
         self.d_from.setText(w.get("from") or "")
@@ -376,17 +458,35 @@ class LimitedExportDialog(QDialog):
         self._show_columns()
         flag = p.get("flag") or {}
         self.flag.setText(flag.get("column") or "")
+        if flag.get("rule") and self.rule.findText(flag["rule"]) < 0:
+            # A rule the lab settings no longer hold: shown, never swapped for
+            # "blank"; saving or making it says the rule is missing.
+            self.rule.addItem(flag["rule"])
         self.rule.setCurrentText(flag.get("rule") or BLANK_RULE)
         self.nightly.setChecked(bool(p.get("nightly", True)))
+
+    def _ticked_cohorts(self) -> List[str]:
+        return [self.cohorts.item(i).data(NAME_ROLE) for i in range(self.cohorts.count())
+                if self.cohorts.item(i).checkState() == Qt.Checked]
 
     def _form(self) -> dict:
         self._store_shown_columns()
         window = ("last_before_injury" if self.w_last.isChecked()
                   else "dates" if self.w_dates.isChecked() else "all")
         rule = self.rule.currentText()
-        return {
-            "cohorts": [self.cohorts.item(i).text() for i in range(self.cohorts.count())
-                        if self.cohorts.item(i).checkState() == Qt.Checked],
+        cohorts = self._ticked_cohorts()
+        loaded = self._loaded or {}
+        carried: dict = {}
+        project = loaded.get("project")
+        if project and not loaded.get("cohorts") and set(cohorts) == self._loaded_ticks:
+            # "Every cohort of the project" with its ticks untouched stays that.
+            carried["project"], cohorts = project, []
+        elif project and cohorts and all(layout.project_of(c) == project for c in cohorts):
+            carried["project"] = project
+        if loaded.get("description"):
+            carried["description"] = loaded["description"]
+        return dict(carried, **{
+            "cohorts": cohorts,
             "tray_types": [c for c, cb in self.trays.items() if cb.isChecked()],
             "window": window, "n": self.n.value(), "window_tray": self.w_tray.currentData(),
             "from": self.d_from.text().strip(), "to": self.d_to.text().strip(),
@@ -395,7 +495,7 @@ class LimitedExportDialog(QDialog):
             "flag_column": self.flag.text(),
             "flag_rule": None if rule == BLANK_RULE else rule,
             "nightly": self.nightly.isChecked(),
-        }
+        })
 
     # ------------------------------------------------------------- actions
     def save(self) -> bool:

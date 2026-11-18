@@ -402,7 +402,20 @@ reaches the full export reaches the limited export the next time it is made.
    per-session analysis, per-day ODC sessions). All are ticked to start with.
 7. **Columns**: pick a kind under "Columns of", then untick the columns you do
    not want. All ticked means every column of that kind. Each kind keeps its
-   own choice. Only columns the full export has are listed.
+   own choice. Only columns the full export has are listed -- except one that
+   a saved limited export names and the full export no longer has (for
+   example a column renamed since): it is listed at the end, ticked, marked
+   "(not in the current exports)". Untick it to take it out; while it is in,
+   making the limited export is refused with its name.
+
+   Opening a saved limited export and pressing Save without changing anything
+   leaves it exactly as it was. In particular a limited export saved with
+   `--project` (every cohort of a project, including cohorts added later)
+   stays that way as long as you leave its cohort ticks as they are; change
+   them and it becomes a fixed list of the cohorts you ticked (the box at the
+   bottom says this when you open it). A cohort it names that the exports no
+   longer hold is listed the same way as such a column. Its description, if it
+   has one, is kept.
 8. **Yes/no column per animal** (optional): type a column name to add a column
    holding "yes" or "no" for each animal. Choose a rule to fill it, or leave
    it on "(none -- leave it blank)" to fill it in later (see "The yes/no
