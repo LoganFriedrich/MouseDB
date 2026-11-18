@@ -190,7 +190,7 @@ def test_the_odc_session_file_withholds_a_running_cohort_s_phase(tmp_path, monke
         def session(self):
             return _S()
 
-    def fake_export(db, cid, path):
+    def fake_export(db, cid, path, running=None):
         pd.DataFrame([{"Animal": cid + "_01", "Cohort": cid, "Date": "2000-01-10",
                        "Test_Phase": "Post_Injury_1"}]).to_excel(path, index=False)
 

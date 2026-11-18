@@ -6,6 +6,17 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Changed
+- **`mousedb export` leaves the phase empty for a running cohort**
+  (`mousedb/exporters/cohort_reports.py`). The nightly files already left a
+  running cohort's phase empty (its labels can still change as later dates
+  arrive), but the exports run by hand -- the tracking-sheet workbook, the ODC
+  workbook, `--all-formats` and `--unified` -- read the database and wrote the
+  stored labels. They now make the same decision
+  (`odc_reaches.running_cohorts`: the lab's `Study_Status` for the cohort,
+  else a last session less than 30 days old) from the database's reach rows,
+  leave `Test_Phase` / `test_phase` empty, and say which cohorts they held
+  back. The nightly session files pass their snapshot decision in, so one
+  refresh never mixes two decisions. Guide: docs/WHERE_IS_MY_DATA.md.
 - **Test suite's live-folder guard refuses writes and knows every spelling**
   (`tests/conftest.py`). A write into a real lab folder during a test (open
   for writing, file or folder creation, rename, replace, copy onto, remove,

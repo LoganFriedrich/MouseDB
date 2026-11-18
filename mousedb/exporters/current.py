@@ -483,7 +483,9 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> Non
         xlsx = out_dir / ("_tmp_%s_ODC.xlsx" % cid)
         label = cohort_label(cid)  # letter cohorts carry their letter: ASPA_04 -> ASPA_04_D
         try:
-            export_odc_format(db, cid, xlsx)
+            # The snapshot's decision, passed in, so this file and the manifest
+            # entry below agree with every other file of the refresh.
+            export_odc_format(db, cid, xlsx, running=running)
             if not xlsx.exists():
                 manifest["files"][layout.key(out_dir, layout.cohort_file(
                     out_dir, "ODC_sessions", cid, label))] = {"rows": 0, "note": "no data"}

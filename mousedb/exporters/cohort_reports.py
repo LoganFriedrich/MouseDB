@@ -9,7 +9,7 @@ Supports:
 
 import pandas as pd
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Iterable
 from datetime import datetime, date
 
 from ..database import Database, get_db
@@ -20,8 +20,45 @@ from ..stats import (
 )
 
 
+# NO PHASE LABELS UNTIL THE COHORT IS OVER (odc_reaches.running_cohorts says
+# why, and how "running" is decided). A session's phase is derived from ALL of
+# its cohort's dates, so while the cohort is still being tested a later date can
+# change the label of a session already written to a file. These exports
+# (`mousedb export`) read the database rather than the snapshot, so they decide
+# from the database's own reach rows -- the same rule over the same kind of rows
+# as the nightly files -- and leave the phase empty for every session of a
+# cohort still running. A caller that has already decided (the nightly refresh,
+# from the snapshot) passes its decision in, so one refresh never mixes two.
+def _running_cohorts_in_db(session, cohort_ids) -> set:
+    """The cohorts among ``cohort_ids`` that are still running, decided from
+    the database's reach rows (subject and video name; the video name carries
+    the session date)."""
+    from ..schema import ReachData
+    from .odc_reaches import running_cohorts
+    ids = sorted({str(c) for c in cohort_ids if c})
+    if not ids:
+        return set()
+    subject_ids = [s for (s,) in session.query(Subject.subject_id)
+                   .filter(Subject.cohort_id.in_(ids)).all()]
+    rows = []
+    for i in range(0, len(subject_ids), 500):
+        rows += (session.query(ReachData.subject_id, ReachData.video_name)
+                 .filter(ReachData.subject_id.in_(subject_ids[i:i + 500]))
+                 .distinct().all())
+    reach = pd.DataFrame([tuple(r) for r in rows], columns=["subject_id", "video_name"])
+    return set(running_cohorts(reach, cohorts=ids))
+
+
+def _say_withheld(running) -> None:
+    """Tell the person running the export which cohorts' phases are empty, so
+    an empty column is never mistaken for missing data."""
+    if running:
+        print("Phase left empty (cohort still running): %s" % ", ".join(sorted(running)))
+
+
 def export_cohort_to_excel(db: Database, cohort_id: str,
-                           output_path: Optional[Path] = None) -> Path:
+                           output_path: Optional[Path] = None,
+                           running: Optional[Iterable[str]] = None) -> Path:
     """
     Export a cohort to Excel format matching the legacy tracking sheet structure.
 
@@ -49,6 +86,9 @@ def export_cohort_to_excel(db: Database, cohort_id: str,
         # Get subjects
         subjects = session.query(Subject).filter_by(cohort_id=cohort_id).all()
         subject_ids = [s.subject_id for s in subjects]
+        if running is None:
+            running = _running_cohorts_in_db(session, [cohort_id])
+        withhold = cohort_id in set(running)
 
         # Create Excel writer
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
@@ -91,7 +131,10 @@ def export_cohort_to_excel(db: Database, cohort_id: str,
                     tray_rows[key] = {
                         'Date': p.session_date,
                         'Animal': p.subject_id,
-                        'Test_Phase': p.test_phase,
+                        # Rows are grouped by the stored phase (the key above),
+                        # so blanking never merges two rows; the column is
+                        # written empty for a running cohort.
+                        'Test_Phase': "" if withhold else p.test_phase,
                         'Tray Type/Number': f"{p.tray_type}{p.tray_number}",
                     }
                     for i in range(1, 21):
@@ -126,11 +169,13 @@ def export_cohort_to_excel(db: Database, cohort_id: str,
                     writer, sheet_name='4_Contusion_Injury_Details', index=False)
 
     print(f"Exported {cohort_id} to: {output_path}")
+    _say_withheld({cohort_id} if withhold else set())
     return output_path
 
 
 def export_odc_format(db: Database, cohort_id: str,
-                      output_path: Optional[Path] = None) -> Path:
+                      output_path: Optional[Path] = None,
+                      running: Optional[Iterable[str]] = None) -> Path:
     """
     Export a cohort to ODC-compatible Excel format (203 columns).
 
@@ -158,6 +203,9 @@ def export_odc_format(db: Database, cohort_id: str,
             raise ValueError(f"Cohort not found: {cohort_id}")
 
         summaries = calculate_cohort_summary(session, cohort_id)
+        if running is None:
+            running = _running_cohorts_in_db(session, [cohort_id])
+        withhold = cohort_id in set(running)
 
         # What happened to the day's recording, when something did
         # (mousedb.recording_issues): a failed recording has no kinematics,
@@ -170,6 +218,8 @@ def export_odc_format(db: Database, cohort_id: str,
             for sess in summary.sessions:
                 row = _build_odc_row(summary, sess)
                 row.update(session_columns(failed.get(sess.session_date, [])))
+                if withhold:
+                    row['Test_Phase'] = ""
                 rows.append(row)
 
         if rows:
@@ -177,6 +227,7 @@ def export_odc_format(db: Database, cohort_id: str,
             df.to_excel(output_path, sheet_name='2_ODC_Animal_Tracking', index=False)
             print(f"Exported ODC format to: {output_path}")
             print(f"  Rows: {len(rows)}, Columns: {len(df.columns)}")
+            _say_withheld({cohort_id} if withhold else set())
         else:
             print(f"No data to export for {cohort_id}")
 
@@ -347,6 +398,13 @@ def export_unified_to_parquet(db: Database, output_path: Optional[Path] = None) 
                 session_summaries.append(sess)
 
         sessions_df = pd.DataFrame(session_summaries)
+        # A running cohort's phase is left empty (_running_cohorts_in_db).
+        running = _running_cohorts_in_db(session, {s.cohort_id for s in subjects})
+        if running and not sessions_df.empty:
+            from .odc_reaches import cohort_of
+            mask = sessions_df['subject_id'].map(cohort_of).isin(running)
+            sessions_df['test_phase'] = sessions_df['test_phase'].astype('object')
+            sessions_df.loc[mask, 'test_phase'] = ""
 
         # Merge subject metadata with sessions
         if not sessions_df.empty and not df.empty:
@@ -358,6 +416,7 @@ def export_unified_to_parquet(db: Database, output_path: Optional[Path] = None) 
         unified_df.to_parquet(output_path, index=False)
         print(f"Exported unified data to: {output_path}")
         print(f"  Rows: {len(unified_df)}")
+        _say_withheld(running)
 
     return output_path
 
