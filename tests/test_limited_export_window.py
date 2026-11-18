@@ -106,3 +106,25 @@ def test_check_only_saves_nothing_and_checks_what_the_window_shows(qt, lab, monk
     assert started[0][1]["cohorts"] == ["PROJA_02"]
     cfg = sheet_projects.config_path()
     assert not cfg.is_file() or "export_subsets" not in json.loads(cfg.read_text())
+
+
+def test_the_window_asks_before_replacing_a_saved_definition(qt, lab, monkeypatch):
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtWidgets import QMessageBox
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"]})
+    before = subsets.profiles()["pre"]
+    asked = []
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *a, **k: asked.append(a) or QMessageBox.No)
+    d = LimitedExportDialog()                   # a new one, typed under a taken name
+    d.name.setText("pre")
+    d.cohorts.item(1).setCheckState(Qt.Checked)
+    assert d.save() is False
+    assert asked and subsets.profiles()["pre"] == before
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+    assert d.save() is True
+    assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_02"]
+    from mousedb import sheet_projects
+    kept = json.loads(sheet_projects.config_path().read_text())[subsets.REPLACED_KEY]["pre"]
+    assert kept[-1]["definition"] == before

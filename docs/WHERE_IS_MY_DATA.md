@@ -410,7 +410,12 @@ reaches the full export reaches the limited export the next time it is made.
 9. **Remake nightly** (ticked to start with): make it again after the nightly
    export, whenever anything it holds has changed.
 10. Press **Save and make now**. It is saved for everyone (in the lab settings
-    file), then made; the box at the bottom says what was written, with the
+    file), then made. If the name you typed is already taken by a different
+    saved definition, a box asks whether to replace it: **No** leaves the saved
+    one as it is (pick another name); **Yes** replaces it, and the replaced
+    definition is kept in the lab settings file under `export_subsets_replaced`
+    with the time it was replaced. Then the box at the bottom says what was
+    made; the box at the bottom says what was written, with the
     row count of every file. A large set of cohorts takes a few minutes.
     **Check only (writes nothing)** counts the rows of what the window shows
     now without writing any file -- it does not save the definition either.
@@ -437,7 +442,12 @@ mousedb export-subset <name> --run          # remake a saved one
 mousedb export-subset <name> --dry-run      # check and count; write nothing
 mousedb export-subset --list                # every saved one, and how its last attempt went
 mousedb export-subset <name> --remove       # forget the definition; files already made stay
+mousedb export-subset <name> --save --replace ...   # replace a saved definition of that name
 ```
+
+`--save` refuses a name that already holds a different definition ("is
+already saved ... nothing was changed"); add `--replace` to replace it.
+Saving exactly what is already saved changes nothing.
 
 Other options: `--project PROJA` (every cohort of a project), `--from` /
 `--to` (a date window), `--kinds`, `--columns KIND=col1,col2`,
@@ -592,6 +602,14 @@ Which projects' sheets are read" in TRACKING_SHEETS.md). A definition looks like
 
 A column named here that the full export does not have is refused by name
 when the limited export is made -- never silently left out.
+
+**A definition is never simply overwritten or deleted.** One that is replaced
+(Yes in the window, `--replace` on the command) or forgotten ("Forget this
+definition", `--remove`) is kept in the same file under
+`export_subsets_replaced`, by name, oldest first, each with `until` (when it
+stopped being the saved one), `why` (`replaced` or `forgotten`) and the
+`definition` itself. To bring one back, copy its `definition` into a new
+limited export (or ask whoever looks after the lab settings).
 
 ## The longer answer: the "Where Is My Data" tab
 

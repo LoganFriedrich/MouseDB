@@ -522,3 +522,38 @@ def test_two_saves_of_the_lab_settings_at_once_both_land(lab, monkeypatch):
     assert json.loads(lab["cfg"].read_text())["grants"] == {"GrantA": ["PROJA"]}
     # No temporary file is left beside the settings file.
     assert [f.name for f in lab["cfg"].parent.iterdir() if f.name.endswith(".tmp")] == []
+
+
+def test_saving_under_a_taken_name_does_not_replace_the_saved_definition(lab):
+    """A saved definition is a person's work: typing a name that is taken must
+    not silently overwrite it."""
+    first = {"cohorts": ["PROJA_01"], "tray_types": ["P"]}
+    subsets.save_profile("pre", first)
+    kept = subsets.profiles()["pre"]
+    with pytest.raises(subsets.SubsetRefused, match="already saved"):
+        subsets.save_profile("pre", {"cohorts": ["PROJA_02"]})
+    assert subsets.profiles()["pre"] == kept
+    # Saving exactly what is saved is not a replacement.
+    subsets.save_profile("pre", first)
+    assert subsets.profiles()["pre"] == kept
+
+
+def test_a_replaced_or_forgotten_definition_is_kept(lab, capsys):
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"]})
+    old = subsets.profiles()["pre"]
+    subsets.save_profile("pre", {"cohorts": ["PROJA_02"]}, replace=True)
+    assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_02"]
+    data = json.loads(lab["cfg"].read_text())
+    kept = data[subsets.REPLACED_KEY]["pre"]
+    assert [k["definition"] for k in kept] == [old] and kept[0]["why"] == "replaced"
+    subsets.remove_profile("pre")
+    kept = json.loads(lab["cfg"].read_text())[subsets.REPLACED_KEY]["pre"]
+    assert [k["why"] for k in kept] == ["replaced", "forgotten"]
+    assert kept[1]["definition"]["cohorts"] == ["PROJA_02"]
+    # The command refuses a taken name without --replace, and replaces with it.
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"]})
+    assert subsets.main(["pre", "--save", "--cohorts", "PROJA_02"]) == subsets.EXIT_REFUSED
+    assert "already saved" in capsys.readouterr().out
+    assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_01"]
+    assert subsets.main(["pre", "--save", "--replace", "--cohorts", "PROJA_02"]) == subsets.EXIT_OK
+    assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_02"]

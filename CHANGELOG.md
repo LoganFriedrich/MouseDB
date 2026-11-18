@@ -170,6 +170,12 @@ checked-in code, not what's planned.
   counts used to stay in the database and every brain export unnoticed (a
   renamed brain twice). Report only: nothing is removed and the exit code is
   unchanged.
+- Limited exports: saving under a name that already holds a different
+  definition is refused unless replacing is asked for (the window asks;
+  the command needs `--replace`), and a replaced or forgotten definition is
+  kept in the lab settings file under `export_subsets_replaced`. Typing a
+  taken name used to overwrite the saved definition with no question and no
+  copy.
 - The lab settings file (`mousedb_lab_config.json`: sheet projects, grants,
   limited-export definitions) is saved in one locked read-change-write
   (`sheet_projects.update_settings`), through a temporary file of its own.

@@ -59,7 +59,15 @@ database: one file for every machine and every login), never in this code::
       "<rule name>": {"type": "listed", "animals": ["PROJA_01_03"]},
       "<rule name>": {"type": "share_at_least", "kind": "sessions_analysis",
                       "numerator": "<column>", "denominator": "<column>", "percent": 30}
+    },
+    "export_subsets_replaced": {
+      "<name>": [{"until": "<time>", "why": "replaced" | "forgotten", "definition": {...}}]
     }
+
+A saved definition is replaced only when that is asked for (save_profile's
+``replace``), and a replaced or forgotten one is kept under
+export_subsets_replaced: a definition is a person's work, never overwritten
+or dropped without a trace.
 
 THE SESSION WINDOW ("last N before the injury")
 -----------------------------------------------
@@ -120,6 +128,10 @@ from . import layout
 
 PROFILES_KEY = "export_subsets"
 RULES_KEY = "export_subset_flag_rules"
+# Definitions that were replaced or forgotten, newest last per name: a saved
+# definition is a person's work and is never simply overwritten (see
+# save_profile). Kept in the same lab settings file, so nothing new is made.
+REPLACED_KEY = "export_subsets_replaced"
 MANIFEST_NAME = "SUBSET_MANIFEST.json"
 STATUS_NAME = "SUBSETS_STATUS.json"
 EXCLUSIONS_NAME = "analysis_EXCLUSIONS.csv"
@@ -161,6 +173,11 @@ EXIT_OK, EXIT_FAILED, EXIT_BUSY, EXIT_REFUSED = 0, 1, 3, 6
 class SubsetRefused(ValueError):
     """The definition, or the state of the exports, does not allow this slice.
     Nothing was written; the message says what to change."""
+
+
+class DefinitionExists(SubsetRefused):
+    """A different definition is already saved under this name, and replacing
+    it was not asked for. Nothing was changed."""
 
 
 # --------------------------------------------------------------- definitions
@@ -380,13 +397,45 @@ def _section(data: dict, key: str) -> dict:
     return sec
 
 
-def save_profile(name: str, profile: dict) -> Path:
-    """Validate and store one definition (replacing one of the same name). Every
-    other setting in the lab settings file is kept."""
+def _keep_old(data: dict, name: str, old: dict, why: str) -> None:
+    """Keep a definition that is being replaced or forgotten, with when and why,
+    under REPLACED_KEY in the lab settings file."""
+    entry = {"until": datetime.now().isoformat(timespec="seconds"), "why": why,
+             "definition": old}
+    kept = _section(data, REPLACED_KEY).setdefault(name, [])
+    if not isinstance(kept, list):
+        raise SubsetRefused("the lab settings file's '%s' entry for %s is not a list; nothing "
+                            "was changed" % (REPLACED_KEY, name))
+    kept.append(entry)
+
+
+def save_profile(name: str, profile: dict, replace: bool = False) -> Path:
+    """Validate and store one definition. Every other setting in the lab
+    settings file is kept.
+
+    A DIFFERENT definition already saved under the name is replaced only when
+    ``replace`` is True (the window asks the person first; the command needs
+    --replace), and the one replaced is kept under REPLACED_KEY with the time.
+    WHY: a saved definition is a person's work, remade every night; typing a
+    name that is already taken used to overwrite it with no question and no
+    copy. Saving exactly what is already saved changes nothing and asks
+    nothing."""
     def change(data: dict) -> None:
         # Validated under the lock, against the rules as they are now.
         rules = data.get(RULES_KEY) if isinstance(data.get(RULES_KEY), dict) else {}
-        _section(data, PROFILES_KEY)[name] = validate(name, profile, rules)
+        clean = validate(name, profile, rules)
+        saved = _section(data, PROFILES_KEY)
+        old = saved.get(name)
+        if old is not None and old != clean:
+            if not replace:
+                raise DefinitionExists(
+                    "a limited export named '%s' is already saved, with a different "
+                    "definition; nothing was changed. To replace it, say so (answer Yes in "
+                    "the window, or add --replace to the command); the one it replaces is "
+                    "kept in the lab settings file under '%s'. Or pick another name."
+                    % (name, REPLACED_KEY))
+            _keep_old(data, name, old, "replaced")
+        saved[name] = clean
     return _update_settings(change)
 
 
@@ -401,12 +450,13 @@ def save_rule(name: str, rule: dict) -> Path:
 
 
 def remove_profile(name: str) -> Path:
-    """Forget a definition. Its slices already written stay where they are."""
+    """Forget a definition. Its slices already written stay where they are, and
+    the definition itself is kept under REPLACED_KEY (archive, never delete)."""
     def change(data: dict) -> None:
         saved = _section(data, PROFILES_KEY)
         if name not in saved:
             raise SubsetRefused("there is no limited export named '%s'" % name)
-        del saved[name]
+        _keep_old(data, name, saved.pop(name), "forgotten")
     return _update_settings(change)
 
 
@@ -1194,8 +1244,13 @@ def build_parser(ap=None):
     ap.add_argument("name", nargs="?", help="the limited export's name (its folder name)")
     ap.add_argument("--list", action="store_true", help="list the saved limited exports")
     ap.add_argument("--save", action="store_true",
-                    help="save the definition given by the options below under NAME "
-                         "(replacing one of that name); with --run, save then make it")
+                    help="save the definition given by the options below under NAME; "
+                         "with --run, save then make it. A different definition already "
+                         "saved under NAME is refused unless --replace is given")
+    ap.add_argument("--replace", action="store_true",
+                    help="with --save: replace a definition already saved under NAME (the "
+                         "replaced one is kept in the lab settings file, under %s)"
+                         % REPLACED_KEY)
     ap.add_argument("--run", action="store_true", help="make NAME now from the current exports")
     ap.add_argument("--remove", action="store_true",
                     help="forget the saved definition NAME (slices already made stay)")
@@ -1269,7 +1324,8 @@ def run_args(a) -> int:
             print("[!] give the limited export's name (or --list / --all-saved)")
             return EXIT_REFUSED
         if a.remove:
-            print("Forgot %s (in %s); its files stay where they are." % (a.name, remove_profile(a.name)))
+            print("Forgot %s (in %s; the definition is kept there under %s); its files stay "
+                  "where they are." % (a.name, remove_profile(a.name), REPLACED_KEY))
             return EXIT_OK
         given = profile_from_args(a)
         if a.definition_file:
@@ -1279,7 +1335,7 @@ def run_args(a) -> int:
                 raise SubsetRefused("the definition file %s cannot be read (%s)"
                                     % (a.definition_file, e)) from None
         if a.save:
-            path = save_profile(a.name, given)
+            path = save_profile(a.name, given, replace=a.replace)
             print("Saved limited export %s in %s" % (a.name, path))
             if not (a.run or a.dry_run):
                 return EXIT_OK

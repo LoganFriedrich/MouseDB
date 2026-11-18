@@ -60,8 +60,10 @@ export -- nothing is calculated again -- so it always agrees with the full expor
    ("Columns of" picks the kind); all ticked = every column.
 5. Optional: a yes/no column per animal. Give it a name; pick a rule, or leave
    it blank to fill in later.
-6. "Save" keeps the definition (in the lab settings, for everyone). "Save and
-   make now" also makes the files. "Check only" counts the rows of what the
+6. "Save" keeps the definition (in the lab settings, for everyone). If another
+   definition is already saved under that name, you are asked before it is
+   replaced, and the replaced one is kept. "Save and make now" also makes the
+   files. "Check only" counts the rows of what the
    window shows now and writes nothing -- it does not save the definition
    either.
 
@@ -397,9 +399,29 @@ class LimitedExportDialog(QDialog):
 
     # ------------------------------------------------------------- actions
     def save(self) -> bool:
+        """Save what the window shows under the name typed. A different
+        definition already saved under that name is replaced only after the
+        person says Yes, and the replaced one is kept (subsets.save_profile)."""
         name = self.name.text().strip()
+        profile = None
         try:
-            path = subsets.save_profile(name, profile_from_form(self._form()))
+            profile = profile_from_form(self._form())
+            path = subsets.save_profile(name, profile)
+        except subsets.DefinitionExists:
+            if QMessageBox.question(
+                    self, "Replace?",
+                    "A limited export named '%s' is already saved, with a different "
+                    "definition.\n\nReplace it with what this window shows? The one it "
+                    "replaces is kept in the lab settings file (under %s)."
+                    % (name, subsets.REPLACED_KEY)) != QMessageBox.Yes:
+                self.out.append("Not saved: '%s' is already saved and was left as it is."
+                                % name)
+                return False
+            try:
+                path = subsets.save_profile(name, profile, replace=True)
+            except Exception as e:
+                QMessageBox.warning(self, "Not saved", "The definition was not saved:\n%s" % e)
+                return False
         except Exception as e:
             QMessageBox.warning(self, "Not saved", "The definition was not saved:\n%s" % e)
             return False
@@ -474,7 +496,9 @@ class LimitedExportDialog(QDialog):
     def forget(self):
         name = self.name.text().strip()
         if QMessageBox.question(self, "Forget", "Forget the saved definition '%s'? Files "
-                                "already made stay where they are." % name) != QMessageBox.Yes:
+                                "already made stay where they are, and the definition is "
+                                "kept in the lab settings file (under %s)."
+                                % (name, subsets.REPLACED_KEY)) != QMessageBox.Yes:
             return
         try:
             subsets.remove_profile(name)
