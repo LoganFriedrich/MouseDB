@@ -1927,11 +1927,12 @@ class ExcelImporter:
         report['not_in_sheet'] = empty
         for sid in empty:
             self.warnings.append(self._ascii(
-                "%s is in the database but not in this cohort's sheet, and nothing is "
-                "recorded for it (no weights, scores, surgeries, videos or reaches). If "
-                "the animal exists, add it to the sheet; if it never did, it has to be "
-                "removed from the database by hand -- an import never removes an animal"
-                % sid))
+                "%s is in the database but not in this cohort's sheet (a 6_Ladder row "
+                "without step counts is a scheduled test and does not count), and "
+                "nothing is recorded for it (no weights, scores, surgeries, videos or "
+                "reaches). If the animal exists, add it to the sheet. If it never did, "
+                "it has to be deleted from the database by whoever looks after it: no "
+                "import, button or mousedb command removes an animal" % sid))
 
     @staticmethod
     def _animals_with_rows(session, subject_ids) -> set:

@@ -226,9 +226,13 @@ imports of that cohort's sheet wrote:
   is recorded for it ...`), `N animals not in the sheet and holding no data`
   on the cohort's line, and a line in the red attention box and the
   cohort's FIX THESE file. This is what is left when an id was typed into
-  the sheet, imported, and later taken out again. If the animal is real,
-  add it to the sheet; if it never existed, it has to be removed from the
-  database by hand -- the import still removes nothing. The check is skipped
+  the sheet, imported, and later taken out again -- or of an animal an older
+  version of the import created from `6_Ladder` rows alone. A `6_Ladder`
+  row without step counts is a scheduled test, not a record of the animal,
+  so it does not count as the sheet naming it. If the animal is real, add it
+  to the sheet. If it never existed, it has to be deleted from the database
+  by whoever looks after it: no import, button or mousedb command removes an
+  animal, so the line stays until that is done. The check is skipped
   when the import cannot trust its read to name every animal (a workbook
   read on a guess, a tab that could not be read, a table refused as
   NOT SYNCED). One thing
@@ -824,7 +828,8 @@ Some things only a person can fix, mostly in the sheet:
   wrong on the tray-scoring tab"): correct it in the sheet;
 - an animal in the database that the sheet no longer names and that nothing
   is recorded for (see "Animals are never removed" above): add it to the
-  sheet if it is real, or have it removed from the database by hand;
+  sheet if it is real, or have it deleted from the database by whoever
+  looks after it (no button or command does this);
 - a sheet import that failed.
 
 They are shown in two places:

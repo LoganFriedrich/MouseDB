@@ -144,3 +144,25 @@ def test_several_left_out_animals_are_judged_each_on_its_own(tmp_path):
     r = ExcelImporter(db).import_cohort_file(_sheet(tmp_path))
 
     assert _not_in_sheet(r) == [LEFT_OUT]
+
+
+def test_an_animal_named_only_on_count_less_ladder_rows_is_listed_and_the_line_says_so(tmp_path):
+    """A 6_Ladder row with no step counts is a test that was scheduled, not a
+    record of the animal (and older imports created animals from such rows
+    alone). The line says that such a row does not count, so a person who
+    finds the animal on the ladder tab is not left wondering."""
+    db = _db(tmp_path)
+    p = _sheet(tmp_path)
+    wb = openpyxl.load_workbook(p)
+    ws = wb.create_sheet("6_Ladder")
+    ws.append(["Animal ID", "Date", "Test Type", "Quality", "Steps suceeded", "Steps missed"])
+    for a in NAMED + (LEFT_OUT,):
+        ws.append([a, date(2026, 1, 12), "Uninjured", "Webcam", None, None])
+    wb.save(p)
+
+    r = ExcelImporter(db).import_cohort_file(p)
+
+    assert _not_in_sheet(r) == [LEFT_OUT]
+    line = next(w for w in r["warnings"] if w.startswith(LEFT_OUT))
+    assert "6_Ladder row without step counts" in line
+    assert "no import, button or mousedb command removes an animal" in line
