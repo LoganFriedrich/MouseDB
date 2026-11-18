@@ -1789,6 +1789,52 @@ root can be retired once the first number reads 0. Like the session lines, the
 line is only as new as the inventory (its date is on the line); re-run the
 command after moving anything. `mousedb-data-status` prints the same lines.
 
+## A video whose results match another tray (a label mismatch)
+
+Sometimes a video's pellet results match the hand scores of ANOTHER tray of the
+same animal on the same day almost exactly, and its own tray's scores much less
+(for example: the P3 video matches the sheet's P4 row on 19 of 19 pellets and its
+own P3 row on 7 of 19). Then either the recording was named with the wrong tray,
+or the sheet has those two trays' rows the other way round. The reaching pipeline
+holds such a video. It is NOT sent to a review queue: nobody answering pellets
+there could settle which tray it is.
+
+**Where you see it.** In red on the Where Is My Data tab, and as a line in the
+cohort's "!! <cohort> - FIX THESE.xlsx" file beside its sheet. The line names the
+video, both trays, how well the results matched each, and -- when the other tray's
+video is analyzed too -- whether that one matches back (which is what a swap
+looks like). mousedb writes this line itself from the pipeline's list
+(`<pipeline>/attention/`), so it reads the same whichever version of the pipeline
+wrote the list; mousedb never imports the pipeline.
+
+**What to do.** Decide whether the recording's NAME or the SHEET is wrong.
+
+- The sheet is wrong: a sheet error is kept as it is and recorded. The sheet is
+  never edited -- how often the bench gets a tray wrong is itself something the
+  lab measures. Record it on the processing server with
+  `mousereach-label-mismatch --sheet-error <video> --by <your name>`; the video is
+  filed with the disagreement and your decision kept with it.
+- The name is wrong: record it with
+  `mousereach-label-mismatch --name-wrong <video> --as <right name> --by <your
+  name>`, and ask whoever maintains the pipeline to rename the recording the
+  documented way (the original and a record are kept in
+  `Archive/manual_corrections`). The command only records the decision; the
+  video checks itself again once renamed.
+- Neither is wrong (another tray's row just happened to fit):
+  `mousereach-label-mismatch --labels-right <video> --by <your name>`; the video
+  is then compared with its own row as usual.
+
+Every decision is kept in `review_records/label_decisions.jsonl` on the storage
+drive (who, when, which video, which rows), so the error rate can be counted. The
+line disappears from the tab and the FIX THESE file once the pipeline no longer
+holds the video.
+
+**Sessions whose comparison is suspended.** The lab can list sessions whose
+hand scores cannot be trusted to belong to their video (while nobody yet knows
+which way round a swap is) in the pipeline's lab settings
+(`"suspended_sessions"`). Those are not compared with their hand scores at all and
+are never held as a label mismatch; `mousereach-watch-status` lists them.
+
 ## Sessions scored by hand that have no video
 
 Every tray scored at the bench is written in the tracking sheet the same day,
