@@ -229,6 +229,12 @@ checked-in code, not what's planned.
   and a contested video was left out alone while the other animals of its
   recording went into the analysis files. The skip signature records whether
   the folder could be reached, so the files are rebuilt once it can.
+- `mousedb-import-aspa-scores --apply` now waits for the cross-task database
+  lock and, once its cohorts are imported, rewrites the hand-scores file and
+  the FIX THESE files, like `mousedb-sheets import --cohort ASPA_xx`. It
+  used to do neither, so the reaching pipeline compared videos with the
+  previous hand scores until the next scheduled import. A hand-scores file
+  that could not be rewritten makes the command exit 1.
 - Sheet import: a contusion row's `Survived` cell corrected from `N` to `Y`
   now also brings the animal back (active, no date of death), listed under
   `death_undone` and in the audit log. It used to correct only the

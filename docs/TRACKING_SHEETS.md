@@ -1418,9 +1418,16 @@ mousedb-sheets import --cohort ASPA_10             # one cohort (or --cohort ASP
 ```
 
 These wait for the database lock like every other import.
-`mousedb-import-aspa-scores --apply` also imports ASPA scores and records the
-import, but it does NOT wait for the lock: use it only when nothing else is
-writing to the database. **Import all sheets** does not import ASPA scores;
+`mousedb-import-aspa-scores --apply` (all letter cohorts, or `--cohort J`)
+does exactly the same per cohort: it waits for the lock, imports, records the
+import, and then rewrites the hand-scores file the reaching pipeline compares
+videos with and each cohort's FIX THESE file, printing `OK   hand scores ...`
+(or `FAIL hand scores ... NOT rewritten`, exit code 1) as its last line.
+Until 2026-11 that command did not wait for the lock and did not rewrite
+those two files, so after it the pipeline compared videos with the previous
+hand scores until the next scheduled import. Without `--apply` it is a dry
+run: it reads, prints what it would import, and writes nothing.
+**Import all sheets** does not import ASPA scores;
 it only refreshes each ASPA animal's details from its workbook's `ODC` tab.
 The ASPA workbooks are frozen; if one ever shows *Sheet edited since last
 import*, someone changed a finished record, which is worth knowing.

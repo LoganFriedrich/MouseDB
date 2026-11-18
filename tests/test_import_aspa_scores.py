@@ -181,3 +181,86 @@ def test_the_import_moves_scores_filed_under_1900_and_corrects_a_1900_start(tmp_
         assert "1900-01-30" not in days and "2022-06-30" in days
         assert s.query(PelletScore).filter_by(session_date=date(2022, 6, 30)).count() == 20
         assert str(s.query(Cohort).filter_by(cohort_id="ASPA_07").one().start_date) == "2022-06-29"
+
+
+def _command_route(tmp_path, monkeypatch, hand_scores_error=None):
+    """Run the command's --apply route with the import itself, the database
+    lock and the after-import step replaced by recorders; returns (events,
+    exit code)."""
+    import contextlib
+    import mousedb.cohort_sheets as cs
+    import mousedb.sheet_sync as ss
+    import mousedb.task_mutex as tm
+    from mousedb.cohort_tools import import_aspa_scores as ias
+
+    events = []
+    state = {"locked": False}
+
+    @contextlib.contextmanager
+    def hold(*a, **k):
+        events.append("lock")
+        state["locked"] = True
+        try:
+            yield
+        finally:
+            state["locked"] = False
+            events.append("unlock")
+
+    def import_cohort(letter, apply=False):
+        events.append(("import", letter, apply, state["locked"]))
+        return {"cohort_id": "ASPA_10", "sheet_name": "J.xlsx", "success": True,
+                "warnings": [], "imported": {"pellet_scores": 20}, "scores_saved": apply}
+
+    def after_import(results, sheets_dir=None, folder_ids=None, full_run=False):
+        events.append(("after", [c["cohort_id"] for c in results["cohorts"]],
+                       state["locked"], full_run))
+        if hand_scores_error:
+            results["hand_scores_error"] = hand_scores_error
+        else:
+            results["hand_scores"] = {"rows": 20, "videos": 1}
+
+    monkeypatch.setattr(cs, "aspa_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda: ["J"])
+    monkeypatch.setattr(ias, "import_cohort", import_cohort)
+    monkeypatch.setattr(tm, "hold", hold)
+    monkeypatch.setattr(ss, "_after_import", after_import)
+    code = ias.main(["--cohort", "J", "--apply"])
+    return events, code
+
+
+def test_the_command_waits_for_the_lock_and_rewrites_the_hand_scores(tmp_path, monkeypatch):
+    """`mousedb-import-aspa-scores --apply` wrote to the database without
+    waiting for the cross-task lock, and never rewrote the hand-scores file or
+    the FIX THESE files afterwards, so the reaching pipeline went on comparing
+    videos with the previous hand scores until the next scheduled import. It
+    now goes the way `mousedb-sheets import --cohort ASPA_10` goes: the import
+    under the lock, then the after-import step once the lock is released."""
+    events, code = _command_route(tmp_path, monkeypatch)
+
+    assert events == ["lock", ("import", "J", True, True), "unlock",
+                      ("after", ["ASPA_10"], False, False)]
+    assert code == 0
+
+
+def test_the_command_fails_when_the_hand_scores_were_not_rewritten(tmp_path, monkeypatch):
+    events, code = _command_route(tmp_path, monkeypatch, hand_scores_error="OSError: disk full")
+
+    assert ("after", ["ASPA_10"], False, False) in events
+    assert code == 1
+
+
+def test_a_dry_run_of_the_command_takes_no_lock_and_rewrites_nothing(tmp_path, monkeypatch):
+    import mousedb.cohort_sheets as cs
+    import mousedb.sheet_sync as ss
+    import mousedb.task_mutex as tm
+    from mousedb.cohort_tools import import_aspa_scores as ias
+    events = []
+    monkeypatch.setattr(cs, "aspa_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(cs, "available_aspa_cohorts", lambda: ["J"])
+    monkeypatch.setattr(ias, "import_cohort", lambda letter, apply=False: events.append(
+        ("import", apply)) or {"cohort_id": "ASPA_10", "success": True, "warnings": []})
+    monkeypatch.setattr(tm, "hold", lambda *a, **k: events.append("lock"))
+    monkeypatch.setattr(ss, "_after_import", lambda *a, **k: events.append("after"))
+
+    assert ias.main(["--cohort", "J"]) == 0
+    assert events == [("import", False)]

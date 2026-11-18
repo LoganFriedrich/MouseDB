@@ -41,7 +41,12 @@ USAGE
     python -m mousedb.cohort_tools.import_aspa_scores --cohort J --apply
 
 Every run (with --apply) is recorded in the sheet-import ledger the
-Tracking Sheets tab reads, keyed by the cohort id (ASPA_10).
+Tracking Sheets tab reads, keyed by the cohort id (ASPA_10). With --apply each
+cohort is imported under the cross-task database lock (waiting while another
+import holds it), and the run ends with the step every writing import ends
+with: the hand-scores file for the reaching pipeline and each cohort's FIX
+THESE file are rewritten (mousedb.sheet_sync._after_import) -- exactly as
+`mousedb-sheets import --cohort ASPA_10` does.
 """
 from __future__ import annotations
 
@@ -310,16 +315,26 @@ def main(argv=None) -> int:
         print(describe(), file=sys.stderr)
         return 2
     letters = [c.upper() for c in args.cohort] if args.cohort else available_aspa_cohorts()
+    from ..sheet_sync import _import_aspa_one, _after_import, import_succeeded, sync_refused, _ascii
     ok = True
+    entries = []
     for L in letters:
-        e = import_cohort(L, apply=args.apply)
+        if args.apply:
+            # The same route as `mousedb-sheets import --cohort ASPA_xx`: under
+            # the cross-task database lock, waiting for whatever import holds
+            # it. WHY: this command used to write straight to the database, so
+            # it could collide with a scheduled import ("database is locked")
+            # and its operators were told to run it only when nothing else ran.
+            e = _import_aspa_one(L, False, "aspa-scores")
+        else:
+            e = import_cohort(L, apply=False)
+        entries.append(e)
         tag = "OK  " if e.get("success") else "FAIL"
         print("%s %s %-28s trays=%s pellets=%s imported=%s%s" % (
             tag, e["cohort_id"], (e.get("sheet_name") or "-")[:28],
             e.get("parsed_trays", "-"), e.get("parsed_pellets", "-"),
             e.get("imported") or e.get("error"),
             "  [%d warning(s)]" % len(e["warnings"]) if e.get("warnings") else ""))
-        from ..sheet_sync import sync_refused, _ascii
         refused = sync_refused(e)
         for x in refused:
             print("      [!] %s" % _ascii(x))
@@ -328,7 +343,26 @@ def main(argv=None) -> int:
         ok = ok and bool(e.get("success")) and not refused
     if not args.apply:
         print("(dry run -- nothing written; re-run with --apply)")
-    return 0 if ok else 1
+        return 0 if ok else 1
+    # The step every import that writes ends with (sheet_sync._after_import):
+    # the hand-scores file the reaching pipeline compares each video with
+    # before filing it, and each cohort's FIX THESE file. WHY here too: this
+    # route used to skip it, so after correcting a letter cohort's scores the
+    # pipeline went on comparing videos with the previous hand scores until
+    # the next scheduled import. After the ledger lines (both files read the
+    # ledger) and outside the lock (the hand-scores write takes it itself).
+    results = {"triggered_by": "aspa-scores", "dry_run": False, "cohorts": entries}
+    _after_import(results, None, None, full_run=False)
+    for cid, what in sorted((results.get("fix_these") or {}).items()):
+        if what.startswith("FAILED"):
+            print(_ascii("[!] %s's FIX THESE file not updated: %s" % (cid, what)))
+    if results.get("hand_scores_error"):
+        print(_ascii("FAIL hand scores for the reaching pipeline NOT rewritten: %s"
+                     % results["hand_scores_error"]))
+    elif results.get("hand_scores"):
+        print(_ascii("OK   hand scores for the reaching pipeline: %d pellets of %d sessions"
+                     % (results["hand_scores"]["rows"], results["hand_scores"]["videos"])))
+    return 0 if ok and import_succeeded(results) else 1
 
 
 if __name__ == "__main__":
