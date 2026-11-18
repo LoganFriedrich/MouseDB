@@ -396,7 +396,7 @@ is installed rewrites every one of them, which takes hours. `MANIFEST.json` says
 
 Often you need only part of the exports: a few cohorts, the last sessions
 before the injury, the pillar trays, a handful of columns, and a column saying
-which animals go into one analysis. A **limited export** is exactly that: a
+which animals (or which days of each animal) go into one analysis. A **limited export** is exactly that: a
 copy of part of `exports/current/`, made by mousedb, saved by name so it can be
 made again.
 
@@ -575,21 +575,35 @@ from"): press **Refresh exports now** once, and try again.
 
 ### The yes/no column
 
-It holds, for each animal, `yes` or `no`, the same on every row of that
-animal. Its entry in the data dictionary says how it was filled. With no rule
-chosen it is left blank (written as the file's word for absent, because an
-ODC file may not hold an empty cell) -- the column to fill once the rule is
-decided.
+A limited export can carry one extra column that says `yes` or `no` on every
+row: which rows go into one analysis. What decides yes or no is a **rule**.
+Its entry in the data dictionary says, in words, how it was filled. With no
+rule chosen the column is left blank (written as the file's word for absent,
+because an ODC file may not hold an empty cell) -- the column to fill once the
+rule is decided.
 
-A rule is defined once in the lab settings file, under
-`export_subset_flag_rules`, and then picked by name. Two kinds exist:
+There are two sorts of rule:
+
+- **Per animal** (`listed`, `share_at_least`): one answer for each animal, the
+  same on every row of that animal.
+- **Per animal-day** (`day_window`): one answer for each animal on each test
+  date, the same on every row of that animal on that date. Use this when the
+  analysis takes some DAYS of every animal -- for example "each animal's last 3
+  test days before the injury".
+
+A rule is defined once in the lab settings file,
+`<mousedb_root>/config/mousedb_lab_config.json`, under
+`export_subset_flag_rules`, and then picked by name (in the window's "filled
+by rule" list, or with `--flag-rule <name>`). The three kinds:
 
 ```
 "export_subset_flag_rules": {
   "<rule name>": {"type": "listed", "animals": ["PROJA_01_03", "PROJA_02_11"]},
   "<rule name>": {"type": "share_at_least", "kind": "sessions_analysis",
                   "numerator": "manual_retrieved", "denominator": "pellets_hand_scored",
-                  "percent": 30}
+                  "percent": 30},
+  "<rule name>": {"type": "day_window", "n": 3, "tray_type": "Pillar",
+                  "before_first": "contusion"}
 }
 ```
 
@@ -597,8 +611,67 @@ A rule is defined once in the lab settings file, under
 for every other. `share_at_least`: yes when the animal's total of one column
 divided by its total of another, over the rows of the limited export (its
 cohorts, sessions and trays) of that kind of file, is at least the percent; no
-when below; blank for an animal with no such rows. A rule only reads the slice;
-it never changes a value in it.
+when below; blank for an animal with no such rows.
+
+`day_window`: **yes on every row of each animal's last `n` test days before
+its cohort's first `before_first` surgery; no on every row of any other day.
+Never blank.**
+
+- A **test day** of an animal is a date on which the cohort's tracking sheet
+  has hand pellet scores for a tray of `tray_type` (`Pillar`/`P`,
+  `Easy`/`E` or `Flat`/`F`). The tray type only decides which dates count as
+  test days; once a day is chosen, EVERY row of that animal on that date is
+  `yes`, whatever its tray.
+- **Before the cohort's first `before_first`**: the earliest date of that
+  surgery type (`contusion`, `tracing` or `perfusion`) for ANY animal of the
+  cohort, in the tracking sheet; days on or after it never count. A cohort
+  with no such date in the sheet gets `no` on every row; the README and
+  `SUBSET_MANIFEST.json` (`flag_days`, `cohorts_without_event_date`) name it.
+- **The sheet decides the days, not the export.** The days are chosen from the
+  tracking sheet's records (the same snapshot the files were made from), so a
+  chosen day whose videos are not filed yet still counts as one of the last
+  `n`; an earlier day never takes its place. Such a day simply has no rows yet.
+  Each file's entry in `SUBSET_MANIFEST.json` lists every chosen day that has
+  no rows in that file (`flag_days_with_no_rows`), and the README gives the
+  count, so a short set of `yes` rows is never mistaken for a complete one.
+  Once the videos are filed and the nightly export has run, their rows appear
+  with `yes` on their own.
+- The manifest's `flag_days` lists, for each animal, the days chosen
+  (`days_chosen`), animals with fewer than `n` such days
+  (`animals_with_fewer_days`, which keep the ones they have), and each
+  cohort's `first_event_date`.
+- It is the same choice of days as the "last N sessions before the injury"
+  session window, but it does not leave any rows out: the window cuts the
+  file down to those days; a day-window rule keeps every row and marks them.
+
+**Setting up a day-window rule, step by step** (no programming; a text editor
+is enough):
+
+1. Open `<mousedb_root>/config/mousedb_lab_config.json` in a text editor
+   (Notepad is fine). Make a copy of the file first, beside it, with the date
+   in its name.
+2. Find `"export_subset_flag_rules"`. If it is missing, or says `null`, make it
+   `"export_subset_flag_rules": {}` (mind the comma before it if it is not the
+   first entry).
+3. Inside its `{ }`, add one line, choosing your own name, number of days,
+   tray type and surgery type:
+   `"my_last3_pillar_days": {"type": "day_window", "n": 3, "tray_type": "Pillar", "before_first": "contusion"}`
+   (separate it from any rule already there with a comma).
+4. Save the file. Check it reads correctly:
+   `mousedb export-subset --list` prints every rule (`yes/no rule ...`) and
+   every saved limited export. A typing mistake in the file makes it refuse
+   with the file's name; undo it from your copy.
+5. In **Make a limited export...**, open (or make) the limited export, type
+   the yes/no column's name, pick your rule in "filled by rule", and press
+   **Check only** -- the summary counts the rows -- then **Save** or **Save
+   and make now**. From a terminal:
+   `mousedb export-subset <name> --save --replace --flag-column used_for_x --flag-rule my_last3_pillar_days ...`
+   (with the same other options the definition already has).
+
+A rule only reads the slice and the tracking sheet; it never changes a value
+in it. Changing a rule (its number of days, say) is picked up the next time
+the limited export is made -- by the nightly remake too, since a rule is part
+of what the remake compares; so is a correction to the sheet's dates.
 
 ### When it is made again by itself
 

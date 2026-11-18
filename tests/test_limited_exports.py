@@ -658,3 +658,132 @@ def test_a_folder_left_part_way_says_so_and_the_next_make_mends_it(lab, monkeypa
     assert not (folder / subsets.NOT_COMPLETE_NAME).exists()
     assert (folder / subsets.MANIFEST_NAME).is_file() and (folder / "README.txt").is_file()
     assert any(Path(p).name == subsets.NOT_COMPLETE_NAME for p in _archived_files(lab))
+
+
+# ------------------------------------------------- the day-window yes/no rule
+# WHY: an analysis often uses some DAYS of each animal (for instance its last N
+# test days before the injury), not some animals. A per-animal rule cannot say
+# that, so such a column used to be filled by a one-off script. The day-window
+# rule decides yes/no for each (animal, test day) from the sheet's records and
+# carries that answer to every row of that day.
+
+LAST2_DAYS = {"type": "day_window", "n": 2, "tray_type": "Pillar", "before_first": "contusion"}
+ALL_WITH_DAY_FLAG = {"cohorts": ["PROJA_01", "PROJA_02", "PROJB_04"],
+                     "flag": {"column": "chosen_day", "rule": "last2"}}
+
+
+def _add_easy_row_on(lab, subject, date):
+    """An Easy-tray reach on a day that is also a Pillar test day."""
+    f = layout.locate("ODC_reaches", subject.rsplit("_", 1)[0], lab["cur"])
+    df = _read(f)
+    extra = df[df.subject_id == subject].iloc[[0]].copy()
+    extra["session_date"] = date
+    extra["tray_type"] = "E"
+    extra["video_name"] = _video(subject, date, "E")
+    pd.concat([df, extra]).to_csv(f, index=False)
+
+
+def test_a_day_window_rule_says_yes_on_every_row_of_the_chosen_days_and_no_elsewhere(lab):
+    _add_easy_row_on(lab, "PROJA_01_01", "2026-03-04")
+    rules = {"last2": LAST2_DAYS}
+    folder = Path(lab["make"]("days", ALL_WITH_DAY_FLAG, rules=rules)["folder"])
+    odc = _read(folder / "ODC_reaches_days.csv")
+    yes = set(zip(odc[odc.chosen_day == "yes"].subject_id, odc[odc.chosen_day == "yes"].session_date))
+    assert yes == {("PROJA_01_01", "2026-03-03"), ("PROJA_01_01", "2026-03-04"),
+                   ("PROJA_01_02", "2026-03-03"), ("PROJA_01_02", "2026-03-04"),
+                   ("PROJA_02_01", "2026-04-01"), ("PROJA_02_01", "2026-04-02"),
+                   ("PROJB_04_01", "2020-01-02"), ("PROJB_04_01", "2020-01-03")}
+    # Per day, not per tray: the Easy row of a chosen day is yes too.
+    easy = odc[(odc.tray_type == "E") & (odc.session_date == "2026-03-04")]
+    assert list(easy.chosen_day) == ["yes"]
+    # The earlier Pillar day, the Easy-only day and the day after the injury are no.
+    for d in ("2026-03-02", "2026-03-05", "2026-03-11"):
+        assert set(odc[(odc.subject_id == "PROJA_01_01") & (odc.session_date == d)].chosen_day) == {"no"}
+    # No blank anywhere, in every kind of file (a letter cohort matched through its videos).
+    for f in ("ODC_reaches_days.csv", "reaches_days_summary.csv", "reaches_days_analysis.csv",
+              "sessions_days_analysis.csv", "ODC_sessions_days.csv"):
+        assert set(_read(folder / f).chosen_day) == {"yes", "no"}, f
+    ana = _read(folder / "reaches_days_analysis.csv")
+    assert set(ana[(ana.subject_id == "D01")].chosen_day) == {"yes"}
+    ses = _read(folder / "ODC_sessions_days.csv")
+    assert set(zip(ses[ses.chosen_day == "yes"].Animal, ses[ses.chosen_day == "yes"].Date)) == yes
+
+
+def test_a_day_window_rule_is_described_per_day_and_its_days_are_in_the_manifest(lab):
+    folder = Path(lab["make"]("days", ALL_WITH_DAY_FLAG, rules={"last2": LAST2_DAYS})["folder"])
+    d = _read(folder / "ODC_reaches_DATA_DICTIONARY.csv")
+    desc = d[d.VariableName == "chosen_day"].Description.iloc[0]
+    assert "per animal-day" in desc.lower() and "per animal," not in desc.lower()
+    assert "last 2" in desc and "contusion" in desc
+    m = json.loads((folder / "SUBSET_MANIFEST.json").read_text())
+    days = m["flag_days"]
+    assert days["days_chosen"]["PROJA_01_01"] == ["2026-03-03", "2026-03-04"]
+    assert days["first_event_date"]["PROJA_01"] == "2026-03-10"
+    assert days["snapshot_generation"] == lab["generation"]
+    assert "per animal-day" in (folder / "README.txt").read_text().lower()
+
+
+def test_flag_days_without_rows_are_listed_not_dropped(lab):
+    f = layout.locate("ODC_reaches", "PROJA_02", lab["cur"])
+    df = _read(f)
+    df[df.session_date != "2026-04-02"].to_csv(f, index=False)
+    folder = Path(lab["make"]("days", ALL_WITH_DAY_FLAG, rules={"last2": LAST2_DAYS})["folder"])
+    m = json.loads((folder / "SUBSET_MANIFEST.json").read_text())
+    assert m["files"]["ODC_reaches_days.csv"]["flag_days_with_no_rows"] == ["PROJA_02_01 2026-04-02"]
+    assert m["files"]["reaches_days_summary.csv"]["flag_days_with_no_rows"] == []
+    assert "have no rows" in (folder / "README.txt").read_text()
+
+
+def test_a_cohort_without_the_event_date_is_all_no_and_named(lab):
+    rules = {"last2": dict(LAST2_DAYS, before_first="perfusion")}   # nobody has one
+    folder = Path(lab["make"]("days", ALL_WITH_DAY_FLAG, rules=rules)["folder"])
+    assert set(_read(folder / "ODC_reaches_days.csv").chosen_day) == {"no"}
+    m = json.loads((folder / "SUBSET_MANIFEST.json").read_text())
+    assert m["flag_days"]["cohorts_without_event_date"] == ["PROJA_01", "PROJA_02", "PROJB_04"]
+
+
+def test_a_day_window_rule_is_refused_on_another_nights_snapshot(lab):
+    _set_manifest(lab, snapshot_generation="20200101T000000-older")
+    with pytest.raises(subsets.SubsetRefused, match="different night"):
+        lab["make"]("days", ALL_WITH_DAY_FLAG, rules={"last2": LAST2_DAYS})
+    assert not (lab["out"] / "days").exists()
+
+
+def test_a_sheet_change_remakes_a_slice_with_a_day_window_rule(lab):
+    """The window is "all", so only the rule reads the sheet's tables: they must
+    still be part of what the nightly remake compares."""
+    lab["make"]("days", ALL_WITH_DAY_FLAG, rules={"last2": LAST2_DAYS})
+    p = subsets.plan("days", ALL_WITH_DAY_FLAG, lab["cur"], lab["snap"], {"last2": LAST2_DAYS})
+    p["snapshot_dir"] = lab["snap"]
+    assert set(subsets.signature(p)["tables"]) == {"pellet_scores", "surgeries"}
+
+
+@pytest.mark.parametrize("bad, words", [
+    (dict(LAST2_DAYS, n=0), "how many days"),
+    (dict(LAST2_DAYS, tray_type="Ladder"), "tray type"),
+    (dict(LAST2_DAYS, before_first="lunch"), "surgery type"),
+])
+def test_a_bad_day_window_rule_is_refused_with_the_reason(bad, words):
+    with pytest.raises(subsets.SubsetRefused, match=words):
+        subsets.validate_rule("r", bad)
+
+
+def test_a_day_window_rule_is_stored_in_its_plain_form(lab):
+    assert subsets.validate_rule("r", LAST2_DAYS) == {
+        "type": "day_window", "n": 2, "tray_type": "P", "before_first": "contusion"}
+
+
+def test_a_rule_can_be_saved_when_the_settings_hold_an_empty_rules_entry(lab):
+    data = json.loads(lab["cfg"].read_text())
+    data["export_subset_flag_rules"] = None
+    lab["cfg"].write_text(json.dumps(data))
+    subsets.save_rule("last2", LAST2_DAYS)
+    assert subsets.flag_rules()["last2"]["type"] == "day_window"
+    assert json.loads(lab["cfg"].read_text())["grants"] == {"GrantA": ["PROJA"]}
+
+
+def test_the_program_lists_the_saved_rules(lab, capsys):
+    subsets.save_rule("last2", LAST2_DAYS)
+    assert subsets.main(["--list"]) == subsets.EXIT_OK
+    out = capsys.readouterr().out
+    assert "last2" in out and "day_window" in out

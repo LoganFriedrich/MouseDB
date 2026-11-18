@@ -219,3 +219,22 @@ def test_a_hand_written_definition_saved_unchanged_is_not_a_replacement(lab):
     subsets.save_profile("pre", {"cohorts": ["PROJA_01"], "tray_types": ["P"]})
     assert subsets.profiles()["pre"]["tray_types"] == ["P"]
     assert subsets.REPLACED_KEY not in json.loads(cfg.read_text())
+
+
+def test_the_window_offers_a_day_window_rule_and_saves_a_definition_using_it(qt, lab):
+    """A per-day rule is set up in the lab settings file and then picked by
+    name in the window, exactly like a per-animal rule."""
+    from PyQt5.QtCore import Qt
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    subsets.save_rule("last3", {"type": "day_window", "n": 3, "tray_type": "Pillar",
+                                "before_first": "contusion"})
+    d = LimitedExportDialog()
+    assert d.rule.findText("last3") >= 0
+    d.name.setText("days")
+    d.cohorts.item(0).setCheckState(Qt.Checked)
+    d.flag.setText("used_for_x")
+    d.rule.setCurrentText("last3")
+    assert d.save()
+    saved = subsets.profiles()["days"]
+    assert saved["flag"] == {"column": "used_for_x", "rule": "last3"}
+    assert saved["window"] == {"type": "all"}

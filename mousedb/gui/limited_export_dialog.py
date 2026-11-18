@@ -79,8 +79,12 @@ export -- nothing is calculated again -- so it always agrees with the full expor
    ("Columns of" picks the kind); all ticked = every column. A column or
    cohort marked "(not in the current exports)" is one the saved definition
    names that the exports no longer have: untick it to take it out.
-5. Optional: a yes/no column per animal. Give it a name; pick a rule, or leave
-   it blank to fill in later.
+5. Optional: a yes/no column. Give it a name; pick a rule, or leave it blank
+   to fill in later. A rule is set up once in the lab settings file (see "The
+   yes/no column" in WHERE_IS_MY_DATA.md). Some rules decide per animal; a
+   "day_window" rule decides per animal-day: yes on every row of each
+   animal's last N test days before its cohort's first injury, no on every
+   other row.
 6. "Save" keeps the definition (in the lab settings, for everyone). If another
    definition is already saved under that name, you are asked before it is
    replaced, and the replaced one is kept. "Save and make now" also makes the
@@ -305,7 +309,7 @@ class LimitedExportDialog(QDialog):
         root.addWidget(colbox, 1)
 
         fl = QHBoxLayout()
-        fl.addWidget(QLabel("Yes/no column per animal (optional) -- name:"))
+        fl.addWidget(QLabel("Yes/no column (optional) -- name:"))
         self.flag = QLineEdit()
         fl.addWidget(self.flag)
         fl.addWidget(QLabel("filled by rule:"))
