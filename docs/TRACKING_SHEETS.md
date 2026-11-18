@@ -1154,6 +1154,15 @@ on the shared storage: `<mousedb_root>/config/mousedb_lab_config.json` (the
 machine and every login reads that same file, so a project is added once,
 from any machine, and nothing is set per person.
 
+Two saves of that file at the same moment (two logins, or a sheet name saved
+while a grant or a limited export is saved) never lose each other's change:
+every save takes a short lock, the file `.mousedb_lab_config.json.task.lock`
+beside it, reads the file, makes its one change and writes it back whole. A
+second save waits for the first (they take a fraction of a second). If the
+lock is still held after a minute, the save stops with "being saved by
+another program ... nothing was changed": try again. A lock left by a program
+that crashed is taken over by the next save.
+
 See what is set:
 
 ```bash

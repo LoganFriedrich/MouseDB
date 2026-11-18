@@ -572,7 +572,9 @@ behind those lines is `exports/subsets/SUBSETS_STATUS.json`.
 In the lab settings file, `<mousedb_root>/config/mousedb_lab_config.json` (or
 the file named by `MOUSEDB_LAB_CONFIG`), under `export_subsets` -- one file
 for every computer and every login, beside the database. Never in mousedb's
-code. A definition looks like this:
+code. Two people saving at the same moment do not lose each other's change:
+each save locks the file for the fraction of a second it takes (see "The
+Which projects' sheets are read" in TRACKING_SHEETS.md). A definition looks like this:
 
 ```
 "export_subsets": {

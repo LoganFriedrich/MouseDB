@@ -170,6 +170,12 @@ checked-in code, not what's planned.
   counts used to stay in the database and every brain export unnoticed (a
   renamed brain twice). Report only: nothing is removed and the exit code is
   unchanged.
+- The lab settings file (`mousedb_lab_config.json`: sheet projects, grants,
+  limited-export definitions) is saved in one locked read-change-write
+  (`sheet_projects.update_settings`), through a temporary file of its own.
+  Two saves at once used to end with the later one writing back what it had
+  read, losing the other's change, and every writer shared one fixed
+  `<file>.tmp` name.
 - Sheet import: an animal the database holds, that its cohort's sheet no
   longer names and that nothing is recorded for (an id typed into the sheet,
   imported, then taken out again) is named in a warning, on the cohort's

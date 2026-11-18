@@ -189,15 +189,24 @@ def _read_settings() -> dict:
     return data
 
 
-def _write_settings(data: dict) -> Path:
-    """Write the whole lab settings file through a temporary name, keeping every
-    other setting in it (sheet projects, grants)."""
+def _update_settings(change) -> Path:
+    """Change the lab settings file in one locked read-change-write
+    (sheet_projects.update_settings, which says why), keeping every other
+    setting in it (sheet projects, grants). ``change(data)`` runs under the
+    lock and may raise SubsetRefused: nothing is written then. Any other
+    failure to read or save the file is a SubsetRefused too, saying that
+    nothing was changed."""
+    from .. import sheet_projects
     p = _settings_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(p)
-    return p
+    try:
+        return sheet_projects.update_settings(change)
+    except SubsetRefused:
+        raise
+    except sheet_projects.SettingsBusy as e:
+        raise SubsetRefused(str(e)) from None
+    except (OSError, ValueError) as e:
+        raise SubsetRefused("the lab settings file %s could not be saved (%s: %s); nothing "
+                            "was changed" % (p, type(e).__name__, e)) from None
 
 
 def profiles() -> Dict[str, dict]:
@@ -361,31 +370,44 @@ def validate_rule(name: str, rule: dict) -> dict:
             "denominator": str(rule["denominator"]), "percent": pct}
 
 
+def _section(data: dict, key: str) -> dict:
+    """``data[key]`` as a dict, made if absent; refused if it holds something else
+    (written back as it was, it would be lost)."""
+    sec = data.setdefault(key, {})
+    if not isinstance(sec, dict):
+        raise SubsetRefused("the lab settings file's '%s' is not a set of named entries; "
+                            "nothing was changed" % key)
+    return sec
+
+
 def save_profile(name: str, profile: dict) -> Path:
     """Validate and store one definition (replacing one of the same name). Every
     other setting in the lab settings file is kept."""
-    clean = validate(name, profile)
-    data = _read_settings()
-    data.setdefault(PROFILES_KEY, {})[name] = clean
-    return _write_settings(data)
+    def change(data: dict) -> None:
+        # Validated under the lock, against the rules as they are now.
+        rules = data.get(RULES_KEY) if isinstance(data.get(RULES_KEY), dict) else {}
+        _section(data, PROFILES_KEY)[name] = validate(name, profile, rules)
+    return _update_settings(change)
 
 
 def save_rule(name: str, rule: dict) -> Path:
     if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
         raise SubsetRefused("'%s' cannot be a rule's name: letters, digits, - and _ only" % name)
     clean = validate_rule(name, rule)
-    data = _read_settings()
-    data.setdefault(RULES_KEY, {})[name] = clean
-    return _write_settings(data)
+
+    def change(data: dict) -> None:
+        _section(data, RULES_KEY)[name] = clean
+    return _update_settings(change)
 
 
 def remove_profile(name: str) -> Path:
     """Forget a definition. Its slices already written stay where they are."""
-    data = _read_settings()
-    if name not in (data.get(PROFILES_KEY) or {}):
-        raise SubsetRefused("there is no limited export named '%s'" % name)
-    del data[PROFILES_KEY][name]
-    return _write_settings(data)
+    def change(data: dict) -> None:
+        saved = _section(data, PROFILES_KEY)
+        if name not in saved:
+            raise SubsetRefused("there is no limited export named '%s'" % name)
+        del saved[name]
+    return _update_settings(change)
 
 
 # ----------------------------------------------------------------- locations

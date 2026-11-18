@@ -474,3 +474,51 @@ def test_a_full_export_that_records_no_snapshot_generation_is_not_cut_by_the_win
     assert not (lab["out"] / "pre").exists()
     # A slice that does not read the snapshot is not affected.
     assert lab["make"]("all", {"cohorts": ["PROJA_01"]})["status"] == "written"
+
+
+def test_two_saves_of_the_lab_settings_at_once_both_land(lab, monkeypatch):
+    """Two logins save at the same moment: both read the file before either
+    wrote it. The later writer must not write back what it read and lose the
+    other's change."""
+    import pathlib
+    import threading
+    real = pathlib.Path.read_text
+    a_reading, b_done = threading.Event(), threading.Event()
+    a_id = {}
+
+    def held_read(self, *a, **k):
+        text = real(self, *a, **k)
+        if (Path(self) == lab["cfg"] and threading.get_ident() == a_id.get("id")
+                and not a_reading.is_set()):
+            a_reading.set()
+            b_done.wait(3)          # the other save runs now, if nothing stops it
+        return text
+    monkeypatch.setattr(pathlib.Path, "read_text", held_read)
+    errors = []
+
+    def first():
+        a_id["id"] = threading.get_ident()
+        try:
+            subsets.save_profile("one", {"cohorts": ["PROJA_01"]})
+        except Exception as e:      # pragma: no cover - reported below
+            errors.append(e)
+
+    def second():
+        try:
+            subsets.save_profile("other", {"cohorts": ["PROJA_02"]})
+        except Exception as e:      # pragma: no cover - reported below
+            errors.append(e)
+        finally:
+            b_done.set()
+    ta = threading.Thread(target=first)
+    ta.start()
+    assert a_reading.wait(20)
+    tb = threading.Thread(target=second)
+    tb.start()
+    ta.join(60)
+    tb.join(60)
+    assert not errors
+    assert sorted(subsets.profiles()) == ["one", "other"]
+    assert json.loads(lab["cfg"].read_text())["grants"] == {"GrantA": ["PROJA"]}
+    # No temporary file is left beside the settings file.
+    assert [f.name for f in lab["cfg"].parent.iterdir() if f.name.endswith(".tmp")] == []

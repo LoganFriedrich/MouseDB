@@ -62,7 +62,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, NamedTuple, Optional, Tuple
 
 ENV_VAR = "MOUSEDB_LAB_CONFIG"
 SET_COMMAND = 'mousedb sheet-projects --set <PROJECT> "<file name with {NN}>"'
@@ -117,6 +117,80 @@ def _read() -> dict:
     if p is None or not p.is_file():
         return {}
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+# How long a save waits for another save of the lab settings file. A save holds
+# the lock for the time it takes to read and write one small file, so a wait
+# this long means the other writer is stuck, not busy.
+SETTINGS_LOCK_WAIT_SECONDS = 60.0
+# A lock left by a writer this machine cannot look up (another computer) is
+# taken over once it is this old: no save holds it for more than seconds.
+SETTINGS_LOCK_STALE_MINUTES = 5
+
+
+class SettingsBusy(RuntimeError):
+    """Another program is saving the lab settings file and did not finish in
+    time. Nothing was changed."""
+
+
+def update_settings(change: Callable[[dict], None]) -> Path:
+    """Change the lab settings file: read it, ``change(data)`` in place, write it.
+
+    WHY ONE LOCKED STEP: the file holds every lab setting (sheet projects,
+    grants, limited-export definitions) and is saved from several places --
+    the command line, the MouseDB window of any login on any computer. Two
+    saves that both read the file before either wrote it ended with the later
+    one writing back what it read, so the other's change was lost without a
+    word. So every writer goes through here:
+
+    * the read, the change and the write happen while holding a lock file
+      beside the settings file (``.<file name>.task.lock``, the same kind of
+      lock the database tasks use, mousedb.task_mutex); a second save waits for
+      the first (up to SETTINGS_LOCK_WAIT_SECONDS, then SettingsBusy, nothing
+      changed). ``change`` runs under the lock, so a check it makes (a name
+      already taken, a grant clash) is made against what is really there;
+    * the new content is written under a temporary name of its own (never a
+      fixed ``<file>.tmp`` two writers would share) and swapped in whole, so a
+      reader never sees half a file.
+
+    ``change`` may raise to refuse: nothing is written then. Returns the path."""
+    import tempfile
+    import time
+    from .task_mutex import TaskMutex
+    p = config_path()
+    if p is None:
+        raise ValueError("mousedb_root is not set, so there is no lab settings file to "
+                         "write to; run 'mousedb config --set mousedb_root <folder>' first")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    mutex = TaskMutex(p.name, stale_minutes=SETTINGS_LOCK_STALE_MINUTES, base_dir=p.parent,
+                      label="the lab settings lock")
+    deadline = time.monotonic() + SETTINGS_LOCK_WAIT_SECONDS
+    while not mutex.try_acquire():
+        if time.monotonic() >= deadline:
+            raise SettingsBusy(
+                "the lab settings file %s is being saved by another program (%s), which did "
+                "not finish within %d seconds; nothing was changed -- try again"
+                % (p, mutex.holder()[1], SETTINGS_LOCK_WAIT_SECONDS))
+        time.sleep(0.05)
+    try:
+        data = _read()
+        if not isinstance(data, dict):
+            raise ValueError("the lab settings file %s does not hold named settings" % p)
+        change(data)
+        fd, tmp = tempfile.mkstemp(prefix=p.name + ".", suffix=".tmp", dir=str(p.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(data, indent=2) + "\n")
+            os.replace(tmp, p)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    finally:
+        mutex.release()
+    return p
 
 
 def _validate(project: str, sheet_name: str) -> None:
@@ -193,20 +267,13 @@ def set_project(project: str, sheet_name: str, template: Optional[str] = None) -
     Returns the file's path. Other settings in the file are kept."""
     project = (project or "").strip().upper()
     _validate(project, sheet_name)
-    p = config_path()
-    if p is None:
-        raise ValueError("mousedb_root is not set, so there is no lab settings file to "
-                         "write to; run 'mousedb config --set mousedb_root <folder>' first")
-    data = _read()
-    entry = (data.setdefault("sheet_projects", {})).setdefault(project, {})
-    entry["sheet_name"] = sheet_name
-    if template is not None:
-        if template:
-            entry["template"] = template
-        else:
-            entry.pop("template", None)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(p)
-    return p
+
+    def change(data: dict) -> None:
+        entry = (data.setdefault("sheet_projects", {})).setdefault(project, {})
+        entry["sheet_name"] = sheet_name
+        if template is not None:
+            if template:
+                entry["template"] = template
+            else:
+                entry.pop("template", None)
+    return update_settings(change)

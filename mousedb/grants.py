@@ -16,7 +16,6 @@ Inspect / change with ``mousedb grants``.
 """
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -73,23 +72,20 @@ def set_grant(grant: str, projects: List[str]) -> Path:
     """Record (or replace) one grant's projects in the lab settings file;
     an empty list removes the grant. Other settings are kept."""
     projects = [str(p).strip().upper() for p in projects]
-    p = sheet_projects.config_path()
-    if p is None:
-        raise ValueError("mousedb_root is not set, so there is no lab settings file to "
-                         "write to; run 'mousedb config --set mousedb_root <folder>' first")
-    data = sheet_projects._read()
-    g = data.setdefault("grants", {})
     if projects:
         _check(grant, projects)
-        for other, theirs in g.items():
-            clash = set(theirs) & set(projects)
-            if other != grant and clash:
-                raise ValueError("%s already belongs to grant %s" % (", ".join(sorted(clash)), other))
-        g[grant] = projects
-    else:
-        g.pop(grant, None)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(p)
-    return p
+
+    # Under the lab settings lock (sheet_projects.update_settings): the clash
+    # check sees the grants as they are, not as another save left them.
+    def change(data: dict) -> None:
+        g = data.setdefault("grants", {})
+        if projects:
+            for other, theirs in g.items():
+                clash = set(theirs) & set(projects)
+                if other != grant and clash:
+                    raise ValueError("%s already belongs to grant %s"
+                                     % (", ".join(sorted(clash)), other))
+            g[grant] = projects
+        else:
+            g.pop(grant, None)
+    return sheet_projects.update_settings(change)
