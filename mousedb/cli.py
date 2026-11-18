@@ -1563,6 +1563,12 @@ def cmd_export_odc_reaches(args):
     raise SystemExit(_main(argv))
 
 
+def cmd_export_subset(args):
+    """mousedb export-subset (see mousedb.exporters.subsets)."""
+    from .exporters.subsets import run_args
+    raise SystemExit(run_args(args))
+
+
 from .config import ConfigError
 
 
@@ -1680,6 +1686,15 @@ def main():
     odc_r.add_argument('--cohort', action='append', help='Cohort id (repeatable; default all)')
     odc_r.add_argument('--out-dir', help='Folder to write into (default: the current exports folder)')
     odc_r.set_defaults(func=cmd_export_odc_reaches)
+
+    # mousedb export-subset -- a saved, filtered copy of the current exports
+    xs = subparsers.add_parser(
+        'export-subset',
+        help='Make a limited export: a filtered copy of the current exports (some cohorts, '
+             'sessions, tray types, columns), saved by name in the lab settings')
+    from .exporters.subsets import build_parser as _subset_parser
+    _subset_parser(xs)
+    xs.set_defaults(func=cmd_export_subset)
 
     # mousedb import-reaches -- pull MouseReach's per-video results into reach_data
     ir = subparsers.add_parser('import-reaches',
