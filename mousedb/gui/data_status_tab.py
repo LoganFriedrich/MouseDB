@@ -547,6 +547,11 @@ class DataStatusTab(QWidget):
     ATTENTION_SHOWN = 10
 
     def _show_attention(self, found):
+        # A cohort's missing videos are one line here, not one per recording
+        # (those are in its FIX THESE file): a finished cohort's gaps would
+        # otherwise push every other item out of the panel.
+        from ..missing_videos import fold_for_tab
+        found = fold_for_tab(found)
         if not found:
             self.attention_label.hide()
             return

@@ -24,6 +24,10 @@ WHAT IS GATHERED
    (birth, death, sex) the sheet gives differently from the database, and
    every animal the database holds that the sheet no longer names and that
    nothing is recorded for.
+3. Hand-scored sessions with no video anywhere in the reaching pipeline
+   (missing_videos.py): one item per missing recording (day + tray), saying
+   which animals and what to do. The tab folds them into one line per cohort
+   (missing_videos.fold_for_tab).
 Frozen workbooks (the letter cohorts) are not listed: nobody corrects them.
 
 THE FIX THESE FILE
@@ -122,7 +126,9 @@ def items() -> List[dict]:
     """Everything that needs a person, from every source. A source that
     cannot be read is itself an item, never silence."""
     out: List[dict] = []
-    for name, fn in (("reaching pipeline", mousereach_items), ("sheet import", sheet_items)):
+    from .missing_videos import items as missing_video_items
+    for name, fn in (("reaching pipeline", mousereach_items), ("sheet import", sheet_items),
+                     ("missing videos", missing_video_items)):
         try:
             out += fn()
         except Exception as e:

@@ -112,6 +112,11 @@ WRITE_HAND_SCORES = True
 # reason: the sheets folder is this machine's configuration.
 WRITE_FIX_THESE = True
 
+# Whether an import that wrote rewrites the list of hand-scored sessions with
+# no video (missing_videos.write_list_quietly, under <mousedb_root>/exports/).
+# Off in the test suite for the same reason as the two above.
+WRITE_MISSING_VIDEOS = True
+
 # Which projects' workbooks the tracking-sheet folder holds, and what each is
 # called, is the lab's configuration (mousedb.sheet_projects). Every cohort
 # found there has the id <PROJECT>_NN, read from its workbook's name. A cohort a
@@ -951,6 +956,11 @@ def _after_import(results: dict, sheets_dir=None, folder_ids=None,
                 results["fix_these"] = write_all_fix_these(target, ids)
         except Exception as e:
             results["fix_these"] = {"all cohorts": "FAILED: %s: %s" % (type(e).__name__, e)}
+    if WRITE_MISSING_VIDEOS:
+        # The hand scores just changed, so the list of hand-scored sessions
+        # with no video may have too (missing_videos.py). Never raises.
+        from .missing_videos import write_list_quietly
+        results["missing_videos"] = write_list_quietly()
 
 
 def _is_configured_folder(d) -> bool:
