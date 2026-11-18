@@ -136,6 +136,15 @@ MANIFEST.json             When these were written, from which snapshot, row
                           counts, and any problems (e.g. columns missing a
                           dictionary entry, which would fail an ODC upload).
 
+PHASE LABELS OF A COHORT STILL RUNNING ARE EMPTY. A session's phase is worked
+out from all of its cohort's dates, so it can change until the cohort is over.
+Every file here leaves it empty ("Undetermined" in the complete record and the
+summary, NA in the analysis files) for a cohort the lab has declared
+in_progress, or, when nothing is declared, whose last session is less than 30
+days old. MANIFEST.json lists those cohorts under reach_data.csv and
+manual_scores.csv (phase_withheld_for_running_cohorts). The Where Is My Data guide says how to
+declare a cohort over.
+
 ODC-SCI submission = a dataset CSV + its DATA_DICTIONARY CSV, together.
 See Databases/docs/ODC-SCI_submission_standard.md.
 """
@@ -165,6 +174,47 @@ def _place(local: Path, final: Path) -> None:
     tmp.replace(final)
 
 
+# The phase columns of the two all-cohort tables (reach_data.csv,
+# manual_scores.csv) and of the per-cohort session tables (ODC_sessions).
+PHASE_COLUMNS = ("test_phase", "phase_group")
+ODC_SESSIONS_PHASE_COLUMNS = ("Test_Phase",)
+
+
+def _running_cohorts(snapshot_dir: Path, cohorts=()) -> List[str]:
+    """The cohorts whose phase labels are withheld tonight: those still running.
+
+    NO PHASE LABELS UNTIL THE COHORT IS OVER (odc_reaches.running_cohorts says
+    why, and how "running" is decided). Decided from the snapshot's reach rows,
+    the same rows and the same rule the per-reach files use, so every file of
+    one refresh withholds the same cohorts. ``cohorts``: also decide these (a
+    cohort with hand scores and no reach yet)."""
+    import pyarrow.parquet as pq
+    from .odc_reaches import running_cohorts
+    src = Path(snapshot_dir) / "reach_data.parquet"
+    if not src.exists():
+        # No reach table: no cohort has a dated session, so every cohort asked
+        # about counts as running unless the lab declared it over -- the side
+        # of silence, never a label that may still change.
+        return running_cohorts(None, cohorts=cohorts)
+    names = pq.read_schema(src).names
+    reach = pd.read_parquet(src, columns=[c for c in ("subject_id", "video_name") if c in names])
+    return running_cohorts(reach, cohorts=cohorts)
+
+
+def _withhold_phases(df: pd.DataFrame, running, columns=PHASE_COLUMNS) -> int:
+    """Empty ``columns`` on every row of a running cohort, in place. Returns
+    how many rows were affected."""
+    from .odc_reaches import cohort_of
+    if df.empty or "subject_id" not in df.columns or not running:
+        return 0
+    mask = df["subject_id"].map(cohort_of).isin(set(running))
+    for c in columns:
+        if c in df.columns:
+            df[c] = df[c].astype("object")
+            df.loc[mask, c] = ""
+    return int(mask.sum())
+
+
 def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     src = snapshot_dir / "reach_data.parquet"
     staging = _staging_dir(snapshot_dir)
@@ -183,6 +233,9 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     # "Not applicable" (trays.ALGO_PELLET_COLUMNS says which, and why).
     trays.blank_where(df, trays.outcome_free(df), trays.ALGO_PELLET_COLUMNS,
                       missing.NOT_APPLICABLE)
+    # A running cohort's phase labels can still change: empty until it is over.
+    running = _running_cohorts(snapshot_dir)
+    _withhold_phases(df, running)
     out = out_dir / "reach_data.csv"
     df[cols].to_csv(staging / out.name, index=False)
     _place(staging / out.name, out)
@@ -191,6 +244,7 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
         "rows": int(len(df)), "columns": int(len(cols)),
         "source": str(src), "source_mtime": _mtime(src),
         "undocumented_columns": dd.undocumented_columns("reach_data", cols),
+        "phase_withheld_for_running_cohorts": running,
     }
     if "extended_features" in df.columns:
         key = [c for c in ("subject_id", "video_name", "segment_num", "reach_id") if c in df.columns]
@@ -211,6 +265,14 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
                         "entered_by", "entered_at", "id") if c in df.columns]
     cols += [c for c in df.columns if c not in cols]
     df = df[cols].sort_values([c for c in ("subject_id", "session_date", "tray_number", "pellet_number") if c in cols])
+    # A running cohort's phase labels can still change: empty until it is over.
+    # Decided with the same rule and rows as reach_data.csv; a cohort with hand
+    # scores and no reach yet is decided too (running, unless declared over).
+    from .odc_reaches import cohort_of
+    scored = (sorted({cohort_of(s) for s in df["subject_id"].dropna()} - {""})
+              if "subject_id" in df.columns else [])
+    running = _running_cohorts(snapshot_dir, scored)
+    _withhold_phases(df, running)
     out = out_dir / "manual_scores.csv"
     staging = _staging_dir(snapshot_dir)
     df.to_csv(staging / out.name, index=False)
@@ -220,6 +282,7 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
         "rows": int(len(df)), "columns": int(len(cols)),
         "source": str(src), "source_mtime": _mtime(src),
         "undocumented_columns": dd.undocumented_columns("manual_scores", cols),
+        "phase_withheld_for_running_cohorts": running,
     }
 
 
@@ -317,6 +380,15 @@ def odc_reaches_signature(snapshot_dir: Path) -> dict:
         pipeline_root = None
     sig["exclusion_inputs"] = export_exclusions.input_signature(
         pipeline_root, _cfg("cohort_sheets_dir"))
+    # Which cohorts are still running decides whether their phase labels (and
+    # an animal's cause of death) are written, and it changes with the date
+    # alone -- a month after a cohort's last session -- with no input changing.
+    # Without it here a cohort that had just ended kept its empty phases for
+    # as long as nothing else changed.
+    try:
+        sig["running_cohorts"] = _running_cohorts(snapshot_dir)
+    except Exception as e:
+        sig["running_cohorts"] = "unreadable: %s" % type(e).__name__
     try:
         from ..cohort_sheets import available_aspa_cohorts, find_aspa_sheet
         sig["aspa_workbooks"] = sorted(
@@ -392,8 +464,11 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
                 "refresh is running" % (sig_file.name, type(e).__name__, e))
 
 
-def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
-    """Per-cohort ODC session tables. Needs the ORM (database read)."""
+def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> None:
+    """Per-cohort ODC session tables. Needs the ORM (database read).
+
+    A running cohort's Test_Phase is left empty (_running_cohorts, decided from
+    the snapshot like every other file of the refresh)."""
     from ..database import get_db
     from .cohort_reports import export_odc_format
     from ..schema import Cohort
@@ -403,6 +478,7 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
         cohorts = [c.cohort_id for c in s.query(Cohort).order_by(Cohort.cohort_id).all()]
     from .odc_reaches import cohort_label, cohort_source, archive_old_names
     dd.write_dictionary("ODC_sessions", out_dir / "ODC_sessions_DATA_DICTIONARY.csv")
+    running = set(_running_cohorts(snapshot_dir, cohorts))
     for cid in cohorts:
         xlsx = out_dir / ("_tmp_%s_ODC.xlsx" % cid)
         label = cohort_label(cid)  # letter cohorts carry their letter: ASPA_04 -> ASPA_04_D
@@ -413,6 +489,10 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
                     out_dir, "ODC_sessions", cid, label))] = {"rows": 0, "note": "no data"}
                 continue
             df = pd.read_excel(xlsx)
+            if cid in running:
+                for c in ODC_SESSIONS_PHASE_COLUMNS:
+                    if c in df.columns:
+                        df[c] = ""
             out = layout.cohort_file(out_dir, "ODC_sessions", cid, label)
             out.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(out, index=False)
@@ -420,6 +500,7 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict) -> None:
             manifest["files"][name] = {
                 "rows": int(len(df)), "columns": int(len(df.columns)),
                 "undocumented_columns": dd.undocumented_columns("ODC_sessions", df.columns),
+                "phase_withheld_for_running_cohorts": [cid] if cid in running else [],
             }
             if label != cid:
                 manifest["files"][name]["cohort"] = cohort_source(cid) or label
@@ -587,7 +668,7 @@ def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool) -> d
             manifest["problems"].append("%s: %s: %s" % (fn.__name__, type(e).__name__, e))
     if db_ok:
         try:
-            _odc_sessions_csvs(out_dir, manifest)
+            _odc_sessions_csvs(out_dir, manifest, snapshot_dir)
         except Exception as e:
             manifest["complete"] = False
             manifest["problems"].append("ODC sessions: %s: %s" % (type(e).__name__, e))

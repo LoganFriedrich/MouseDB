@@ -65,6 +65,11 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     # has no hand-score record to check against), so the count cannot be
     # committed to yet -- see day_reach_totals.
     "Day_Total_Reaches_AI": missing.UNDETERMINED,
+    # The session's phase is left empty while its cohort is still running
+    # (running_cohorts says why): the label cannot be committed to until the
+    # cohort's dates are all in, so it reads 'Undetermined', not 'Not recorded'.
+    "Test_Type": missing.UNDETERMINED,
+    "Test_Type_Grouped": missing.UNDETERMINED,
 }
 
 # Columns of the complete record that answer a question about a pellet. On an easy
@@ -197,6 +202,55 @@ def _cohort_still_on_study(cohort_id: str, reaches, cohort_facts: dict) -> bool:
     if pd.isna(when):
         return True
     return (pd.Timestamp.today().normalize() - when).days < STILL_ON_STUDY_DAYS
+
+
+def running_cohorts(reach, facts=None, cohorts=None) -> List[str]:
+    """The cohorts in ``reach`` that are still running, sorted.
+
+    NO PHASE LABELS UNTIL THE COHORT IS OVER. A session's phase label is
+    derived from the cohort's WHOLE set of dates (mousedb.phases): which day was
+    the last baseline, which the first after injury, which rehabilitation. While
+    a cohort is still running, dates that have not happened yet can move the
+    labels of sessions already exported, and the earlier file would carry the
+    old label with nothing to say it had changed. So every export leaves the
+    phase EMPTY for every session of a running cohort, and fills it the first
+    time the export runs after the cohort is over.
+
+    "Running" is the one decision the exports already make for this purpose
+    (_cohort_still_on_study, which also withholds the cause of death): the
+    lab's own ``Study_Status`` for the cohort in the study-facts file
+    (``in_progress`` / ``completed``) when it has written one, else a cohort
+    whose last recorded session is less than STILL_ON_STUDY_DAYS old -- or that
+    has no datable session at all -- counts as running. Nothing here invents a
+    schedule or a completion rule: to release a cohort's labels early, declare
+    it ``completed``; to hold them longer, declare it ``in_progress``.
+
+    ``reach``: reach rows with ``subject_id`` and ``video_name`` (the dates are
+    read from the video names, as for the cause of death, so every export
+    reaches the same answer from the same rows). ``facts``: per-cohort study
+    facts (default: mousedb.study_facts.facts). ``cohorts``: decide these
+    cohorts too (default: every cohort in ``reach``) -- a cohort with hand
+    scores and no reach row yet has no datable session here, so it counts as
+    running unless the lab declared otherwise.
+    """
+    if facts is None:
+        from ..study_facts import facts as facts
+    has_reach = reach is not None and len(reach) > 0 and "subject_id" in reach
+    wanted = set(cohorts_in(reach)) if has_reach else set()
+    wanted |= {str(c) for c in (cohorts or ()) if str(c)}
+    sids = reach["subject_id"].astype(str) if has_reach else None
+    out = []
+    for cid in sorted(wanted):
+        rc = reach[sids.str.startswith(cid + "_")] if has_reach else pd.DataFrame()
+        if _cohort_still_on_study(cid, rc, facts(cid) or {}):
+            out.append(cid)
+    return out
+
+
+def cohort_of(subject_id) -> str:
+    """The cohort part of a subject id (PROJ_01_07 -> PROJ_01); "" when it has none."""
+    s = str(subject_id)
+    return s.rsplit("_", 1)[0] if s.count("_") >= 2 else ""
 
 
 def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
@@ -427,6 +481,11 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     cols["Injury_Type"] = a["Injury_Type"]
     cols["Test_Type"] = rc["test_phase"] if "test_phase" in rc else pd.Series("", index=rc.index)
     cols["Test_Type_Grouped"] = rc["phase_group"] if "phase_group" in rc else pd.Series("", index=rc.index)
+    if on_study:
+        # A running cohort's phase labels can still change as its later dates
+        # arrive, so none is exported until it is over (running_cohorts says why).
+        cols["Test_Type"] = pd.Series("", index=rc.index, dtype="object")
+        cols["Test_Type_Grouped"] = pd.Series("", index=rc.index, dtype="object")
     dpi = (test_date - pd.to_datetime(a["_injury_date"], errors="coerce")).dt.days
     cols["Days_Post_Injury"] = dpi.where(dpi >= 0).astype("Int64")
     for c, _t, _f, _n in sheet_cols:

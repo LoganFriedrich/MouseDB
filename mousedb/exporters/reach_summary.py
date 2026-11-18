@@ -222,6 +222,10 @@ REASONS: Dict[str, str] = {
     # The question cannot apply to this row.
     "days_post_injury": missing.NOT_APPLICABLE,        # session before the injury
     "exclusion_reason": missing.NOT_APPLICABLE,        # the animal was not excluded
+    # The phase is withheld while the cohort is still running (its label can
+    # still change; odc_reaches.running_cohorts): not decided yet, not missing.
+    "test_phase": missing.UNDETERMINED,
+    "test_phase_group": missing.UNDETERMINED,
     # The apex is the reach's last detected frame, so no detected frame follows it and
     # there is no step to measure (extractor 2.4.0). A 2.3.0 row may be empty instead
     # because the reach had no anchor.

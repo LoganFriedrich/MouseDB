@@ -183,6 +183,18 @@ def _row(name, title, desc, unit="", dtype="", pv="", pvd="", mn="", mx="", comm
             "Comments": comments}
 
 
+# Appended to every phase column's description. WHY: a phase label is derived
+# from the cohort's WHOLE date set, so while the cohort is running a later date
+# can change the label of a session already exported. Exports therefore leave
+# it empty until the cohort is over (exporters.odc_reaches.running_cohorts).
+RUNNING_PHASE_NOTE = (" Empty for every session of a cohort that is still running: "
+                      "the label can still change as the cohort's later sessions "
+                      "arrive, so none is exported until the cohort is over (the "
+                      "lab's Study_Status for the cohort, else its last session more "
+                      "than 30 days ago). Empty too for a session whose phase has "
+                      "not been derived yet (mousedb backfill-phases derives it).")
+
+
 NEVER_COMPUTED = ("Declared in the data model but never computed by any code; "
                   "always empty. Kept so the column set is stable.")
 
@@ -282,8 +294,8 @@ REACH_DATA = [
     _row("reviewed_by", "Reviewed by", "Username of the human reviewer, when outcome_source is not algo.", "", "text"),
     _row("algo_outcome", "Algorithm's original outcome", "What the algorithm said before a human overrode it (empty when no override).", "", "text"),
     _row("algo_causal_reach_id", "Algorithm's original causal reach", "Reach id the algorithm blamed before a human overrode it. Empty on current data.", "count", "integer"),
-    _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (see manual_scores dictionary for values).", "", "text"),
-    _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...).", "", "text"),
+    _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (see manual_scores dictionary for values)." + RUNNING_PHASE_NOTE, "", "text"),
+    _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("contact_group", "Did this reach meet the pellet (algorithm)", "What THIS reach did, in the words for a reach: contacted when the pipeline identified the frame at which its paw met the pellet (only ever on the reach credited with the pellet), otherwise missed.", "", "text", "missed; contacted", "missed=this reach did not meet the pellet; contacted=it did"),
     _row("segment_contact_group", "Was the pellet moved (algorithm)", "What happened to the pellet this reach was aimed at, in the words for a pellet, on every reach at that pellet: contacted when it was retrieved or displaced, untouched when nothing moved it, empty when the algorithm has no answer (a pellet a person saw moved by something other than a reach).", "", "text", "untouched; contacted", "untouched=no reach moved the pellet; contacted=retrieved or displaced"),
     _row("extended_features", "Extended features (JSON)", "The full per-reach extended feature block as a JSON string: 174 values, the per-paw-point kinematics, four recording how the reach's anchors were placed and nine reproducing an earlier swipe-measure definition (legacy_swipe_*, extractor 2.6.0). Rows from an extractor before 2.6.0 hold 165 (no legacy_swipe_*); before 2.3.0, 161 (no anchor values either). See KINEMATICS_FIELDS.md section 6.", "", "text (JSON)"),
@@ -302,8 +314,8 @@ for _r in REACH_DATA:
 MANUAL_SCORES = [
     _row("subject_id", "Subject identifier", "Animal id in PROJECT_CC_SS form, e.g. CNT_05_03.", "", "text"),
     _row("session_date", "Session date", "Date of the testing session.", "", "date"),
-    _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (not the operator's entry).", "", "text", "Flat_Training; Pillar_Training; Pillar; Post_Injury_1; Post_Injury_2; Post_Injury_3; Post_Injury_4; Rehab_Easy; Rehab_Flat; Rehab_Pillar; unassigned", "Training phases precede injury; Pillar=pre-injury baseline; Post_Injury_N=post-injury test N; Rehab_*=rehabilitation on that tray; unassigned=could not be derived"),
-    _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...).", "", "text"),
+    _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (not the operator's entry)." + RUNNING_PHASE_NOTE, "", "text", "Flat_Training; Pillar_Training; Pillar; Post_Injury_1; Post_Injury_2; Post_Injury_3; Post_Injury_4; Rehab_Easy; Rehab_Flat; Rehab_Pillar; unassigned", "Training phases precede injury; Pillar=pre-injury baseline; Post_Injury_N=post-injury test N; Rehab_*=rehabilitation on that tray; unassigned=could not be derived"),
+    _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("tray_type", "Tray type", "P = pillar, E = easy, F = flat.", "", "text", "P; E; F", "P=pillar; E=easy; F=flat"),
     _row("tray_number", "Tray number", "Which tray of the session (1-4).", "", "integer", "", "", "1", "4"),
     _row("pellet_number", "Pellet number", "Pellet position on the tray (1-20).", "", "integer", "", "", "1", "20"),
@@ -324,7 +336,7 @@ def _odc_session_rows() -> List[dict]:
         _row("Cohort", "Cohort", "Cohort id, e.g. CNT_05.", "", "text"),
         _row("Sex", "Sex", "Animal sex.", "", "text", "M; F", "M=male; F=female"),
         _row("Date", "Session date", "Date of the testing session.", "", "date"),
-        _row("Test_Phase", "Test phase", "Phase of the experiment the session belongs to (see manual_scores dictionary for values).", "", "text"),
+        _row("Test_Phase", "Test phase", "Phase of the experiment the session belongs to (see manual_scores dictionary for values)." + RUNNING_PHASE_NOTE, "", "text"),
         _row("Days_Post_Injury", "Days post injury", "Days since the injury surgery; empty before injury.", "days", "integer"),
         _row("Weight_g", "Body weight", "Body weight recorded for the session.", "g", "number", "", "", "0"),
         _row("Weight_Pct", "Body weight, percent of baseline", "Weight as a percentage of the animal's baseline weight.", "percent", "number", "", "", "0"),
@@ -418,8 +430,8 @@ ODC_REACH_SESSION = [
     _row("Tray_ID", "Tray id", "Tray type letter and run number within the session: P = pillar, E = easy, F = flat; P2 = the second pillar tray that day.", "", "text"),
     _row("Session_ID", "Session id", "SubjectID-YYYYMMDD-Tray_ID; unique per animal, day and tray.", "", "text"),
     _row("Injury_Type", "Injury type", "Injury type from the tracking sheet, with the intended force for a contusion (e.g. Contusion-60kD).", "", "text"),
-    _row("Test_Type", "Test type", "Phase of the experiment the session belongs to (same as test_phase; see manual_scores dictionary).", "", "text"),
-    _row("Test_Type_Grouped", "Test type grouped", "Statistical grouping of Test_Type (same as phase_group).", "", "text"),
+    _row("Test_Type", "Test type", "Phase of the experiment the session belongs to (same as test_phase; see manual_scores dictionary)." + RUNNING_PHASE_NOTE, "", "text"),
+    _row("Test_Type_Grouped", "Test type grouped", "Statistical grouping of Test_Type (same as phase_group)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("Days_Post_Injury", "Days post injury", "Days from the injury surgery date to the session; empty before the injury or when no injury date is recorded.", "days", "integer", "", "", "0"),
 ]
 

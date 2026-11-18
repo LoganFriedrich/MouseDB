@@ -65,6 +65,21 @@ checked-in code, not what's planned.
   the web dashboard are unchanged and still show one watcher's records, with
   the line saying whose. Guides: INSTALL.md ("GUI Features"),
   docs/WATCHER_VIEWS.md.
+- Exports: no phase labels for a cohort that is still running. A session's
+  phase is derived from its cohort's whole date set, so a later date could
+  change the label of a session already exported, and the earlier file
+  carried the old label unmarked. Every current export now leaves the phase
+  empty for every session of a running cohort -- `test_phase` / `phase_group`
+  in `reach_data.csv` and `manual_scores.csv`, `Test_Phase` in the ODC
+  session files, `Test_Type` / `Test_Type_Grouped` in the complete record
+  and the summary (`Undetermined`), `test_type`, `test_type_grouped` and
+  `experiment_stage` in the analysis files (`NA`) -- and fills it the first
+  export after the cohort is over. "Running" is the decision the exports
+  already made for the cause of death: the cohort's own `Study_Status` in the
+  study-facts file, else a last session under 30 days old. Which cohorts are
+  running is now part of the per-reach skip signature, so a cohort that has
+  just ended is rebuilt that night. `MANIFEST.json` lists the cohorts as
+  `phase_withheld_for_running_cohorts`.
 - Data dictionaries: the nine `legacy_swipe_*` values the kinematics
   extractor writes from version 2.6.0 (an earlier program's swipe measures,
   carried for continuity) each have a written definition and their real unit.

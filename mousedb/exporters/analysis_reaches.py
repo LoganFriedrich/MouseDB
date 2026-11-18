@@ -441,8 +441,16 @@ _STAGE_RULES = (
 
 
 def experiment_stage(labels) -> "pd.Series":
-    """The coarse stage for each session label."""
+    """The coarse stage for each session label.
+
+    An EMPTY label gives an empty stage (NA in the file), not "unknown": the
+    phase of a running cohort's sessions is withheld until the cohort is over
+    (odc_reaches.running_cohorts), and a stage derived from it would be the
+    same label by another name -- withheld too, and filled in on the same
+    night the label is."""
     def one(value):
+        if _blank(value):
+            return None
         text = str(value or "").strip().lower()
         for needle, stage in _STAGE_RULES:
             if needle in text:
@@ -678,7 +686,10 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
                 "is the stage, for grouping that does not care which week it was. "
                 "Derived from the phase label by matching the words in it, so a "
                 "label that names no stage is reported as unknown rather than "
-                "being forced into one.",
+                "being forced into one. Empty (NA) when the label is empty: a "
+                "cohort that is still running has its phase withheld until it "
+                "is over, and its stage with it; a session whose phase has not "
+                "been derived yet is empty too.",
                 "", "text", EXPERIMENT_STAGE_VALUES, "")
         elif name == "pellet_state_at_this_reach":
             base = dd._row(

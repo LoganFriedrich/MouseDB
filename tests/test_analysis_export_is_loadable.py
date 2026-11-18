@@ -173,8 +173,15 @@ def test_post_rehab_is_not_swallowed_by_the_rehab_rule():
 
 def test_a_label_naming_no_stage_is_unknown_rather_than_forced():
     import pandas as pd
-    assert list(ar.experiment_stage(pd.Series(["Unscheduled", "", None]))) == [
-        ar.STAGE_UNKNOWN] * 3
+    assert list(ar.experiment_stage(pd.Series(["Unscheduled", "Odd_label"]))) == [
+        ar.STAGE_UNKNOWN] * 2
+
+
+def test_an_empty_label_gives_an_empty_stage():
+    """An empty label is a phase withheld (a cohort still running), not a label
+    naming no stage: the stage is the same label, coarser, and is withheld too."""
+    import pandas as pd
+    assert list(ar.experiment_stage(pd.Series(["", None]))) == [None, None]
 
 
 def test_all_three_phase_columns_travel():
