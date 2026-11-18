@@ -353,8 +353,9 @@ reaches the full export reaches the limited export the next time it is made.
 10. Press **Save and make now**. It is saved for everyone (in the lab settings
     file), then made; the box at the bottom says what was written, with the
     row count of every file. A large set of cohorts takes a few minutes.
-    **Check only (writes nothing)** saves the definition and counts the rows
-    without writing any file. **Open its folder** opens the result.
+    **Check only (writes nothing)** counts the rows of what the window shows
+    now without writing any file -- it does not save the definition either.
+    **Open its folder** opens the result.
 
 If something is wrong (a cohort with no injury date, a column the full export
 does not have, the exports being rewritten right now) a box says so and
@@ -416,6 +417,13 @@ such dates keeps the ones it has; `SUBSET_MANIFEST.json` lists it under
 no such sessions, so its animals have no rows; the manifest lists it under
 `cohorts_without_injury_date`, and README.txt says so.
 
+A chosen session can still have no rows in a file: the sheet has the day, but
+the full export does not (no recording of it was found, its video is still in
+review, or the animal did not reach). Each file's entry in
+`SUBSET_MANIFEST.json` lists those animal-days under
+`chosen_sessions_with_no_rows`, and README.txt gives their number, so a slice
+short of sessions is not mistaken for a complete one.
+
 The sessions are read from the same snapshot the full export was made from.
 Between the two steps of the nightly job (the snapshot is new, the full export
 not rewritten yet) a limited export is refused with "the sessions would be
@@ -461,17 +469,26 @@ it never changes a value in it.
 
 ### When it is made again by itself
 
-Each night, after the full export has been rewritten **completely**, every
-saved limited export with "Remake nightly" ticked is checked: if anything it
-is cut from changed -- one of its source files, a dictionary, the exclusions,
-the sheet's sessions or injury dates, its definition, its rule, or mousedb's
-own code -- it is made again (the previous files go to the archive);
-otherwise it is left as it is. WHY: a limited export that is not remade goes
-stale the first night something it holds changes -- a video leaves review, a
-sheet row is corrected -- while still looking current. Remaking only on a
-change keeps the archive from filling with identical copies. A night the full
-export is incomplete, nothing is remade: a slice of a partial export would be
-partial too.
+Each night, after the full export has been rewritten **completely** (and
+after the job has let go of the database, so imports never wait for it),
+every saved limited export with "Remake nightly" ticked is checked:
+
+- if nothing it is cut from changed -- its source files, the dictionaries, the
+  exclusions, the sheet's sessions and injury dates, its definition, its rule,
+  mousedb's own code -- it is left as it is;
+- otherwise it is built again. If every file comes out byte for byte the same
+  as the one already there (the full export rewrites many of its files each
+  night with the same content), the files already there are kept;
+- only when a file comes out different are the previous files moved to the
+  archive and the new ones put in place.
+
+WHY: a limited export that is not remade goes stale the first night something
+it holds changes -- a video leaves review, a sheet row is corrected -- while
+still looking current. Putting new files in place only when they differ keeps
+the archive from filling with identical copies. A night the full export is
+incomplete, nothing is remade: a slice of a partial export would be partial
+too. A remake you start yourself (the button or `--run`) always writes the
+files.
 
 The Where Is My Data tab shows one line per saved limited export below the
 export files: when it was last made, or `[FAIL] <name>: ...` with the reason

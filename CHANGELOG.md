@@ -22,11 +22,16 @@ checked-in code, not what's planned.
   written. Definitions are saved by name in the lab settings file
   (`export_subsets`, rules under `export_subset_flag_rules`), never in the
   code. Making one again moves the previous files to
-  `_archived/exports_subsets/<name>/<time>/`. The nightly snapshot job remakes
-  every saved one after a complete full export, only when something it is cut
-  from changed; a failure prints `[FAIL]`, fails the job and shows on the
-  Where Is My Data tab (`exports/subsets/SUBSETS_STATUS.json`). Guide:
-  docs/WHERE_IS_MY_DATA.md, "Limited exports".
+  `_archived/exports_subsets/<name>/<time>/`. The manifest lists, per file,
+  the chosen animal-days that have no rows. The nightly snapshot job remakes
+  every saved one after a complete full export, once it has released the
+  database lock; it skips one whose inputs are unchanged and keeps the files
+  already there when the new ones come out byte for byte the same, so the
+  archive does not fill with identical copies. A failure prints `[FAIL]`,
+  fails the job and shows on the Where Is My Data tab
+  (`exports/subsets/SUBSETS_STATUS.json`). "Check only" in the window checks
+  without saving the definition. Guide: docs/WHERE_IS_MY_DATA.md, "Limited
+  exports".
 - `mousedb-make-shortcuts`: puts **MouseDB** (the window) and **MouseDB -
   Browse the data** on the Desktop and in a MouseDB folder of the Start menu,
   for you, or with `--all-users` for everyone who logs in to the computer
