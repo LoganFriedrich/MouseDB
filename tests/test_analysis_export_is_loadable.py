@@ -70,8 +70,8 @@ def test_a_numeric_column_holds_only_numbers_or_NA():
 def test_a_reason_word_from_the_other_documents_becomes_NA():
     """'Not recorded' is the right answer elsewhere and unusable here."""
     out, _ = ar.build(frame(ext_righthand_total_path_mm=["Not recorded", 4.0]))
-    assert out["path_length"].iloc[0] == ar.MISSING
-    assert out["path_length"].iloc[1] == 4.0
+    assert out["righthand_total_path_mm"].iloc[0] == ar.MISSING
+    assert out["righthand_total_path_mm"].iloc[1] == 4.0
 
 
 def test_nothing_is_ever_blank():
@@ -129,10 +129,11 @@ def test_every_measurement_is_carried_not_a_chosen_few():
 
 
 def test_a_measure_with_a_collaborator_name_keeps_that_name_once():
-    """So a script written against their file still runs."""
-    out, _ = ar.build(frame())
+    """So a script written against their file still runs: the earlier
+    program's name, holding the earlier program's measure, carried once."""
+    out, _ = ar.build(frame(ext_legacy_swipe_path_length_px=[90.0, 80.0]))
     assert "path_length" in out.columns
-    assert "righthand_total_path_mm" not in out.columns, "carried twice"
+    assert "legacy_swipe_path_length_px" not in out.columns, "carried twice"
 
 
 # ------------------------------------------------------------- the dictionary

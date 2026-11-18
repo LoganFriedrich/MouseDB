@@ -62,6 +62,22 @@ checked-in code, not what's planned.
   `ext_legacy_swipe_speed_px_div4_per_sec` was described as seconds; its unit
   is "(pixels / 4) per second". The `extended_features` entry counts 174
   values (165 on rows from an extractor before 2.6.0, 161 before 2.3.0).
+- **Analysis table (`reaches_<cohort>_analysis.csv`): the swipe names now hold
+  the earlier program's swipe measures.** `swipe_length`, `swipe_breadth`,
+  `swipe_area`, `swipe_speed`, `path_length` and `swipe_duration_frames` are
+  that program's names, but held the pipeline's own measures, which are
+  different quantities in different units. They now hold the extractor's
+  `legacy_swipe_*` values (pixels; speed in (pixels / 4) per second), and
+  `path_over_frames` is added beside them. The pipeline's own measures keep
+  the extractor's names. To read an older file: `swipe_length` was
+  `righthand_extension_past_nose_mm`, `swipe_breadth` was
+  `righthand_lateral_deviation_mm`, `swipe_area` was
+  `righthand_swept_area_mm2`, `swipe_speed` was
+  `righthand_peak_speed_mm_per_frame`, `path_length` was
+  `righthand_total_path_mm`, `swipe_duration_frames` was `duration_frames`
+  (each dictionary entry says so too). A reach filed before extractor 2.6.0
+  reads NA in the swipe columns, never the pipeline's measure; the columns
+  are written even when no row has a value yet.
 - **The sheet wins.** The tracking-sheet import no longer only adds: for the
   rows earlier imports of a cohort's sheet wrote (pellet scores, weights, ramp
   days, surgeries) it corrects a value the sheet now gives differently and

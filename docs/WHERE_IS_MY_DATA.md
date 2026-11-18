@@ -204,6 +204,41 @@ said `missed` too).
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.
 
+### Swipe measures: which column is which (changed 2026-11-17)
+
+An earlier reach program reported its own per-swipe measures (swipe length,
+breadth, area, speed, path length, duration in frames, path over frames).
+Analyses built on those numbers can only be continued if the same numbers are computed the same way, so the kinematics extractor
+(MouseReach, version 2.6.0 and later) now also computes them on every reach, as
+nine `legacy_swipe_*` values. They are in pixels, as the earlier program
+reported them, and the speed is in "(pixels / 4) per second" -- the earlier
+program's own unit, **not** millimetres. Each has a full definition in the
+dictionaries.
+
+**What changed in the analysis table (`reaches_<cohort>_analysis.csv`).** The
+columns named after the earlier program now hold the earlier program's measure.
+Until 2026-11-17 they held the pipeline's own measures, which are different
+numbers in different units. If you have an older file, use this table to line
+the two up:
+
+| name in the analysis table | holds now | held until 2026-11-17, now found under |
+|---|---|---|
+| `swipe_length` | `legacy_swipe_length_px` (pixels) | `righthand_extension_past_nose_mm` |
+| `swipe_breadth` | `legacy_swipe_breadth_px` (pixels) | `righthand_lateral_deviation_mm` |
+| `swipe_area` | `legacy_swipe_area_px2` (pixels^2) | `righthand_swept_area_mm2` |
+| `swipe_speed` | `legacy_swipe_speed_px_div4_per_sec` ((pixels / 4) per second) | `righthand_peak_speed_mm_per_frame` |
+| `path_length` | `legacy_swipe_path_length_px` (pixels) | `righthand_total_path_mm` |
+| `swipe_duration_frames` | `legacy_swipe_duration_frames` (frames) | `duration_frames` |
+| `path_over_frames` (new) | `legacy_swipe_path_over_frames_px_per_frame` | -- |
+
+**Reaches filed before extractor 2.6.0 have no earlier-definition values.**
+On those rows the `swipe_*` columns read `NA`. In the complete record and the
+shareable table the `legacy_swipe_*` columns appear only once some reach of the
+cohort carries the values; until then they are not in those files at all, and
+once they are, a reach without values reads `Not recorded`. They are never
+filled in from the pipeline's own measure. They fill in when those videos are
+measured again with extractor 2.6.0 and imported.
+
 ### No cell is ever empty -- and the word tells you why
 
 ODC-SCI rejects a dataset with empty cells, so both files fill every one. The
