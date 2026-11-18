@@ -170,7 +170,7 @@ imports of that cohort's sheet wrote:
 | pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
 | weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams, and % of body weight (see below) | that animal and date has no weight in the sheet any more |
 | ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, food put in and taken out, food eaten | the row is gone |
-| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes, survived; for a tracing injection virus, titre, volume, target, weight, survived) -- see "Survived" below | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
+| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes, weight on the day, survived; for a tracing injection virus, titre, volume, target, weight, survived) -- see "Survived" below | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
 
 - **The % of body weight on a weight row** is taken from the weight's own tab
   when that tab has a percentage column (`Weight %` on `1_Weight`,
@@ -200,6 +200,14 @@ imports of that cohort's sheet wrote:
   are deaths gets `NOT SYNCED surgeries` once. Check the `Survived` column,
   then import that cohort with `--allow-large-removal` (dry run first), as
   described below.
+- **The weight on the day of a surgery** (`Subject_Weight (g)`, see "Surgery
+  rows" below) is stored on the surgery (`pre_surgery_weight_grams`) for a
+  contusion as for an injection. Until 2026-11 a contusion's weight was read
+  only to decide that the surgery happened, and then not kept. Contusions
+  imported before then are filled in by the next import; filling an empty
+  value never counts toward the guard, so this alone never makes an import
+  refuse. (A cohort whose surgeries are refused for another reason, such as
+  the Survived catch-up above, gets its weights filled once that is settled.)
 - A cell that holds something that is not a value (`x`, `?`, `n/a` where a
   score belongs) is **not** an empty cell: the stored value is kept, and the
   usual warning names the cell.

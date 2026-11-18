@@ -870,3 +870,46 @@ def test_survived_flags_overwritten_on_too_many_rows_are_refused(tmp_path):
     r = imp(_survived_cells(_workbook(_sheet(tmp_path)), ["N", "N"]))   # 2 of 2: refused
     assert any(x.startswith("NOT SYNCED surgeries") for x in r["sheet_sync"]["refused"])
     assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}
+
+
+# --------------------------------------------------------------------------
+# the weight on the day of a contusion
+# --------------------------------------------------------------------------
+
+def _contusion_grams(db):
+    with db.session() as s:
+        return {x.subject_id: x.pre_surgery_weight_grams
+                for x in s.query(Surgery).filter_by(surgery_type="contusion")}
+
+
+def test_a_contusions_weight_on_the_day_is_stored(tmp_path):
+    """The weight typed on the contusion tab is the number that proves the
+    surgery happened, yet it was read and thrown away: no contusion carried
+    its surgery-day weight, while every injection did."""
+    db = _db(tmp_path)
+
+    _import(db, _workbook(_sheet(tmp_path), surgeries=[
+        (ANIMALS[0], date(2026, 3, 20), 21.5, 60), (ANIMALS[1], date(2026, 3, 20), 23.0, 61)]))
+
+    assert _contusion_grams(db) == {ANIMALS[0]: 21.5, ANIMALS[1]: 23.0}
+
+
+def test_contusions_stored_without_their_weight_get_it_and_that_is_no_broken_read(tmp_path):
+    """Rows imported before the weight was kept hold none. The next import
+    fills it in -- every row at once -- and, being a fill rather than an
+    overwrite, that never trips the shifted-column guard."""
+    db = _db(tmp_path)
+    _import(db, _workbook(_sheet(tmp_path)))
+    with db.session() as s:
+        for x in s.query(Surgery):
+            x.pre_surgery_weight_grams = None
+
+    r = _import(db, _workbook(_sheet(tmp_path)))
+
+    assert _contusion_grams(db) == {ANIMALS[0]: 21.0, ANIMALS[1]: 21.0}
+    assert "refused" not in r["sheet_sync"]
+    assert len(r["sheet_sync"]["surgeries"]["changed"]) == 2
+    # A weight corrected in the sheet is corrected too.
+    _import(db, _workbook(_sheet(tmp_path), surgeries=[
+        (ANIMALS[0], date(2026, 3, 20), 22.0, 60), (ANIMALS[1], date(2026, 3, 20), 21.0, 61)]))
+    assert _contusion_grams(db) == {ANIMALS[0]: 22.0, ANIMALS[1]: 21.0}

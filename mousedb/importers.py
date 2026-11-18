@@ -1265,10 +1265,14 @@ class ExcelImporter:
                 cells, raw_id, cohort_id, '4_Contusion_Injury_Details')
             if performed is None:
                 continue
-            # The weight is not stored on a contusion row: none of the
-            # contusions already imported carries it, and this importer only
-            # adds rows, so storing it from now on would split the table.
-            subject_id, date_val, _grams = performed
+            # The weight on the day (read by the shared rule, so '22.4 g' is
+            # stored, not proved and then dropped) is stored on the contusion,
+            # as on an injection. It used to be left out because the import
+            # only added rows, so contusions already imported would never have
+            # got it. The sheet-wins sync (_sync_table) now fills a value that
+            # was stored empty on every import, and a fill never counts toward
+            # the shifted-column guard, so earlier contusions get it too.
+            subject_id, date_val, grams = performed
 
             # Ensure subject exists (False: refused, and a warning says why)
             if not self._ensure_subject(session, subject_id, cohort_id, dry_run,
@@ -1304,6 +1308,7 @@ class ExcelImporter:
                 surgeon=row.get('Surgeon') if pd.notna(row.get('Surgeon')) else None,
                 anesthesia=row.get('Anesthetic') if pd.notna(row.get('Anesthetic')) else None,
                 notes=self._build_surgery_notes(row),
+                pre_surgery_weight_grams=grams,
             )
             # The Survived cell is stored on the surgery row as well as marking
             # the animal dead above. WHY: it used to do only the second, so
@@ -1596,7 +1601,8 @@ class ExcelImporter:
     # with the sheet when the import syncs (_sync_table).
     _SURGERY_FIELDS = {
         'contusion': ('force_kdyn', 'displacement_um', 'velocity_mm_s', 'dwell_time_s',
-                      'surgeon', 'anesthesia', 'notes', 'survived'),
+                      'surgeon', 'anesthesia', 'notes', 'survived',
+                      'pre_surgery_weight_grams'),
         'tracing': ('virus_name', 'virus_lot', 'volume_nl', 'injection_site',
                     'pre_surgery_weight_grams', 'anesthesia', 'notes', 'survived'),
     }

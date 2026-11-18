@@ -76,6 +76,11 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Sheet import: a contusion's weight on the day (`Subject_Weight (g)`) is
+  stored on the contusion (`surgeries.pre_surgery_weight_grams`), as an
+  injection's always was, and kept in step with the sheet. Contusions
+  imported earlier are filled in by the next import (a fill, so never a
+  refusal).
 - Sheet import: a contusion's `Survived` cell is stored on the contusion
   (`surgeries.survived`), and kept in step with the sheet like its other
   readings. It used to only mark the animal dead, so every contusion read as
