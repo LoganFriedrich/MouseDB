@@ -100,9 +100,10 @@ smaller window holding only the Setup tab opens instead, naming the file.
 Put the file right, close that window and open `mousedb-entry` again.
 
 From a terminal it reads the same. `mousedb-sheets status` prints the folder
-line as `Tracking sheets folder: (NOT IN USE: ...)` -- for a damaged settings
-file `(NOT IN USE: a settings file is damaged -- see below)` -- with the
-sentence from the table on the line under it. `mousedb-sheets import` (which
+line as `Tracking sheets folder: (NOT IN USE: <the folder set>)` -- or
+`(NOT CONFIGURED)` when no folder is set, or `(NOT IN USE: a settings file is
+damaged -- see below)` for a damaged settings file -- with the sentence from
+the table on the line under it. `mousedb-sheets import` (which
 is what the scheduled sheet import runs) imports nothing, ends with
 `Sheets: NOTHING IMPORTED -- <the same sentence>` and exits 1, so the
 scheduler records a failure.
@@ -626,9 +627,18 @@ pipeline compared videos with the previous scores until the nightly import.)
 
 **The lock** is one file under `<mousedb_root>/logs` that every job writing
 the database takes in turn (INSTALL.md, "What happens when another program
-has the database locked"). An import waits for it up to 25 minutes per
-cohort; after that, that cohort FAILS with `could not acquire the
-database-task lock after 1500s`, and the others carry on.
+has the database locked"). An import waits while the job holding it is
+working: up to 25 minutes per cohort when started from the window, the
+**Update the database now** button or `mousedb update`, up to 40 minutes when
+started by the scheduled job or another terminal command (the environment variable
+`MOUSEDB_LOCK_WAIT_MINUTES` changes it). After that -- or sooner, if the
+holder shows no sign of progress for 30 minutes -- that cohort FAILS with
+`could not acquire the database-task lock: waited the full N minutes ...`
+(or `... has shown no sign of progress for 30 minutes ...`). The cohorts after
+it are still tried, but they do not wait again for the same holder: while it
+still holds the lock they fail at once with `... this job already waited for
+... and gave up on it ...`. Nothing from a failed cohort was changed; import it
+again once the other job has finished.
 
 **A dry run** (`--dry-run`) reads everything and writes nothing: not the
 database, not the import history, and it does not wait for the lock. (One
@@ -648,7 +658,7 @@ so for that cohort the two described different versions of the sheet.)
 You see it on the line under the cohort's `FAIL` line:
 
 ```
-FAIL CNT_NN Connectome_NN_Animal_Tracking.xlsx <the error>  [N warnings]
+FAIL PROJA_NN ProjectA_NN_Animal_Tracking.xlsx <the error>  [N warnings]
        [!] animal details left as they were: nothing from this workbook was saved (see the error), ...
 ```
 
@@ -1017,7 +1027,7 @@ never read as a sheet. You then see three lines:
 ```
 REFUSED: <the file> was not imported.
   Why: <which folder, or what is wrong with the name>.
-  Instead: import CNT_NN's live sheet, Connectome_NN_Animal_Tracking.xlsx, from the sheets folder: mousedb-sheets import --cohort CNT_NN
+  Instead: import PROJA_NN's live sheet, ProjectA_NN_Animal_Tracking.xlsx, from the sheets folder: mousedb-sheets import --cohort PROJA_NN
 ```
 
 Run the command on the *Instead* line. If the refused copy really is the
@@ -1133,7 +1143,7 @@ that is missing or renamed is kept as it was and reported
 | `<workbook> is open in another program: read its last saved version` | Nothing to do. This is not a failure: you may leave a workbook open in Excel, and the import reads what was last saved. Changes you have not saved are not in the file; save them and the next import picks them up. |
 | `FAIL ... Could not read the workbook: it is open in <program> (process N) on this computer ...` | Rare. Excel does not cause this; it means the program named is holding the file so that nothing at all can read it. Close that program. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. |
 | `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same, when Windows could not say which program. Also check that your account can read the file. |
-| `FAIL ... could not acquire the database-task lock after 1500s ...` | Another database task held the lock for 25 minutes. Import again later; if it keeps happening, find the task that is stuck. |
+| `FAIL ... could not acquire the database-task lock: ...` | Another database task held the lock for this import's whole wait (25 minutes from the window, 40 from a terminal or the scheduled job), or showed no progress for 30 minutes, or this import had already given up on it for an earlier cohort. Import again later; if it keeps happening, find the task that is stuck (the message names it). |
 | `Sheets: NOTHING IMPORTED -- ...` | Read the reason on that line; usually the sheets folder is not set or not found (see "Setting the folder"). |
 | `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with its project's sheet name; otherwise nothing. If the reason is that the name fits more than one project, rename it so it fits one. |
 | `[!] CNT_NN is pinned to <file>, which ...` (or `PIN BROKEN: ...`) | Pin the right file again, or unpin (see "A broken pin"). |
@@ -1293,8 +1303,10 @@ animal on a day" covers exactly the new animals. No dates are filled in
 could not be pointed at the right row, the log box lists it (`[!] ...`) and
 the formula is left as it was in the template, never guessed.
 
-This button is the only thing in the mousedb window that writes into the
-sheets folder, and it only ever creates a NEW file. It never replaces a file
+Apart from the `!! <cohort> - FIX THESE.xlsx` files every import writes and
+removes (see "Beside the sheet"), this button is the only thing in the mousedb
+window that writes into the sheets folder, and it only ever creates a NEW
+file. It never replaces a file
 and never closes anything:
 
 - **The name must be exactly `PROJECT_NN`** -- a project with sheets here
@@ -1340,6 +1352,11 @@ written.` and ends with exit code 3; any other non-zero code means it failed.
 <workbook> --output-dir <folder>` writes a tidied copy under the input's own
 name and never writes over a file that is already there -- not even its own
 input -- so give it a working folder, not the sheets folder.
+
+Run with no options, `mousedb-make-sheets` asks its questions in the terminal
+and builds the workbook from mousedb's own built-in layout, NOT from the
+project's template (it still never writes over a file). Use **New cohort
+sheet...** or `mousedb new-sheet` for a sheet made from the template.
 
 ### Making or changing a project's template (once per project)
 
@@ -1391,7 +1408,9 @@ reads its structure every time; nothing else needs changing.
   all-or-nothing per cohort), and each animal's details were left as they
   were. Copy the message and report it.
 - **LAST IMPORT FAILED** with *could not acquire the database-task lock*:
-  another database task held the lock for 25 minutes. Import again later.
+  another database task held the lock for this import's whole wait (25
+  minutes from the window, 40 from a terminal or the scheduled job), or showed
+  no progress for 30 minutes. Import again later.
 - **A sheet is open in Excel, on this computer or another**: import still
   works and reads what was last saved. Leave it open. Unsaved changes arrive
   with the first import after you save.
@@ -1464,7 +1483,7 @@ From a terminal (MouseDB environment active):
 mousedb-sheets status                             # which file, edited when, imported when
 mousedb-sheets import [--cohort CNT_NN] [--dry-run] [--json]
 mousedb-sheets import --cohort <cohort> --allow-large-removal   # after checking: see "The sheet wins"
-mousedb-sheets pin CNT_NN "Connectome_NN_Animal_Tracking.xlsx"
+mousedb-sheets pin PROJA_NN "ProjectA_NN_Animal_Tracking.xlsx"
 mousedb-sheets unpin CNT_NN
 mousedb-sheets set-dir "<folder>"
 mousedb cohort-sheets                             # the folder, files not read, broken pins
