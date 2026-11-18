@@ -2,8 +2,8 @@
 
 WHY THIS EXISTS
 ---------------
-A limited export (mousedb.exporters.subsets) is routine lab work -- "give me
-cohorts 1 to 4, the last three pillar sessions before the injury" -- and
+A limited export (mousedb.exporters.subsets) is routine lab work -- "these
+cohorts, only the sessions just before the injury, only these columns" -- and
 routine lab work never needs a terminal. This window builds the same
 definition the command ``mousedb export-subset`` takes, saves it by name in the
 lab settings file, and makes the slice by starting the exporter as a program of
@@ -61,8 +61,9 @@ export -- nothing is calculated again -- so it always agrees with the full expor
 5. Optional: a yes/no column per animal. Give it a name; pick a rule, or leave
    it blank to fill in later.
 6. "Save" keeps the definition (in the lab settings, for everyone). "Save and
-   make now" also makes the files. "Check only" counts the rows and writes
-   nothing.
+   make now" also makes the files. "Check only" counts the rows of what the
+   window shows now and writes nothing -- it does not save the definition
+   either.
 
 The files go to exports\\subsets\\<name>\\: the data files, their data
 dictionaries (only the kept columns), analysis_EXCLUSIONS.csv for these
@@ -76,10 +77,12 @@ Full guide: docs/WHERE_IS_MY_DATA.md, "Limited exports".
 
 
 def run_subset_program(name: str, dry_run: bool = False,
+                       definition_file: Optional[Path] = None,
                        timeout_seconds: Optional[float] = None) -> dict:
     """Make (or check) the saved limited export ``name`` in a program of its own
-    (``python -m mousedb.exporters.subsets <name> --run --no-wait``). Returns
-    {"returncode", "busy", "refused", "output"}. See data_status_tab.
+    (``python -m mousedb.exporters.subsets <name> --run --no-wait``); with
+    ``definition_file``, the definition in that file instead of the saved one.
+    Returns {"returncode", "busy", "refused", "output"}. See data_status_tab.
     run_exports_program for why a fresh program and why this working folder."""
     exe = Path(sys.executable)
     if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").is_file():
@@ -87,6 +90,8 @@ def run_subset_program(name: str, dry_run: bool = False,
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     cmd = [str(exe), "-m", "mousedb.exporters.subsets", name,
            "--dry-run" if dry_run else "--run", "--no-wait"]
+    if definition_file:
+        cmd += ["--definition-file", str(definition_file)]
     proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                           stdin=subprocess.DEVNULL, creationflags=flags,
                           cwd=str(exe.parent), timeout=timeout_seconds)
@@ -402,14 +407,16 @@ class LimitedExportDialog(QDialog):
         self._load_names(select=name)
         return True
 
-    def _start(self, dry_run: bool):
+    def _start(self, dry_run: bool, definition_file: Optional[Path] = None):
         if self._job is not None and self._job.isRunning():
             QMessageBox.information(self, "Limited export", "It is still being made -- wait for it.")
             return
         name = self.name.text().strip()
         self.out.append("%s %s ... (large cohorts take a few minutes)"
                         % ("Checking" if dry_run else "Making", name))
-        job = _Job(lambda: run_subset_program(name, dry_run=dry_run))
+        self._check_file = definition_file
+        job = _Job(lambda: run_subset_program(name, dry_run=dry_run,
+                                              definition_file=definition_file))
         self._job = job
         job.finished.connect(lambda: self._done(job.result))
         job.start()
@@ -419,10 +426,30 @@ class LimitedExportDialog(QDialog):
             self._start(dry_run=False)
 
     def check(self):
-        if self.save():
-            self._start(dry_run=True)
+        """Count what the window shows now, writing nothing -- not even the
+        definition: the check runs on a temporary copy of it. WHY not save first:
+        a saved definition is remade by the nightly job, and a check is not a
+        decision to keep one."""
+        import json
+        import tempfile
+        name = self.name.text().strip()
+        try:
+            profile = subsets.validate(name, profile_from_form(self._form()))
+        except Exception as e:
+            QMessageBox.warning(self, "Not checked", "The definition cannot be used:\n%s" % e)
+            return
+        fd, path = tempfile.mkstemp(prefix="mousedb_subset_check_", suffix=".json")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(profile, fh)
+        self._start(dry_run=True, definition_file=Path(path))
 
     def _done(self, r: dict):
+        if getattr(self, "_check_file", None):
+            try:
+                Path(self._check_file).unlink()
+            except OSError:
+                pass
+            self._check_file = None
         self.out.append(r.get("output", "").strip())
         if r.get("busy"):
             QMessageBox.information(self, "Limited export",

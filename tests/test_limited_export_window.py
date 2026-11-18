@@ -89,3 +89,20 @@ def test_the_tab_has_the_button_and_shows_a_failed_remake(qt, lab, monkeypatch):
         "result": "SubsetRefused: no column ghost"}}))
     lines = data_status_tab.limited_export_lines()
     assert any(l.strip().startswith("[FAIL] pre") and "ghost" in l for l in lines)
+
+
+def test_check_only_saves_nothing_and_checks_what_the_window_shows(qt, lab, monkeypatch):
+    from PyQt5.QtCore import Qt
+    from mousedb import sheet_projects
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    d = LimitedExportDialog()
+    d.name.setText("trial")
+    d.cohorts.item(1).setCheckState(Qt.Checked)
+    started = []
+    monkeypatch.setattr(d, "_start", lambda dry_run, definition_file=None:
+                        started.append((dry_run, json.loads(definition_file.read_text()))))
+    d.check()
+    assert started and started[0][0] is True
+    assert started[0][1]["cohorts"] == ["PROJA_02"]
+    cfg = sheet_projects.config_path()
+    assert not cfg.is_file() or "export_subsets" not in json.loads(cfg.read_text())
