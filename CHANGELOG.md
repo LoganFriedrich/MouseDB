@@ -229,6 +229,14 @@ checked-in code, not what's planned.
   and a contested video was left out alone while the other animals of its
   recording went into the analysis files. The skip signature records whether
   the folder could be reached, so the files are rebuilt once it can.
+- Study facts: a damaged study-facts file (not valid JSON) is refused by
+  every reader and writer, naming the file, instead of reading as "nothing
+  set". Exports used to write the study-fact columns blank without a word,
+  and the next Set wrote back a file holding only that one fact, losing every
+  other project's facts and exception rules. Saves now go through the same
+  writer as the other settings files: a damaged file is never written over
+  (a copy is kept as `<name>.damaged-<time>`), and a new file is swapped in
+  whole. The Study Facts tab shows the damaged file in red and saves nothing.
 - Sheet import, animal details: a tab that reads only part of its animals
   (more than 5 and more than a quarter of those the database holds details
   for from it are left out) is kept as it was and reported as

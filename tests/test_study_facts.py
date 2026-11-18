@@ -44,9 +44,71 @@ def test_blank_value_in_file_counts_as_unset(facts_file):
     assert "StudyLeader" in sf.unset_fields("PROJA")
 
 
-def test_unreadable_file_is_treated_as_empty(facts_file):
-    facts_file.write_text("{not json", encoding="utf-8")
-    assert sf.facts("PROJA") == {}
+# ---------------------------------------------------------------------------
+# A damaged file is refused, never read as "nothing set" and never written over.
+# WHY: it used to read as empty, so every export wrote its study-fact columns
+# blank without a word, and the next Set wrote back a file holding only that
+# one fact -- every other project's facts and exception rules gone.
+# ---------------------------------------------------------------------------
+
+DAMAGED = ('{"default": {"SpeciesTyp": "species-x"},\n'
+           ' "PROJA": {"SpeciesStrainTyp": "strain-a",,\n'
+           '           "_rules": [{"field": "SpeciesStrainTyp", "value": "strain-b",\n'
+           '                       "when_any_value_contains": "marker"}]}}\n')
+
+
+def test_a_damaged_file_is_refused_by_every_reader(facts_file):
+    from mousedb import config
+    facts_file.write_text(DAMAGED, encoding="utf-8")
+    for read in (lambda: sf.facts("PROJA"), sf.read_all, lambda: sf.get("PROJA", "SpeciesTyp"),
+                 lambda: sf.rules("PROJA"), lambda: sf.unset_fields("PROJA"), sf.describe):
+        with pytest.raises(config.SettingsFileDamaged) as e:
+            read()
+        assert str(facts_file) in str(e.value)
+    # A ConfigError, so the mousedb command prints it as one [FAIL] line.
+    assert issubclass(config.SettingsFileDamaged, config.ConfigError)
+
+
+def test_a_damaged_file_is_never_written_over(facts_file):
+    from mousedb import config
+    facts_file.write_text(DAMAGED, encoding="utf-8")
+    for write in (lambda: sf.set_fact("PROJB", "StudyLeader", "someone"),
+                  lambda: sf.set_fact("PROJA", "SpeciesStrainTyp", None),
+                  lambda: sf.set_rules("PROJB", [{"field": "SpeciesTyp", "value": "v",
+                                                  "when_any_value_contains": "t"}])):
+        with pytest.raises(config.SettingsFileDamaged):
+            write()
+        assert facts_file.read_text(encoding="utf-8") == DAMAGED
+    copies = list(facts_file.parent.glob(facts_file.name + ".damaged-*"))
+    assert copies and copies[0].read_text(encoding="utf-8") == DAMAGED
+
+
+def test_a_missing_or_empty_file_is_nothing_set(facts_file):
+    assert sf.read_all() == {}
+    facts_file.write_text("", encoding="utf-8")
+    assert sf.read_all() == {} and sf.facts("PROJA") == {}
+
+
+def test_saving_one_fact_keeps_every_other_project_and_rule(facts_file):
+    rule = {"field": "SpeciesStrainTyp", "value": "strain-b", "when_any_value_contains": "m"}
+    sf.set_fact("default", "SpeciesTyp", "species-x")
+    sf.set_fact("PROJA", "SpeciesStrainTyp", "strain-a")
+    sf.set_rules("PROJA", [rule])
+    sf.set_fact("PROJB", "StudyLeader", "someone")
+    data = json.loads(facts_file.read_text(encoding="utf-8"))
+    assert data == {"default": {"SpeciesTyp": "species-x"},
+                    "PROJA": {"SpeciesStrainTyp": "strain-a", "_rules": [rule]},
+                    "PROJB": {"StudyLeader": "someone"}}
+    # No temporary file is left beside it.
+    assert [p.name for p in facts_file.parent.iterdir()] == [facts_file.name]
+
+
+def test_a_section_that_is_not_named_values_is_refused_not_replaced(facts_file):
+    from mousedb import config
+    facts_file.write_text(json.dumps({"PROJA": "oops"}), encoding="utf-8")
+    with pytest.raises(config.SettingsFileDamaged):
+        sf.set_fact("PROJA", "StudyLeader", "someone")
+    assert json.loads(facts_file.read_text(encoding="utf-8")) == {"PROJA": "oops"}
 
 
 @pytest.mark.parametrize("ident,project", [

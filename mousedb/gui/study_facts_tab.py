@@ -227,10 +227,34 @@ class StudyFactsTab(QWidget):
     def _say(self, text: str):
         self.log.append(text)
 
+    def _sections(self, tell: bool = False):
+        """Every section of the study-facts file, or None when the file is
+        damaged. WHY: a damaged file is refused, never read as empty
+        (study_facts.StudyFactsFileDamaged); uncaught here, that refusal would
+        close the whole window from inside a button. Instead the tab says
+        which file is damaged, in red at the top and in its log, shows no
+        values (none can be trusted) and saves nothing until it is mended.
+        ``tell``: also pop up a message (for a button the person just pressed)."""
+        try:
+            sections = study_facts.read_all()
+        except study_facts.StudyFactsFileDamaged as e:
+            self.path_label.setText("NOT READ -- %s" % e)
+            self.path_label.setStyleSheet("color: #b00020; font-weight: bold;")
+            self.facts_table.setRowCount(0)
+            self.rules_table.setRowCount(0)
+            self._say(str(e))
+            if tell:
+                QMessageBox.critical(self, "Study facts file damaged", str(e))
+            return None
+        self.path_label.setStyleSheet("color: #555;")
+        return sections
+
     def reload(self):
         self.path_label.setText("Stored in: %s   (this file is never committed; it "
                                 "holds this lab's own facts)" % study_facts.facts_path())
-        sections = study_facts.read_all()
+        sections = self._sections()
+        if sections is None:
+            return
         names = [study_facts.DEFAULT_SECTION] + sorted(
             k for k in sections if k != study_facts.DEFAULT_SECTION)
         current = self.project.currentText()
@@ -247,7 +271,9 @@ class StudyFactsTab(QWidget):
 
     def reload_tables(self):
         project = self._current_project()
-        sections = study_facts.read_all()
+        sections = self._sections()
+        if sections is None:
+            return
         own = sections.get(project, {})
         # For a real project show the effective value (its own, else the default) so
         # the person sees what the export will actually write.
@@ -301,7 +327,10 @@ class StudyFactsTab(QWidget):
         project = self._current_project()
         known = dict(study_facts.FIELDS)
         known.update(study_facts.PROTOCOL_FIELDS)
-        current = study_facts.read_all().get(project, {}).get(name, "")
+        sections = self._sections(tell=True)
+        if sections is None:
+            return
+        current = sections.get(project, {}).get(name, "")
         value, ok = QInputDialog.getText(
             self, "Set %s" % name,
             "%s\n\nValue for project '%s':" % (known.get(name, ""), project),
@@ -360,8 +389,12 @@ class StudyFactsTab(QWidget):
                   "exception." % name)
 
     # --------------------------------------------------------------- rules
-    def _rules(self) -> List[dict]:
-        own = study_facts.read_all().get(self._current_project(), {})
+    def _rules(self) -> Optional[List[dict]]:
+        """The project's exceptions; None when the file is damaged (said already)."""
+        sections = self._sections(tell=True)
+        if sections is None:
+            return None
+        own = sections.get(self._current_project(), {})
         return [r for r in (own.get(study_facts.RULES_KEY) or []) if isinstance(r, dict)]
 
     def _save_rules(self, rules: List[dict]):
@@ -374,15 +407,21 @@ class StudyFactsTab(QWidget):
         self.reload_tables()
 
     def _add_rule(self):
+        if self._rules() is None:
+            return
         dlg = _RuleDialog(self)
         if dlg.exec_() == QDialog.Accepted:
-            rules = self._rules() + [dlg.rule()]
-            self._save_rules(rules)
+            rules = self._rules()
+            if rules is None:
+                return
+            self._save_rules(rules + [dlg.rule()])
             self._say("Exception added.")
 
     def _edit_rule(self):
         row = self.rules_table.currentRow()
         rules = self._rules()
+        if rules is None:
+            return
         if row < 0 or row >= len(rules):
             QMessageBox.information(self, "Pick an exception",
                                     "Select a row in the Exceptions table first.")
@@ -396,6 +435,8 @@ class StudyFactsTab(QWidget):
     def _remove_rule(self):
         row = self.rules_table.currentRow()
         rules = self._rules()
+        if rules is None:
+            return
         if row < 0 or row >= len(rules):
             QMessageBox.information(self, "Pick an exception",
                                     "Select a row in the Exceptions table first.")
@@ -411,6 +452,8 @@ class StudyFactsTab(QWidget):
     def _move_rule(self, delta: int):
         row = self.rules_table.currentRow()
         rules = self._rules()
+        if rules is None:
+            return
         new = row + delta
         if row < 0 or new < 0 or new >= len(rules):
             return

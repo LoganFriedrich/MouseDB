@@ -342,6 +342,27 @@ Useful to know:
 Nothing about your lab belongs in the code. The tool supplies the mechanism;
 the file supplies your facts.
 
+**When the study-facts file is damaged.** The file is plain JSON, so a hand
+edit with a stray comma, or a save cut off part-way, can leave it unreadable.
+Such a file is refused, never read as "nothing set": `mousedb study-facts`
+prints `[FAIL] the study-facts file <path> is damaged and was not read (...)`
+and exits 1; the Study Facts tab shows `NOT READ -- ...` in red at the top
+and no values; and the exports do not write any cohort whose rows need the
+facts -- each such cohort is listed under `failures` in `MANIFEST.json` with
+that same sentence, and the nightly job reports `[FAIL]`. Nothing is ever
+written over the damaged file: a Set or Clear (tab or command) is refused,
+and a copy of the file as it was is kept beside it as
+`study_facts.json.damaged-<date>-<time>`. To mend it, open the file named in
+the message in a text editor (Notepad is fine), correct it so it reads as
+JSON (`{"<PROJECT>": {"<column>": "<value>"}, ...}`), save, and run
+`mousedb study-facts --show`: when it lists your facts again, everything
+works again; the next export rewrites the files. Until 2026-11 a damaged file
+read as empty: every export wrote these columns blank without saying why,
+and the next Set wrote back a file holding only that one value -- every
+other project's facts and exceptions were lost. Saves are also made whole
+now: the new file is written beside the old one and swapped in, so a save
+cut off part-way leaves the previous file as it was.
+
 **ASPA file names.** A frozen ASPA cohort's files are named `..._ASPA_NN_X`,
 e.g. `ODC_reaches_ASPA_04_D.csv`: `X` is the cohort letter the lab knows it by
 (its workbook and folder), `NN` is the same cohort as the pipeline encodes it

@@ -34,15 +34,27 @@ Set and inspect with::
 
 Any ODC column name may be stored; FIELDS lists the ones the tools fill today,
 with a plain description of each for the command and the GUI.
+
+A damaged file is refused, never read as empty
+----------------------------------------------
+A file that exists but is not valid JSON (a half-written save, a hand edit with
+a stray comma) raises StudyFactsFileDamaged from every reader and every writer,
+naming the file. WHY: it used to read as "nothing set", so every export quietly
+wrote its study-fact columns blank as if nobody had ever set them, and the next
+Set (tab or command) wrote back a file holding only that one fact -- every other
+project's facts and exception rules gone. Writes go through
+config.update_settings_file, the one writer every mousedb settings file uses: it
+refuses a damaged file (keeping a copy beside it, <name>.damaged-<time>) and
+swaps a finished temporary file in, so a crash mid-save leaves the old file
+whole. A missing or empty file is the normal "nothing set yet".
 """
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Dict, Optional
 
-from .config import CONFIG_PATH
+from .config import CONFIG_PATH, SettingsFileDamaged, read_settings_file, update_settings_file
 
 ENV_VAR = "MOUSEDB_STUDY_FACTS"
 DEFAULT_SECTION = "default"
@@ -94,38 +106,82 @@ PROTOCOL_FIELDS: Dict[str, str] = {
 }
 
 
+class StudyFactsFileDamaged(SettingsFileDamaged):
+    """The study-facts file exists but cannot be read as study facts. A
+    SettingsFileDamaged (so a ConfigError: the mousedb command prints it as one
+    [FAIL] line), worded for this file."""
+
+    def __init__(self, path, why: str, backup=None):
+        super().__init__(path, why, backup)
+        msg = ("the study-facts file %s is damaged and was not read (%s).\n"
+               "  Until it is put right no export carries study facts and nothing can "
+               "be saved to it. Open it in a text editor and correct it (it must be "
+               "JSON: {\"<PROJECT>\": {\"<column>\": \"<value>\"}, ...}); then "
+               "'mousedb study-facts --show' lists what it holds." % (path, why))
+        if backup is not None:
+            msg += "\n  Nothing was saved: a copy of the damaged file is at %s" % backup
+        self.args = (msg,)
+
+
 def facts_path() -> Path:
     """The study-facts file for this machine (env override, else beside config.json)."""
     env = os.environ.get(ENV_VAR)
     return Path(env) if env else CONFIG_PATH.parent / "study_facts.json"
 
 
+def _read_file() -> dict:
+    """The file as it is on disk; {} when missing or empty. Raises
+    StudyFactsFileDamaged when it exists but is not a JSON object."""
+    try:
+        return read_settings_file(facts_path())
+    except SettingsFileDamaged as e:
+        raise StudyFactsFileDamaged(e.path, e.why) from None
+
+
 def read_all() -> Dict[str, Dict[str, str]]:
-    """Every section in the file; {} when the file is missing or unreadable.
+    """Every section in the file; {} when the file is missing or empty.
+    Raises StudyFactsFileDamaged when it exists but cannot be read (see the
+    module docstring: a damaged file never reads as "nothing set").
 
     Values are coerced to text so a number typed into the file cannot reach an export
     as an int -- except RULES_KEY, which is a list and is passed through untouched.
     """
-    path = facts_path()
+    out = {}
+    for k, sec in _read_file().items():
+        if not isinstance(sec, dict):
+            continue
+        section = {}
+        for f, v in sec.items():
+            if str(f) == RULES_KEY:
+                section[RULES_KEY] = v if isinstance(v, list) else []
+            else:
+                section[str(f)] = str(v)
+        out[str(k)] = section
+    return out
+
+
+def _update(change) -> Path:
+    """Apply ``change(dict)`` to the file through config.update_settings_file
+    (refuses a damaged file and keeps a copy of it; writes a temporary file and
+    swaps it in whole). Returns the file's path."""
     try:
-        if path.is_file():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                out = {}
-                for k, sec in data.items():
-                    if not isinstance(sec, dict):
-                        continue
-                    section = {}
-                    for f, v in sec.items():
-                        if str(f) == RULES_KEY:
-                            section[RULES_KEY] = v if isinstance(v, list) else []
-                        else:
-                            section[str(f)] = str(v)
-                    out[str(k)] = section
-                return out
-    except Exception:
-        pass
-    return {}
+        return update_settings_file(facts_path(), change)
+    except SettingsFileDamaged as e:
+        if isinstance(e, StudyFactsFileDamaged):
+            raise
+        raise StudyFactsFileDamaged(e.path, e.why, e.backup) from None
+
+
+def _own_section(data: dict, project: str) -> dict:
+    """The project's section of the raw file, created when missing. A section
+    that is there but is not a set of named values is refused, not replaced:
+    replacing it would throw away whatever it holds."""
+    section = data.setdefault(project, {})
+    if not isinstance(section, dict):
+        raise StudyFactsFileDamaged(
+            facts_path(), "the section '%s' holds a %s, not named values; nothing "
+                          "was saved" % (project, type(section).__name__))
+    return section
 
 
 def rules(project: Optional[str]) -> list:
@@ -201,18 +257,16 @@ def set_fact(project: str, field: str, value: Optional[str]) -> Path:
     field = field.strip()
     if not project or not field:
         raise ValueError("both a project (or 'default') and a field name are needed")
-    data = read_all()
-    section = data.setdefault(project, {})
-    if value is None or str(value) == "":
-        section.pop(field, None)
-        if not section:
-            data.pop(project, None)
-    else:
-        section[field] = str(value)
-    path = facts_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return path
+
+    def change(data):
+        section = _own_section(data, project)
+        if value is None or str(value) == "":
+            section.pop(field, None)
+            if not section:
+                data.pop(project, None)
+        else:
+            section[field] = str(value)
+    return _update(change)
 
 
 def set_rules(project: str, rule_list: list) -> Path:
@@ -244,18 +298,16 @@ def set_rules(project: str, rule_list: list) -> Path:
             if only:
                 entry["in_fields"] = only
         cleaned.append(entry)
-    data = read_all()
-    section = data.setdefault(project, {})
-    if cleaned:
-        section[RULES_KEY] = cleaned
-    else:
-        section.pop(RULES_KEY, None)
-    if not section:
-        data.pop(project, None)
-    path = facts_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return path
+
+    def change(data):
+        section = _own_section(data, project)
+        if cleaned:
+            section[RULES_KEY] = cleaned
+        else:
+            section.pop(RULES_KEY, None)
+        if not section:
+            data.pop(project, None)
+    return _update(change)
 
 
 def describe(project: Optional[str] = None) -> str:
