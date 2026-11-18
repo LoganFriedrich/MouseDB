@@ -587,12 +587,20 @@ def acknowledge(selectors: List[str], by: str, reason: str,
 
 # --- command line ---------------------------------------------------------------
 
-def main(argv=None) -> int:
+DESCRIPTION = ("List hand-scored sessions with no video anywhere in the reaching "
+               "pipeline (read-only unless --write or --acknowledge is given).")
+
+
+def build_parser(ap=None):
+    """The options of ``mousedb missing-videos``. ``mousedb``'s own command line
+    adds them to its subcommand through this function, and ``python -m
+    mousedb.missing_videos`` builds its parser here too. WHY one function: the
+    subcommand used to hand everything after its name on as a block
+    (argparse.REMAINDER), which refuses a block that starts with an option, so
+    every option -- --help, --cohort, --write, and the --acknowledge line the
+    FIX THESE files print -- failed with "unrecognized arguments"."""
     import argparse
-    ap = argparse.ArgumentParser(
-        prog="mousedb missing-videos",
-        description="List hand-scored sessions with no video anywhere in the reaching "
-                    "pipeline (read-only unless --write or --acknowledge is given).")
+    ap = ap or argparse.ArgumentParser(prog="mousedb missing-videos", description=DESCRIPTION)
     ap.add_argument("--cohort", action="append", help="Only this cohort (repeatable)")
     ap.add_argument("--grace-days", type=int, default=None,
                     help="Days after a session before its video counts as missing "
@@ -604,7 +612,15 @@ def main(argv=None) -> int:
                          "session (<YYYYMMDD>_<animal>_<tray>)")
     ap.add_argument("--by", help="Who acknowledges (with --acknowledge)")
     ap.add_argument("--reason", help="Why (with --acknowledge)")
-    a = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None) -> int:
+    return run_args(build_parser().parse_args(argv))
+
+
+def run_args(a) -> int:
+    """The command's work, from parsed options (see build_parser)."""
     try:
         res = check(a.cohort, grace=a.grace_days)
         if a.acknowledge:

@@ -1026,15 +1026,15 @@ def cmd_backfill_phases(args):
 def cmd_missing_videos(args):
     """List (and optionally write, or acknowledge) hand-scored sessions with no
     video anywhere in the reaching pipeline."""
-    from .missing_videos import main
-    raise SystemExit(main(args.rest))
+    from .missing_videos import run_args
+    raise SystemExit(run_args(args))
 
 
 def cmd_sheet_progress(args):
     """How far along the videos are, counted against the tracking sheets
     (read only; mousedb.session_states)."""
-    from .session_states import main
-    raise SystemExit(main(args.rest))
+    from .session_states import run_args
+    raise SystemExit(run_args(args))
 
 
 def cmd_recording_issues(args):
@@ -1937,19 +1937,25 @@ def main():
              'pipeline (also done after every sheet import)')
     hs_parser.set_defaults(func=cmd_hand_scores)
 
-    # mousedb missing-videos
-    mv_parser = subparsers.add_parser('missing-videos', add_help=False,
+    # mousedb missing-videos. Its options are the module's own (build_parser),
+    # added to this subcommand. WHY not pass the rest on as a block
+    # (argparse.REMAINDER): argparse refuses a block that starts with an
+    # option, so every option failed "unrecognized arguments" -- including the
+    # --acknowledge line the FIX THESE files tell people to run.
+    from .missing_videos import DESCRIPTION as _mv_desc, build_parser as _mv_parser
+    mv_parser = subparsers.add_parser('missing-videos', description=_mv_desc,
         help='Hand-scored sessions with no video anywhere in the reaching pipeline '
              '(--help for its options: --write, --acknowledge, --grace-days, --cohort)')
-    mv_parser.add_argument('rest', nargs=argparse.REMAINDER)
+    _mv_parser(mv_parser)
     mv_parser.set_defaults(func=cmd_missing_videos)
 
     # mousedb sheet-progress
-    sp_parser = subparsers.add_parser('sheet-progress', add_help=False,
+    from .session_states import DESCRIPTION as _sp_desc, build_parser as _sp_parser
+    sp_parser = subparsers.add_parser('sheet-progress', description=_sp_desc,
         help='How far along the videos are, counted against the tracking sheets: filed, '
              'in processing, held for review, recording failed, not on the server yet '
              '(read only; --help for --list, --json, --cohort)')
-    sp_parser.add_argument('rest', nargs=argparse.REMAINDER)
+    _sp_parser(sp_parser)   # the module's own options (same reason as missing-videos)
     sp_parser.set_defaults(func=cmd_sheet_progress)
 
     # mousedb recording-issues

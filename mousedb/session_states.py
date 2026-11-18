@@ -404,19 +404,31 @@ def from_files(mousedb_root: Optional[Path] = None, census: Optional[dict] = Non
 
 # --- command line ---------------------------------------------------------------
 
-def main(argv=None) -> int:
+DESCRIPTION = ("How far along the videos are, counted against the tracking sheets: "
+               "every hand-scored session is filed, in processing, held for review, "
+               "recording failed, or not on the server yet. Read only.")
+
+
+def build_parser(ap=None):
+    """The options of ``mousedb sheet-progress``; ``mousedb``'s command line adds
+    them to its subcommand through this function (the same fix, and the same
+    reason, as missing_videos.build_parser)."""
     import argparse
-    from .missing_videos import CannotCheck
-    ap = argparse.ArgumentParser(
-        prog="mousedb sheet-progress",
-        description="How far along the videos are, counted against the tracking sheets: "
-                    "every hand-scored session is filed, in processing, held for review, "
-                    "recording failed, or not on the server yet. Read only.")
+    ap = ap or argparse.ArgumentParser(prog="mousedb sheet-progress", description=DESCRIPTION)
     ap.add_argument("--cohort", action="append", help="Only this cohort (repeatable)")
     ap.add_argument("--list", action="store_true",
                     help="Also list every overdue not-on-the-server recording, by cohort")
     ap.add_argument("--json", action="store_true", help="Print the whole result as JSON")
-    a = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None) -> int:
+    return run_args(build_parser().parse_args(argv))
+
+
+def run_args(a) -> int:
+    """The command's work, from parsed options (see build_parser)."""
+    from .missing_videos import CannotCheck
     try:
         res = from_files()
     except CannotCheck as e:

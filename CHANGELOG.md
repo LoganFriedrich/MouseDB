@@ -23,6 +23,20 @@ checked-in code, not what's planned.
   longer stops a rule being saved. Guide: docs/WHERE_IS_MY_DATA.md, "The
   yes/no column".
 
+### Fixed
+- **`mousedb missing-videos` and `mousedb sheet-progress` take their options
+  again** (`mousedb/cli.py`, `missing_videos.build_parser`,
+  `session_states.build_parser`). Both subcommands handed everything after
+  their name on as one block, which argparse refuses when the block starts
+  with an option, so every option -- `--help`, `--cohort`, `--write`,
+  `--json`, `--list`, and the `mousedb missing-videos --acknowledge ...` line
+  the FIX THESE files print -- failed with "unrecognized arguments". The
+  subcommands now carry the modules' own options (one parser-building
+  function each, used by `mousedb <subcommand>` and by `python -m`).
+  `export-subset` and `recording-issues` were checked the same way and were
+  not affected. Tests: tests/test_subcommand_options.py runs the printed
+  acknowledge lines as a person would.
+
 ### Changed
 - **Progress is counted against the tracking sheets**
   (`mousedb/session_states.py`, new). Every hand-scored session (one animal,

@@ -1910,6 +1910,11 @@ silences new ones.
 count per cohort and every missing recording, and changes nothing;
 `--write` also rewrites the CSV; `--cohort <id>` limits it to one cohort;
 `--grace-days <n>` overrides the setting for that run.
+`mousedb missing-videos --help` lists every option. (An earlier version
+refused every option after `missing-videos` and
+`sheet-progress` with "unrecognized arguments"; if you meet that message, the
+same command works as `python -m mousedb.missing_videos <options>` or
+`python -m mousedb.session_states <options>` in the MouseDB environment.)
 
 ## A recording that failed
 
