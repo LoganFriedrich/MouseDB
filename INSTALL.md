@@ -1,20 +1,5 @@
 # MouseDB - Installation & Usage
 
-## Subpackages
-
-`mousedb` ships two installable Python packages:
-
-- **`mousedb`** itself — the core package described in this document
-  (database, importers, exporters, GUI, web, validators, CLI).
-- **`mousedb/endpoint_ck_analysis/`** — a self-contained statistical
-  analysis pipeline (PCA, PLS, LMM, clustering) on the SCI cohort. It
-  ships its own `pyproject.toml`, notebooks, and a `QUICKSTART.md`. See
-  [`mousedb/endpoint_ck_analysis/QUICKSTART.md`](mousedb/endpoint_ck_analysis/QUICKSTART.md)
-  for that subpackage's setup; it can be installed and run independently
-  of the rest of `mousedb`.
-
-The instructions below cover the core `mousedb` package only.
-
 ## Quick Setup
 
 ```bash
@@ -125,12 +110,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-`testpaths` in `pyproject.toml` keeps `pytest` scoped to `tests/` and
-`mousedb/endpoint_ck_analysis/tests/`, so it won't crawl `.venv/` or stray
-cache directories. The endpoint_ck_analysis smoke test executes a notebook
-against the bundled database and is slower than the unit tests; if you
-just want fast feedback while editing the core package, run
-`pytest tests/`.
+`testpaths` in `pyproject.toml` keeps `pytest` scoped to `tests/`, so it
+won't crawl `.venv/` or stray cache directories.
 
 ### The tests never touch your real data (the live-folder guard)
 
@@ -310,8 +291,19 @@ archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 | `mousedb export --cohort CNT_05 --all-formats` | Export all formats |
 | `mousedb export ... --output <path>` | Write the export to `<path>`. Refused before the database is opened (`REFUSED` / `Why` / `Instead`, exit code 1) when `<path>` is inside the tracking-sheets folder or the ASPA folder, or is named like a cohort's tracking sheet: the export would empty the workbook that is there |
 | `mousedb export --unified` | Export unified reaches parquet |
+| (where the files go) | Without `--output`, into `<mousedb_root>/exports/`: `<cohort>_tracking.xlsx` (the plain export), `<cohort>_ODC.xlsx` (`--odc`), `unified_reaches.parquet` (`--unified`). `--all-formats` writes the first two (not the parquet); with `--output` it is the folder they go into |
 | (every `mousedb export` above) | A cohort that is still running gets an EMPTY phase in these files (`Test_Phase` in the two workbooks, `test_phase` in the unified parquet), the same rule as the nightly exports, decided from the database's reach rows; the command prints `Phase left empty (cohort still running): <cohorts>`. Why, how "running" is decided, and how to release a finished cohort's labels early: docs/WHERE_IS_MY_DATA.md, "A cohort that is still running has no phase labels yet" |
 | `mousedb entry` | Launch GUI |
+| `mousedb check [--cohort <cohort>] [-v] [--json]` | Data-completeness report per cohort (what each cohort is missing in the database). Like every command that opens the database, it first brings the table layout up to date (as `mousedb init` does); otherwise it only reads |
+| `mousedb dump [<table>] [-o <folder>]` | Copy database tables (projects, cohorts, subjects, weights, pellet scores, ramp entries, surgeries, virus preps, audit log) to CSV files for a person to look at, by default into `<mousedb_root>/database_dump`. Apart from bringing the table layout up to date (as `mousedb init` does), the database is only read |
+| `mousedb config --show` / `--set <key> <value>` / `--unset <key>` | Show, set or remove one machine-specific setting (add `--machine` for the settings file every login shares). See "Configuration" below |
+| `mousedb cohort-sheets` | Show the tracking-sheets folder, the files in it that are not read as sheets, and broken pins (`--cohort <cohort>` also shows that cohort's sheet). `--set <folder>` records the folder (refused if it holds no project's sheet, or looks like a snapshot copy); `--set-aspa <folder>` records the ASPA animal-sheets folder (workbooks named for a cohort letter, `<cohort letter>.xlsx`); `--discover` looks for the folder on this computer and records it when exactly one is found. All three write YOUR OWN settings file only |
+| `mousedb import-reaches` options | `--all` ignores the ledger and imports every file again (slow); `--include-processing` also reads results still in the pipeline's Processing folder; `--limit N` imports at most N files; `--force` writes even while a MouseReach watcher that writes the database is running (see "Scheduled jobs"); `--verbose` prints more |
+| `mousedb-update-sheets <workbook> [--output-dir <folder>]` | Fill the `2_ODC_Animal_Tracking` tab of a tracking workbook and write the result as a COPY, `<name>_updated.xlsx`, into `--output-dir` (default: a `processed` folder in the folder you run it from). The original workbook is never changed. With no options it asks in the terminal which workbook to use. (`--all` processes only workbooks named in one fixed built-in pattern, so on most computers it finds none -- give the workbook instead) |
+| `mousedb-reorganize [--dir <folder>]` | Asks in the terminal which Excel workbooks and tabs in the folder to use, and writes their pellet scores one row per pellet to `reorganized_data_long_format.csv` in that folder (replacing it). The database is not touched. Close the workbooks in Excel first |
+| `mousedb-quick-export [--dir <folder>]` | Reads `generated/all_cohorts_pellet_level.csv` and `generated/all_cohorts_tray_summaries.csv` under the folder (default: the folder you run it from) and writes `unified_pellet_level.csv`, `unified_tray_level.csv` and `unified_behavioral_data.xlsx` beside them (replacing them). The database is not touched |
+| `mousedb-web [--host <address>] [--port <n>]` | Start the web dashboard (docs/WATCHER_VIEWS.md). By default it listens on every network address of the computer, port 8000 (`MOUSEDB_WEB_HOST` / `MOUSEDB_WEB_PORT` change the defaults), so other computers on the network can open it; it has no login |
+| `mousedb-status`, `mousedb-init`, `mousedb-new-cohort`, `mousedb-import`, `mousedb-export`, `mousedb-entry`, `mousedb-browse`, `mousedb-check`, `mousedb-video-status`, `mousedb-archive-status`, `mousedb-import-brains`, `mousedb-import-reaches`, `mousedb-import-analyses` | The same as `mousedb <command>` (for example `mousedb-check` = `mousedb check`), with the same options |
 | `mousedb import-reaches --pellets-only` | Fill the per-pellet table (`video_pellets`: one row per pellet the pipeline cut each video into, reached for or not) from every features file, touching nothing else. A filed video whose newer run waits in a review queue is skipped (the output counts them): it is not done, and the nightly import keeps it out of the database until the new run is filed. Run once after upgrading; the nightly import keeps it current afterwards |
 | `mousedb import-reaches` | Pull new or changed MouseReach `*_features.json` results into `reach_data` (`--dry-run` to count only) |
 | `mousedb import-analyses` | Mirror MouseBrain's analysis registry (exports, figures, logs, provenance) into `<mousedb_root>/exports/<analysis>`, `figures/<analysis>`, `logs/`; writes `exports/ANALYSES_MANIFEST.json` (`--dry-run` to count only). Only one runs at a time: a second one (the nightly task and the "Update the database now" button on the Where Is My Data tab (`mousedb update`) at once) waits for the first, using the lock file `logs/.import-analyses.task.lock`, and ends with `[FAIL] import-analyses not run: ...` if it waited too long |
@@ -356,11 +348,11 @@ All subjects with session summaries for analysis:
 
 | Field | Constraint | Error |
 |-------|------------|-------|
-| Subject ID | `CNT_XX_YY` format | "Subject ID must be PROJECT_COHORT_SUBJECT" |
-| Pellet score | 0, 1, or 2 only | "Score must be 0=miss, 1=displaced, 2=retrieved" |
+| Subject ID | `PROJECT_NN_NN` format (letters, then two 2-digit numbers) | "Subject ID must be format XXX_NN_NN (e.g., CNT_05_01), got: <value>" |
+| Pellet score | 0, 1, or 2 only | "Score must be 0 (miss), 1 (displaced), or 2 (retrieved), got: <value>" |
 | Tray number | 1-4 | "Tray number must be 1-4" |
 | Pellet number | 1-20 | "Pellet number must be 1-20" |
-| Weight | 10-50g | "Weight must be in valid range" |
+| Weight | 10-50g | "Weight seems too low (check units), got: <value>g" or "Weight seems too high for a mouse, got: <value>g"; 100 g or more: "Weight must be less than 100g (check units), got: <value>" |
 | Sex | M or F | "Sex must be M or F" |
 
 ## Updating
@@ -430,7 +422,9 @@ mousedb config --set snapshot_dir <local folder for the parquet snapshot>
 mousedb config --set mousereach_pipeline_root <MouseReach's shared pipeline folder>   # optional if ~/.mousereach/config.json exists
 mousedb config --set mousebrain_pipeline_root <MouseBrain's pipeline folder>
 mousedb config --set lab_name "<your lab, as it should appear in exports>"
-mousedb config --set mousereach_env <MouseReach env's Scripts or bin dir>             # only for a by-hand bench-scan --route
+mousedb config --set mousereach_env <MouseReach env's Scripts or bin dir>             # needed for the pipeline census (the nightly snapshot job, "Refresh pipeline view") and a by-hand bench-scan --route
+mousedb config --set db_path <the database file>                                      # only if it is not <mousedb_root>/connectome.db
+mousedb config --set mousebrain_registry_root <folder>                                # only if MouseBrain records its analyses somewhere other than <mousebrain_pipeline_root>/Registry
 mousedb-sheets set-dir <folder holding the tracking workbooks>
 mousedb config --show
 ```
@@ -459,6 +453,25 @@ file instead:
 ```
 mousedb config --machine --set cohort_sheets_dir "<folder holding the tracking workbooks>"
 ```
+
+The ASPA sheets folder is the exception: it is set with
+`mousedb cohort-sheets --set-aspa <folder>`, which writes YOUR OWN settings
+file only. `aspa_data_dir` is not a `mousedb config` key, so
+`mousedb config --set aspa_data_dir ...` does not work (it stops with an
+error and saves nothing). To give it to every login, set the environment
+variable `MOUSEDB_ASPA_DATA` machine-wide, or add `"aspa_data_dir": "<folder>"`
+to the machine settings file in a text editor.
+
+**Other environment variables** (not `mousedb config` keys, so
+`mousedb config --show` does not list them):
+
+| variable | what it changes | default |
+|---|---|---|
+| `MOUSEDB_DB_TIMEOUT` | how many seconds a database call waits for another program's write before it fails with "database is locked" | 600; the window (`mousedb-entry`) uses 30 so it never freezes for minutes |
+| `MOUSEDB_FIELD_DEFINITIONS` | the file holding the lab's own descriptions of tracking-sheet columns, used in the data dictionaries | `~/.mousedb/sheet_field_definitions.json` |
+| `MOUSEDB_VERSIONS_JSON` | the `pipeline_versions.json` that `mousedb archive-status` compares against | found through `~/.mousereach/config.json`, then `mousereach_pipeline_root` |
+| `MOUSEDB_ASPA_DATA` | the ASPA animal-sheets folder (see above) | your own settings file, then the machine file |
+| `MOUSEDB_WEB_HOST`, `MOUSEDB_WEB_PORT` | where `mousedb-web` listens | every network address (`0.0.0.0`), port 8000 |
 
 **A damaged settings file is never read as empty, and never written over.**
 If either file is not valid JSON (say it was edited by hand and a comma went
@@ -499,11 +512,16 @@ mousedb study-facts --set <PROJECT> Injury_device "<device model and version>"
 mousedb study-facts --show
 ```
 
-The same command also holds the surgery protocol a NEW blank tracking sheet
-starts with (`Contusion_Location`, `Intended_kd`, `Anesthetic`,
-`Anesthetic_Dose`, `Analgesic`, `Analgesic_Dose`, `Injection_Location`,
-`Depths (D/V)`, `Coordinates (M/L)`); each animal's real values are still
-what is typed into its sheet.
+The same command also holds surgery-protocol defaults (`Contusion_Location`,
+`Intended_kd`, `Anesthetic`, `Anesthetic_Dose`, `Analgesic`,
+`Analgesic_Dose`, `Injection_Location`, `Depths (D/V)`, `Coordinates (M/L)`).
+They are used only by `mousedb-make-sheets` run with no options (its
+questions in the terminal, which build a workbook from mousedb's own built-in
+layout) and by `mousedb-make-sheets --fix` when it adds a missing tab. A new
+cohort sheet made with **New cohort sheet...** or `mousedb new-sheet` comes
+from the project's template (docs/TRACKING_SHEETS.md, "Starting a new
+cohort") and starts with whatever the template holds. Each animal's real
+values are still what is typed into its sheet.
 
 They are saved in `~/.mousedb/study_facts.json` (or the file named by
 `MOUSEDB_STUDY_FACTS`). A fact that is not set is left as an empty cell in
@@ -522,7 +540,7 @@ from what they imported, then the bench check, which reads the snapshot):
 | reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
 | brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables; a recounted brain's counts replace its old ones. Exits 1, with a last line starting `[FAIL]` that names what was left out, when any brain (or the calibration runs) did not land, or when it gave up waiting for the database. A brain the database refuses keeps this job failing every night until the cause is fixed -- that is on purpose |
 | analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it). Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then, only when those exports are complete, remakes every saved limited export not marked "not nightly" (docs/WHERE_IS_MY_DATA.md, "Limited exports"; one that cannot be made also makes the job exit 1); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it), and, when the census was retaken, brings the database's record of failed recordings up to date from it (`Failed recordings imported: ...`) and rewrites `exports/missing_videos/missing_session_videos.csv` (`List of sessions without a video written: ...`) -- a failure of these last three prints `[FAIL]` but does not change the exit code. Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
 | bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
@@ -539,9 +557,29 @@ every installation. Where a job takes tens of minutes, daily is the right
 answer; a corpus small enough that each job finishes in seconds can run them
 hourly.
 
-The jobs that write the database do not run while a MouseReach watcher is
-running on the same machine; they report that and exit. The analysis import
-writes files only (never the database), so it runs regardless.
+The snapshot refresh (and its `--import-sheets` step) and the reach import
+refuse to run while a MouseReach watcher that can WRITE the database is
+running on the same computer (one with `central_db` set in its
+`~/.mousereach/config.json`, or `MOUSEREACH_CENTRAL_DB` set); they report that
+and exit. The bench check refuses the same only when it would read the live
+database (when there is no snapshot to read). A watcher that does not write
+the database does not stop them. The sheet import, the brain import and the
+analysis import do not check for a watcher at all.
+
+**mousedb ships no job that checks whether the scheduled jobs succeeded.**
+(The tab does show the snapshot's age, failed sheet imports and failed limited
+exports.) The Where Is My Data tab and `mousedb-data-status` also read a
+health report,
+`<mousedb_root>/logs/health.json`, that a scheduled check of your own writes
+(mousedb does not ship one). Without that file they show the problem
+"nothing has checked whether the overnight jobs succeeded: no health report
+at ..."; the task name that message gives is one lab's own, not something
+mousedb installs. The report is a JSON file: `checked_at` (when the check ran;
+older than 48 hours is reported as "has not run"), `failing` (true when a job
+failed), `detail` (one line per failed run, `<job log name> | ...`) and `jobs`
+(each task's `task` name and `last_result`; 267014 is reported as "stopped at
+its time limit"). Without such a check that problem line stays, and the
+snapshot's age line is what tells you the jobs stopped working.
 
 ### What happens when another program has the database locked
 
