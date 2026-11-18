@@ -411,7 +411,8 @@ reaches the full export reaches the limited export the next time it is made.
    limited export...**. A window opens.
 2. At the top, pick a saved limited export from the list to change or remake
    it, or leave it on "(a new limited export)" and type a **Name** (letters,
-   digits, `-` and `_`; it becomes the folder name).
+   digits, `-` and `_`, starting with a letter or digit; it becomes the
+   folder name).
 3. **Cohorts**: tick the cohorts you want. The list is the cohorts the current
    exports hold.
 4. **Tray types**: tick Pillar, Easy and/or Flat. None ticked = every tray.
@@ -419,7 +420,7 @@ reaches the full export reaches the limited export the next time it is made.
    - **All sessions**;
    - **The last N [tray type] sessions before the cohort's first injury** --
      see "Which sessions 'the last N before the injury' picks" below;
-   - **From** a date **to** a date (either may be left empty).
+   - **From** a date **to** a date (either may be left empty, not both).
 6. **Kinds of file**: tick the files you want (the same kinds as the full
    export: per-reach complete record, per-reach shareable, per-reach analysis,
    per-session analysis, per-day ODC sessions). All are ticked to start with.
@@ -439,15 +440,18 @@ reaches the full export reaches the limited export the next time it is made.
    bottom says this when you open it). A cohort it names that the exports no
    longer hold is listed the same way as such a column. Its description, if it
    has one, is kept.
-8. **Yes/no column per animal** (optional): type a column name to add a column
-   holding "yes" or "no" for each animal. Choose a rule to fill it, or leave
+8. **Yes/no column (optional) -- name:** type a column name to add a column
+   holding "yes" or "no" for each animal (or, with a day-window rule, for each
+   animal on each day). Choose a rule in **filled by rule** to fill it, or leave
    it on "(none -- leave it blank)" to fill it in later (see "The yes/no
    column" below).
 9. **Remake nightly** (ticked to start with): make it again after the nightly
    export, whenever anything it holds has changed.
-10. Press **Save and make now**. It is saved for everyone (in the lab settings
-    file), then made. If the name you typed is already taken by a different
-    saved definition, a box asks whether to replace it: **No** leaves the saved
+10. Press **Save and make now** (or **Save** to save without making it). It is
+    saved for everyone (in the lab settings file), then made. If the name is
+    already saved with a different definition -- a name you typed that is
+    taken, or a saved limited export you opened and changed -- a box asks
+    whether to replace it: **No** leaves the saved
     one as it is (pick another name); **Yes** replaces it, and the replaced
     definition is kept in the lab settings file under `export_subsets_replaced`
     with the time it was replaced. Then the box at the bottom says what was
@@ -458,7 +462,20 @@ reaches the full export reaches the limited export the next time it is made.
 
 If something is wrong (a column the full export does not have, the exports
 being rewritten right now, a full export that is not complete) a box says so
-and **nothing is written**.
+and **no file is written**. (With **Save and make now** the definition was
+already saved before the making was refused; it stays saved. If the reason
+lasts -- a column the full export does not have, say -- the nightly job then
+reports that limited export as failed every night until it is fixed or
+forgotten.)
+
+**To forget a saved limited export**, open it in the window and press
+**Forget this definition** (a box asks first), or run
+`mousedb export-subset <name> --remove`. The files already made stay where
+they are, it is no longer remade at night, and its line leaves the Where Is
+My Data tab. There is no undo button or command: to bring it back, save it
+again (in the window, or with `--save` and its options), or copy its
+`definition` from `export_subsets_replaced` back under `export_subsets` in the
+lab settings file (see "Where the definitions are kept").
 
 **A full export that is not complete is never cut.** When a part of the
 nightly (or a "Refresh exports now") export failed, `exports/current/MANIFEST.json`
@@ -482,12 +499,27 @@ mousedb export-subset <name> --save --replace ...   # replace a saved definition
 
 `--save` refuses a name that already holds a different definition ("is
 already saved ... nothing was changed"); add `--replace` to replace it.
-Saving exactly what is already saved changes nothing.
+Saving exactly what is already saved changes nothing. `--save --replace`
+builds the whole definition from the options on that command line: anything
+you leave out goes back to its default (for example, without `--not-nightly`
+it is remade nightly again). `--run` with options but without `--save` makes
+a one-off limited export under that name and saves nothing.
+
+What the command prints and its exit code (the window shows the same text):
+
+| exit code | meaning | the line starts |
+|---|---|---|
+| 0 | done (also: `--list`, `--save` alone, `--remove`, a dry run) | `Limited export <name>: ...`, `Saved ...`, `Forgot ...` |
+| 6 | refused; no file was written (a taken name without `--replace`, no saved limited export of that name, a column the full export lacks, a full export that is not complete, the sessions from a different night, no action given). With `--save --run` the definition was saved before the making was refused, and stays saved | `[!] ` and the reason |
+| 3 | busy: the full exports are being rewritten (only with `--no-wait`, which the window uses) | `[!] ` |
+| 1 | the exports lock could not be taken (`[!] the exports lock could not be taken: ... Nothing was written.`), or the files could not be put in place (`[FAIL] limited export <name>: ...`, saying whether anything was changed) | `[!]` or `[FAIL]` |
 
 Other options: `--project PROJA` (every cohort of a project), `--from` /
-`--to` (a date window), `--kinds`, `--columns KIND=col1,col2`,
-`--flag-column`, `--flag-rule`, `--not-nightly`. `mousedb export-subset --help`
-lists them all.
+`--to` (a date window), `--session-tray` (which tray type's sessions
+`--last-sessions` counts; default the first `--tray-types`), `--kinds`,
+`--columns KIND=col1,col2`, `--flag-column`, `--flag-rule`, `--not-nightly`,
+`--all-saved` (remake every saved one). `mousedb export-subset --help` lists
+them all.
 
 ### What you get
 
@@ -660,7 +692,10 @@ is enough):
 4. Save the file. Check it reads correctly:
    `mousedb export-subset --list` prints every rule (`yes/no rule ...`) and
    every saved limited export. A typing mistake in the file makes it refuse
-   with the file's name; undo it from your copy.
+   with the file's name; undo it from your copy. (`--list` checks only that
+   the file can be read; a wrong value inside a rule -- say a tray type that
+   does not exist -- is found when a limited export using it is made, or with
+   **Check only**.)
 5. In **Make a limited export...**, open (or make) the limited export, type
    the yes/no column's name, pick your rule in "filled by rule", and press
    **Check only** -- the summary counts the rows -- then **Save** or **Save
@@ -1052,11 +1087,14 @@ imports it again, which is safe, only slower.
 which files it has imported (its ledger, `<mousedb_root>/logs/reach_imports.json`)
 every few minutes while it runs, not only at the end. So when a run is ended
 part-way -- the scheduled task's time limit, End in Task Scheduler, the
-computer restarting -- the next run (the task's automatic restart, or the
-next night's) skips everything already imported and does only the rest. At
+computer restarting -- the next run (the next night's, or one you start by
+hand) skips everything already imported and does only the rest. (Task
+Scheduler's restart setting does not re-run a task stopped at its time limit
+or one that exited with an error -- INSTALL.md, "Nothing re-runs a job that
+gave up".) At
 most the last few minutes of work are done again, which is safe: importing a
 video again replaces its rows, it never doubles them. You do not need to do
-anything; the restarted run's first line says how many files are still to
+anything; the next run's first line says how many files are still to
 import. Three rules keep a stopped run from leaving anything wrong behind:
 
 - A video is written into the ledger only after its reaches are in the
@@ -1573,9 +1611,9 @@ Rules that keep a replacement safe:
   The two-minute rule also covers `elife_counts.csv`, which every brain
   shares: if THAT file changed in the last two minutes, every brain waits,
   and the run ends with a `[FAIL]` line naming all of them. Nothing is lost:
-  the next scheduled run (or the task's restart after a failure, where it
-  has one), or running the command again a few minutes later,
-  imports them all.
+  the next scheduled run, or running the command again a few minutes later,
+  imports them all. (Task Scheduler's restart setting does not re-run a job
+  that exited 1.)
 - A counts file that looks cut off is refused the same way (stored counts
   kept, `[FAIL]` naming the brain, the words `looks cut off` in its line):
   a file whose last line has no line break at its end (its last row was cut
@@ -1867,8 +1905,9 @@ cohort, animal, day, tray, session name, `missing`, `recording_failed` or
 that animal and day, the recording name to look for, what to do, who
 acknowledged it, when and why, and -- for a recording that failed -- the
 reason, the recording and whether it was scored; see "A recording that
-failed" below). mousedb rewrites it after every sheet import and after the nightly
-pipeline scan; nothing else writes it.
+failed" below). mousedb rewrites it after every sheet import, after the nightly
+pipeline scan, and when someone runs `mousedb missing-videos --write`;
+nothing else writes it.
 
 **What is checked, and against what.**
 
@@ -1916,6 +1955,86 @@ refused every option after `missing-videos` and
 same command works as `python -m mousedb.missing_videos <options>` or
 `python -m mousedb.session_states <options>` in the MouseDB environment.)
 
+### Acknowledging: what can be, how, and how to undo it
+
+**What can be acknowledged.** Only what `mousedb missing-videos` lists as
+open right now:
+
+- a session listed as `missing` (overdue: older than the grace period when
+  the pipeline view was taken, in a cohort with a live sheet); and
+- a session of a failed recording (`recording_failed`; see "A recording that
+  failed" below).
+
+Nothing else can be: not a recent session still inside the grace period (it
+is not missing yet), not a session of a frozen workbook's cohort (never
+checked), not one already acknowledged, and none of the other lines on the
+tab or in a FIX THESE file (a video held for review, a label mismatch, a
+hand-score hold, a sheet typo, a failed import, a video with no sheet row):
+those are fixed where they come from.
+
+**How.** There is no button for it in the MouseDB window; it is one command
+in a terminal:
+
+    conda activate <the MouseDB environment>
+    mousedb missing-videos --acknowledge <selector> [<selector> ...] --by "<your name>" --reason "<why>"
+
+A selector is one of:
+
+- a cohort, e.g. `PROJA_03` -- every session of it open now, failed
+  recordings included;
+- a cohort and a day, `PROJA_03:2025-03-14` -- every tray of that day open
+  now, failed recordings included;
+- one session, written as in the CSV's `video_key` column
+  (`<YYYYMMDD>_<animal>_<tray>`);
+- a failed recording's file name, exactly as in the CSV's `recording` column
+  (put it in quotes).
+
+Selectors must match exactly, capital letters included. `--cohort <cohort>`
+on the same command limits what the selectors can name to that cohort, and
+`--grace-days <n>` changes which sessions count as missing for that run, the
+acknowledging included.
+
+**What it prints.** `[OK] <N> session(s) acknowledged`, then the usual
+listing with the new counts. If anything is wrong it prints one line, exits
+with code 1 and records **nothing** (every selector is checked before
+anything is written):
+
+| message | what to do |
+|---|---|
+| `[FAIL] say who is acknowledging (--by) and why (--reason)` | give both, each not empty |
+| `[FAIL] '<selector>' names no session that is missing or whose recording failed now` | check the spelling and capitals against `mousedb missing-videos` or the CSV; it may already be acknowledged, still recent, or in a cohort that is not checked |
+| `[FAIL] the acknowledgements file <file> could not be read (...); fix or delete it` | see "Undoing" below |
+| `[FAIL] the hand-scores file ... does not exist yet ...`, `[FAIL] no pipeline view has been taken yet ...` (or another `[FAIL]` about those two files) | the check cannot run at all; import the sheets, or press **Refresh pipeline view**, then try again |
+
+**When it stops showing.** The acknowledgement is written at once to
+`<mousedb_root>/logs/missing_videos_acknowledged.json`. Then:
+
+- **Where Is My Data tab**: the next time the tab reads its status (press
+  **Refresh**; it also reads it when the window opens and after **Update the
+  database now** or **Refresh pipeline view**). Its red line goes; a missing session
+  is then counted as "acknowledged as lost" (still not done), and a failed
+  recording's sessions stay counted as recording failed.
+- **`!! <cohort> - FIX THESE.xlsx`**: at the next sheet import that writes
+  (the nightly one, **Import all sheets** / **Import selected**, or
+  **Update the database now**); the file is removed when nothing else is in it.
+- **`missing_session_videos.csv`**: at its next rewrite (a sheet import, the
+  nightly snapshot job, or `mousedb missing-videos --write`), where the
+  session stays, marked `acknowledged`.
+- **The exports**: nothing changes. A missing session has no rows there
+  anyway, and a failed recording stays in `ODC_sessions_*.csv` with its
+  `Recording_Status` -- what happened to it is a fact about the data.
+
+**Undoing an acknowledgement.** There is no command or button for it. Open
+`<mousedb_root>/logs/missing_videos_acknowledged.json` in a text editor
+(save a copy beside it first). Each acknowledged session is one entry, named
+by its `video_key`, holding `by`, `at`, `reason` and `cohort_id`; delete the
+entries you want back (mind the commas between entries) and save. Keep the
+file valid: a damaged file stops the check everywhere until it is put right
+or deleted (the tab and this command say it "could not be read", and the FIX
+THESE files lose their missing-video and failed-recording lines meanwhile) --
+and deleting the whole file un-acknowledges everything.
+The session reappears in red at the same moments as above.
+
 ## A recording that failed
 
 Sometimes a recording fails: the recording program stopped after a fraction
@@ -1960,11 +2079,13 @@ stay in `manual_scores.csv` and in the session files like any other.
   reason is written. The data dictionary says the same.
 
 **Acknowledging it.** Once a person has seen it, acknowledge it once with the
-same command as a missing video; the recording's file name is a selector:
+same command as a missing video (see "Acknowledging: what can be, how, and how
+to undo it" above); the recording's file name is a selector:
 
     mousedb missing-videos --acknowledge "<recording file name>" --by "<name>" --reason "<why>"
 
-It then leaves the red line and the FIX THESE file. It stays in the CSV (marked
+It then leaves the red line (at the tab's next **Refresh**) and the FIX THESE
+file (at the next sheet import). It stays in the CSV (marked
 `acknowledged`), in the database and in the exports, because what happened to
 the recording is a fact about the data. (The pipeline's own dashboard lists set
 -aside recordings without an alarm; the acknowledgement lives here.)
@@ -2093,8 +2214,9 @@ What it means for you:
   again. Nothing was changed by the attempt.
 - **A scheduled job** that meets a lock no longer gives up at once. It waits
   and tries again a few times. How long it keeps trying depends on the job: the
-  short ones try for about three quarters of an hour, the snapshot refresh for
-  about twenty minutes, because a retry starts it over from the beginning and
+  short ones try for about three quarters of an hour (45 minutes), the
+  snapshot refresh for about twenty-five minutes (`--retry-minutes`, default
+  25), because a retry starts it over from the beginning and
   it must not still be running when the next job is due. This rescues a lock
   that clears in minutes. It will not rescue one held for an hour, and is not
   meant to -- the age line at the top of the tab is what tells you about those.
@@ -2111,8 +2233,9 @@ What it means for you:
 
 The scheduled jobs also take turns with each other through a lockfile, so they
 are never the cause. A job that finds another mousedb job working waits for it
-to finish -- the snapshot refresh for up to three hours, the others for up to
-forty minutes -- and writes a line every ten minutes while it waits. If it
+to finish -- the snapshot refresh for up to 165 minutes (`--lock-wait-minutes`),
+the others for up to forty minutes (`MOUSEDB_LOCK_WAIT_MINUTES` changes either)
+-- and writes a line every ten minutes while it waits. If it
 still cannot start, or the job ahead of it seems stuck (no progress for half an
 hour), it writes a `[FAIL]` line naming that job and does not run that night.
 **Nothing runs it again automatically**: press **Update the database now**, or
@@ -2156,9 +2279,10 @@ What it compares:
   MouseReach's route command also checks the review itself before marking
   anything, so a pellet already answered is never sent back.
 
-The list it made is written to `<mousedb_root>/logs/never_reviewed_worklist.json`,
-and the job's output (how many videos and pellets, and each video's result) is
-in `<mousedb_root>/logs/tasks/bench_scan.log`.
+The list it made is written to `<mousedb_root>/logs/never_reviewed_worklist.json`;
+the job's printed output (how many videos and pellets, and each video's
+result) goes wherever your scheduler sends the command's output (mousedb
+writes no log file of its own for it).
 
 ## When something looks wrong
 
@@ -2184,7 +2308,7 @@ From a terminal (MouseDB environment active):
 mousedb-data-status              # the table above, as text
 mousedb import-reaches           # pull new MouseReach results into reach_data
 mousedb import-analyses          # mirror MouseBrain's analysis registry (exports, figures, provenance)
-mousedb-current-exports          # rewrite reach_data + manual_scores (+ dictionaries)
+mousedb-current-exports          # rewrite reach_data.csv, manual_scores.csv, every cohort's reach and session-analysis files and each project's combined files (+ dictionaries): what "Refresh exports now" does
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
 mousedb-current-exports --no-wait  # stop at once (exit 3) if another refresh is writing
 ```
