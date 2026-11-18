@@ -225,3 +225,28 @@ def test_the_words_give_the_sheet_denominator_and_every_state():
     "\n".join(table).encode("ascii")
     [g] = ss.not_on_server_recordings(res)
     assert (g["cohort_id"], g["tray"], g["animals"]) == ("PROJA_01", "P1", ["PROJA0102"])
+
+
+def test_the_weekly_page_headline_uses_the_sheet_denominator():
+    from mousedb import weekly_report
+    hand = _hand_dict(("PROJA_01_01", "2026-03-02", "P1", "PROJA_01"),
+                      ("PROJA_01_02", "2026-03-02", "P1", "PROJA_01"))
+    res = ss.classify(hand, {"20260302_PROJA0101_P1": {"element": "mousereach",
+                                                        "finished": True}}, TAKEN)
+    page = weekly_report.sheet_progress_html(res)
+    assert "1 of 2 hand-scored sessions filed (50.0%)" in page
+    assert "NOT ON THE SERVER YET" in page
+    assert "PROJA_01 2026-03-02 tray P1" in page
+
+
+def test_the_tab_cells_show_done_and_not_on_server():
+    from mousedb.gui.data_status_tab import sheet_cells
+    hand = _hand_dict(("PROJA_01_01", "2026-03-02", "P1", "PROJA_01"),
+                      ("PROJA_01_02", "2026-03-02", "P1", "PROJA_01"))
+    res = ss.classify(hand, {"20260302_PROJA0101_P1": {"element": "mousereach",
+                                                        "finished": True}}, TAKEN)
+    done, notsrv, others, nosheet, red = sheet_cells(res["by_cohort"]["PROJA_01"])
+    assert done == "1 / 2 (50.0%)"
+    assert notsrv.startswith("1") and red is True
+    assert others == "0 / 0 / 0" and nosheet == "0"
+    assert sheet_cells(None)[:4] == ("-", "-", "-", "-")

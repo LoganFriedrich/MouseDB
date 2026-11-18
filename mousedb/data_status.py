@@ -608,6 +608,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     # list so "analyzed" means finished AND in the database AND on disk.
     pc = None
     pc_by_cohort: Dict[str, dict] = {}
+    census = None
     try:
         from .pipeline_census import load_cached, join_with_db
         census = load_cached()
@@ -634,8 +635,32 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
         out["problems"].append("pipeline census unreadable: %s" % e)
     out["pipeline"] = pc
 
+    # How far along, counted against the TRACKING SHEETS (session_states):
+    # every hand-scored session is filed, in processing, held for review,
+    # recording failed or not on the server yet. WHY the sheets and not the
+    # census: the census only knows what reached the pipeline, so a
+    # recording left on a recording PC was invisible to every progress
+    # figure. When it cannot be counted, no done % is shown at all -- never
+    # one counted against the pipeline alone.
+    sp_by_cohort: Dict[str, dict] = {}
+    out["sheet_progress"] = None
+    out["sheet_progress_error"] = None
+    try:
+        from .session_states import from_files as sheet_progress
+        sp = sheet_progress(census=census) if census else None
+        if sp is None:
+            out["sheet_progress_error"] = "no pipeline census has been taken yet"
+        else:
+            out["sheet_progress"] = sp
+            sp_by_cohort = sp["by_cohort"]
+            out["problems"].extend(sp.get("caveats") or [])
+    except Exception as e:
+        out["sheet_progress_error"] = "%s: %s" % (type(e).__name__, e)
+        out["problems"].append("progress against the tracking sheets could not be counted: %s"
+                               % out["sheet_progress_error"])
+
     all_cohorts = (set(rd["cohort"]) | set(ps["cohort"]) | set(q_by_cohort)
-                   | set(sheets) | set(pc_by_cohort))
+                   | set(sheets) | set(pc_by_cohort) | set(sp_by_cohort))
     if cohorts is not None:
         all_cohorts |= set(cohorts["cohort_id"])
     for cid in sorted(c for c in all_cohorts if c and c != "?"):
@@ -665,6 +690,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "videos_in_review": q_by_cohort.get(cid, {"triage": 0, "deep_review": 0}),
             "segments_by_outcome_source": {k: int(v) for k, v in src.items()},
             "pipeline": pc_by_cohort.get(cid),
+            "sheet_progress": sp_by_cohort.get(cid),
         })
 
     manifest = require("mousedb_root") / "exports" / "current" / "MANIFEST.json"
@@ -726,6 +752,18 @@ def _print(st: dict) -> None:
             c["cohort_id"], c["animals"] if c["animals"] is not None else "?",
             c["sessions_scored"], c["videos_in_db"], c["reaches_in_db"],
             q["triage"], q["deep_review"], c["sheet"].get("state") or "-"))
+    sp = st.get("sheet_progress")
+    if sp:
+        from .session_states import cohort_lines, headline
+        print("Progress against the tracking sheets (pipeline census of %s):" % sp["view_taken"])
+        print("  " + headline(sp))
+        for line in cohort_lines(sp):
+            print("  " + line)
+        print("  (NOTSRV = not on the server yet; overdue = the red part; nosheet = videos "
+              "with no sheet row. Each missing recording: mousedb sheet-progress --list)")
+    else:
+        print("Progress against the tracking sheets: could not be counted (%s)"
+              % st.get("sheet_progress_error"))
     pc = st.get("pipeline")
     if pc:
         t = pc.get("totals") or {}

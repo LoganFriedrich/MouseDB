@@ -7,9 +7,13 @@ a review queue nobody mentioned, and concluding everything failed. This tab
 answers, per cohort, in one table -- and since 2026-09 it answers the four
 questions the census exists for:
 
-1. the TOTAL workload (how many single-animal sessions should exist, from
-   every collage anywhere in the pipeline),
-2. how many are NOT done yet,
+1. how far along the videos are, counted against the TRACKING SHEETS (since
+   2026-11): every session scored by hand in a sheet is filed, in
+   processing, held for review, recording failed, or NOT ON THE SERVER YET
+   (mousedb.session_states). WHY the sheets: the pipeline's own list cannot
+   see a recording nobody sent to it, and such recordings once sat unseen
+   on a recording PC for over a year;
+2. the pipeline's own workload and how many of it are NOT done yet,
 3. WHERE every unfinished one sits (categories that name real folders), and
 4. percentages and pace-based completion estimates, always labelled as
    estimates with their basis.
@@ -34,6 +38,23 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QTextEdit, QMessageBox,
 )
 
+def sheet_cells(d: Optional[dict]):
+    """The table's sheet-progress cells for one cohort (session_states
+    by_cohort entry): (done, not on server, processing / held / failed,
+    no sheet row, whether the not-on-server cell is red). "-" when there is
+    no sheet progress for the cohort."""
+    if not d:
+        return "-", "-", "-", "-", False
+    from ..session_states import pct_text
+    done = ("%d / %d (%s)" % (d["filed"], d["sheet_scored"], pct_text(d["done_pct"]))
+            if d["sheet_scored"] else "-")
+    notsrv = str(d["not_on_server"])
+    if d["not_on_server_red"]:
+        notsrv += " (%d overdue)" % d["not_on_server_red"]
+    others = "%d / %d / %d" % (d["in_processing"], d["held_for_review"], d["recording_failed"])
+    return done, notsrv, others, str(d["videos_without_sheet_row"]), bool(d["not_on_server_red"])
+
+
 QUICK_GUIDE = """\
 NEEDS YOUR ATTENTION (red, at the top; hidden when there is nothing): things
 only a person can fix, gathered from every tool --
@@ -55,17 +76,37 @@ Each cohort's list is also written beside its sheet, in
 "!! <cohort> - FIX THESE.xlsx" (rewritten after every import, removed when
 nothing is left).
 
+PROGRESS AGAINST THE TRACKING SHEETS (the line above the table): every
+session scored by hand in a tracking sheet (one animal, one tray, one day)
+is in exactly one of five states --
+  filed                  finished and in the Analyzed folder;
+  in processing          on the server and moving (waiting to be cut, posed,
+                         analysed, or waiting for the sheet's next import);
+  held for review        waiting for a person (triage, deep review,
+                         quarantine, or a label mismatch / hand-score hold);
+  recording failed       the recording was empty or unreadable; never a video;
+  NOT ON THE SERVER YET  scored in the sheet, no video anywhere. Red when it
+                         is more than a few days old: look on the recording
+                         PC. Recent ones and ones a person acknowledged as
+                         lost are counted but not red.
+Done = filed / scored in the sheet. Videos the pipeline holds with no sheet
+row are counted separately ("No sheet row") and never in done.
+Terminal: mousedb sheet-progress (--list names every missing recording).
+
 WHERE IS MY DATA -- one row per cohort:
 
 * Animals: how many animals the database knows for the cohort (a number in
   brackets = created from a video before the sheet named them).
 * Sheet: the tracking sheet's import status (see the Tracking Sheets tab).
 * Sessions scored: hand-scored animal-days in the database.
-* Should exist: the cohort's TOTAL workload -- every single-animal video that
-  ultimately needs analysis, counted from every multi-animal collage found
-  anywhere in the pipeline (intake, archives, retired) plus every video that
-  already left a file on disk.
-* Left to do: Should exist minus everything fully done.
+* Done (filed / sheet-scored): the cohort's sessions scored in its sheet that
+  are filed, out of all of them, with the percentage.
+* Not on server yet: sessions scored in the sheet with no video anywhere in
+  the pipeline (red when any is overdue; the number in brackets is how many
+  are overdue).
+* Processing / held / failed: the other three states, as counts.
+* No sheet row: videos the pipeline holds that no sheet row matches (listed
+  by `mousedb sheet-progress --json`; never dropped, never in done).
 * Pipeline: where the unfinished ones are, as four numbers --
     not started    only the parent collage exists (Unanalyzed/Multi-Animal)
     crop+DLC       being cropped or pose-estimated (DLC_Queue, Unanalyzed/Single_Animal)
@@ -255,6 +296,13 @@ class _Worker(QThread):
 
 
 class DataStatusTab(QWidget):
+    COLUMNS = ["Cohort", "Animals", "Sheet", "Sessions scored",
+               "Done (filed / sheet-scored)", "Not on server yet",
+               "Processing / held / failed", "No sheet row",
+               "Not started / crop+DLC / algorithms / quarantined",
+               "In review (triage / deep)", "Analyzed",
+               "Videos in DB", "Outcomes algo / human", "Reaches"]
+
     def __init__(self, db=None, parent=None):
         super().__init__(parent)
         self.db = db
@@ -298,6 +346,12 @@ class DataStatusTab(QWidget):
 
         # The workload summary (census questions 1, 2 and 4) and the alarm
         # line (the finished-but-not-in-database invariant, which must be 0).
+        # Progress against the tracking sheets (session_states): the one
+        # "how far along" figure, with the sheet as the denominator.
+        self.sheet_label = QLabel("")
+        self.sheet_label.setWordWrap(True)
+        self.sheet_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        root.addWidget(self.sheet_label)
         self.workload_label = QLabel("")
         self.workload_label.setWordWrap(True)
         root.addWidget(self.workload_label)
@@ -305,13 +359,8 @@ class DataStatusTab(QWidget):
         self.invariant_label.setWordWrap(True)
         root.addWidget(self.invariant_label)
 
-        self.table = QTableWidget(0, 12)
-        self.table.setHorizontalHeaderLabels(
-            ["Cohort", "Animals", "Sheet", "Sessions scored",
-             "Should exist", "Left to do",
-             "Not started / crop+DLC / algorithms / quarantined",
-             "In review (triage / deep)", "Analyzed",
-             "Videos in DB", "Outcomes algo / human", "Reaches"])
+        self.table = QTableWidget(0, len(self.COLUMNS))
+        self.table.setHorizontalHeaderLabels(self.COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -469,6 +518,29 @@ class DataStatusTab(QWidget):
         self.refresh()
 
     # --- rendering ------------------------------------------------------------
+    def _render_sheet_progress(self, sp: Optional[dict], why: Optional[str]):
+        if not sp:
+            self.sheet_label.setText(
+                "PROGRESS AGAINST THE TRACKING SHEETS: could not be counted (%s). No done "
+                "percentage is shown rather than one counted against the pipeline alone."
+                % (why or "no sheet progress"))
+            self.sheet_label.setStyleSheet("background:#e65100; color:white; padding:3px;")
+            return
+        import html as _html
+        from ..session_states import headline
+        t = sp["totals"]
+        text = _html.escape("PROGRESS AGAINST THE TRACKING SHEETS (pipeline census of %s): %s"
+                            % (sp["view_taken"], headline(sp)))
+        if t["not_on_server_red"]:
+            text = text.replace(
+                "NOT ON THE SERVER YET",
+                "<span style='background:#b71c1c; color:white; font-weight:bold;'>"
+                "NOT ON THE SERVER YET</span>", 1)
+        for c in sp.get("caveats") or []:
+            text += "<br>[!] " + _html.escape(c)
+        self.sheet_label.setText(text)
+        self.sheet_label.setStyleSheet("padding:3px; font-weight:bold;")
+
     def _render_pipeline_summary(self, pc: Optional[dict]):
         if not pc:
             self.workload_label.setText(
@@ -483,7 +555,6 @@ class DataStatusTab(QWidget):
         be = pc.get("by_element") or {}
         exp = t.get("expected") or 0
         fin = t.get("finished_files") or 0
-        pct = (100.0 * fin / exp) if exp else 0.0
         analyzed = t.get("analyzed")
         an_txt = "unavailable" if analyzed is None else str(analyzed)
         if t.get("session_only"):
@@ -498,11 +569,14 @@ class DataStatusTab(QWidget):
                 "after the snapshot; it has not succeeded since %s. Press 'Refresh "
                 "pipeline view' to retake it now."
                 % (pc.get("age") or "an unknown time", pc.get("generated_at") or "?"))
+        # No percentage here: the census's own list is not the denominator
+        # (the sheets are -- the line above). It cannot see a recording that
+        # never reached the pipeline.
         lines += [
-            "PIPELINE (census of %s -- %s old, scan %ss): %d sessions should exist | "
-            "%d finished on disk (%.1f%%) | fully analyzed (done + in DB + on disk): %s"
+            "PIPELINE (census of %s -- %s old, scan %ss): it holds %d sessions | "
+            "%d finished on disk | fully analyzed (done + in DB + on disk): %s"
             % (pc.get("generated_at") or "?", pc.get("age") or "unknown",
-               pc.get("scan_seconds"), exp, fin, pct, an_txt),
+               pc.get("scan_seconds"), exp, fin, an_txt),
             "Remaining: %d not started, %d in crop/pose, %d in algorithms, "
             "%d + %d waiting on a person (triage + deep review), %d quarantined. "
             "Recording failed (set aside, never analyzed): %d"
@@ -594,6 +668,7 @@ class DataStatusTab(QWidget):
                "analysed work is missing from everything below." if stale else ""))
         self.snapshot_label.setStyleSheet(
             "background:#b71c1c; color:white; padding:3px;" if stale else "color: #888;")
+        self._render_sheet_progress(st.get("sheet_progress"), st.get("sheet_progress_error"))
         self._render_pipeline_summary(st.get("pipeline"))
         cohorts = st.get("cohorts", [])
         self.table.setRowCount(len(cohorts))
@@ -606,12 +681,8 @@ class DataStatusTab(QWidget):
                 animals += "  [%d from video only]" % c["animals_created_from_video_only"]
             sh = c.get("sheet") or {}
             p = c.get("pipeline")
+            done, notsrv, others, nosheet, red = sheet_cells(c.get("sheet_progress"))
             if p:
-                exp = p.get("expected", 0)
-                done = (p.get("analyzed", 0) or 0) + p.get("session_only", 0)
-                # A session whose recording failed is not left to do: it will
-                # never have a video (mousedb.recording_issues).
-                left = exp - done - p.get("recording_issue", 0)
                 stages = "%d / %d / %d / %d" % (
                     p.get("unanalyzed", 0), p.get("crop_dlc", 0),
                     p.get("mousereach", 0), p.get("quarantined", 0))
@@ -619,17 +690,20 @@ class DataStatusTab(QWidget):
                 if p.get("session_only"):
                     an += " (+%d E/F)" % p["session_only"]
             else:
-                exp = left = stages = an = "-"
+                stages = an = "-"
             vals = [c["cohort_id"], animals, sh.get("state") or "-",
                     c.get("sessions_scored", 0),
-                    exp, left, stages,
+                    done, notsrv, others, nosheet, stages,
                     "%d / %d" % (q.get("triage", 0), q.get("deep_review", 0)),
                     an,
                     c.get("videos_in_db", 0),
                     "%d / %d" % (src.get("algo", 0), human), c.get("reaches_in_db", 0)]
             for j, v in enumerate(vals):
                 it = QTableWidgetItem(str(v))
-                if j == 7 and (q.get("triage", 0) or q.get("deep_review", 0)):
+                if j == 5 and red:
+                    it.setForeground(Qt.white)
+                    it.setBackground(Qt.darkRed)
+                if j == 9 and (q.get("triage", 0) or q.get("deep_review", 0)):
                     it.setForeground(Qt.white)
                     it.setBackground(Qt.darkYellow)
                 if j == 2 and sh.get("state") in ("last_import_failed", "never_imported", "sheet_newer",
