@@ -167,8 +167,14 @@ does two things before any test runs (in `tests/conftest.py`):
 The guard recognizes a real folder **however it is written**: upper or lower
 case, `/` or `\`, the Windows short name of any part of it (`PROGRA~1`), the
 server path of a mapped network drive (`\\server\share\...` for a drive
-letter), or the real folder behind a folder link (junction or symbolic link). All of these are worked
-out once, when the tests start.
+letter), or a folder link (junction or symbolic link) in the configured
+folder's own path. All of these are worked out once, when the tests start.
+A folder link that a test itself creates under `tmp_path` and points at a
+real folder is **not** followed, so a write through it is not refused.
+
+The guard sees the files that the test code and the code under test open
+through Python. It does not see files opened by a child process the tests
+start or by native (non-Python) code, so do not assume those are guarded.
 
 **The code's own folder is not lab data.** If you run the tests from a
 working copy that sits *inside* a real folder (for example a copy kept inside
