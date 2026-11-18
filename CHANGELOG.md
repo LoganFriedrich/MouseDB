@@ -5,6 +5,24 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Added
+- **Limited exports: a per-day yes/no rule, `day_window`**
+  (`mousedb/exporters/subsets.py`). The yes/no column of a limited export
+  could only say yes or no per animal, so a column marking which DAYS of each
+  animal an analysis uses was filled by a one-off script. A rule of type
+  `day_window` (`n`, `tray_type`, `before_first`) says yes on every row of
+  each animal's last `n` test days -- dates with hand scores for that tray
+  type in the tracking sheet -- before its cohort's first surgery of that
+  type, and no on every other row; never blank. The days are chosen exactly
+  as the "last N before the injury" window chooses them (one shared
+  function), from the same snapshot generation as the files, also when the
+  window is "all". Each file's manifest entry lists the chosen days that have
+  no rows (`flag_days_with_no_rows`); the manifest's `flag_days` says how
+  they were chosen. A sheet correction remakes such a slice at night.
+  `--list` now also prints the rules, and a rules entry stored as null no
+  longer stops a rule being saved. Guide: docs/WHERE_IS_MY_DATA.md, "The
+  yes/no column".
+
 ### Changed
 - **Progress is counted against the tracking sheets**
   (`mousedb/session_states.py`, new). Every hand-scored session (one animal,
