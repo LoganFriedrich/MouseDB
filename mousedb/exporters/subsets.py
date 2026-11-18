@@ -77,6 +77,10 @@ built from. If the snapshot has been refreshed since (the nightly job between
 its two steps), the slice is refused rather than cut with one night's sessions
 from another night's files.
 
+A full export whose MANIFEST.json does not say it is complete (a part of it
+failed, so some of its files are an earlier run's or missing) is never cut, by
+any path: the nightly remake, the button, --run or a dry run.
+
 WHICH ROWS A FILTER KEEPS
 -------------------------
 Each row's animal, date and tray type come from the row itself: the animal from
@@ -413,6 +417,31 @@ def _read_manifest(current: Path) -> dict:
                             "make the full export first" % (current, type(e).__name__)) from None
 
 
+def _require_complete(name: str, manifest: dict, current: Path) -> None:
+    """Refuse a slice of a full export that does not say it is complete.
+
+    WHY: when a part of the full export fails, its files are the previous run's
+    (or missing) while the manifest already carries the new snapshot
+    generation. A slice cut from it would pair one night's files with another
+    night's session window -- exactly what the generation check exists to
+    prevent -- and nothing in the slice would show it. The nightly remake only
+    runs after a complete export; the button and ``--run`` must hold to the
+    same rule, so the check sits here, where every way of making a slice
+    passes (a dry run included)."""
+    if manifest.get("complete") is True:
+        return
+    problems = [str(x) for x in (manifest.get("problems") or [])]
+    said = ("; ".join(problems[:5]) + (" (and %d more)" % (len(problems) - 5)
+                                       if len(problems) > 5 else "")) if problems else         "it names no problem"
+    raise SubsetRefused(
+        "limited export %s: the full export in %s is not complete (its MANIFEST.json "
+        "says complete=%s: %s). Some of its files may be from an earlier run or missing, "
+        "so a slice of it could mix two runs. Nothing was written. Rewrite the full "
+        "export ('Refresh exports now' on the Where Is My Data tab, or wait for the "
+        "nightly job) and make this again once it is complete."
+        % (name, current, manifest.get("complete"), said))
+
+
 def _cohorts_of(profile: dict, current: Path) -> List[str]:
     """The cohort ids the slice covers, in cohort order."""
     if profile.get("cohorts"):
@@ -638,6 +667,7 @@ def plan(name: str, profile: dict, current: Path, snapshot_dir: Optional[Path],
     profile = validate(name, profile, rules)
     current = Path(current)
     manifest = _read_manifest(current)
+    _require_complete(name, manifest, current)
     cohorts = _cohorts_of(profile, current)
     if not cohorts:
         raise SubsetRefused("limited export %s: none of its cohorts are in the current exports"

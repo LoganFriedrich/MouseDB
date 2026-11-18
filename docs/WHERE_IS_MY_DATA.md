@@ -416,9 +416,18 @@ reaches the full export reaches the limited export the next time it is made.
     now without writing any file -- it does not save the definition either.
     **Open its folder** opens the result.
 
-If something is wrong (a cohort with no injury date, a column the full export
-does not have, the exports being rewritten right now) a box says so and
-**nothing is written**.
+If something is wrong (a column the full export does not have, the exports
+being rewritten right now, a full export that is not complete) a box says so
+and **nothing is written**.
+
+**A full export that is not complete is never cut.** When a part of the
+nightly (or a "Refresh exports now") export failed, `exports/current/MANIFEST.json`
+says `"complete": false` and lists the problems; the files of the part that
+failed are an earlier run's, or missing. A limited export made from it would
+mix two runs without showing it, so the button, `--run` and `--dry-run` all
+refuse it, quoting the problems. Rewrite the full export (press **Refresh
+exports now**, or wait for the nightly job), and make the limited export again
+once the tab says the export is complete.
 
 From a terminal, the same thing (MouseDB environment active):
 

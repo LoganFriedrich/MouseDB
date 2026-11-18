@@ -433,3 +433,32 @@ def test_a_chosen_session_without_rows_is_listed(lab):
         "PROJA_02_01 2026-04-02"]
     assert m["files"]["reaches_pre_summary.csv"]["chosen_sessions_with_no_rows"] == []
     assert "1 chosen animal-day(s) have no rows" in (folder / "README.txt").read_text()
+
+
+def _set_manifest(lab, **fields):
+    m = json.loads((lab["cur"] / "MANIFEST.json").read_text())
+    m.update(fields)
+    (lab["cur"] / "MANIFEST.json").write_text(json.dumps(m))
+
+
+@pytest.mark.parametrize("profile", [LAST2_PILLAR, {"cohorts": ["PROJA_01"]}])
+def test_an_incomplete_full_export_is_refused_by_the_button_and_the_command(
+        lab, capsys, monkeypatch, profile):
+    """A part of the full export failed: its files are an earlier run's while the
+    manifest carries the new generation. A slice of it would mix two runs."""
+    monkeypatch.setenv("MOUSEDB_ROOT", str(lab["root"] / "db"))     # the command's lock folder
+    _set_manifest(lab, complete=False, problems=["_odc_reaches_csvs: OSError: share full"])
+    with pytest.raises(subsets.SubsetRefused, match="not complete"):
+        lab["make"]("pre", profile)
+    assert not (lab["out"] / "pre").exists()
+    assert subsets.read_status(lab["out"])["pre"]["ok"] is False
+    # The command (what the window's "Save and make now" runs) says so too.
+    f = lab["root"] / "def.json"
+    f.write_text(json.dumps(profile))
+    code = subsets.main(["pre", "--run", "--definition-file", str(f),
+                         "--current-dir", str(lab["cur"]), "--out-dir", str(lab["out"]),
+                         "--snapshot-dir", str(lab["snap"])])
+    assert code == subsets.EXIT_REFUSED
+    out = capsys.readouterr().out
+    assert "not complete" in out and "share full" in out
+    assert not (lab["out"] / "pre").exists()
