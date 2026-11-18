@@ -130,3 +130,17 @@ def test_nothing_is_judged_on_a_workbook_read_on_a_guess(tmp_path):
     r = imp.import_cohort_file(_sheet(tmp_path))
 
     assert not _not_in_sheet(r)
+
+
+def test_several_left_out_animals_are_judged_each_on_its_own(tmp_path):
+    """The tables are asked once for all the left-out animals together; each
+    animal is still judged by its own rows."""
+    other = "PROJA_01_04"
+    db = _db(tmp_path, NAMED + (LEFT_OUT, other))
+    with db.session() as s:
+        s.add(Weight(subject_id=other, date=date(2026, 1, 6), weight_grams=20.0,
+                     entered_by="someone"))
+
+    r = ExcelImporter(db).import_cohort_file(_sheet(tmp_path))
+
+    assert _not_in_sheet(r) == [LEFT_OUT]

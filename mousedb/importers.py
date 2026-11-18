@@ -1919,7 +1919,8 @@ class ExcelImporter:
         absent = [sid for sid in held if sid not in named]
         if not absent:
             return
-        empty = [sid for sid in absent if not self._animal_has_rows(session, sid)]
+        with_rows = self._animals_with_rows(session, absent)
+        empty = [sid for sid in absent if sid not in with_rows]
         if not empty:
             return
         report = self._sync_state().setdefault('subjects', {})
@@ -1933,23 +1934,31 @@ class ExcelImporter:
                 % sid))
 
     @staticmethod
-    def _animal_has_rows(session, subject_id: str) -> bool:
-        """Whether any table other than subjects holds a row for this animal.
-        Every table with a subject_id column is asked, read from the database
-        itself, so a table added later is never forgotten."""
-        from sqlalchemy import inspect as sa_inspect, text as sa_text
+    def _animals_with_rows(session, subject_ids) -> set:
+        """Which of these animals any table other than subjects holds a row
+        for. Every table with a subject_id column is asked, read from the
+        database itself, so a table added later is never forgotten. One query
+        per table for all the animals at once: some tables (a video's pellet
+        outcomes) have no index on subject_id, so each query reads the whole
+        table, and this runs inside the nightly import."""
+        from sqlalchemy import bindparam, inspect as sa_inspect, text as sa_text
         insp = sa_inspect(session.get_bind())
+        left = set(subject_ids)
+        found = set()
         for table in insp.get_table_names():
+            if not left:
+                break
             if table == 'subjects':
                 continue
             if 'subject_id' not in {c['name'] for c in insp.get_columns(table)}:
                 continue
-            hit = session.execute(
-                sa_text('SELECT 1 FROM "%s" WHERE subject_id = :s LIMIT 1'
-                        % table.replace('"', '""')), {'s': subject_id}).first()
-            if hit is not None:
-                return True
-        return False
+            query = sa_text('SELECT DISTINCT subject_id FROM "%s" WHERE subject_id IN :ids'
+                            % table.replace('"', '""')).bindparams(
+                                bindparam('ids', expanding=True))
+            hits = {r[0] for r in session.execute(query, {'ids': sorted(left)})}
+            found |= hits
+            left -= hits
+        return found
 
     def _undo_copied_death(self, session, surgery, dry_run: bool):
         """A contusion row being removed may be what marked its animal dead:
