@@ -662,6 +662,123 @@ stopped being the saved one), `why` (`replaced` or `forgotten`) and the
 `definition` itself. To bring one back, copy its `definition` into a new
 limited export (or ask whoever looks after the lab settings).
 
+## How far along are we? Counted against the tracking sheets
+
+**Every "how far along" number mousedb gives is counted against the tracking
+sheets, not against the videos.** The Where Is My Data tab, the weekly page and
+`mousedb sheet-progress` all give the same figure:
+
+> **done = sessions filed / sessions scored by hand in the sheets**
+
+A *session* is one animal, on one tray, on one day.
+
+### Why the sheets and not the videos
+
+The person at the bench scores every tray in the tracking sheet on the day it
+is recorded. So the sheet is the one complete list of what was really
+recorded. The pipeline only knows the videos someone sent to it. If a
+recording is never copied off the recording PC, the pipeline has never heard
+of it, and a progress figure counted from the pipeline would say "100% done"
+while that recording sits forgotten. That happened: one cohort's
+recordings stayed on a recording PC for over a year, and
+every progress figure looked fine. Counted against the sheets, those sessions
+show up in red as **not on the server yet**.
+
+### The five states
+
+Every session scored in a sheet is in exactly one of these:
+
+| state | what it means | what to do |
+|---|---|---|
+| **filed** | the video was analyzed, passed every check, and is in the Analyzed folder | nothing -- it is done |
+| **in processing** | the video is on the server and moving: waiting to be cut, being posed, in the analysis steps, or analyzed and waiting for the sheet's next import so it can be compared with its hand scores | nothing -- the machines are on it |
+| **held for review** | waiting for a person: in the triage or deep-review queue (a quality check that could not run also holds a video in deep review), set aside as unprocessable (quarantine), or held by the pipeline outside the queues for something only a person can fix -- a **label mismatch** (the video's results match another tray's hand scores, so the sheet or the video's name has the trays swapped) or hand scores the pipeline could not find or compare | work the review queues in MouseReach; for a label mismatch or a hand-score hold, read the line in the cohort's FIX THESE file |
+| **recording failed** | the recording itself failed (empty, a fraction of a second long, unreadable) and was set aside; there will never be a video | nothing can be fixed; see "A recording that failed" below |
+| **NOT ON THE SERVER YET** | scored in the sheet, but no video of it is anywhere in the reaching pipeline | look on the recording PC (see "Sessions scored by hand that have no video" below) |
+
+When a session is visible in two places at once -- a filed video that was sent
+back to a review queue keeps its old results in Analyzed until the new run
+replaces them -- it is counted where a person has to act: a failed recording
+first, then a review queue, then filed. A hold outside the queues (label
+mismatch, hand scores) counts only for a video that is not filed yet.
+
+### "Not on the server yet": red, recent, or acknowledged
+
+Not every missing video is an alarm. Each one is one of three kinds, and only
+the first is shown in red:
+
+- **Overdue (red).** More than the grace period old (3 days unless the setting
+  `missing_video_grace_days` says otherwise; counted to when the pipeline view
+  was taken, not to today), in a cohort whose tracking sheet is live, and not
+  acknowledged. These are exactly the sessions `mousedb missing-videos` lists.
+  Go and find the recording.
+- **Recent.** Inside the grace period. A recording is named and sent some days
+  after it is made, so this is normal.
+- **Acknowledged as lost.** A person looked, the recording is gone for good,
+  and they recorded that with `mousedb missing-videos --acknowledge`. It stays
+  counted -- the session was recorded and will never be filed -- so that
+  cohort's done stays below 100%, and the reason is on record.
+
+A cohort whose workbook is frozen (a finished project imported from a fixed
+workbook, not from the live sheets folder) is counted the same way, but its
+missing sessions are never red: nobody is going to record those animals again.
+
+When the pipeline holds the same animal and day under a tray the sheet does
+NOT have, the session is still "not on the server" (nothing carries its own
+name) but it is counted as **maybe under another name**: one of the two names
+-- the sheet's or the video's -- is probably wrong.
+
+### The other way round: videos with no sheet row
+
+A video the pipeline holds that matches no session in any sheet is **listed
+separately** ("No sheet row" on the tab; `unmatched_videos` in
+`mousedb sheet-progress --json`), with its pipeline stage. It is never
+dropped and never counted in done. A name the cohort cannot be read from is
+listed under `?`. Such a video usually means a typo in the video's name or a
+missing row in the sheet.
+
+### Pillar trays on their own
+
+Easy and flat trays are scored in the sheet too, but the pipeline processes
+them last on purpose. So the done figure is also given for pillar trays alone
+(`pillar_done_pct`, "Done, pillar trays" on the weekly page): a cohort can be
+nearly done on pillar trays while its overall figure is low.
+
+### Where you see it
+
+- **Where Is My Data tab**: the bold line above the table ("PROGRESS AGAINST
+  THE TRACKING SHEETS"), with "NOT ON THE SERVER YET" on a red background when
+  any session is overdue; and per cohort the columns *Done (filed /
+  sheet-scored)*, *Not on server yet* (red when any is overdue; the number in
+  brackets is how many), *Processing / held / failed* and *No sheet row*.
+- **The weekly page**: its first section, with every overdue recording listed
+  by cohort, day and tray.
+- **From a terminal** (MouseDB environment active):
+
+      mousedb sheet-progress                 # one line per cohort
+      mousedb sheet-progress --list          # also every overdue recording, by cohort
+      mousedb sheet-progress --cohort <cohort> --list
+      mousedb sheet-progress --json          # everything, one row per session
+
+  It reads only; it writes nothing.
+
+### What it reads, and when the numbers change
+
+It reads the hand-scores file (`<mousedb_root>/exports/hand_scores/`,
+rewritten after every sheet import), the pipeline view
+(`<mousedb_root>/logs/pipeline_census.json`, retaken every night), the
+acknowledgements file, and the reaching pipeline's own attention lists (for
+the holds outside the queues). So the figure moves when the sheets are
+imported (nightly) and when the pipeline view is retaken (nightly, or the
+tab's **Refresh pipeline view** button). If either file cannot be read, no
+done percentage is shown at all -- never one counted against the pipeline
+alone -- and the tab says why.
+
+If the pipeline that took the pipeline view is too old to report failed
+recordings, the tab says so under the line; failed recordings are then
+counted where the pipeline view puts them (usually "not on the server yet")
+until the pipeline is updated.
+
 ## The longer answer: the "Where Is My Data" tab
 
 Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
@@ -673,6 +790,10 @@ Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
 | Animals | animals the database knows for the cohort. `[N from video only]` means N of them were created from a video before the tracking sheet named them -- import the sheet to fill in their details. Once the sheet names such an animal, the next import replaces its "created from video" note and it stops being counted here |
 | Sheet | the tracking sheet's import status (worked in the **Tracking Sheets** tab): Up to date / Sheet edited since last import / Never imported / LAST IMPORT FAILED / NOT SYNCED (red: the last import found the sheet looking broken and removed and changed nothing -- see below) |
 | Sessions scored | hand-scored animal-days in the database |
+| Done (filed / sheet-scored) | sessions scored in the cohort's sheet that are filed, out of all of them, with the percentage (see "How far along are we?" above) |
+| Not on server yet | sessions scored in the sheet with no video anywhere in the pipeline; red when any is overdue, with how many in brackets |
+| Processing / held / failed | the other three states: in processing, held for review, recording failed |
+| No sheet row | videos the pipeline holds that no sheet row matches |
 | Videos in DB | videos whose reaches are in the database (i.e. are in `reach_data.csv`) |
 | In review (triage / deep) | videos waiting for a person in MouseReach's review queues. **Their data is not final until they are reviewed and released.** They are worked in MouseReach (its Review Queues tab) |
 | Outcomes algo / human | pellet outcomes resting on the algorithm alone vs confirmed or corrected by a person |
@@ -800,9 +921,16 @@ Each run writes two files in that folder:
 - `Where is my data YYYY-MM-DD.html` -- that run's page, kept.
 - `Where is my data - LATEST.html` -- the same page, replaced every run.
 
-The page shows, from the pipeline census and the database snapshot:
+The page shows, from the tracking sheets, the pipeline census and the database
+snapshot:
 
-1. **Videos by stage**, per project and per cohort: done, waiting for triage,
+0. **How far along, counted against the tracking sheets** (the page's first
+   section): filed of every session scored in a sheet, per cohort, with the
+   other four states as counts and every overdue "not on the server yet"
+   recording listed by cohort, day and tray. See "How far along are we?" above.
+1. **Where the pipeline's sessions are**, per project and per cohort (no done
+   percentage here -- the pipeline's own list cannot see what never reached
+   it): done, waiting for triage,
    waiting for deep review, being posed, not started (pillar trays and
    Easy/Flat trays separately), set aside.
 2. **Why videos have not started** (pillar trays only -- trays your work order

@@ -6,6 +6,23 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Changed
+- **Progress is counted against the tracking sheets**
+  (`mousedb/session_states.py`, new). Every hand-scored session (one animal,
+  tray and day in the hand-scores file) is put in exactly one state -- filed,
+  in processing, held for review (triage, deep review, quarantine, or a
+  pipeline hold outside the queues such as a label mismatch), recording
+  failed, or NOT ON THE SERVER YET -- from the hand-scores file, the pipeline
+  census, the acknowledgements file and the pipeline's attention lists, all
+  read only. Done % is filed / sheet-scored (pillar trays also on their own).
+  "Not on the server yet" is red only when overdue, live and unacknowledged:
+  the same sessions `mousedb missing-videos` lists. Videos the pipeline holds
+  with no sheet row are listed separately, never dropped. WHY: a progress
+  figure counted from the pipeline cannot see a recording that never reached
+  it. The Where Is My Data tab (a line above the table and four columns),
+  `mousedb-data-status` and the weekly page now give this figure; the
+  census-based "finished on disk %" and the weekly page's census done % are
+  gone. New command: `mousedb sheet-progress [--list] [--json] [--cohort]`.
+  Guide: docs/WHERE_IS_MY_DATA.md, "How far along are we?".
 - **`mousedb export` leaves the phase empty for a running cohort**
   (`mousedb/exporters/cohort_reports.py`). The nightly files already left a
   running cohort's phase empty (its labels can still change as later dates

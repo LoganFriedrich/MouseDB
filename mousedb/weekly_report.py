@@ -7,10 +7,14 @@ asks. A lab meeting needs the answer ready BEFORE anyone asks: a page that is
 already written, dated, and can be copied into meeting notes. This module
 writes that page from what mousedb already has -- it measures nothing new:
 
+    * the tracking sheets' hand scores (session_states): how far along the
+      videos are is counted against every session scored in a sheet -- filed,
+      in processing, held for review, recording failed, or NOT ON THE SERVER
+      YET -- so a recording nobody sent to the server shows as work to do;
     * the pipeline census (<mousedb_root>/logs/pipeline_census.json, retaken
-      every night by the snapshot refresh job): every session that should
-      exist, and which stage each one is at, counted per project and per
-      cohort;
+      every night by the snapshot refresh job): which stage each session the
+      pipeline holds is at, counted per project and per cohort (no done %:
+      the pipeline's own list cannot see what never reached it);
     * the review-time estimate the census already makes;
     * each processing machine's own status report
       (<mousereach pipeline>/Processing/.node_status/*.json), read only;
@@ -269,6 +273,48 @@ def _cohort_db_table(st: dict) -> str:
             "%s</table>" % "".join(rows))
 
 
+def sheet_progress_html(res: dict) -> str:
+    """The page's headline section: progress counted against the tracking
+    sheets (session_states), per cohort, and every overdue recording that is
+    not on the server yet, by cohort."""
+    from . import session_states as ss
+    t = res["totals"]
+    out = ["<h2>Videos: %s of %s hand-scored sessions filed (%s)</h2>"
+           % (format(t["filed"], ","), format(t["sheet_scored"], ","), ss.pct_text(t["done_pct"])),
+           "<p class=sub>Counted against the tracking sheets: a session is one animal on one tray "
+           "on one day, and every session scored by hand in a sheet was recorded. Pipeline census "
+           "of %s. %s</p>" % (html.escape(res["view_taken"]), html.escape(ss.headline(res))),
+           "<table><tr><th>Cohort</th><th>Scored in the sheet</th><th>Filed</th><th>Done</th>"
+           "<th>Done, pillar trays</th><th>In processing</th><th>Held for review</th>"
+           "<th>Recording failed</th><th>NOT ON THE SERVER YET</th><th>Videos with no sheet row</th></tr>"]
+    for cid, d in res["by_cohort"].items():
+        nos = format(d["not_on_server"], ",")
+        if d["not_on_server_red"]:
+            nos = "<b style='color:#b71c1c'>%s (%s overdue)</b>" % (nos, format(d["not_on_server_red"], ","))
+        out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+                   "<td>%s</td><td>%s</td><td>%s</td></tr>" % (
+                       html.escape(cid), format(d["sheet_scored"], ","), format(d["filed"], ","),
+                       ss.pct_text(d["done_pct"]), ss.pct_text(d["pillar_done_pct"]),
+                       format(d["in_processing"], ","), format(d["held_for_review"], ","),
+                       format(d["recording_failed"], ","), nos,
+                       format(d["videos_without_sheet_row"], ",")))
+    out.append("</table>")
+    recs = ss.not_on_server_recordings(res)
+    if recs:
+        out.append("<h3 style='color:#b71c1c'>Not on the server yet: scored in the sheet, no video "
+                   "anywhere (more than %d days old)</h3><ul>" % res["grace_days"])
+        for g in recs:
+            shown = g["animals"] if len(g["animals"]) <= 8 else g["animals"][:8] + ["..."]
+            out.append("<li>%s</li>" % html.escape("%s %s tray %s: %s" % (
+                g["cohort_id"], g["session_date"], g["tray"], ", ".join(shown))))
+        out.append("</ul><p class=sub>Check the recording PC for these recordings and send them to the "
+                   "pipeline; a recording that is gone for good is acknowledged with "
+                   "<code>mousedb missing-videos --acknowledge</code>.</p>")
+    for c in res.get("caveats") or []:
+        out.append("<p class=sub>[!] %s</p>" % html.escape(c))
+    return "\n".join(out)
+
+
 CSS = """body{font-family:Segoe UI,Arial,sans-serif;margin:24px;max-width:1100px;color:#222}
 h1{margin-bottom:0}.sub{color:#666;margin-top:4px}
 table{border-collapse:collapse;margin:8px 0 20px}td,th{border:1px solid #bbb;padding:4px 10px;text-align:right}
@@ -295,12 +341,20 @@ def build(now: Optional[datetime] = None) -> str:
     if census:
         by_project, by_cohort = census_tables(census)
         t = census.get("totals") or {}
-        done = sum(c["done"] for c in by_project.values())
+        # How far along: against the SHEETS, never against the pipeline's own
+        # list, which cannot see a recording that never reached it.
+        try:
+            from .session_states import from_files
+            parts.append(sheet_progress_html(from_files(census=census)))
+        except Exception as e:
+            problems.append("progress against the tracking sheets: %s: %s" % (type(e).__name__, e))
+            parts.append("<h2>Videos</h2><p><b>Progress could not be counted against the tracking "
+                         "sheets</b> (%s), so no done %% is given this week.</p>" % html.escape(str(e)))
         expected = t.get("expected") or sum(sum(c.values()) for c in by_project.values())
-        parts.append("<h2>Videos: %s of %s sessions done (%d%%)</h2>"
-                     % (format(done, ","), format(expected, ","), round(100 * done / expected) if expected else 0))
-        parts.append("<p class=sub>From the pipeline census taken %s. A session is one animal on one "
-                     "tray on one day.</p>" % html.escape(str(census.get("generated_at"))))
+        parts.append("<h2>Where the pipeline's %s sessions are</h2>" % format(expected, ","))
+        parts.append("<p class=sub>From the pipeline census taken %s: every session the pipeline's "
+                     "folders hold, whether or not a sheet has it.</p>"
+                     % html.escape(str(census.get("generated_at"))))
         parts.append(_table("By project", by_project, _project_order(by_project)))
         parts.append("<h3>Per cohort (ASPA above as one project)</h3>")
         parts.append(_table("Cohort", by_cohort, sorted(k for k in by_cohort if "(" not in k)))
