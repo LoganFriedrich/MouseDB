@@ -42,7 +42,15 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(dbmod, "init_database", lambda *a, **k: db)
     summary = tmp_path / "2_Data_Summary"
     summary.mkdir()
-    return {"db": db, "summary": summary}
+    # The list of brains with counts but no counts file goes under tmp_path.
+    from mousedb import importers
+    # (getattr / raising=False: the same tests also run against a mousedb
+    # without this list, to show what it lacked.)
+    without_file = tmp_path / "dbroot" / "logs" / getattr(
+        importers, "BRAINS_WITHOUT_FILE_NAME", "brain_counts_without_file.json")
+    monkeypatch.setattr(importers, "brains_without_file_path", lambda: without_file,
+                        raising=False)
+    return {"db": db, "summary": summary, "without_file": without_file}
 
 
 def write_counts(summary, total, left, right, age=OLD):

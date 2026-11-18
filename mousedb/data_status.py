@@ -471,6 +471,37 @@ def rows_without_file_problem(path: Path) -> Optional[str]:
             "Full list: %s" % (len(videos), shown, report.get("checked_at") or "?", path))
 
 
+def brains_without_file_problem(path: Path) -> Optional[str]:
+    """A problem line when the last brain import (``import-brains --all``)
+    found brains whose final counts are in the database but whose counts file
+    is not in MouseBrain's summary folder; None when it found none, or has not
+    checked yet.
+
+    WHY HERE: those counts stay in the database and in every brain export,
+    marked final, under the brain's old id (a brain renamed in MouseBrain is
+    then there twice). The import deliberately does not remove them -- a
+    listing that missed a file must never delete counts -- so a person has to
+    see them, and nobody reads the import's log. The list is the file the
+    import writes (``importers.BRAINS_WITHOUT_FILE_NAME``)."""
+    try:
+        report = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        return ("the brain import's list of brains with counts but no counts file "
+                "could not be read (%s): %s" % (path, e))
+    brains = (report.get("brains") or []) if isinstance(report, dict) else []
+    if not brains:
+        return None
+    shown = ", ".join(brains[:5]) + (", ..." if len(brains) > 5 else "")
+    return ("%d brain(s) have final counts in the database but no counts file in "
+            "MouseBrain's summary folder (%s; found by the brain import of %s). "
+            "Nothing was removed: put the file back, or hand the line to whoever "
+            "looks after the database (docs/WHERE_IS_MY_DATA.md, 'Brains whose "
+            "counts file has gone'). Full list: %s"
+            % (len(brains), shown, report.get("checked_at") or "?", path))
+
+
 def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
     snapshot_dir = snapshot_dir or require("snapshot_dir")
     import pandas as pd
@@ -550,6 +581,15 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             out["problems"].append(line)
     except Exception as e:
         out["problems"].append("the reach import's list of rows without a results "
+                               "file is unavailable: %s" % e)
+    try:
+        from .importers import BRAINS_WITHOUT_FILE_NAME
+        line = brains_without_file_problem(
+            Path(require("mousedb_root")) / "logs" / BRAINS_WITHOUT_FILE_NAME)
+        if line:
+            out["problems"].append(line)
+    except Exception as e:
+        out["problems"].append("the brain import's list of brains without a counts "
                                "file is unavailable: %s" % e)
 
     rd["cohort"] = rd["subject_id"].str.rsplit("_", n=1).str[0]

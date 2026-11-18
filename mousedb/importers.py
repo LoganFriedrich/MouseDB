@@ -3759,6 +3759,21 @@ def _content(rows, fields):
 
 
 
+# The list `import-brains --all` writes of brains whose final counts are in the
+# database but whose counts file is not in MouseBrain's summary folder (see
+# BrainGlobeImporter.final_brains_without_a_counts_file). The Where Is My Data
+# tab reads it (data_status.brains_without_file_problem).
+BRAINS_WITHOUT_FILE_NAME = "brain_counts_without_file.json"
+# How many of those brains the import's output names; the file holds them all.
+BRAINS_WITHOUT_FILE_SHOWN = 20
+
+
+def brains_without_file_path() -> Path:
+    """<mousedb_root>/logs/brain_counts_without_file.json."""
+    from .config import require
+    return require("mousedb_root") / "logs" / BRAINS_WITHOUT_FILE_NAME
+
+
 class BrainGlobeImporter:
     """
     Import BrainGlobe cell detection and region analysis results.
@@ -4637,7 +4652,9 @@ class BrainGlobeImporter:
 
         What it never does:
           - It never touches a brain whose counts file is gone: the stored
-            counts stay (only files that exist are read).
+            counts stay (only files that exist are read). ``import-brains
+            --all`` reports such brains instead
+            (final_brains_without_a_counts_file).
           - It never stores a file with a region whose acronym the acronym
             lookup does not know (``unknown_acronyms``): that region would be
             left out, its stored cells deleted. Refused with an error, the
@@ -4910,6 +4927,33 @@ class BrainGlobeImporter:
                         f"its {len(stored_ec)} stored eLife group count(s) were removed: they "
                         f"were computed from the previous region counts, which this run replaced")
         return done()
+
+    def final_brains_without_a_counts_file(self, have) -> List[str]:
+        """Brains (sorted ids) with FINAL region or eLife counts in the
+        database whose id is not in ``have`` -- the brains a counts file in
+        MouseBrain's summary folder names.
+
+        WHY: sync_brain_counts only reads files that exist, so a brain whose
+        counts file left the folder -- the brain renamed in MouseBrain (its
+        cohort or subject corrected), or its counts withdrawn -- keeps its
+        counts in the database, marked final, under the old id, and in every
+        brain export; a renamed brain is then there twice. Removing them here
+        would turn a listing that missed a file into lost counts, so this
+        only REPORTS them (the same rule as the reach import's
+        import_reaches.rows_without_a_filed_file): a person looks, and either
+        puts the file back or has the old brain taken out of the database.
+        A brain imported once with ``import-brains --csv`` from a file kept
+        elsewhere is listed too: its file is not in the summary folder.
+        """
+        from .schema import BrainSample, ElifeRegionCount, RegionCount
+        have = set(have)
+        found = set()
+        with self.db.session() as session:
+            for table in (RegionCount, ElifeRegionCount):
+                found |= {r[0] for r in session.query(BrainSample.brain_id)
+                          .join(table, table.brain_sample_id == BrainSample.id)
+                          .filter(table.is_final == 1).distinct()}
+        return sorted(b for b in found if b not in have)
 
     def _region_totals(self, df: pd.DataFrame):
         """({acronym: total}, {acronym: {'left': n, 'right': n}}) from a

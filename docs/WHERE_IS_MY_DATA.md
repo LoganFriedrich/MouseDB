@@ -1276,7 +1276,8 @@ numbers from the other source are `unchanged`, and the stored list is kept.)
 Rules that keep a replacement safe:
 
 - A counts file that is gone does not remove anything: the brain keeps the
-  counts it has.
+  counts it has. It is REPORTED instead: see "Brains whose counts file has
+  gone" below.
 - A file changed in the last two minutes may still be being written. That
   brain is left alone (its stored counts kept) and the run ends with a
   `[FAIL]` line naming it; the next run takes it. The same happens when the
@@ -1380,6 +1381,37 @@ Rules that keep a replacement safe:
   "Unknown acronym" above): region X is not among them. `group ... is not a known eLife group name` means a group in
   `elife_counts.csv` was stored under the name it has there. Neither fails
   the run.
+
+**Brains whose counts file has gone are reported, never removed.** The
+import reads only the counts files that are in MouseBrain's `2_Data_Summary`
+folder. When a brain's file leaves that folder -- the brain was renamed in
+MouseBrain (its cohort or subject corrected in the folder name), or its
+counts were withdrawn -- the counts already in the database would otherwise
+stay there, marked final, under the old name, and in every brain export; a
+renamed brain would be there twice, once under each name. So every
+`import-brains --all` that finds at least one counts file compares the
+brains with final counts in the database with the files it found, and lists
+every brain that has counts but no file:
+
+- in its output, before its summary:
+  `[!] N brain(s) have final counts in the database but no counts file in <folder> -- nothing was taken out; a person should look (<first 20 names>)`;
+- in `<mousedb_root>/logs/brain_counts_without_file.json` (every name, the
+  folder it looked in, and when it checked, `checked_at`). A `--dry-run`
+  prints the line but does not write the file, and a run that found no
+  counts file at all does not check (an empty folder is treated as a broken
+  listing, never as "every brain is gone"), so the list can be older than
+  the last import; its date tells you how old;
+- on the **Where Is My Data** tab, among the problems at the top, with that
+  date (`found by the brain import of <checked_at>`).
+
+Nothing is deleted, and the import's result does not change: a listing that
+missed a file must never cost counts. What to do: find out where the file
+went. If it was moved or renamed by mistake, put it back -- the next import
+clears the line. If the brain really was renamed or withdrawn, the old
+brain's rows have to be taken out of the database by whoever looks after it;
+there is deliberately no button or command for that here. A brain imported
+once with `import-brains --csv` from a file kept somewhere else is listed
+too, because its file is not in the summary folder.
 
 **Calibration runs follow the tracker too.** A run the tracker names by its
 own id (`exp_id`) that is already in the database is brought in line with
@@ -1649,6 +1681,9 @@ in `<mousedb_root>/logs/tasks/bench_scan.log`.
 - **"N video(s) have reaches in the database but no results file"** at the top
   of the tab: see "Reaches whose results file has gone are reported, never
   removed" above.
+- **"N brain(s) have final counts in the database but no counts file"** at
+  the top of the tab: see "Brains whose counts file has gone are reported,
+  never removed" above.
 - **"complete for ODC upload: False"**: a new column reached the exports
   without a dictionary entry. The problems list names it; the definition is
   added in `mousedb/exporters/data_dictionary.py`.

@@ -1243,6 +1243,34 @@ def _import_brains_body(args, summary_dir):
             elif result['elife_errors']:
                 elife_failed.append(brain_id)
 
+        # Brains whose final counts are in the database but whose counts file
+        # is not in this folder (renamed in MouseBrain, or withdrawn): REPORTED,
+        # never removed, and the exit code is not changed -- a listing that
+        # missed a file must never cost counts (see
+        # BrainGlobeImporter.final_brains_without_a_counts_file). Checked only
+        # here, where the folder listed at least one counts file: an empty
+        # listing (returned above) may be a broken one. Saved for the Where Is
+        # My Data tab, which is where a person sees it; a dry run prints it
+        # and saves nothing.
+        from .importers import (BRAINS_WITHOUT_FILE_SHOWN, brains_without_file_path)
+        from .state_files import _write_json_atomically
+        without_file = importer.final_brains_without_a_counts_file(files_of)
+        if without_file:
+            shown = without_file[:BRAINS_WITHOUT_FILE_SHOWN]
+            print("  [!] %d brain(s) have final counts in the database but no counts file "
+                  "in %s -- nothing was taken out; a person should look (%s%s)"
+                  % (len(without_file), summary_dir, ", ".join(shown),
+                     ", ..." if len(without_file) > len(shown) else ""))
+        if not dry_run:
+            try:
+                _write_json_atomically(brains_without_file_path(), {
+                    "checked_at": datetime.now().isoformat(timespec="seconds"),
+                    "summary_dir": str(summary_dir),
+                    "count": len(without_file),
+                    "brains": without_file})
+            except Exception as e:
+                print("  [!] could not save the list of brains without a counts file: %s" % e)
+
         # Summary
         print(f"\n{'=' * 60}")
         print(f"{prefix}Import Complete:")

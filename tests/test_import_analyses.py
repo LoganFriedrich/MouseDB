@@ -1465,6 +1465,9 @@ class TestImportBrainsExitCode:
                     "region_action": "new" if ok else None,
                     "elife_action": "new" if ok else None, "elife_errors": []}
 
+        def final_brains_without_a_counts_file(self, have):
+            return []          # report only; never changes the exit code
+
     def _setup(self, tmp_path, monkeypatch, calibration_ok=True):
         import sqlalchemy
         from mousedb import cli
