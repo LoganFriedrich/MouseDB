@@ -21,6 +21,18 @@ checked-in code, not what's planned.
   guarded. Guide: INSTALL.md, "The tests never touch your real data".
 
 ### Added
+- **Hand-scored sessions with no video** (`mousedb/missing_videos.py`,
+  `mousedb missing-videos`). Every session the hand-scores file holds for a
+  cohort with a live tracking sheet is looked for in the pipeline census;
+  one more than `missing_video_grace_days` (default 3) days old at the time of
+  the census with no video anywhere is shown as one red line per cohort on
+  the Where Is My Data tab, as one line per missing recording in the cohort's
+  FIX THESE file (what to look for and where to send it), and as a row in
+  `exports/missing_videos/missing_session_videos.csv` (rewritten after every
+  sheet import and after the nightly census). A gap a person cannot close is
+  acknowledged once (`--acknowledge ... --by ... --reason ...`), session by
+  session, so it stops being listed without silencing later gaps. Guide:
+  docs/WHERE_IS_MY_DATA.md, "Sessions scored by hand that have no video".
 - **Limited exports** (`mousedb export-subset`, and the **Make a limited
   export...** button on the Where Is My Data tab): a filtered copy of part of
   `exports/current` -- chosen cohorts (or a whole project), tray types,

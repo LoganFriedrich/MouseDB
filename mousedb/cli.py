@@ -1023,6 +1023,13 @@ def cmd_backfill_phases(args):
     print_stats(stats)
 
 
+def cmd_missing_videos(args):
+    """List (and optionally write, or acknowledge) hand-scored sessions with no
+    video anywhere in the reaching pipeline."""
+    from .missing_videos import main
+    raise SystemExit(main(args.rest))
+
+
 def cmd_hand_scores(args):
     """Write the hand pellet scores file the reaching pipeline reads."""
     from .hand_scores_file import main
@@ -1891,6 +1898,13 @@ def main():
         help='Write every hand pellet score to exports/hand_scores/ for the reaching '
              'pipeline (also done after every sheet import)')
     hs_parser.set_defaults(func=cmd_hand_scores)
+
+    # mousedb missing-videos
+    mv_parser = subparsers.add_parser('missing-videos', add_help=False,
+        help='Hand-scored sessions with no video anywhere in the reaching pipeline '
+             '(--help for its options: --write, --acknowledge, --grace-days, --cohort)')
+    mv_parser.add_argument('rest', nargs=argparse.REMAINDER)
+    mv_parser.set_defaults(func=cmd_missing_videos)
 
     # mousedb import-brains
     brain_parser = subparsers.add_parser('import-brains',

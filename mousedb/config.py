@@ -86,6 +86,7 @@ KEYS = {
     "mousereach_route_cmd": "MOUSEDB_MOUSEREACH_ROUTE_CMD",
     "mousereach_env": "MOUSEDB_MOUSEREACH_ENV",
     "lab_name": "MOUSEDB_LAB_NAME",
+    "missing_video_grace_days": "MOUSEDB_MISSING_VIDEO_GRACE_DAYS",
 }
 
 
@@ -427,6 +428,9 @@ KEY_HELP = {
                                "it is not the same one as this tool."),
     "lab_name": ("text", "The laboratory name written into generated sheets and shared "
                          "exports."),
+    "missing_video_grace_days": ("text", "How many days after a hand-scored session its "
+                                         "video may still be on its way before the session "
+                                         "is listed as having no video (default 3)."),
 }
 
 # Set before anything works. Everything else has a sensible fallback or is optional.

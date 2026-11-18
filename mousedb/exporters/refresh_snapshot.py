@@ -456,9 +456,21 @@ def main(argv=None) -> int:
     # files and the snapshot, and building one can take minutes that the
     # imports waiting for that lock should not spend waiting.
     rc = _after_exports(rc)
-    if not args.skip_census:
-        retake_census()
+    if not args.skip_census and retake_census():
+        write_missing_videos_list()
     return rc
+
+
+def write_missing_videos_list() -> None:
+    """Rewrite the list of hand-scored sessions with no video
+    (missing_videos.py) from the census just taken. Never raises and never
+    changes this job's exit code, for the same reason as retake_census; a
+    failure is printed as [FAIL]."""
+    from mousedb.missing_videos import write_list_quietly
+    said = write_list_quietly()
+    print(("  [FAIL] list of sessions without a video not rewritten: %s" % said)
+          if said.startswith("FAILED") else ("List of sessions without a video %s" % said),
+          flush=True)
 
 
 def _after_exports(rc: int) -> int:

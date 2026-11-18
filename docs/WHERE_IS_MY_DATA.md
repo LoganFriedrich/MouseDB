@@ -1588,6 +1588,80 @@ root can be retired once the first number reads 0. Like the session lines, the
 line is only as new as the inventory (its date is on the line); re-run the
 command after moving anything. `mousedb-data-status` prints the same lines.
 
+## Sessions scored by hand that have no video
+
+Every tray scored at the bench is written in the tracking sheet the same day,
+so a hand-scored session proves a recording was made. If that recording never
+reaches the pipeline, nothing else would notice: the pipeline only knows the
+videos it is given. So mousedb checks, for every hand-scored session (one
+animal, one day, one tray), that its video is somewhere the pipeline knows
+about -- a recording waiting to be cut, a video being posed or analyzed, one in
+a review queue or quarantine, or a filed one in Analyzed.
+
+**What you see.** A red line per cohort at the top of the Where Is My Data tab:
+
+    PROJA_03: 256 hand-scored session(s) in 24 recording(s) (<first day> to <last day>) have no video anywhere in the reaching pipeline. ...
+
+and, in that cohort's `!! <cohort> - FIX THESE.xlsx` beside its sheet, one
+line per missing recording (day + tray), naming its animals and saying what
+to do: look in the recording PC's OBS folder for that day's recording (named
+like `<YYYYMMDD>_<animal>,<animal>,..._<tray>.mkv` once a person has named it,
+or by its date and time if not yet); if it is there, name it and send it to
+the pipeline's intake folder (`<MouseReach pipeline root>\Unanalyzed\Multi-Animal`)
+the way the day's recordings are sent. When the pipeline holds the same animal
+and day under ANOTHER tray, the line says so: the tray in the sheet or in the
+video's name is then wrong, and the recording is probably there under the other
+name -- correct whichever is wrong.
+
+The full list, one row per session, is
+`<mousedb_root>\exports\missing_videos\missing_session_videos.csv` (columns:
+cohort, animal, day, tray, session name, `missing` or `acknowledged`, days
+since the session, other trays the pipeline holds for that animal and day,
+the recording name to look for, what to do, and who acknowledged it, when and
+why). mousedb rewrites it after every sheet import and after the nightly
+pipeline scan; nothing else writes it.
+
+**What is checked, and against what.**
+
+- The hand scores are mousedb's own hand-scores file
+  (`exports\hand_scores\hand_pellet_scores.csv`, rewritten after every sheet
+  import). What the pipeline knows is the pipeline census the tab already uses
+  (`logs\pipeline_census.json`, retaken every night by the snapshot job, or by
+  **Refresh pipeline view**). Nothing new walks the folders, and the live
+  database is not opened.
+- Only cohorts with a live tracking sheet in the configured sheets folder.
+  Frozen workbooks of finished projects (imported another way) are not
+  checked: their recordings were collected before this pipeline existed and
+  nobody will record those animals again.
+- A session counts as missing only when it is more than **3 days** old at the
+  time the census was taken. Three days covers a weekend between recording and
+  sending. Change it with `mousedb config --set missing_video_grace_days <days>`.
+  It is counted to the census, not to today, because a census taken last night
+  cannot hold a recording sent this morning.
+- If the census or the hand-scores file is missing or unreadable, the red box
+  says "Could not check for hand-scored sessions without a video" and why. It
+  never reads as "nothing missing".
+
+**Old gaps: acknowledge them once.** Long-finished cohorts are checked too,
+because a recording that never left its PC can still be on that PC or on a
+backup. When a person has looked and the recording is gone (or was never
+made), they acknowledge it:
+
+    mousedb missing-videos --acknowledge <cohort>:<YYYY-MM-DD> --by "<name>" --reason "<why>"
+
+(the selector can also be a whole cohort, or one session such as
+`<YYYYMMDD>_<animal>_<tray>`). The sessions it names at that moment are
+recorded one by one, with who, when and why, in
+`<mousedb_root>\logs\missing_videos_acknowledged.json`. They leave the red line
+and the FIX THESE file, and stay in the CSV marked `acknowledged`. A gap that
+opens later in the same cohort is still listed -- acknowledging old gaps never
+silences new ones.
+
+**From a terminal** (MouseDB environment): `mousedb missing-videos` prints the
+count per cohort and every missing recording, and changes nothing;
+`--write` also rewrites the CSV; `--cohort <id>` limits it to one cohort;
+`--grace-days <n>` overrides the setting for that run.
+
 ## The "Update the database now" button
 
 On the Where Is My Data tab, the green button **Update the database now**

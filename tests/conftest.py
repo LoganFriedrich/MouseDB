@@ -660,6 +660,8 @@ def _no_production_hand_scores(_isolated_from_this_machine, monkeypatch):
     monkeypatch.setattr(sheet_sync, "WRITE_HAND_SCORES", False)
     # nor writes a FIX THESE file into a sheets folder
     monkeypatch.setattr(sheet_sync, "WRITE_FIX_THESE", False)
+    # nor rewrites the list of hand-scored sessions with no video
+    monkeypatch.setattr(sheet_sync, "WRITE_MISSING_VIDEOS", False, raising=False)
 
 
 @pytest.fixture(autouse=True)

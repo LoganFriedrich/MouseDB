@@ -41,7 +41,12 @@ only a person can fix, gathered from every tool --
   cannot run (a setting or file to fix);
 * a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
   in the sheet;
-* a sheet import that failed.
+* a sheet import that failed;
+* sessions scored by hand whose video is nowhere in the pipeline (one line
+  per cohort; each recording, with where to look for it, is in the FIX THESE
+  file and in exports/missing_videos/). A gap nobody can close is
+  acknowledged once: mousedb missing-videos --acknowledge ... (see
+  docs/WHERE_IS_MY_DATA.md, "Sessions scored by hand that have no video").
 Each cohort's list is also written beside its sheet, in
 "!! <cohort> - FIX THESE.xlsx" (rewritten after every import, removed when
 nothing is left).
@@ -547,6 +552,11 @@ class DataStatusTab(QWidget):
     ATTENTION_SHOWN = 10
 
     def _show_attention(self, found):
+        # A cohort's missing videos are one line here, not one per recording
+        # (those are in its FIX THESE file): a finished cohort's gaps would
+        # otherwise push every other item out of the panel.
+        from ..missing_videos import fold_for_tab
+        found = fold_for_tab(found)
         if not found:
             self.attention_label.hide()
             return
