@@ -214,6 +214,13 @@ checked-in code, not what's planned.
   Two saves at once used to end with the later one writing back what it had
   read, losing the other's change, and every writer shared one fixed
   `<file>.tmp` name.
+- Analysis exclusions: a MouseReach pipeline folder that is set but cannot be
+  reached (share dropped, folder moved) now stops the checks, like a sheet
+  folder that is set but gone. Before, every watcher database in it read as
+  "absent" (a note only), the recording checks ran with no recording list,
+  and a contested video was left out alone while the other animals of its
+  recording went into the analysis files. The skip signature records whether
+  the folder could be reached, so the files are rebuilt once it can.
 - Sheet import: an animal the database holds, that its cohort's sheet no
   longer names and that nothing is recorded for (an id typed into the sheet,
   imported, then taken out again) is named in a warning, on the cohort's

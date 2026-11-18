@@ -80,8 +80,13 @@ tracking-sheet folder (check 5). Two cases are kept apart:
   from the local watcher database, and a note says they ran without the
   central one (a recording known only to it cannot be checked).
 * the input EXISTS but cannot be read tonight (a locked or damaged database, a
-  record that does not parse, a sheet folder that is set but cannot be
-  reached): compute() raises ExclusionInputUnreadable. Then no per-reach
+  record that does not parse, a sheet folder or a MouseReach pipeline folder
+  that is set but cannot be reached): compute() raises
+  ExclusionInputUnreadable. A pipeline folder that cannot be reached is the
+  same case as an unreadable watcher database, not a missing one: every file
+  in it would look "absent", the recording checks would run with no recording
+  list at all, and a contested video would be left out alone while the other
+  animals of its recording went into the analysis files. Then no per-reach
   file is rewritten -- not the complete record, the summary, the analysis
   files, analysis_EXCLUSIONS.csv or the combined files; last night's stay --
   and the export is incomplete, so the nightly job fails loudly. A database
@@ -286,6 +291,8 @@ def input_signature(pipeline_root=None, sheets_dir=None) -> Dict[str, object]:
 
     sig: Dict[str, object] = {
         "pipeline_root": str(pipeline_root) if pipeline_root else None,
+        # Set but not reachable is not the same input as reachable and empty.
+        "pipeline_reachable": (Path(pipeline_root).is_dir() if pipeline_root else None),
         "sheets_dir": str(sheets_dir) if sheets_dir else None,
         "pellets_per_tray": PELLETS_PER_TRAY,
     }
@@ -411,6 +418,17 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
     snapshot = Path(snapshot_dir)
     ex = Exclusions()
     pipeline = Path(pipeline_root) if pipeline_root else None
+    if pipeline is not None and not pipeline.is_dir():
+        # Set, but not there tonight (share dropped, folder moved or renamed).
+        # Every watcher database and the name-audit record inside it would read
+        # as "absent" -- a standing fact, worth only a note -- when the truth is
+        # that nothing about the recordings can be known tonight. Fail closed,
+        # like the sheet folder below.
+        raise ExclusionInputUnreadable(
+            "the MouseReach pipeline folder is set (%s) but cannot be reached, so the "
+            "recordings each video was cut from are not known tonight -- reconnect the "
+            "drive, or set the right folder (mousedb config --set "
+            "mousereach_pipeline_root <folder>)" % pipeline)
     errors: Dict[str, str] = {}
     listing = collage_listing(pipeline, errors)
     unreadable = sorted(db for db, v in listing.items() if v == "unreadable")

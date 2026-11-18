@@ -445,6 +445,25 @@ def test_a_sheet_folder_that_is_set_but_gone_stops_the_checks(tmp_path):
     _refuses(snap, "tracking-sheet folder", sheets_dir=tmp_path / "moved_away")
 
 
+def test_a_pipeline_folder_that_is_set_but_gone_stops_the_checks(tmp_path):
+    """Set but not reachable tonight (share dropped, folder moved): every
+    watcher database in it would read "absent", the recording checks would run
+    with no recording list, and a contested video would be left out alone
+    while the other animals of its recording went into the analysis files.
+    The same case as a sheet folder that is set but gone: refused."""
+    snap = _one_video(tmp_path)
+    _refuses(snap, "pipeline folder", pipeline_root=tmp_path / "share_not_mounted")
+
+
+def test_an_unreachable_pipeline_folder_is_its_own_signature(tmp_path):
+    """The day it can be reached again the signature must change, so the
+    skipped per-reach files are rebuilt."""
+    gone = ee.input_signature(tmp_path / "share_not_mounted", None)
+    (tmp_path / "share_not_mounted").mkdir()
+    back = ee.input_signature(tmp_path / "share_not_mounted", None)
+    assert gone != back
+
+
 def test_inputs_that_do_not_exist_are_notes_not_failures(tmp_path):
     snap = _one_video(tmp_path)
     pipeline = tmp_path / "pipe"
