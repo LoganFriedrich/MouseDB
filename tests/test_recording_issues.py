@@ -216,3 +216,18 @@ def test_parse_key():
         "subject_id": "PROJA_01_02", "session_date": dt.date(2026, 3, 2),
         "tray_type": "P", "tray_number": 2}
     assert ri.parse_key("nonsense")["subject_id"] is None
+
+
+def test_the_counts_and_the_weekly_page_count_a_failed_recording():
+    """Readers of the census that do not know the element would drop the
+    sessions from their totals or count them as not started."""
+    from mousedb import pipeline_census, weekly_report
+    census = _census_dict()
+    joined = pipeline_census.join_with_db(census, set())
+    assert joined["by_element"]["recording_issue"] == 2
+    by_project, _by_cohort = weekly_report.census_tables(
+        {"sessions": {k: dict(v, project="PROJA") for k, v in census["sessions"].items()}})
+    page = weekly_report._table("Project", by_project)
+    assert "Recording failed (never analyzed)" in page
+    assert by_project["PROJA"]["recording_issue"] == 2
+    assert "not_started_pillar" not in by_project["PROJA"]

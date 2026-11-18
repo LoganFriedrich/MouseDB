@@ -107,6 +107,12 @@ def load_census() -> Optional[dict]:
     return load_cached()
 
 
+# How long the import waits for the database-task lock. Short on purpose: it
+# runs at the end of the nightly snapshot job, which has already waited for
+# and done its own work, and the record is retaken the next night anyway.
+LOCK_WAIT_SECONDS = 600
+
+
 def import_from_census(census: Optional[dict] = None, db=None, hold_lock: bool = True) -> dict:
     """Bring ``session_recording_status`` in step with the census: add or
     update a row for every session of every recording issue, and remove the
@@ -127,7 +133,8 @@ def import_from_census(census: Optional[dict] = None, db=None, hold_lock: bool =
     SessionRecordingStatus.__table__.create(db.engine, checkfirst=True)
     from .task_mutex import hold
     counts = {"added": 0, "updated": 0, "removed": 0}
-    with (hold(waiting_for="another database task") if hold_lock else contextlib.nullcontext()):
+    with (hold(wait_seconds=LOCK_WAIT_SECONDS, waiting_for="another database task")
+          if hold_lock else contextlib.nullcontext()):
         with db.session() as s:
             have = {r.video_key: r for r in s.query(SessionRecordingStatus).all()}
             for key, info in wanted.items():

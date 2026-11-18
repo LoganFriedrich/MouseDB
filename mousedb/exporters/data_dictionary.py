@@ -378,7 +378,8 @@ def _odc_session_rows() -> List[dict]:
              "no_issue_recorded=no recording failure is on record",
              "", "",
              "Why reaches are absent is said HERE, on the session row: the per-reach files "
-             "(ODC_reaches, reaches_*_analysis, reach_data) have no rows for a failed "
+             "(ODC_reaches, reaches_*_analysis, reach_data) and the session file built "
+             "from them (sessions_*_analysis) have no rows for a failed "
              "recording, because no reach was ever measured in it. Filled from the "
              "database table session_recording_status, which the nightly census step "
              "imports from the reaching pipeline."),

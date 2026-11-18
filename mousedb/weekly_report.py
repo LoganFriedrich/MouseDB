@@ -57,6 +57,10 @@ STAGES = [
     ("not_started_pillar", "Not started -- pillar trays"),
     ("not_started_easy_flat", "Not started -- Easy/Flat trays"),
     ("quarantined", "Set aside (quarantined)"),
+    # A recording that failed (mousedb.recording_issues): never analyzed, and
+    # never will be. Listed so its sessions are not silently left out of the
+    # totals (a stage not in this list is not counted in any row).
+    ("recording_issue", "Recording failed (never analyzed)"),
 ]
 
 FOLDER_NAME = "Where is my data"
