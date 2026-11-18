@@ -428,8 +428,7 @@ reaches the full export reaches the limited export the next time it is made.
     one as it is (pick another name); **Yes** replaces it, and the replaced
     definition is kept in the lab settings file under `export_subsets_replaced`
     with the time it was replaced. Then the box at the bottom says what was
-    made; the box at the bottom says what was written, with the
-    row count of every file. A large set of cohorts takes a few minutes.
+    written, with the row count of every file. A large set of cohorts takes a few minutes.
     **Check only (writes nothing)** counts the rows of what the window shows
     now without writing any file -- it does not save the definition either.
     **Open its folder** opens the result.

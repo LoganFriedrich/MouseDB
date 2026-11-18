@@ -136,6 +136,9 @@ ROUND_TRIP = {
     # a column the full export has since renamed, and a cohort no longer exported
     "stale": {"cohorts": ["PROJA_01", "PROJA_09"], "kinds": ["ODC_reaches"],
               "columns": {"ODC_reaches": ["subject_id", "old_column_name"]}},
+    # cohorts, tray types and kinds in an order of its own
+    "order": {"cohorts": ["PROJA_02", "PROJA_01"], "tray_types": ["Easy", "Pillar"],
+              "kinds": ["sessions_analysis", "ODC_reaches"]},
     # a fixed list naming every column there is today, in its own order
     "fixed": {"cohorts": ["PROJA_02"], "kinds": ["ODC_reaches"],
               "columns": {"ODC_reaches": ["start_frame", "subject_id", "video_name"]}},
@@ -203,3 +206,16 @@ def test_the_window_does_not_claim_nothing_changed_for_a_failed_remake(qt, lab, 
     assert shown and "Nothing was changed" not in shown[-1] and "NOT complete" in shown[-1]
     d._done({"returncode": subsets.EXIT_REFUSED, "refused": True, "output": "[!] no column x"})
     assert "Nothing was changed" in shown[-1]
+
+
+def test_a_hand_written_definition_saved_unchanged_is_not_a_replacement(lab):
+    """A definition typed into the settings file by hand (a tray word, no kinds)
+    saved again as it reads is not a different definition."""
+    from mousedb import sheet_projects
+    cfg = sheet_projects.config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(json.dumps({"export_subsets": {"pre": {"cohorts": ["PROJA_01"],
+                                                          "tray_types": ["Pillar"]}}}))
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"], "tray_types": ["P"]})
+    assert subsets.profiles()["pre"]["tray_types"] == ["P"]
+    assert subsets.REPLACED_KEY not in json.loads(cfg.read_text())

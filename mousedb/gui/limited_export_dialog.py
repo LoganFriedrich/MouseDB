@@ -415,6 +415,12 @@ class LimitedExportDialog(QDialog):
         p = {}
         if name and name != NEW:
             p = (subsets.profiles() or {}).get(name, {})
+            try:
+                # In its stored form (Pillar -> P, no kinds -> every kind), so the
+                # boxes show a hand-written definition as it is read.
+                p = subsets.validate(name, p)
+            except Exception:
+                pass
             self.name.setText(name)
         else:
             self.name.clear()
@@ -488,12 +494,19 @@ class LimitedExportDialog(QDialog):
             carried["project"] = project
         if loaded.get("description"):
             carried["description"] = loaded["description"]
+
+        def in_saved_order(now: List[str], key: str) -> List[str]:
+            # The definition's own order first (it is the order the slice's
+            # files follow for kinds and cohorts), then anything newly ticked.
+            was = [x for x in (loaded.get(key) or []) if x in now]
+            return was + [x for x in now if x not in was]
         return dict(carried, **{
-            "cohorts": cohorts,
-            "tray_types": [c for c, cb in self.trays.items() if cb.isChecked()],
+            "cohorts": in_saved_order(cohorts, "cohorts"),
+            "tray_types": in_saved_order([c for c, cb in self.trays.items() if cb.isChecked()],
+                                         "tray_types"),
             "window": window, "n": self.n.value(), "window_tray": self.w_tray.currentData(),
             "from": self.d_from.text().strip(), "to": self.d_to.text().strip(),
-            "kinds": [k for k, cb in self.kinds.items() if cb.isChecked()],
+            "kinds": in_saved_order([k for k, cb in self.kinds.items() if cb.isChecked()], "kinds"),
             "columns": {k: v for k, v in self._columns.items() if v is not None},
             "flag_column": self.flag.text(),
             "flag_rule": None if rule == BLANK_RULE else rule,

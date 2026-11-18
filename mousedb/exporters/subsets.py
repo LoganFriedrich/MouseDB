@@ -415,6 +415,18 @@ def _keep_old(data: dict, name: str, old: dict, why: str) -> None:
     kept.append(entry)
 
 
+def _same_definition(name: str, old, clean: dict, rules: dict) -> bool:
+    """True when the saved ``old`` means exactly ``clean``. A definition written
+    into the settings file by hand is compared in its stored form (``Pillar``
+    is ``P``; no kinds is every kind), so saving it unchanged is no replacement."""
+    if old == clean:
+        return True
+    try:
+        return validate(name, old, rules) == clean
+    except SubsetRefused:
+        return False
+
+
 def save_profile(name: str, profile: dict, replace: bool = False) -> Path:
     """Validate and store one definition. Every other setting in the lab
     settings file is kept.
@@ -432,7 +444,7 @@ def save_profile(name: str, profile: dict, replace: bool = False) -> Path:
         clean = validate(name, profile, rules)
         saved = _section(data, PROFILES_KEY)
         old = saved.get(name)
-        if old is not None and old != clean:
+        if old is not None and not _same_definition(name, old, clean, rules):
             if not replace:
                 raise DefinitionExists(
                     "a limited export named '%s' is already saved, with a different "
