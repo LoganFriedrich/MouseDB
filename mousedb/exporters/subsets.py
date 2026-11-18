@@ -4,7 +4,8 @@ WHY THIS EXISTS
 ---------------
 A person often needs only part of what the current exports hold: some cohorts,
 the last few sessions before the injury, one kind of tray, a handful of
-columns, and a yes/no column saying which animals go into one analysis. Until
+columns, and a yes/no column saying which animals (or which days of each
+animal) go into one analysis. Until
 this existed every such slice was a one-off script, written again each time,
 with nothing to say what it was cut from or how.
 
@@ -59,7 +60,9 @@ database: one file for every machine and every login), never in this code::
     "export_subset_flag_rules": {
       "<rule name>": {"type": "listed", "animals": ["PROJA_01_03"]},
       "<rule name>": {"type": "share_at_least", "kind": "sessions_analysis",
-                      "numerator": "<column>", "denominator": "<column>", "percent": 30}
+                      "numerator": "<column>", "denominator": "<column>", "percent": 30},
+      "<rule name>": {"type": "day_window", "n": 3, "tray_type": "P",
+                      "before_first": "contusion"}
     },
     "export_subsets_replaced": {
       "<name>": [{"until": "<time>", "why": "replaced" | "forgotten", "definition": {...}}]
@@ -108,7 +111,16 @@ dropped. A column that some cohorts' files lack is filled for them with the
 kind's word for absent ("Not recorded", or NA in the analysis files), exactly as
 the full export's combined files do, and the manifest says which.
 
-The yes/no column holds, per animal, "yes" or "no" from the named rule. With no
+The yes/no column holds "yes" or "no" from the named rule: per animal for the
+"listed" and "share_at_least" rules, per animal-day for a "day_window" rule.
+A day-window rule says yes to each animal's last N test days (dates with hand
+scores for a tray of its tray type in the tracking sheet) strictly before its
+cohort's first surgery of the "before_first" type, chosen exactly as the
+session window chooses them (last_days_before), and every row of a chosen
+(animal, date) -- whatever its tray -- is yes, every other row no; never
+blank. The days come from the same snapshot generation as the files, and a
+chosen day with no rows in a file is listed in the manifest
+(flag_days_with_no_rows), never dropped silently. With no
 rule it is left blank -- written as the kind's word for absent, because an ODC
 file may not hold an empty cell. Rules only READ the slice; they never change a
 value in it.
@@ -140,11 +152,14 @@ SUBSETS_DIR = "subsets"
 
 ALL_KINDS = tuple(layout.KINDS)
 WINDOW_TYPES = ("all", "last_before_injury", "dates")
-RULE_TYPES = ("listed", "share_at_least")
+RULE_TYPES = ("listed", "share_at_least", "day_window")
 # The tray types the pipeline names (exporters.trays): P pillar, E easy, F flat.
 TRAY_WORDS = {"PILLAR": "P", "EASY": "E", "FLAT": "F"}
 # The surgery type the schema calls the injury (schema.Surgery's check).
 INJURY_SURGERY = "contusion"
+# Every surgery type the schema allows (schema.Surgery's check): what a
+# day-window rule may count its days back from.
+SURGERY_TYPES = ("contusion", "tracing", "perfusion")
 
 # Where each kind keeps the row's date, tray type, video and animal. The animal
 # is read from the video name when there is one (import_reaches.parse_subject_id),
@@ -374,6 +389,27 @@ def validate(name: str, profile: dict, rules: Optional[Dict[str, dict]] = None) 
 def validate_rule(name: str, rule: dict) -> dict:
     if not isinstance(rule, dict) or rule.get("type") not in RULE_TYPES:
         raise SubsetRefused("yes/no rule %s: its type must be one of %s" % (name, ", ".join(RULE_TYPES)))
+    if rule["type"] == "day_window":
+        # WHY a rule of its own: the column says which DAYS of each animal an
+        # analysis uses (its last N test days before an event), not which
+        # animals. Every parameter is the lab's to choose; none is built in.
+        try:
+            n = int(rule.get("n"))
+        except (TypeError, ValueError):
+            n = 0
+        if n < 1:
+            raise SubsetRefused("yes/no rule %s: say how many days ('n', a whole number, 1 or "
+                                "more)" % name)
+        wt = tray_code(rule.get("tray_type") or "")
+        if wt not in TRAY_WORDS.values():
+            raise SubsetRefused("yes/no rule %s: say which tray type makes a day a test day "
+                                "('tray_type': Pillar/P, Easy/E or Flat/F)" % name)
+        event = str(rule.get("before_first") or "").strip().lower()
+        if event not in SURGERY_TYPES:
+            raise SubsetRefused("yes/no rule %s: 'before_first' must be a surgery type (%s): the "
+                                "days are counted back from its cohort's first such surgery"
+                                % (name, ", ".join(SURGERY_TYPES)))
+        return {"type": "day_window", "n": n, "tray_type": wt, "before_first": event}
     if rule["type"] == "listed":
         animals = rule.get("animals")
         if not isinstance(animals, list):
@@ -394,9 +430,13 @@ def validate_rule(name: str, rule: dict) -> dict:
 
 
 def _section(data: dict, key: str) -> dict:
-    """``data[key]`` as a dict, made if absent; refused if it holds something else
-    (written back as it was, it would be lost)."""
-    sec = data.setdefault(key, {})
+    """``data[key]`` as a dict, made if absent or null; refused if it holds
+    something else (written back as it was, it would be lost)."""
+    if data.get(key) is None:
+        # An entry written as null (by hand, or by an older save) means "none
+        # yet"; refusing it would make the first rule impossible to save.
+        data[key] = {}
+    sec = data[key]
     if not isinstance(sec, dict):
         raise SubsetRefused("the lab settings file's '%s' is not a set of named entries; "
                             "nothing was changed" % key)
@@ -554,19 +594,31 @@ def _norm_date(v) -> str:
     return str(v)[:10]
 
 
-def session_window(profile: dict, cohorts: List[str], snapshot_dir: Optional[Path],
-                   expect_generation: Optional[str]) -> Tuple[Optional[set], dict]:
-    """The (animal, date) pairs the window keeps -- None when every session is
-    kept -- and what the manifest should say about how they were chosen."""
-    window = profile["window"]
-    if window["type"] == "all":
-        return None, {"type": "all"}
-    if window["type"] == "dates":
-        return None, dict(window)
+def last_days_before(cohorts: List[str], snapshot_dir: Optional[Path],
+                     expect_generation: Optional[str], n: int, tray_type: str,
+                     event: str, what: str) -> dict:
+    """Each animal's last ``n`` test days before its cohort's first ``event``.
+
+    A test day of an animal is a date on which the cohort's tracking sheet
+    records hand scores for a tray of ``tray_type`` (the snapshot's
+    pellet_scores table, imported from the sheet). The cohort's first ``event``
+    is the earliest date of that surgery type for any animal of the cohort (the
+    snapshot's surgeries table). WHY the sheet and not the export's own rows:
+    the sheet decides when things happened, and a day whose videos are not
+    filed yet must still count as one of the last N -- otherwise an earlier day
+    would silently take its place.
+
+    Shared by the session window ("last_before_injury") and the day-window
+    yes/no rule, so the two can never choose days differently. ``what`` names
+    the caller in messages. Read under one snapshot generation, which must be
+    the one the full export was made from (refused otherwise).
+
+    Returns {"days": {(animal, date)}, "chosen": {animal: [dates]},
+    "short": {animal: count}, "first": {cohort: date}, "generation": ...}."""
     from .. import snapshot_generation
     if not snapshot_dir:
-        raise SubsetRefused("the session window comes from the analysis snapshot, and "
-                            "snapshot_dir is not set (mousedb config --set snapshot_dir <folder>)")
+        raise SubsetRefused("%s comes from the analysis snapshot, and snapshot_dir is not set "
+                            "(mousedb config --set snapshot_dir <folder>)" % what)
     snapshot_dir = Path(snapshot_dir)
 
     def read():
@@ -579,14 +631,14 @@ def session_window(profile: dict, cohorts: List[str], snapshot_dir: Optional[Pat
     try:
         (ps, su), generation = snapshot_generation.read_consistent(snapshot_dir, read)
     except snapshot_generation.SnapshotNotConsistent as e:
-        raise SubsetRefused("the session window could not be read: %s" % e) from None
+        raise SubsetRefused("%s could not be read: %s" % (what, e)) from None
     except (OSError, ValueError, KeyError) as e:
-        raise SubsetRefused("the session window could not be read from the snapshot in %s "
-                            "(%s: %s)" % (snapshot_dir, type(e).__name__, e)) from None
+        raise SubsetRefused("%s could not be read from the snapshot in %s (%s: %s)"
+                            % (what, snapshot_dir, type(e).__name__, e)) from None
     # Compared as they are, None included. WHY: a full export written from a
     # snapshot made before refreshes were numbered records no generation
     # (exporters.current writes None). Skipping the check then would cut the
-    # window from whatever the snapshot holds now, against files of another
+    # days from whatever the snapshot holds now, against files of another
     # night. Only when BOTH are unnumbered (a snapshot still unnumbered today)
     # can nothing be compared; that case is as before.
     if generation != expect_generation:
@@ -594,44 +646,81 @@ def session_window(profile: dict, cohorts: List[str], snapshot_dir: Optional[Pat
             raise SubsetRefused(
                 "the current exports do not record which snapshot they were made from "
                 "(they were written before snapshot refreshes were numbered), and the "
-                "snapshot is now %s: the sessions cannot be shown to come from the same "
+                "snapshot is now %s: the days for %s cannot be shown to come from the same "
                 "night's records as the files. Rewrite the full export ('Refresh exports "
-                "now' on the Where Is My Data tab) and try again." % generation)
+                "now' on the Where Is My Data tab) and try again." % (generation, what))
         raise SubsetRefused(
             "the current exports were made from snapshot %s, but the snapshot is now %s: the "
-            "sessions would be chosen from a different night's records than the files. This "
-            "happens while the nightly job is between its two steps; try again once the full "
-            "export has been rewritten (or press 'Refresh exports now')."
-            % (expect_generation, generation or "an unnumbered one"))
-    n, wt = window["n"], window["tray_type"]
+            "days for %s would be chosen from a different night's records than the files. "
+            "This happens while the nightly job is between its two steps; try again once the "
+            "full export has been rewritten (or press 'Refresh exports now')."
+            % (expect_generation, generation or "an unnumbered one", what))
     cohort_of = lambda s: str(s).rsplit("_", 1)[0]
     ps = ps[ps["subject_id"].map(cohort_of).isin(cohorts)].copy()
     ps["d"] = ps["session_date"].map(_norm_date)
-    ps = ps[ps["tray_type"].fillna("").astype(str).str.upper() == wt]
-    su = su[(su["surgery_type"] == INJURY_SURGERY) & su["surgery_date"].notna()].copy()
+    ps = ps[ps["tray_type"].fillna("").astype(str).str.upper() == tray_type]
+    su = su[(su["surgery_type"] == event) & su["surgery_date"].notna()].copy()
     su["cohort"] = su["subject_id"].map(cohort_of)
     su["d"] = su["surgery_date"].map(_norm_date)
     first = su[su["cohort"].isin(cohorts)].groupby("cohort")["d"].min().to_dict()
-    keep, chosen, short = set(), {}, {}
+    days, chosen, short = set(), {}, {}
     for subject, g in ps.groupby("subject_id"):
-        injury = first.get(cohort_of(subject))
-        if not injury:
+        until = first.get(cohort_of(subject))
+        if not until:
             continue
-        dates = sorted(d for d in g["d"].unique() if d < injury)[-n:]
+        dates = sorted(d for d in g["d"].unique() if d < until)[-n:]
         if dates:
             chosen[subject] = dates
-            keep.update((subject, d) for d in dates)
+            days.update((subject, d) for d in dates)
             if len(dates) < n:
                 short[subject] = len(dates)
+    return {"days": days, "chosen": chosen, "short": short,
+            "first": {c: first.get(c) for c in cohorts}, "generation": generation}
+
+
+def session_window(profile: dict, cohorts: List[str], snapshot_dir: Optional[Path],
+                   expect_generation: Optional[str]) -> Tuple[Optional[set], dict]:
+    """The (animal, date) pairs the window keeps -- None when every session is
+    kept -- and what the manifest should say about how they were chosen."""
+    window = profile["window"]
+    if window["type"] == "all":
+        return None, {"type": "all"}
+    if window["type"] == "dates":
+        return None, dict(window)
+    n, wt = window["n"], window["tray_type"]
+    got = last_days_before(cohorts, snapshot_dir, expect_generation, n, wt, INJURY_SURGERY,
+                           "the session window")
+    first = got["first"]
     info = {"type": window["type"], "n": n, "tray_type": wt,
             "rule": ("each animal's last %d dates with %s-tray hand scores in the tracking sheet, "
                      "strictly before its cohort's first %s date" % (n, wt, INJURY_SURGERY)),
-            "snapshot_generation": generation,
-            "first_injury_date": {c: first.get(c) for c in cohorts},
+            "snapshot_generation": got["generation"],
+            "first_injury_date": first,
             "cohorts_without_injury_date": [c for c in cohorts if not first.get(c)],
-            "sessions_chosen": chosen,
-            "animals_with_fewer_sessions": short}
-    return keep, info
+            "sessions_chosen": got["chosen"],
+            "animals_with_fewer_sessions": got["short"]}
+    return got["days"], info
+
+
+def flag_days(rule_name: str, rule: dict, cohorts: List[str], snapshot_dir: Optional[Path],
+              expect_generation: Optional[str]) -> Tuple[set, dict]:
+    """The (animal, date) pairs a day-window rule says yes to, and what the
+    manifest says about them (under "flag_days")."""
+    rule = validate_rule(rule_name, rule)
+    n, wt, event = rule["n"], rule["tray_type"], rule["before_first"]
+    got = last_days_before(cohorts, snapshot_dir, expect_generation, n, wt, event,
+                           "yes/no rule %s" % rule_name)
+    first = got["first"]
+    info = {"rule_name": rule_name, "n": n, "tray_type": wt, "before_first": event,
+            "rule": ("yes on every row of each animal's last %d test days (dates with %s-tray "
+                     "hand scores in the tracking sheet) strictly before its cohort's first %s "
+                     "date; no on every row of any other day" % (n, wt, event)),
+            "snapshot_generation": got["generation"],
+            "first_event_date": first,
+            "cohorts_without_event_date": [c for c in cohorts if not first.get(c)],
+            "days_chosen": got["chosen"],
+            "animals_with_fewer_days": got["short"]}
+    return got["days"], info
 
 
 # ------------------------------------------------------------------- filters
@@ -705,20 +794,34 @@ def _exclusion_mask(frame: pd.DataFrame, profile: dict, cohorts: List[str],
 
 # --------------------------------------------------------------------- rules
 
+PER_ANIMAL = "Per animal, the same on every row of the animal: "
+PER_DAY = ("Per animal-day (one animal on one test date), the same on every row of that "
+           "animal on that date: ")
+
+
 def _flag_values(profile: dict, rules: Dict[str, dict], sources: Dict[str, List[Tuple[str, Path]]],
-                 cohorts: List[str], keep: Optional[set]) -> Tuple[Optional[Dict[str, str]], str]:
-    """{animal: "yes"/"no"} from the profile's rule, and the sentence the
-    dictionary uses to say how. None: no rule, the column is left blank."""
+                 cohorts: List[str], keep: Optional[set],
+                 days: Optional[Tuple[set, dict]] = None) -> Tuple[Optional[Dict[str, str]], str]:
+    """{animal: "yes"/"no"} from the profile's rule (or {"__listed__": animals},
+    or {"__days__": {(animal, date)}} for a day-window rule), and the full
+    sentence the dictionary uses to say how. None: no rule, the column is left
+    blank. ``days``: the day-window rule's days, chosen in plan()."""
     flag = profile.get("flag")
     if not flag or not flag.get("rule"):
-        return None, ("Left blank on purpose: no rule has been set for it. It is the column "
-                      "to fill once the rule for it is decided.")
+        return None, PER_ANIMAL + ("Left blank on purpose: no rule has been set for it. It is "
+                                   "the column to fill once the rule for it is decided.")
     rule = validate_rule(flag["rule"], rules[flag["rule"]])
+    if rule["type"] == "day_window":
+        chosen, info = days
+        return ({"__days__": chosen},
+                PER_DAY + "%s (the lab's rule '%s'). Never blank. The days are chosen from the "
+                "tracking sheet, so a chosen day whose videos are not in the export yet has no "
+                "rows here; SUBSET_MANIFEST.json lists such days." % (info["rule"], flag["rule"]))
     if rule["type"] == "listed":
         listed = set(rule["animals"])
         return ({"__listed__": listed},
-                "yes for the animals listed in the lab's rule '%s', no for every other animal."
-                % flag["rule"])
+                PER_ANIMAL + "yes for the animals listed in the lab's rule '%s', no for every "
+                "other animal." % flag["rule"])
     kind = rule["kind"]
     paths = sources.get(kind)
     if paths is None:
@@ -743,7 +846,7 @@ def _flag_values(profile: dict, rules: Dict[str, dict], sources: Dict[str, List[
                     t[1] += y
     values = {a: ("yes" if t[1] > 0 and 100.0 * t[0] / t[1] >= rule["percent"] else "no")
               for a, t in tot.items() if t[1] > 0}
-    how = ("yes when the animal's total %s divided by its total %s, over this file's rows of the "
+    how = PER_ANIMAL + ("yes when the animal's total %s divided by its total %s, over this file's rows of the "
            "%s file, is at least %g percent; no when below; blank when the animal has no such "
            "rows (the lab's rule '%s')." % (num, den, kind, rule["percent"], flag["rule"]))
     return values, how
@@ -815,9 +918,18 @@ def plan(name: str, profile: dict, current: Path, snapshot_dir: Optional[Path],
                             "kinds for %s" % (name, ", ".join(cohorts)))
     keep, window_info = session_window(profile, cohorts, snapshot_dir,
                                        manifest.get("snapshot_generation"))
+    # A day-window rule's days are chosen here, beside the window and under the
+    # same check that the snapshot is the one the full export was made from --
+    # whatever the window is (an "all" window reads no snapshot of its own).
+    days = None
+    rule_name = (profile.get("flag") or {}).get("rule")
+    if rule_name and rules[rule_name].get("type") == "day_window":
+        days = flag_days(rule_name, rules[rule_name], cohorts, snapshot_dir,
+                         manifest.get("snapshot_generation"))
     return {"name": name, "profile": profile, "current": current, "manifest": manifest,
             "cohorts": cohorts, "sources": sources, "columns": columns, "filled": filled,
-            "missing_files": missing_files, "keep": keep, "window": window_info, "rules": rules}
+            "missing_files": missing_files, "keep": keep, "window": window_info, "rules": rules,
+            "flag_days": days}
 
 
 def _cut_dictionary(current: Path, kind: str, columns: List[str], flag_col: Optional[str],
@@ -831,7 +943,7 @@ def _cut_dictionary(current: Path, kind: str, columns: List[str], flag_col: Opti
     if flag_col:
         row = {c: "" for c in d.columns}
         row.update({"VariableName": flag_col, "Title": flag_col.replace("_", " "),
-                    "Description": "Per animal, the same on every row of the animal: " + flag_how,
+                    "Description": flag_how,
                     "DataType": "text", "PermittedValues": "yes|no",
                     "Comments": "Added by the limited export; not a column of the full export."})
         d = pd.concat([d, pd.DataFrame([row])], ignore_index=True)
@@ -844,8 +956,10 @@ def build(p: dict, staging: Path) -> dict:
     flag_col = (profile.get("flag") or {}).get("column")
     srcs = dict(p["sources"])
     srcs["__root__"] = current
-    flag_values, flag_how = _flag_values(profile, p["rules"], srcs, p["cohorts"], p["keep"])
+    flag_values, flag_how = _flag_values(profile, p["rules"], srcs, p["cohorts"], p["keep"],
+                                         p.get("flag_days"))
     listed = (flag_values or {}).get("__listed__")
+    yes_days = (flag_values or {}).get("__days__")
     files, problems = {}, []
     for kind in profile["kinds"]:
         absent = layout.KINDS[kind][1]
@@ -861,12 +975,17 @@ def build(p: dict, staging: Path) -> dict:
                 for chunk in pd.read_csv(path, dtype=str, keep_default_na=False,
                                          chunksize=layout.CHUNK_ROWS):
                     chunk = chunk[_row_mask(chunk, kind, profile, p["keep"])]
-                    if p["keep"] is not None:
-                        seen.update(zip(_row_animal(chunk, kind),
-                                        chunk[ROW_KEYS[kind]["date"]].map(_norm_date)))
+                    if p["keep"] is not None or yes_days is not None:
+                        pairs = list(zip(_row_animal(chunk, kind),
+                                         chunk[ROW_KEYS[kind]["date"]].map(_norm_date)))
+                        seen.update(pairs)
                     if flag_col:
                         animal = _row_animal(chunk, kind)
-                        if listed is not None:
+                        if yes_days is not None:
+                            # Per day: every row of a chosen (animal, date) is yes,
+                            # whatever its tray; every other row is no. Never blank.
+                            chunk[flag_col] = ["yes" if x in yes_days else "no" for x in pairs]
+                        elif listed is not None:
                             chunk[flag_col] = ["yes" if a in listed else "no" for a in animal]
                         elif flag_values is not None:
                             chunk[flag_col] = [flag_values.get(a, absent) for a in animal]
@@ -900,6 +1019,11 @@ def build(p: dict, staging: Path) -> dict:
             # so a slice short of sessions is not mistaken for a complete one.
             empty = sorted(p["keep"] - seen)
             entry["chosen_sessions_with_no_rows"] = ["%s %s" % x for x in empty]
+        if yes_days is not None:
+            # A day the rule says yes to, chosen from the sheet, with no row in
+            # this file (its videos not filed yet, left out, or outside the
+            # slice's window or trays): listed, so a short "yes" set is seen.
+            entry["flag_days_with_no_rows"] = ["%s %s" % x for x in sorted(yes_days - seen)]
         if undocumented:
             entry["undocumented_columns"] = undocumented
             problems.append("%s: %d column(s) have no entry in the full export's dictionary: %s"
@@ -924,6 +1048,7 @@ def build(p: dict, staging: Path) -> dict:
         "source_snapshot_generation": src_m.get("snapshot_generation"),
         "source_exports_complete": src_m.get("complete"),
         "session_window": p["window"],
+        "flag_days": (p.get("flag_days") or (None, None))[1],
         "files": files,
         "problems": problems,
         "signature": p.get("signature"),
@@ -965,6 +1090,12 @@ def readme(m: dict) -> str:
     if d.get("flag"):
         lines.append("  Yes/no column: %s (rule: %s)" % (d["flag"]["column"],
                                                           d["flag"].get("rule") or "none -- left blank"))
+        fd = m.get("flag_days")
+        if fd:
+            lines.append("      per animal-day: %s" % fd["rule"])
+            if fd.get("cohorts_without_event_date"):
+                lines.append("      no %s date in the sheet, so every day is no: %s"
+                             % (fd["before_first"], ", ".join(fd["cohorts_without_event_date"])))
     lines += ["", "FILES"]
     for f, e in m["files"].items():
         lines.append("  %-44s %8s rows" % (f, e.get("rows")))
@@ -972,6 +1103,10 @@ def readme(m: dict) -> str:
             lines.append("      %d chosen animal-day(s) have no rows in this file (listed in "
                          "SUBSET_MANIFEST.json, chosen_sessions_with_no_rows)"
                          % len(e["chosen_sessions_with_no_rows"]))
+        if e.get("flag_days_with_no_rows"):
+            lines.append("      %d animal-day(s) the yes/no rule says yes to have no rows in "
+                         "this file (listed in SUBSET_MANIFEST.json, flag_days_with_no_rows)"
+                         % len(e["flag_days_with_no_rows"]))
     lines += ["",
               "Each kind of file has its data dictionary beside it (<kind>_DATA_DICTIONARY.csv),",
               "cut down to the columns kept. analysis_EXCLUSIONS.csv lists the entries the full",
@@ -1020,7 +1155,10 @@ def signature(p: dict) -> dict:
     flag = p["profile"].get("flag") or {}
     if flag.get("rule"):
         sig["rule"] = p["rules"].get(flag["rule"])
-    if p["profile"]["window"]["type"] == "last_before_injury":
+    # The sheet's tables are read by a "last before injury" window AND by a
+    # day-window rule: either way a sheet correction must remake the slice.
+    if (p["profile"]["window"]["type"] == "last_before_injury"
+            or p.get("flag_days") is not None):
         snap = p.get("snapshot_dir")
         sig["tables"] = {t: snapshot_generation.table_hash(snap, t) if snap else None
                          for t in ("pellet_scores", "surgeries")}
@@ -1438,8 +1576,10 @@ def build_parser(ap=None):
     g.add_argument("--kinds", nargs="+", help="kinds of file (default all): %s" % ", ".join(ALL_KINDS))
     g.add_argument("--columns", nargs="+", metavar="KIND=COL,COL",
                    help="keep only these columns of that kind of file")
-    g.add_argument("--flag-column", help="add a per-animal yes/no column of this name")
-    g.add_argument("--flag-rule", help="the named rule that fills it (default: left blank)")
+    g.add_argument("--flag-column", help="add a yes/no column of this name (per animal, or "
+                   "per animal-day with a day_window rule)")
+    g.add_argument("--flag-rule", help="the named rule that fills it, from the lab settings "
+                   "file's export_subset_flag_rules (default: left blank)")
     g.add_argument("--definition-file", type=Path,
                    help="read the definition from this JSON file instead of the options "
                         "(how the window checks a definition without saving it)")
@@ -1463,6 +1603,9 @@ def run_args(a) -> int:
             status = read_status(a.out_dir)
             if not saved:
                 print("No limited exports are saved.")
+            rules = flag_rules()
+            for n in sorted(rules):
+                print("yes/no rule %s: %s" % (n, json.dumps(rules[n])))
             for n in sorted(saved):
                 s = status.get(n) or {}
                 print("%s: %s" % (n, json.dumps(saved[n])))
