@@ -191,7 +191,7 @@ imports of that cohort's sheet wrote:
   or `0` mean it did not. On the contusion tab a blank cell, or anything
   else (`?`), says nothing: a surgery first imported from such a row is
   stored as survived (the database's default), and a stored flag is left
-  as it is. Until 2026-11 the contusion tab's `Survived` cell only marked
+  as it is. In earlier versions the contusion tab's `Survived` cell only marked
   the animal dead and was never stored on the contusion itself, so every
   contusion read as survived. The first import after that was fixed turns
   each contusion whose row says `N` from 1 to 0. That is an overwrite, so it
@@ -202,7 +202,7 @@ imports of that cohort's sheet wrote:
   described below.
 - **The weight on the day of a surgery** (`Subject_Weight (g)`, see "Surgery
   rows" below) is stored on the surgery (`pre_surgery_weight_grams`) for a
-  contusion as for an injection. Until 2026-11 a contusion's weight was read
+  contusion as for an injection. In earlier versions a contusion's weight was read
   only to decide that the surgery happened, and then not kept. Contusions
   imported before then are filled in by the next import; filling an empty
   value never counts toward the guard, so this alone never makes an import
@@ -240,8 +240,8 @@ imports of that cohort's sheet wrote:
   survive marks it dead on that day, so when such a row is removed (a row
   copied in from another cohort's workbook, say) or its `Survived` cell is
   corrected to `Y` (a mistyped `N`), and nothing left in the sheet says the
-  animal died, the death is undone and listed (`N deaths undone`). Until
-  2026-11 correcting the cell to `Y` corrected only the surgery's flag: the
+  animal died, the death is undone and listed (`N deaths undone`). In earlier
+  versions correcting the cell to `Y` corrected only the surgery's flag: the
   animal stayed dead on that day. "Nothing left in the sheet says the
   animal died" means no other contusion row of the animal says `N` and its
   `0a_Metadata` row gives no `Date_of_Death` (a date still ahead does not
@@ -683,7 +683,7 @@ details are left exactly as they were when:
   holds details for from it: more than 5 animals AND more than a quarter of
   them (the same rule as for pellet scores, weights and surgeries in "The
   sheet wins"). A shifted header or a file caught mid-save can read only
-  part of a tab; until 2026-11 such a read still replaced the cohort's
+  part of a tab; in earlier versions such a read still replaced the cohort's
   details and the left-out animals' sex, date of birth, strain ... were gone
   without a word. Taking out a few animals (5 or fewer, or a quarter or
   less) is an edit and is copied. The line names the left-out animals:
@@ -1406,7 +1406,7 @@ reads its structure every time; nothing else needs changing.
 ## ASPA cohorts (a second project, a second folder)
 
 ASPA's animals live in one frozen workbook per cohort letter (`I.xlsx`,
-`J.xlsx`, ...) in a folder of their own (`aspa_data_dir` in the config), and
+`<letter>.xlsx`, ...) in a folder of their own (`aspa_data_dir` in the config), and
 their manual tray scores sit in a wide tab called `1 - ENTER DATA HERE`:
 one row per animal per day, with up to four trays side by side. The import
 takes each tray's number from its place in the row -- the first block of
@@ -1422,21 +1422,21 @@ a `REPAIRED` warning, moves any scores an earlier import filed under 1900 to
 that date, and replaces a cohort start date of 1900 with the earliest scored
 session. A day that fits neither month is left out and listed as a warning.
 They appear in the same table as the other cohorts (project ASPA, ids like
-`ASPA_10` for cohort J) with the same status words. Import their scores with
+`ASPA_NN` for cohort letter number NN) with the same status words. Import their scores with
 **Import selected** on their rows, or from a terminal:
 
 ```
-mousedb-sheets import --cohort ASPA_10 --dry-run   # what it would import
-mousedb-sheets import --cohort ASPA_10             # one cohort (or --cohort ASPA_J)
+mousedb-sheets import --cohort ASPA_NN --dry-run   # what it would import
+mousedb-sheets import --cohort ASPA_NN             # one cohort (or --cohort ASPA_<letter>)
 ```
 
 These wait for the database lock like every other import.
-`mousedb-import-aspa-scores --apply` (all letter cohorts, or `--cohort J`)
+`mousedb-import-aspa-scores --apply` (all letter cohorts, or `--cohort <letter>`)
 does exactly the same per cohort: it waits for the lock, imports, records the
 import, and then rewrites the hand-scores file the reaching pipeline compares
 videos with and each cohort's FIX THESE file, printing `OK   hand scores ...`
 (or `FAIL hand scores ... NOT rewritten`, exit code 1) as its last line.
-Until 2026-11 that command did not wait for the lock and did not rewrite
+In earlier versions that command did not wait for the lock and did not rewrite
 those two files, so after it the pipeline compared videos with the previous
 hand scores until the next scheduled import. Without `--apply` it is a dry
 run: it reads, prints what it would import, and writes nothing.

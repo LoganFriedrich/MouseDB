@@ -356,7 +356,7 @@ and a copy of the file as it was is kept beside it as
 the message in a text editor (Notepad is fine), correct it so it reads as
 JSON (`{"<PROJECT>": {"<column>": "<value>"}, ...}`), save, and run
 `mousedb study-facts --show`: when it lists your facts again, everything
-works again; the next export rewrites the files. Until 2026-11 a damaged file
+works again; the next export rewrites the files. In earlier versions a damaged file
 read as empty: every export wrote these columns blank without saying why,
 and the next Set wrote back a file holding only that one value -- every
 other project's facts and exceptions were lost. Saves are also made whole
