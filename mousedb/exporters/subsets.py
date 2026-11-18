@@ -493,13 +493,26 @@ def session_window(profile: dict, cohorts: List[str], snapshot_dir: Optional[Pat
     except (OSError, ValueError, KeyError) as e:
         raise SubsetRefused("the session window could not be read from the snapshot in %s "
                             "(%s: %s)" % (snapshot_dir, type(e).__name__, e)) from None
-    if expect_generation and generation != expect_generation:
+    # Compared as they are, None included. WHY: a full export written from a
+    # snapshot made before refreshes were numbered records no generation
+    # (exporters.current writes None). Skipping the check then would cut the
+    # window from whatever the snapshot holds now, against files of another
+    # night. Only when BOTH are unnumbered (a snapshot still unnumbered today)
+    # can nothing be compared; that case is as before.
+    if generation != expect_generation:
+        if expect_generation is None:
+            raise SubsetRefused(
+                "the current exports do not record which snapshot they were made from "
+                "(they were written before snapshot refreshes were numbered), and the "
+                "snapshot is now %s: the sessions cannot be shown to come from the same "
+                "night's records as the files. Rewrite the full export ('Refresh exports "
+                "now' on the Where Is My Data tab) and try again." % generation)
         raise SubsetRefused(
             "the current exports were made from snapshot %s, but the snapshot is now %s: the "
             "sessions would be chosen from a different night's records than the files. This "
             "happens while the nightly job is between its two steps; try again once the full "
             "export has been rewritten (or press 'Refresh exports now')."
-            % (expect_generation, generation))
+            % (expect_generation, generation or "an unnumbered one"))
     n, wt = window["n"], window["tray_type"]
     cohort_of = lambda s: str(s).rsplit("_", 1)[0]
     ps = ps[ps["subject_id"].map(cohort_of).isin(cohorts)].copy()

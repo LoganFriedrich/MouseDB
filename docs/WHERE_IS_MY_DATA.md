@@ -496,7 +496,10 @@ The sessions are read from the same snapshot the full export was made from.
 Between the two steps of the nightly job (the snapshot is new, the full export
 not rewritten yet) a limited export is refused with "the sessions would be
 chosen from a different night's records than the files" -- try again once the
-full export has been rewritten.
+full export has been rewritten. A full export written from a snapshot made
+before refreshes were numbered records no snapshot at all; it is refused the
+same way ("the current exports do not record which snapshot they were made
+from"): press **Refresh exports now** once, and try again.
 
 ### Which rows a filter keeps, file by file
 

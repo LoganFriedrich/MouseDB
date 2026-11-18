@@ -462,3 +462,15 @@ def test_an_incomplete_full_export_is_refused_by_the_button_and_the_command(
     out = capsys.readouterr().out
     assert "not complete" in out and "share full" in out
     assert not (lab["out"] / "pre").exists()
+
+
+def test_a_full_export_that_records_no_snapshot_generation_is_not_cut_by_the_window(lab):
+    """exports.current writes snapshot_generation None when it was built from a
+    snapshot made before refreshes were numbered. The window must not then be cut
+    from whatever generation the snapshot holds now."""
+    _set_manifest(lab, snapshot_generation=None)
+    with pytest.raises(subsets.SubsetRefused, match="do not record which snapshot"):
+        lab["make"]("pre", LAST2_PILLAR)
+    assert not (lab["out"] / "pre").exists()
+    # A slice that does not read the snapshot is not affected.
+    assert lab["make"]("all", {"cohorts": ["PROJA_01"]})["status"] == "written"
