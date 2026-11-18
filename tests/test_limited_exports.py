@@ -270,10 +270,48 @@ def test_unchanged_inputs_are_not_remade_when_asked(lab):
     lab["make"]("pre", LAST2_PILLAR)
     r = lab["make"]("pre", LAST2_PILLAR, if_changed=True)
     assert r["status"] == "unchanged" and not r["archived"]
-    # A changed source file makes it again.
+    # A value that changed inside the slice makes it again.
     f = layout.locate("ODC_reaches", "PROJA_02", lab["cur"])
-    f.write_text(f.read_text() + "\n")
-    assert lab["make"]("pre", LAST2_PILLAR, if_changed=True)["status"] == "written"
+    f.write_text(f.read_text().replace("retrieved", "displaced", 1))
+    r = lab["make"]("pre", LAST2_PILLAR, if_changed=True)
+    assert r["status"] == "written" and r["archived"]
+    # A person's own remake always writes.
+    assert lab["make"]("pre", LAST2_PILLAR)["status"] == "written"
+
+
+def _archived_versions(lab):
+    arch = lab["root"] / "_archived" / "exports_subsets" / "pre"
+    return sorted(arch.iterdir()) if arch.is_dir() else []
+
+
+def test_a_source_rewritten_with_the_same_content_does_not_remake_it(lab):
+    """The full export rewrites many of its files every night with the same
+    content: new file times, same bytes. That must not archive an identical copy."""
+    lab["make"]("pre", LAST2_PILLAR)
+    f = layout.locate("ODC_reaches", "PROJA_01", lab["cur"])
+    data = f.read_bytes()
+    f.unlink()
+    f.write_bytes(data)
+    os.utime(f, (1_900_000_000, 1_900_000_000))
+    before = _archived_versions(lab)
+    r = lab["make"]("pre", LAST2_PILLAR, if_changed=True)
+    assert r["status"] == "unchanged" and not r["archived"]
+    assert _archived_versions(lab) == before
+    # Checked once by content, the next check takes the fast path.
+    assert lab["make"]("pre", LAST2_PILLAR, if_changed=True)["status"] == "unchanged"
+
+
+def test_a_row_outside_the_slice_does_not_remake_it(lab):
+    lab["make"]("pre", LAST2_PILLAR)
+    f = layout.locate("ODC_reaches", "PROJA_01", lab["cur"])
+    df = _read(f)
+    extra = df.iloc[[0]].copy()
+    extra["session_date"] = "2026-03-20"                          # after the injury
+    extra["video_name"] = _video("PROJA_01_01", "2026-03-20", "P")
+    pd.concat([df, extra]).to_csv(f, index=False)
+    before = _archived_versions(lab)
+    r = lab["make"]("pre", LAST2_PILLAR, if_changed=True)
+    assert r["status"] == "unchanged" and _archived_versions(lab) == before
 
 
 def test_sessions_from_another_snapshot_generation_are_refused(lab):
@@ -373,3 +411,25 @@ def test_the_analysis_mirror_leaves_the_subsets_folder_alone(tmp_path, monkeypat
     m = json.loads((db / "exports" / "ANALYSES_MANIFEST.json").read_text())
     assert [r["analysis_name"] for r in m["analyses"]] == ["Alpha"]
     assert "subsets" not in json.dumps(m.get("problems", []))
+
+
+def test_a_definition_file_is_checked_without_being_saved(lab, tmp_path):
+    f = tmp_path / "def.json"
+    f.write_text(json.dumps(LAST2_PILLAR))
+    code = subsets.main(["pre", "--dry-run", "--definition-file", str(f),
+                         "--current-dir", str(lab["cur"]), "--snapshot-dir", str(lab["snap"])])
+    assert code == subsets.EXIT_OK
+    assert "pre" not in subsets.profiles()
+    assert not lab["out"].exists()
+
+
+def test_a_chosen_session_without_rows_is_listed(lab):
+    f = layout.locate("ODC_reaches", "PROJA_02", lab["cur"])
+    df = _read(f)
+    df[df.session_date != "2026-04-02"].to_csv(f, index=False)    # no rows for that day
+    folder = Path(lab["make"]("pre", LAST2_PILLAR)["folder"])
+    m = json.loads((folder / "SUBSET_MANIFEST.json").read_text())
+    assert m["files"]["ODC_reaches_pre.csv"]["chosen_sessions_with_no_rows"] == [
+        "PROJA_02_01 2026-04-02"]
+    assert m["files"]["reaches_pre_summary.csv"]["chosen_sessions_with_no_rows"] == []
+    assert "1 chosen animal-day(s) have no rows" in (folder / "README.txt").read_text()

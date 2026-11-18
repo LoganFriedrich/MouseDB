@@ -721,12 +721,16 @@ def build(p: dict, staging: Path) -> dict:
         out = staging / layout.file_name(kind, name)
         rows, first = 0, True
         per_cohort = {}
+        seen = set()      # (animal, date) pairs that have rows in this file
         with open(out, "w", encoding="utf-8", newline="") as fh:
             for cohort, path in p["sources"][kind]:
                 kept = 0
                 for chunk in pd.read_csv(path, dtype=str, keep_default_na=False,
                                          chunksize=layout.CHUNK_ROWS):
                     chunk = chunk[_row_mask(chunk, kind, profile, p["keep"])]
+                    if p["keep"] is not None:
+                        seen.update(zip(_row_animal(chunk, kind),
+                                        chunk[ROW_KEYS[kind]["date"]].map(_norm_date)))
                     if flag_col:
                         animal = _row_animal(chunk, kind)
                         if listed is not None:
@@ -757,6 +761,12 @@ def build(p: dict, staging: Path) -> dict:
                 c: {"columns": v, "filled_with": absent} for c, v in p["filled"][kind].items()}
         if p["missing_files"].get(kind):
             entry["cohorts_with_no_file_of_this_kind"] = p["missing_files"][kind]
+        if p["keep"] is not None:
+            # A chosen session with no row here: the sheet has it, the full export
+            # does not (no recording found, still in review, or no reaches). Said,
+            # so a slice short of sessions is not mistaken for a complete one.
+            empty = sorted(p["keep"] - seen)
+            entry["chosen_sessions_with_no_rows"] = ["%s %s" % x for x in empty]
         if undocumented:
             entry["undocumented_columns"] = undocumented
             problems.append("%s: %d column(s) have no entry in the full export's dictionary: %s"
@@ -784,6 +794,11 @@ def build(p: dict, staging: Path) -> dict:
         "files": files,
         "problems": problems,
         "signature": p.get("signature"),
+        # The content of every file but this manifest and the README (which carry
+        # the time they were written): a remake whose files come out the same is
+        # not put in place (make, if_changed).
+        "file_hashes": {f.name: _sha256(f) for f in sorted(staging.iterdir())
+                        if f.is_file() and f.name not in (MANIFEST_NAME, "README.txt")},
     }
     (staging / MANIFEST_NAME).write_text(json.dumps(manifest, indent=1, default=str), encoding="utf-8")
     (staging / "README.txt").write_text(readme(manifest), encoding="utf-8")
@@ -820,6 +835,10 @@ def readme(m: dict) -> str:
     lines += ["", "FILES"]
     for f, e in m["files"].items():
         lines.append("  %-44s %8s rows" % (f, e.get("rows")))
+        if e.get("chosen_sessions_with_no_rows"):
+            lines.append("      %d chosen animal-day(s) have no rows in this file (listed in "
+                         "SUBSET_MANIFEST.json, chosen_sessions_with_no_rows)"
+                         % len(e["chosen_sessions_with_no_rows"]))
     lines += ["",
               "Each kind of file has its data dictionary beside it (<kind>_DATA_DICTIONARY.csv),",
               "cut down to the columns kept. analysis_EXCLUSIONS.csv lists the entries the full",
@@ -830,6 +849,15 @@ def readme(m: dict) -> str:
     if m["problems"]:
         lines += ["", "PROBLEMS"] + ["  [!] %s" % x for x in m["problems"]]
     return "\n".join(lines) + "\n"
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def signature(p: dict) -> dict:
@@ -980,17 +1008,25 @@ def make(name: str, profile: Optional[dict] = None, *, current: Optional[Path] =
             p = plan(name, profile, current, snapshot_dir, rules)
             p["snapshot_dir"] = snapshot_dir
             p["signature"] = signature(p)
-            if if_changed and _previous_signature(folder) == p["signature"]:
-                _record_status(out_root, name, {
-                    "last_attempt": datetime.now().isoformat(timespec="seconds"), "ok": True,
-                    "result": "unchanged: nothing it is cut from changed since it was made",
-                    "written_at": _read_manifest_safe(folder).get("written_at")})
-                return {"status": "unchanged", "manifest": _read_manifest_safe(folder),
-                        "archived": [], "folder": str(folder)}
+            previous = _read_manifest_safe(folder)
+            # Two ways to know nothing changed. Fast: every input is as it was
+            # (the signature). Certain: the files built now are byte for byte
+            # those already there -- needed because the full export rewrites
+            # many of its files every night with the same content, which
+            # changes their times but not what the slice holds.
+            last_sig = ((read_status(out_root).get(name) or {}).get("signature")
+                        or previous.get("signature"))
+            if if_changed and previous and last_sig == p["signature"]:
+                return _unchanged(out_root, name, folder, previous, p["signature"],
+                                  "nothing it is cut from changed since it was made")
             staging_parent = Path(snapshot_dir) if snapshot_dir and Path(snapshot_dir).is_dir() else None
             staging = Path(tempfile.mkdtemp(prefix="_subset_staging_", dir=staging_parent))
             try:
                 m = build(p, staging)
+                if (if_changed and previous.get("file_hashes") == m["file_hashes"]
+                        and all((folder / f).is_file() for f in m["file_hashes"])):
+                    return _unchanged(out_root, name, folder, previous, p["signature"],
+                                      "made again, and every file came out the same as before")
                 archived = _place(staging, folder, out_root, name)
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
@@ -1003,10 +1039,21 @@ def make(name: str, profile: Optional[dict] = None, *, current: Optional[Path] =
             "last_attempt": m["written_at"], "ok": True, "result": "written",
             "written_at": m["written_at"],
             "rows": {f: e.get("rows") for f, e in m["files"].items()},
-            "problems": m["problems"]})
+            "problems": m["problems"], "signature": p["signature"]})
         return {"status": "written", "manifest": m, "archived": archived, "folder": str(folder)}
     finally:
         mutex.release()
+
+
+def _unchanged(out_root: Path, name: str, folder: Path, previous: dict, sig: dict,
+               why: str) -> dict:
+    """Keep the slice as it is (nothing archived, nothing rewritten); remember the
+    inputs it was checked against, so the next check can take the fast path."""
+    _record_status(out_root, name, {
+        "last_attempt": datetime.now().isoformat(timespec="seconds"), "ok": True,
+        "result": "unchanged: " + why, "written_at": previous.get("written_at"),
+        "signature": sig})
+    return {"status": "unchanged", "manifest": previous, "archived": [], "folder": str(folder)}
 
 
 def _read_manifest_safe(folder: Path) -> dict:
@@ -1116,6 +1163,9 @@ def build_parser(ap=None):
                    help="keep only these columns of that kind of file")
     g.add_argument("--flag-column", help="add a per-animal yes/no column of this name")
     g.add_argument("--flag-rule", help="the named rule that fills it (default: left blank)")
+    g.add_argument("--definition-file", type=Path,
+                   help="read the definition from this JSON file instead of the options "
+                        "(how the window checks a definition without saving it)")
     g.add_argument("--not-nightly", action="store_true",
                    help="do not remake this one after the nightly export")
     return ap
@@ -1157,6 +1207,12 @@ def run_args(a) -> int:
             print("Forgot %s (in %s); its files stay where they are." % (a.name, remove_profile(a.name)))
             return EXIT_OK
         given = profile_from_args(a)
+        if a.definition_file:
+            try:
+                given = json.loads(Path(a.definition_file).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                raise SubsetRefused("the definition file %s cannot be read (%s)"
+                                    % (a.definition_file, e)) from None
         if a.save:
             path = save_profile(a.name, given)
             print("Saved limited export %s in %s" % (a.name, path))
