@@ -42,7 +42,7 @@ def frame(**overrides):
         "duration_frames": [12, 9],
         "ext_righthand_total_path_mm": [4.2, None],
         "ext_paw_outline_area_mean_mm2": [1.5, 2.0],
-        "Total_Swipes_AI": [2, 2],
+        "Video_Reaches_AI": [2, 2],
         "Manual_Retrieved": [1, 1],
     }
     base.update(overrides)
@@ -96,19 +96,19 @@ def test_the_row_stands_alone():
     out, _ = ar.build(frame())
     for needed in ("subject_id", "test_date", "session_id", "tray_type",
                    "test_type", "test_type_grouped", "injury_type", "sex",
-                   "total_swipes_ai"):
+                   "reaches_in_video"):
         assert needed in out.columns, "%s must travel on the row" % needed
 
 
 def test_the_session_totals_repeat_on_every_row_of_the_session():
     out, _ = ar.build(frame())
-    assert out["total_swipes_ai"].nunique() == 1
+    assert out["reaches_in_video"].nunique() == 1
 
 
 def test_both_scoring_streams_are_carried():
     """They disagree sometimes; which is right is the reader's question."""
     out, _ = ar.build(frame())
-    assert "total_swipes_ai" in out.columns      # the algorithm's
+    assert "reaches_in_video" in out.columns     # the algorithm's
     assert "manual_retrieved" in out.columns     # the hand scores'
 
 

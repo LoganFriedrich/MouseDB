@@ -60,6 +60,11 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     "Days_Post_Injury": missing.NOT_APPLICABLE,
     "Exclusion_reason": missing.NOT_APPLICABLE,
     "interaction_frame": missing.NOT_APPLICABLE,
+    # Not 'not applicable' but a judgement of the same kind, kept with them: the
+    # day's total is empty only when a tray of that day is not filed (or the day
+    # has no hand-score record to check against), so the count cannot be
+    # committed to yet -- see day_reach_totals.
+    "Day_Total_Reaches_AI": missing.UNDETERMINED,
 }
 
 # Columns of the complete record that answer a question about a pellet. On an easy
@@ -300,6 +305,74 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     }
 
 
+DAY_COMPLETE = "yes"
+DAY_INCOMPLETE = "no"
+
+
+def _tray_keys(subject, day, tray_type, number) -> List[tuple]:
+    """(subject, YYYY-MM-DD, tray letter, tray number) per row, normalised so the
+    reach table's run_number and the hand scores' tray_number compare equal."""
+    numbers = pd.to_numeric(pd.Series(list(number)), errors="coerce")
+    return [(str(s), str(d), str(t).strip().upper(), None if pd.isna(n) else int(n))
+            for s, d, t, n in zip(subject, day, tray_type, numbers)]
+
+
+def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
+                     pellets: Optional[pd.DataFrame],
+                     video_pellets: Optional[pd.DataFrame]):
+    """(Day_Total_Reaches_AI, Day_Total_Reaches_Complete) for every reach row.
+
+    WHY A DAY TOTAL. An earlier reach program reported "Total Swipes": the
+    reaches one animal made in one testing session -- one date, every tray of
+    it. This export's per-video count (Video_Reaches_AI, which was published as
+    Total_Swipes_AI until 2026-11-17) counts one tray only, so it is not that
+    number. This is: the reach rows of the animal on that date, all trays.
+
+    WHY IT CAN BE EMPTY. Only filed videos have reach rows, so a day with a tray
+    still in review (or never recorded) would give a smaller number that looks
+    exactly like a real one. The trays the day SHOULD have are the ones the
+    hand-score sheet records for that animal and date (scored at the bench the
+    same day, before any video is processed). The day is complete when every
+    one of them is filed: it has reach rows, or rows in the per-pellet table (a
+    filed pillar tray at which the animal never reached counts, as 0). Then the
+    total is given and the flag reads yes. Otherwise the flag reads no and the
+    total is left empty -- a partial count is never reported as the day's.
+    A day with no hand-score rows at all has nothing to check against and is
+    not assumed complete. An easy or flat tray has no per-pellet rows, so one
+    that is filed but has no reaches reads as not filed: that day reads no,
+    the safe direction.
+    """
+    day = pd.Series(test_date, index=rc.index).astype(str)
+    subject = rc["subject_id"].astype(str)
+    filed = set(_tray_keys(subject, day, rc["tray_type"], rc["run_number"]))
+    # The per-pellet table names each video's animal, date and tray itself; an
+    # older one without those columns adds nothing here (its videos then count as
+    # filed only through their reach rows, the safe direction).
+    vp_keys = {"subject_id", "session_date", "tray_type", "run_number"}
+    if (video_pellets is not None and not video_pellets.empty
+            and vp_keys <= set(video_pellets.columns)):
+        vp = video_pellets[video_pellets["subject_id"].astype(str).isin(set(subject))]
+        if not vp.empty:
+            vday = pd.to_datetime(vp["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            filed |= set(_tray_keys(vp["subject_id"], vday, vp["tray_type"], vp["run_number"]))
+    expected: Dict[tuple, set] = {}
+    if pellets is not None and not pellets.empty:
+        p = pellets[pellets["subject_id"].astype(str).isin(set(subject))]
+        if not p.empty:
+            pday = pd.to_datetime(p["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            for key in set(_tray_keys(p["subject_id"], pday, p["tray_type"], p["tray_number"])):
+                expected.setdefault(key[:2], set()).add(key)
+    complete = {k: bool(trays_) and trays_ <= filed for k, trays_ in expected.items()}
+    pairs = list(zip(subject, day))
+    from collections import Counter
+    per_day = Counter(pairs)
+    counts = pd.Series([per_day[k] for k in pairs], index=rc.index)
+    is_complete = pd.Series([complete.get(k, False) for k in pairs], index=rc.index)
+    total = counts.where(is_complete).astype("Int64")
+    flag = is_complete.map({True: DAY_COMPLETE, False: DAY_INCOMPLETE})
+    return total, flag
+
+
 def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
                  records: pd.DataFrame, pellets: pd.DataFrame,
                  facts: Callable[[str], Dict[str, str]], lab: str = "",
@@ -361,9 +434,12 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     for c in reach_cols:
         cols[c] = rc[c]
 
-    # 5. session totals: per video (pipeline) and per tray (hand scores)
+    # 5. session totals: per video (pipeline) and per tray (hand scores), and
+    # the animal's reaches over the whole testing day (day_reach_totals says why)
     video = rc["video_name"]
-    cols["Total_Swipes_AI"] = video.map(video.value_counts())
+    cols["Video_Reaches_AI"] = video.map(video.value_counts())
+    cols["Day_Total_Reaches_AI"], cols["Day_Total_Reaches_Complete"] = day_reach_totals(
+        rc, cols["Test_Date"], pellets, video_pellets)
     seg = rc.groupby(["video_name", "segment_num"]).agg(o=("segment_outcome", "first"),
                                                          att=("attention_score", "first")).reset_index()
     per_video = seg.groupby("video_name").agg(
@@ -657,8 +733,10 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # sessions file is built from these rows, so it inherits the same exclusions.
     exclusion_report = []
     if exclusions is not None:
+        before = analysis
         analysis, exclusion_report = export_exclusions.apply(analysis, exclusions,
                                                              cohort_id=cohort_id)
+        analysis = analysis_reaches.void_day_totals_after_exclusion(before, analysis)
     # Named in code, so legal already -- but passed through the same rule as every
     # other document, so that stays true of a column added later by someone who has
     # not read ODC's naming guide.

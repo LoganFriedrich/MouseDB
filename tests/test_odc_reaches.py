@@ -77,7 +77,7 @@ def test_totals_count_pellets_per_video_and_hand_scores_per_tray():
                             for i, s in enumerate([2, 2, 1, 0], 1)])
     df, _ = _build(_records(), pellets)
     day = df[df["Test_Date"] == "2025-07-10"].iloc[0]
-    assert day["Total_Swipes_AI"] == 4
+    assert day["Video_Reaches_AI"] == 4
     assert (day["Video_Retrieved"], day["Video_Displaced"], day["Video_Contacted"]) == (1, 1, 2)
     assert (day["Manual_Retrieved"], day["Manual_Displaced"], day["Manual_Contacted"]) == (2, 1, 3)
     assert day["Contacted_Match"] == 1

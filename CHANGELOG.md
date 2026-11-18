@@ -78,6 +78,21 @@ checked-in code, not what's planned.
   (each dictionary entry says so too). A reach filed before extractor 2.6.0
   reads NA in the swipe columns, never the pipeline's measure; the columns
   are written even when no row has a value yet.
+- **Reach counts per video and per testing day, each named for what it
+  counts.** The per-video count `Total_Swipes_AI` (complete record) is renamed
+  `Video_Reaches_AI`, same values: an earlier program's Total Swipes counted
+  one animal's reaches over a whole testing day, every tray, not one video.
+  In the shareable table `reaches_in_session` is renamed `reaches_in_video`,
+  same values; in the analysis tables `reaches_in_session` is renamed
+  `reaches_in_video` and the duplicate `total_swipes_ai` is removed (it held
+  the same number). New in all three: `Day_Total_Reaches_AI` /
+  `day_total_reaches`, the animal's reaches on that date over every tray of
+  the day, and `Day_Total_Reaches_Complete` / `day_total_reaches_complete`,
+  yes when every tray the hand-score sheet records for that animal and date
+  is filed. When it is no, the total is left empty (`Undetermined`, or NA in
+  the analysis tables) rather than reporting a partial count; a day with no
+  hand scores reads no. In the analysis tables a day whose tray was left out
+  as a known problem also reads no.
 - **The sheet wins.** The tracking-sheet import no longer only adds: for the
   rows earlier imports of a cohort's sheet wrote (pellet scores, weights, ramp
   days, surgeries) it corrects a value the sheet now gives differently and

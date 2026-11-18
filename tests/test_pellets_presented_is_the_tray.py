@@ -27,7 +27,7 @@ def _session(manual_displaced=None, manual_retrieved=None):
         "segment_num": [1, 1, 4], "reach_num": [1, 2, 1],
         "segment_outcome": ["retrieved", "retrieved", "displaced_sa"],
         "causal_reach": [0, 1, 1], "duration_frames": [12, 9, 10],
-        "Total_Swipes_AI": [n] * n,
+        "Video_Reaches_AI": [n] * n,
         "Video_Displaced": [1] * n, "Video_Retrieved": [1] * n, "Video_Contacted": [2] * n,
     }
     if manual_displaced is not None:

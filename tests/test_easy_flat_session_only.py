@@ -32,7 +32,7 @@ def test_easy_or_flat_exports_reaches_and_attention_with_blank_pellet_counts():
     df, _ = ox.build_cohort("PROJA_01", pd.DataFrame(rows), subjects, None, None,
                             lambda s: {}, "")
     row = df.iloc[0]
-    assert row["Total_Swipes_AI"] == 3
+    assert row["Video_Reaches_AI"] == 3
     assert row["Attention_AI"] == 62.5
     for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted"):
         assert pd.isna(row[c]), c

@@ -204,7 +204,7 @@ said `missed` too).
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.
 
-### Swipe measures: which column is which (changed 2026-11-17)
+### Swipe measures and reach counts: which column is which (changed 2026-11-17)
 
 An earlier reach program reported its own per-swipe measures (swipe length,
 breadth, area, speed, path length, duration in frames, path over frames).
@@ -238,6 +238,30 @@ cohort carries the values; until then they are not in those files at all, and
 once they are, a reach without values reads `Not recorded`. They are never
 filled in from the pipeline's own measure. They fill in when those videos are
 measured again with extractor 2.6.0 and imported.
+
+**Reach counts.** "Session" in these files means one tray's video. The earlier
+program's Total Swipes counted the reaches of one animal over a whole testing
+day, every tray. So there are now two counts, each named for what it counts:
+
+| complete record | analysis and shareable tables | what it counts |
+|---|---|---|
+| `Video_Reaches_AI` (was `Total_Swipes_AI`) | `reaches_in_video` (was `reaches_in_session`; the duplicate `total_swipes_ai` is retired) | reaches in this video: one tray |
+| `Day_Total_Reaches_AI` (new) | `day_total_reaches` | reaches by this animal on this date, every tray of the day: the earlier program's Total Swipes |
+| `Day_Total_Reaches_Complete` (new) | `day_total_reaches_complete` | `yes` or `no`: is the day's total complete |
+
+**A day's total is given only when the day is complete.** Only filed videos
+have reach rows, so a day with a tray still in review would otherwise give a
+smaller number that looks like a real one. The trays a day should have are the
+ones the tracking sheet has hand scores for, for that animal and date. When
+every one of them is filed, the day reads `yes` and the total is given. When
+any is not, it reads `no` and the total is empty (`Undetermined` in the complete
+record and the shareable table, `NA` in the analysis tables). A day with no hand
+scores at all reads `no`: there is nothing to check against. A filed pillar tray
+where the animal never reached counts, as 0. An easy or flat tray that is filed
+but has no reaches leaves no rows to show it is filed, so its day reads `no`.
+In the analysis tables a day also reads `no` when one of its trays was left out
+as a known problem (`analysis_EXCLUSIONS.csv`), so the left-out tray's reaches
+are not counted back in through the total.
 
 ### No cell is ever empty -- and the word tells you why
 

@@ -89,8 +89,15 @@ IDENTITY: List[Tuple[str, str]] = [
 # Session totals, repeated on every row of that session. Both scoring streams are
 # carried: the algorithm's and the hand scores'. They disagree sometimes, and
 # which is right is the reader's question, not ours to settle by dropping one.
+#
+# The per-video reach count is not taken from here: the sessions exporter counts
+# it from these very rows as reaches_in_video and it is carried back onto every
+# row (_carry_session_totals). It was also published as total_swipes_ai until
+# 2026-11-17 -- the same number twice, one of them under an earlier program's
+# per-DAY name. The per-day count is day_total_reaches.
 SESSION_TOTALS: List[Tuple[str, str]] = [
-    ("Total_Swipes_AI", "total_swipes_ai"),
+    ("Day_Total_Reaches_AI", "day_total_reaches"),
+    ("Day_Total_Reaches_Complete", "day_total_reaches_complete"),
     ("Attention_AI", "attention_ai"),
     ("Video_Pellets", "pellets_in_video"),
     ("Video_Displaced", "video_displaced"),
@@ -292,7 +299,45 @@ TEXT_COLUMNS = {
     "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach",
     # The name of a paw point, so the same applies: as a number it is NA on every row.
     "paw_leading_point",
+    # yes / no: is the day's reach total complete.
+    "day_total_reaches_complete",
 }
+
+
+DAY_TOTAL_COLUMNS = ("day_total_reaches", "day_total_reaches_complete")
+DAY_TOTAL_EXCLUSION_NOTE = (
+    "In this file there is a third reason a day reads no and its total is NA: a "
+    "tray of that day was left out of this file as a known problem (listed in "
+    "analysis_EXCLUSIONS.csv), so the total would otherwise count reaches this "
+    "file does not hold.")
+
+
+def void_day_totals_after_exclusion(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    """Empty the day total wherever the exclusion pass left out a tray of that day.
+
+    The analysis documents leave out entries known to be wrong (export_exclusions).
+    day_total_reaches is counted over every filed tray of the animal's day, so a
+    day that lost a tray to an exclusion would still count that tray's reaches --
+    the doubtful reaches would be back in through the total. So on the rows that
+    remain, that day reads incomplete and its total NA, exactly as for a day with
+    a tray not filed.
+    """
+    need = {"subject_id", "test_date", "video_name", "day_total_reaches"}
+    if after.empty or not need <= set(before.columns) or not need <= set(after.columns):
+        return after
+    key = ["subject_id", "test_date"]
+    had = before.groupby(key)["video_name"].nunique()
+    kept = after.groupby(key)["video_name"].nunique()
+    lost = {k for k, n in kept.items() if had.get(k, n) > n}
+    if not lost:
+        return after
+    out = after.copy()
+    hit = pd.Series([k in lost for k in zip(out["subject_id"], out["test_date"])],
+                    index=out.index)
+    out.loc[hit, "day_total_reaches"] = MISSING
+    if "day_total_reaches_complete" in out.columns:
+        out.loc[hit, "day_total_reaches_complete"] = "no"
+    return out
 
 
 
@@ -677,6 +722,8 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
                 if name not in TEXT_COLUMNS
                 else "Absent values are written as NA.")
         pair = _unit_partner(name, order)
+        if name in DAY_TOTAL_COLUMNS:
+            pair = (pair + " " + DAY_TOTAL_EXCLUSION_NOTE).strip()
         # A reader comparing this file with another of ours needs to know the
         # numbers were rounded, and to what -- otherwise a difference in the
         # seventh digit looks like a difference in the data.
