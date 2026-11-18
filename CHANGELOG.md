@@ -55,6 +55,16 @@ checked-in code, not what's planned.
   optional extra `pip install -e ".[browse]"`. Guide: docs/DATA_BROWSER.md.
 
 ### Changed
+- The MouseDB window no longer has the **Video Pipeline** and **Archive
+  Status** tabs (were 8 and 9). They laid out one computer's MouseReach
+  watcher records as if they were the pipeline's state, so videos another
+  computer had handled, or that waited in a review queue, read as not started
+  or missing. The whole pipeline is on the Where Is My Data tab. The tabs
+  after them are renumbered: **8. Tracking Sheets**, **9. Where Is My Data**,
+  **10. Study Facts**. `mousedb video-status`, `mousedb archive-status` and
+  the web dashboard are unchanged and still show one watcher's records, with
+  the line saying whose. Guides: INSTALL.md ("GUI Features"),
+  docs/WATCHER_VIEWS.md.
 - Data dictionaries: the nine `legacy_swipe_*` values the kinematics
   extractor writes from version 2.6.0 (an earlier program's swipe measures,
   carried for continuity) each have a written definition and their real unit.

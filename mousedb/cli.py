@@ -812,7 +812,7 @@ def cmd_video_status(args):
 def cmd_archive_status(args):
     """Show archive processing and version compliance status."""
     from .watcher_bridge import (
-        WatcherBridge, ARCHIVE_STATE_DISPLAY,
+        WatcherBridge,
         watcher_scope, watcher_db_last_written, watcher_scope_lines,
     )
 

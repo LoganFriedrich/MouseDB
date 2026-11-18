@@ -1,12 +1,13 @@
-"""The Video Pipeline / Archive Status views read the watcher database the
-watcher actually writes, and say whose records they are.
+"""The watcher views (`mousedb video-status`, `mousedb archive-status`, the web
+dashboard) read the watcher database the watcher actually writes, and say
+whose records they are.
 
 WHY: a node may point its watcher at a database other than the default
 (``db_path`` in the ``watcher`` section of ~/.mousereach/config.json, set
 because SQLite over a network share loses writes). The watcher then writes
 ONLY that file; the default ``<processing_root>/watcher.db`` may still sit
-beside it, full of old rows. mousedb used to open the default, so both tabs
-and both commands showed a stale copy as the pipeline's state. And even the
+beside it, full of old rows. mousedb used to open the default, so its views
+showed a stale copy as the pipeline's state. And even the
 right file holds only THIS computer's watcher records -- other computers'
 work and the review queues' folders are not in it -- so every view now says
 so, with the file and when it was last written.
@@ -129,30 +130,6 @@ def test_both_commands_json_name_the_scope(node, capsys, command):
     assert out["watcher_db_last_written"]
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    from PyQt5.QtWidgets import QApplication
-    return QApplication.instance() or QApplication([])
-
-
-@pytest.mark.parametrize("modname,cls", [
-    ("mousedb.gui.video_pipeline_tab", "VideoStatusTab"),
-    ("mousedb.gui.archive_status_tab", "ArchiveStatusTab"),
-])
-def test_both_tabs_say_these_are_one_computers_records(node, qapp, modname, cls):
-    import importlib
-    from PyQt5.QtWidgets import QLabel
-    tab = getattr(importlib.import_module(modname), cls)(db=None)
-    # everything the tab shows a person, wherever it is placed
-    text = " ".join(lbl.text() for lbl in tab.findChildren(QLabel))
-    assert "this computer's watcher only" in text
-    assert str(node["live"]) in text
-    assert _when_written(node["live"]) in text
-    assert "Where Is My Data" in text
-    assert tab.summary_labels["total"].text().endswith("3")
-
-
-
 def test_a_file_named_by_the_environment_variable_is_not_called_this_computers(
         node, tmp_path, monkeypatch, capsys):
     """MOUSEDB_WATCHER_DB (or mousedb's pipeline folder) can name any
@@ -216,7 +193,7 @@ def test_web_dashboard_refreshes_the_scope_line(tmp_path):
               and isinstance(d.args[0], ast.Constant)]
     assert "/scope" in routes
 
-    # The partial renders the same lines the GUI tabs and commands show.
+    # The partial renders the same lines the commands show.
     db = tmp_path / "w.db"
     _watcher_db(db, ["archived"])
     lines = watcher_scope_lines(WatcherBridge(db_path=db).status)

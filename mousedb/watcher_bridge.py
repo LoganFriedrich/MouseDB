@@ -82,22 +82,8 @@ IN_PIPELINE_STATES = frozenset([
     'processing', 'processed', 'archiving',
 ])
 
-# Color scheme for archive status view
-ARCHIVE_STATE_DISPLAY = {
-    'current':       {'label': 'Current',       'color': '#4CAF50'},
-    'outdated':      {'label': 'Outdated',       'color': '#FF9800'},
-    'crystallized':  {'label': 'Crystallized',   'color': '#2196F3'},
-    'in_pipeline':   {'label': 'In Pipeline',    'color': '#9E9E9E'},
-    'in_review':     {'label': 'In Review',      'color': '#AB47BC'},
-    'not_on_this_node': {'label': 'Not on this computer', 'color': '#BDBDBD'},
-    'quarantined':   {'label': 'Quarantined',    'color': '#FF5722'},
-    'failed':        {'label': 'Failed',         'color': '#F44336'},
-    'other':         {'label': 'Other',          'color': '#795548'},
-}
-
-
 def pipeline_bucket(state: str) -> str:
-    """Which count of the Video Pipeline view a watcher state belongs to:
+    """Which count of `mousedb video-status` a watcher state belongs to:
     'done', 'in_progress', 'in_review', 'not_on_this_node', 'failed',
     'quarantined', or 'other' for a state mousedb does not know (shown under
     its own name, never folded into a bucket that means something else)."""
@@ -117,7 +103,7 @@ def pipeline_bucket(state: str) -> str:
 
 
 def archive_bucket(state: str) -> str:
-    """Which count of the Archive Status view a watcher state belongs to:
+    """Which count of `mousedb archive-status` a watcher state belongs to:
     'archived', 'outdated', 'crystallized', 'in_pipeline', 'in_review',
     'not_on_this_node', 'quarantined', 'failed', or 'other'.
 
@@ -387,8 +373,9 @@ def watcher_db_last_written(status: WatcherStatus) -> Optional[str]:
 
 
 def watcher_scope_lines(status: WatcherStatus) -> List[str]:
-    """The lines every watcher view (two GUI tabs, two commands, the web
-    dashboard) shows above its numbers. ASCII only: the commands print them.
+    """The lines every watcher view (`mousedb video-status`, `mousedb
+    archive-status`, the web dashboard) shows above its numbers. ASCII only:
+    the commands print them.
 
     WHY: the watcher database records what THIS computer's watcher did. Work
     done by other computers, and anything moved by hand, is not in it, so its

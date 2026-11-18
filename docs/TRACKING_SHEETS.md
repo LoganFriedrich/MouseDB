@@ -52,7 +52,7 @@ Open the mousedb GUI: double-click **MouseDB** on the desktop (or Start menu
 -> **MouseDB** folder -> **MouseDB**). From a terminal instead: activate the
 MouseDB conda environment (`conda activate MouseDB`, or the full path of the
 environment if it was created with `--prefix`) and run `mousedb-entry`. Find the
-**10. Tracking Sheets** tab. Everything below is a button on that tab unless
+**8. Tracking Sheets** tab. Everything below is a button on that tab unless
 it says otherwise.
 
 ## What the table tells you
@@ -574,7 +574,7 @@ with such a row is named.
 | How you start it | Recorded in the history as | Waits for the lock | When it fails |
 |---|---|---|---|
 | **Import all sheets** / **Import selected** (Tracking Sheets tab) | `gui` | yes | a `FAIL` line in the log box and a box with the summing-up line; the row turns *LAST IMPORT FAILED* |
-| **Update the database now** (11. Where Is My Data tab), or `mousedb update` | `update` | yes | the sheets step shows `[FAIL]` and the whole update reports FAILED |
+| **Update the database now** (9. Where Is My Data tab), or `mousedb update` | `update` | yes | the sheets step shows `[FAIL]` and the whole update reports FAILED |
 | the scheduled sheet import (INSTALL.md, "Scheduled jobs") | `scheduled` | yes | the job ends with exit code 1, which the scheduler shows as a failure |
 | `mousedb-sheets import [--cohort CNT_NN]` | `manual` | yes | exit code 1 |
 | `mousedb import --all` | `mousedb-import` | yes | exit code 1, after `[FAIL] the import did not complete for every cohort` |

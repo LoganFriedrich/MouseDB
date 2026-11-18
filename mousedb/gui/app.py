@@ -6792,40 +6792,30 @@ class DataEntryWindow(QMainWindow):
         self.browser_tab = DatabaseBrowserTab(self.db)
         self.tabs.addTab(self.browser_tab, "7. Database Browser")
 
-        # 8. VIDEO PIPELINE - Video processing status from watcher
-        try:
-            from .video_pipeline_tab import VideoStatusTab
-            self.video_tab = VideoStatusTab(self.db)
-            self.tabs.addTab(self.video_tab, "8. Video Pipeline")
-        except Exception:
-            pass  # Graceful if watcher_bridge not available
+        # (No Video Pipeline / Archive Status tabs. They showed one computer's
+        # MouseReach watcher records as if they were the pipeline's state and
+        # were removed; the whole pipeline is on the Where Is My Data tab, and
+        # `mousedb video-status` / `mousedb archive-status` still read one
+        # watcher's records for whoever needs them -- see docs/WATCHER_VIEWS.md.)
 
-        # 9. ARCHIVE STATUS - Archive processing and version compliance
-        try:
-            from .archive_status_tab import ArchiveStatusTab
-            self.archive_tab = ArchiveStatusTab(self.db)
-            self.tabs.addTab(self.archive_tab, "9. Archive Status")
-        except Exception:
-            pass  # Graceful if watcher_bridge not available
-
-        # 10. TRACKING SHEETS - import the lab's tracking workbooks from a button
+        # 8. TRACKING SHEETS - import the lab's tracking workbooks from a button
         # (moved here from MouseReach 2026-08-28: importing sheets is this tool's job)
         try:
             from .sheets_tab import TrackingSheetsTab
             self.sheets_tab = TrackingSheetsTab(self.db)
-            self.tabs.addTab(self.sheets_tab, "10. Tracking Sheets")
+            self.tabs.addTab(self.sheets_tab, "8. Tracking Sheets")
         except Exception as e:
             print("[!] Tracking Sheets tab unavailable: %s" % e)
 
-        # 11. WHERE IS MY DATA - per-cohort data status + the current exports folder
+        # 9. WHERE IS MY DATA - per-cohort data status + the current exports folder
         try:
             from .data_status_tab import DataStatusTab
             self.data_status_tab = DataStatusTab(self.db)
-            self.tabs.addTab(self.data_status_tab, "11. Where Is My Data")
+            self.tabs.addTab(self.data_status_tab, "9. Where Is My Data")
         except Exception as e:
             print("[!] Where Is My Data tab unavailable: %s" % e)
 
-        # 12. STUDY FACTS - the facts no sheet records, and the exceptions to them.
+        # 10. STUDY FACTS - the facts no sheet records, and the exceptions to them.
         # WHY a tab: these fill columns in every export, and until this existed the
         # only way to set one was a terminal command and the only way to write an
         # exception was to hand-edit a JSON file -- so in practice a column stayed
@@ -6833,7 +6823,7 @@ class DataEntryWindow(QMainWindow):
         try:
             from .study_facts_tab import StudyFactsTab
             self.study_facts_tab = StudyFactsTab(self.db)
-            self.tabs.addTab(self.study_facts_tab, "12. Study Facts")
+            self.tabs.addTab(self.study_facts_tab, "10. Study Facts")
         except Exception as e:
             print("[!] Study Facts tab unavailable: %s" % e)
 

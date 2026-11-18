@@ -1,21 +1,33 @@
-# The watcher views: Video Pipeline and Archive Status
+# The watcher views: `mousedb video-status` and `mousedb archive-status`
 
 This page is for the person reading the numbers. No codebase knowledge assumed.
 
-MouseDB has four places that show what a MouseReach **watcher** has recorded:
+**Looking for where your videos are?** Use the **9. Where Is My Data** tab of
+the MouseDB window. It reads the pipeline's folders, so it shows every video
+wherever it is (see [Where is my data?](WHERE_IS_MY_DATA.md)). The views on
+this page show something narrower: one computer's watcher records.
+
+MouseDB has three places that show what a MouseReach **watcher** has recorded:
 
 | where | how to open it |
 |---|---|
-| **8. Video Pipeline** tab | MouseDB window, tab 8 |
-| **9. Archive Status** tab | MouseDB window, tab 9 |
 | `mousedb video-status` | a terminal with the MouseDB environment active (add `--by-animal`, `--cohort <id>`, `--show-errors` or `--json`) |
 | `mousedb archive-status` | the same terminal (add `--cohort <id>`, `--verbose` or `--json`) |
 
 The web dashboard (`/dashboard/` of the MouseDB web server, if your lab runs
 it) shows the same records, with fewer counts: Total, Processed %, Failed,
 Archived, In Review, Quarantined and Not on this computer. Its counts do not
-add up to the total (Archived is one part of Processed); use tab 8 or
+add up to the total (Archived is one part of Processed); use
 `mousedb video-status` for the full split.
+
+**The MouseDB window has no Video Pipeline or Archive Status tab.** It used
+to have both (tabs 8 and 9). They laid one computer's watcher records out as
+if they were the pipeline's state, so a person reading them saw videos that
+another computer had handled, or that waited in a review queue, as not
+started or missing. They were removed; the tabs after them were renumbered
+(Tracking Sheets is now 8, Where Is My Data 9, Study Facts 10). The two
+commands below still show the same records, each with the line saying whose
+records they are.
 
 ## What these views are -- and are not
 
@@ -66,11 +78,10 @@ when the file was found through this computer's MouseReach settings,
 ## What each count means
 
 The watcher gives every video one state. Each view sorts the states into a
-few counts. In tab 8, tab 9, `mousedb video-status` and `mousedb
-archive-status`, every video is in exactly one count, so the counts add up to
-the total -- on the summary cards, on every row of the By Cohort and By
-Animal tables of both tabs, and on every row of the commands' per-animal
-tables. A video held for a person (In Review, Quarantined) is always in a
+few counts. In `mousedb video-status` and `mousedb archive-status`, every
+video is in exactly one count, so the counts add up to the total -- in the
+summary and on every row of the commands' per-animal tables. A video held
+for a person (In Review, Quarantined) is always in a
 count of its own, never hidden in another; a video in a state MouseDB does
 not know is in the Other count (see below).
 
@@ -78,10 +89,9 @@ not know is in the Other count (see below).
 plus a list of the non-zero counts, not a table; the web dashboard's counts
 do not add up, see above.)
 
-**Video Pipeline** (tab 8, `mousedb video-status`). The summary cards, the By
-Cohort and By Animal tables of tab 8, and the by-cohort and `--by-animal`
-tables of the command all have these columns (`Not Here` is short for Not on
-this computer):
+**`mousedb video-status`**. The summary, and the by-cohort and `--by-animal`
+tables, all have these counts (`Not Here` is short for Not on this
+computer):
 
 | count | watcher states | meaning |
 |---|---|---|
@@ -93,10 +103,9 @@ this computer):
 | Quarantined | quarantined | held until a person deals with the recording (for example, its name could not be read and it must be renamed). Nothing happens to it until then. |
 | Other | any state MouseDB does not know | see below. |
 
-**Archive Status** (tab 9, `mousedb archive-status`). The summary cards, the
-By Cohort and By Animal tables of tab 9, and the `--verbose` / `--cohort`
-per-animal table of the command all have these counts (`Not Here` is short
-for Not on this computer, `Quarant` for Quarantined):
+**`mousedb archive-status`**. The summary and the `--verbose` / `--cohort`
+per-animal table have these counts (`Not Here` is short for Not on this
+computer, `Quarant` for Quarantined):
 
 | count | watcher states |
 |---|---|
@@ -108,7 +117,7 @@ for Not on this computer, `Quarant` for Quarantined):
 | Not on this computer | unresolvable |
 | Quarantined | quarantined -- held until a person deals with the recording; not a failure |
 | Failed | failed |
-| Other | any state MouseDB does not know (the Other cell's tooltip in tab 9 names them) |
+| Other | any state MouseDB does not know (listed by name, see below) |
 
 **A state MouseDB does not know** (a newer MouseReach may add one) is never
 folded into one of the counts above. The views list it by its own name, for
@@ -117,9 +126,9 @@ MouseDB needs updating to describe the new state.
 
 (Before this was fixed, In Review and Not on this computer did not exist:
 those videos were counted as In Progress / In Pipeline, and crystallized
-videos as In Progress. Archive Status also showed quarantined videos as
-Failed, and had no Other column, so a row with an unknown state did not add
-up to its Total.)
+videos as In Progress. `mousedb archive-status` also showed quarantined
+videos as Failed, and had no Other count, so a row with an unknown state did
+not add up to its Total.)
 
 In `--json` output: `summary`, each cohort and each animal carry
 `in_review`, `not_on_this_node`, `quarantined` and `other` (an object mapping

@@ -142,9 +142,37 @@ is written to `logs/sheet_imports.jsonl` as `manual_setup_check`.
 
 ## GUI Features
 
-The GUI has three tabs:
+The window (`mousedb-entry`, or the **MouseDB** shortcut) has these tabs, in
+this order:
 
-### Tab 1: Pellet Scores
+| tab | what it is for |
+|---|---|
+| **0. Setup** | where this computer keeps things: every machine-specific location, shown, checked and editable |
+| **1. Cohort Setup** | create and manage cohorts, with their starting weights |
+| **2. Ramp Entry** | the food-restriction days before testing: body and tray weights |
+| **3. Testing Entry** | pellet scores for testing days, several animals on one screen |
+| **4. Surgery Entry** | surgery records (see below) |
+| **5. Virus Prep** | injection calculations for a tracing surgery |
+| **6. Dashboard** | statistics per cohort and animal (see below) |
+| **7. Database Browser** | the raw database tables |
+| **8. Tracking Sheets** | import the lab's tracking workbooks; start a new cohort sheet ([docs/TRACKING_SHEETS.md](docs/TRACKING_SHEETS.md)) |
+| **9. Where Is My Data** | per-cohort data status, the whole pipeline's counts, the current exports, "Update the database now" ([docs/WHERE_IS_MY_DATA.md](docs/WHERE_IS_MY_DATA.md)) |
+| **10. Study Facts** | the facts no sheet records, and the exceptions to them |
+| **Extra: Weight Entry** | weights for a whole cohort on one date |
+| **Extra: Single Animal** | pellet scores for one animal (see below) |
+
+A tab that cannot be built on this computer (for example because a setting
+is missing) is left out, and a line starting `[!]` says why: in the terminal
+when the window was started from one, otherwise in
+`%LOCALAPPDATA%\mousedb\gui.log`. The other tabs keep their numbers.
+
+There is no Video Pipeline or Archive Status tab. Those two tabs showed one
+computer's MouseReach watcher records as if they were the pipeline's state,
+and were removed: the whole pipeline is on **9. Where Is My Data**. The same
+watcher records are still in `mousedb video-status` and `mousedb
+archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
+
+### Extra: Single Animal (pellet scores)
 - **For undergrad data entry** (bulletproof validation)
 - Select Cohort → Animal → Date
 - Weight entry with range validation
@@ -153,7 +181,7 @@ The GUI has three tabs:
 - Color-coded: Red=Miss, Yellow=Displaced, Green=Retrieved
 - Auto-save on "Next Animal"
 
-### Tab 2: Surgery Records
+### 4. Surgery Entry
 - **For PI data entry** (contusion, tracing, perfusion)
 - Select Animal → Fill form → Save
 - Shows existing records for the animal
@@ -161,7 +189,7 @@ The GUI has three tabs:
 - Tracing: Virus name, Volume (nL)
 - Perfusion: Date, Notes
 
-### Tab 3: Dashboard
+### 6. Dashboard
 - **For viewing stats** (like Excel formulas calculated)
 - Select Cohort → See overview
 - Subject summary table with:

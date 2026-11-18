@@ -384,7 +384,7 @@ reaches the full export reaches the limited export the next time it is made.
 
 ### Making one (no terminal)
 
-1. Open the MouseDB window, tab **11. Where Is My Data**, and press **Make a
+1. Open the MouseDB window, tab **9. Where Is My Data**, and press **Make a
    limited export...**. A window opens.
 2. At the top, pick a saved limited export from the list to change or remake
    it, or leave it on "(a new limited export)" and type a **Name** (letters,
@@ -583,7 +583,7 @@ when the limited export is made -- never silently left out.
 
 Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
 **MouseDB** -> **MouseDB**; from a terminal: MouseDB environment active, then
-`mousedb-entry`) and find **11. Where Is My Data**. One row per cohort:
+`mousedb-entry`) and find **9. Where Is My Data**. One row per cohort:
 
 | column | meaning |
 |---|---|
