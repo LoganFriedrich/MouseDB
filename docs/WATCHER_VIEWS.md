@@ -15,7 +15,12 @@ MouseDB has three places that show what a MouseReach **watcher** has recorded:
 | `mousedb archive-status` | the same terminal (add `--cohort <id>`, `--verbose` or `--json`) |
 
 The web dashboard (`/dashboard/` of the MouseDB web server, if your lab runs
-it) shows the same records, with fewer counts: Total, Processed %, Failed,
+it: start it with `mousedb-web` in a terminal with the MouseDB environment
+active, then open `http://<that computer>:8000/dashboard/`. By default it
+listens on every network address of that computer, port 8000 --
+`MOUSEDB_WEB_HOST` / `MOUSEDB_WEB_PORT`, or `--host` / `--port`, change that
+-- so other computers on the network can open it; it has no login) shows the
+same records, with fewer counts: Total, Processed %, Failed,
 Archived, In Review, Quarantined and Not on this computer. Its counts do not
 add up to the total (Archived is one part of Processed); use
 `mousedb video-status` for the full split.
@@ -91,11 +96,13 @@ do not add up, see above.)
 
 **`mousedb video-status`**. The summary, and the by-cohort and `--by-animal`
 tables, all have these counts (`Not Here` is short for Not on this
-computer):
+computer). The tables call the first count `Done`; the summary line reads
+`Completed: <percent>% (<N> done, <N> in progress, <N> waiting for review,
+<N> not on this computer, <N> failed, <N> quarantined)`:
 
 | count | watcher states | meaning |
 |---|---|---|
-| Completed | processed, archiving, archived, crystallized | analyzed (and filed, or being filed). Crystallized = filed and locked for a publication. On a computer that only poses videos and hands them on (a graphics-card computer set up not to analyze), Completed means **posed and handed on**, not analyzed: its watcher marks a video archived as soon as it has passed the pose on. |
+| Done | processed, archiving, archived, crystallized | analyzed (and filed, or being filed). Crystallized = filed and locked for a publication. On a computer that only poses videos and hands them on (a graphics-card computer set up not to analyze), Done means **posed and handed on**, not analyzed: its watcher marks a video archived as soon as it has passed the pose on. |
 | In Progress | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, outdated | work the pipeline still has to do on this computer. Outdated = filed with older tool versions; it will be run again. |
 | In Review | triage, deep_review | waiting for a **person** in a review queue (triage, or deep review). Nothing happens to it until someone reviews it. |
 | Not on this computer | unresolvable | this computer has no file for the video -- another computer holds it. Not a failure. |
@@ -104,12 +111,14 @@ computer):
 | Other | any state MouseDB does not know | see below. |
 
 **`mousedb archive-status`**. The summary and the `--verbose` / `--cohort`
-per-animal table have these counts (`Not Here` is short for Not on this
-computer, `Quarant` for Quarantined):
+per-animal table have these counts. The table's headings are short:
+`Crystal` = Crystallized, `Pipeline` = In Pipeline, `Review` = In Review,
+`NotHere` = Not on this computer, `Quarant` = Quarantined. The summary line
+reads `Version compliance: <archived>/<total> current`:
 
 | count | watcher states |
 |---|---|
-| Current (Archived) | archived -- on a computer that only poses and hands videos on, this means posed and handed on, not analyzed |
+| Archived | archived -- on a computer that only poses and hands videos on, this means posed and handed on, not analyzed |
 | Outdated | outdated |
 | Crystallized | crystallized |
 | In Pipeline | discovered, validated, dlc_queued, dlc_running, dlc_complete, processing, processed, archiving |
@@ -121,7 +130,8 @@ computer, `Quarant` for Quarantined):
 
 **A state MouseDB does not know** (a newer MouseReach may add one) is never
 folded into one of the counts above. The views list it by its own name, for
-example `States mousedb does not know: some_state = 2`. If you see that line,
+example `States mousedb does not know: some_state=2` (`mousedb video-status`
+adds `(counted in none of the above)` before the colon). If you see that line,
 MouseDB needs updating to describe the new state.
 
 (Before this was fixed, In Review and Not on this computer did not exist:
