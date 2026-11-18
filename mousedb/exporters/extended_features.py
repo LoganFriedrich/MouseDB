@@ -39,6 +39,9 @@ _SUFFIX_UNITS = (
     ("_mm2", "mm^2"), ("_px2", "pixels^2"),
     ("_mm_per_frame", "mm per frame"), ("_px_per_frame", "pixels per frame"),
     ("_mm_per_sec", "mm per second"),
+    # Before "_sec": the earlier swipe speed is pixels divided by four, per second,
+    # and read as "_sec" it would be described as a time.
+    ("_px_div4_per_sec", "(pixels / 4) per second"),
     ("_mm", "mm"), ("_px", "pixels"),
     ("_deg", "degrees"), ("_frames", "frames"), ("_sec", "seconds"),
 )
@@ -94,6 +97,8 @@ def expand(series: pd.Series, index=None, keys: Optional[List[str]] = None) -> p
 
 
 def _unit_for(key: str) -> str:
+    if key in _LEGACY_SWIPE:
+        return _LEGACY_SWIPE[key][0]
     for suffix, unit in _SUFFIX_UNITS:
         if key.endswith(suffix):
             return unit
@@ -110,7 +115,7 @@ def _unit_for(key: str) -> str:
 # just read, and leaves them unable to tell whether an area is a convex hull, a
 # bounding box or a polygon, or over what the mean was taken.
 #
-# Composed from three parts rather than written out 161 times -- the landmark,
+# Composed from three parts rather than written out for every key -- the landmark,
 # the measure, the variant. Each part is written once and is accurate for every
 # column that uses it, which is both less text and fewer chances to be wrong.
 
@@ -314,6 +319,81 @@ def _split_key(key):
     return landmark, body, variant
 
 
+# The earlier swipe measures (kinematics extractor 2.6.0 and later). WHY THEY EXIST:
+# analyses built on an earlier reach program's per-swipe numbers can only be
+# continued with new data if the same numbers are computed the same way, so the
+# extractor reproduces that program's definition on each reach. They are NOT a
+# better measurement of the reach than the rest of this block, and they do not
+# follow its rules: no nose subtraction, no anchors, no millimetres. Their names
+# do not take apart into landmark / measure / variant, so each is written out
+# whole here and looked up by its full key (MouseReach docs/KINEMATICS_FIELDS.md,
+# section 6.8, is the source).
+_LEGACY_BASIS = (
+    " This is the EARLIER swipe-measure definition, carried so analyses built on an "
+    "earlier reach program can be continued; it is not a better measurement of the "
+    "reach than the other columns. Computed only on the reach's counted frames: "
+    "inside the reach's start and end frames, a frame counts when the right hand's "
+    "tracking likelihood is above 0.7, the nose's above 0.5, the nose is inside a "
+    "fixed zone at the slit (set from the Reference point at the pellet window's "
+    "first frame), the hand is more than 8 pixels past the nose (RightHand_y - "
+    "Nose_y > 8), and RightHand_y > y_max - 300, where y_max is the largest "
+    "RightHand_y over the pellet window's frames whose right-hand likelihood is "
+    "above 0.95 (no frame counts when there is none). "
+    "Raw right-hand positions as tracked, in image pixels: no smoothing, no nose "
+    "subtraction, no anchor points.")
+_LEGACY_SWIPE = {
+    "legacy_swipe_duration_frames": (
+        "frames",
+        "How many frames of the reach count under the earlier swipe definition. 0 when "
+        "none counts; the measures below need at least 2 and are empty otherwise."),
+    "legacy_swipe_first_frame": (
+        "frame",
+        "The first counted frame of the reach under the earlier swipe definition, as a "
+        "video frame index. Empty when no frame counts."),
+    "legacy_swipe_last_frame": (
+        "frame",
+        "The last counted frame of the reach under the earlier swipe definition, as a "
+        "video frame index. Empty when no frame counts."),
+    "legacy_swipe_breadth_px": (
+        "pixels",
+        "Swipe breadth, the earlier definition: the side-to-side extent of the right "
+        "hand over the counted frames, largest x minus smallest x."),
+    "legacy_swipe_length_px": (
+        "pixels",
+        "Swipe length, the earlier definition: how far past the nose the right hand "
+        "got, as its largest y over the counted frames minus the nose's y in the first "
+        "frame holding that largest y."),
+    "legacy_swipe_area_px2": (
+        "pixels^2",
+        "Swipe area, the earlier definition: the area of the polygon through the right "
+        "hand's positions on the counted frames, in frame order (shoelace formula)."),
+    "legacy_swipe_path_length_px": (
+        "pixels",
+        "Path length, the earlier definition: the sum of the straight-line steps of the "
+        "right hand between consecutive counted frames."),
+    "legacy_swipe_speed_px_div4_per_sec": (
+        "(pixels / 4) per second",
+        "Swipe speed, the earlier definition and in its own unit: (path length / 4) "
+        "divided by (last counted frame - first counted frame) / the video's frame "
+        "rate. The 4 was the earlier program's nominal pixels per millimetre and is "
+        "kept so the number is the earlier one; it is NOT a calibrated millimetre "
+        "value. The earlier program divided by a fixed 60 frames per second, so the "
+        "two agree on a 60 frames-per-second video. Empty when the first and last "
+        "counted frames are the same or the frame rate is unknown."),
+    "legacy_swipe_path_over_frames_px_per_frame": (
+        "pixels per frame",
+        "Path over frames, the earlier definition: path length divided by the number "
+        "of counted frames."),
+}
+_LEGACY_COMMENT = (
+    "Earlier swipe-measure definition (kinematics extractor 2.6.0 and later). Empty on "
+    "every reach whose features were written by an extractor before 2.6.0, and on "
+    "every reach whose pose file has no Reference point; never filled from any other "
+    "measure. In the complete record and the shareable table these columns exist "
+    "only once some reach of the cohort carries the values; where they exist, a "
+    "reach without them reads 'Not recorded'.")
+
+
 def _describe(key: str) -> str:
     """What this measurement is and, being calculated, how it is calculated.
 
@@ -322,6 +402,8 @@ def _describe(key: str) -> str:
     apart says it has no definition yet -- honest about saying little, which
     beats prose that sounds like a definition and is not.
     """
+    if key in _LEGACY_SWIPE:
+        return _LEGACY_SWIPE[key][1] + _LEGACY_BASIS
     landmark, measure, variant = _split_key(key)
     template = _MEASURES.get(measure)
     if not template:
@@ -362,7 +444,7 @@ def dictionary_rows(keys: Iterable[str]) -> List[dict]:
     """A data dictionary row for every extended column (an upload fails without one)."""
     rows = []
     for key in keys:
-        note = _NOTES.get(key, "")
+        note = _NOTES.get(key, "") or (_LEGACY_COMMENT if key in _LEGACY_SWIPE else "")
         dtype, permitted, permitted_meaning = _NOT_NUMBERS.get(key, ("number", "", ""))
         rows.append(dd._row(
             PREFIX + key,

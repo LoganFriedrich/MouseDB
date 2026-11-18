@@ -95,7 +95,7 @@ reach_data.csv            One row per reach the pipeline detected, with the
                           review, or ground truth). Column definitions:
                           reach_data_DATA_DICTIONARY.csv.
 reach_data_extended.parquet
-                          The 161-value extended feature block per reach (per
+                          The 174-value extended feature block per reach (per
                           paw-point kinematics) as JSON, keyed by subject_id,
                           video_name, segment_num, reach_id. Kept out of the CSV
                           because it made the file 3 GB. Read with pandas /
@@ -173,7 +173,7 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
                  if c in df.columns]
     df = df.sort_values(sort_cols)
 
-    # The extended block (161 per-paw-point values, stored as one JSON string
+    # The extended block (174 per-reach values from extractor 2.6.0, stored as one JSON string
     # per row) is NOT in the CSV: with it the file was 2.98 GB, which nothing
     # opens. It goes to a parquet sidecar keyed by the same identity columns;
     # the CSV stays the ~200 MB a person can actually load.

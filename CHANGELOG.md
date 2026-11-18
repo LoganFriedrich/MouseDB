@@ -55,6 +55,13 @@ checked-in code, not what's planned.
   optional extra `pip install -e ".[browse]"`. Guide: docs/DATA_BROWSER.md.
 
 ### Changed
+- Data dictionaries: the nine `legacy_swipe_*` values the kinematics
+  extractor writes from version 2.6.0 (an earlier program's swipe measures,
+  carried for continuity) each have a written definition and their real unit.
+  Before, all nine read "No written definition yet", and
+  `ext_legacy_swipe_speed_px_div4_per_sec` was described as seconds; its unit
+  is "(pixels / 4) per second". The `extended_features` entry counts 174
+  values (165 on rows from an extractor before 2.6.0, 161 before 2.3.0).
 - **The sheet wins.** The tracking-sheet import no longer only adds: for the
   rows earlier imports of a cohort's sheet wrote (pellet scores, weights, ramp
   days, surgeries) it corrects a value the sheet now gives differently and

@@ -766,7 +766,7 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     snapshot_dir = Path(snapshot_dir)
     names = pq.read_schema(snapshot_dir / "reach_data.parquet").names
     # Only the surrogate key is left behind. extended_features IS read: it carries the
-    # 161 per-reach measurements the complete document exists to contain (see
+    # per-reach measurements (174 from extractor 2.6.0) the complete document exists to contain (see
     # mousedb.exporters.extended_features for what dropping it used to cost).
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
                                   columns=[c for c in names if c != "id"])}
