@@ -229,6 +229,13 @@ checked-in code, not what's planned.
   and a contested video was left out alone while the other animals of its
   recording went into the analysis files. The skip signature records whether
   the folder could be reached, so the files are rebuilt once it can.
+- Sheet import: a contusion row's `Survived` cell corrected from `N` to `Y`
+  now also brings the animal back (active, no date of death), listed under
+  `death_undone` and in the audit log. It used to correct only the
+  surgery's flag, leaving the animal dead on the day of a surgery the
+  database said it survived. Not when another contusion row still says `N`,
+  nor when `0a_Metadata` gives the animal a date of death: then a warning
+  names the two cells that disagree.
 - Sheet import: an animal the database holds, that its cohort's sheet no
   longer names and that nothing is recorded for (an id typed into the sheet,
   imported, then taken out again) is named in a warning, on the cohort's

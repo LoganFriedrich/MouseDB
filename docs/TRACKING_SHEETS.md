@@ -238,9 +238,17 @@ imports of that cohort's sheet wrote:
   NOT SYNCED). One thing
   about an animal IS corrected: a contusion row saying the animal did not
   survive marks it dead on that day, so when such a row is removed (a row
-  copied in from another cohort's workbook, say) and nothing left in the
-  sheet says the animal died, the death is undone and listed
-  (`N deaths undone`).
+  copied in from another cohort's workbook, say) or its `Survived` cell is
+  corrected to `Y` (a mistyped `N`), and nothing left in the sheet says the
+  animal died, the death is undone and listed (`N deaths undone`). Until
+  2026-11 correcting the cell to `Y` corrected only the surgery's flag: the
+  animal stayed dead on that day. "Nothing left in the sheet says the
+  animal died" means no other contusion row of the animal says `N` and its
+  `0a_Metadata` row gives no `Date_of_Death` (a date still ahead does not
+  count). When `0a_Metadata` does give one, the animal stays dead and the
+  import warns (`<animal>: the contusion row of that day now says the animal
+  survived ..., but 0a_Metadata gives the animal a Date_of_Death ...`):
+  decide which cell is wrong and correct it.
 - **An animal's date of birth, date of death and sex** come from
   `0a_Metadata` into the database where the database has NOTHING for them
   (an animal first created from a video, or from another tab, before its
@@ -1128,6 +1136,7 @@ that is missing or renamed is kept as it was and reported
 | `[!] <tab>!<cell>: ... left as written` (after a new sheet is created) | That formula could not be pointed at the new animal's row; it is as it was in the template. Check it in the new sheet, and fix the template if it should be different. |
 | `NOT SYNCED <table>: ...` | The sheet read as broken, so nothing in that table was removed or changed. Check the tab it names; if the sheet is right, import that cohort with `--allow-large-removal` or use Replace (see "The sheet wins"). |
 | `<table>: <animal> <date> ... was typed in by hand (by <name>) and differs from the sheet ...` / `3b_Manual_Tray: <animal> <date> <tray> has scores typed in by hand ...` | Nothing is wrong with the import. Decide which is right: correct the sheet, or correct the hand-typed row in the entry tab it came from. |
+| `<animal>: the contusion row of that day ... but 0a_Metadata gives the animal a Date_of_Death, so it is still recorded as dead on <date> ...` | The contusion row says the animal survived (or is gone from the sheet) while `0a_Metadata` says it died. If it is alive, clear `Date_of_Death` in the sheet and mark the animal alive in the GUI; if it died, correct the contusion row's `Survived` cell. |
 | `0a_Metadata: <animal>'s <date of birth / date of death / sex> is <value> in the database but <value> in the sheet ...` | Decide which is right. If the sheet is wrong, correct it there; if the database is wrong, correct the animal in the GUI. The import never overwrites the database's value itself. |
 | `3b_Manual_Tray: <animal> <date> <tray> pellet N is on two rows with different scores ...` | The same tray is typed twice. Delete the extra row in the sheet. |
 | `changed from the sheet -- ...` (under a cohort's `OK` line) | Nothing: it lists what the import corrected or removed because the sheet changed. Check it matches what you meant to change. |

@@ -872,6 +872,85 @@ def test_survived_flags_overwritten_on_too_many_rows_are_refused(tmp_path):
     assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}
 
 
+def _subject_state(db, animal):
+    with db.session() as s:
+        a = s.query(Subject).filter_by(subject_id=animal).one()
+        return a.is_active, a.date_of_death
+
+
+def test_a_survived_cell_corrected_to_yes_brings_the_animal_back(tmp_path):
+    """A mistyped N on a contusion row marks the animal dead on the surgery's
+    day AND stores the surgery as not survived. Correcting the cell to Y used
+    to correct only the surgery: the animal stayed dead, dated that day, so
+    the database said both "survived the surgery" and "died that day", and
+    the death is what attrition counts and the exports read."""
+    db = _db(tmp_path)
+    _import(db, _survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"]))
+    assert _subject_state(db, ANIMALS[0]) == (0, date(2026, 3, 20))
+
+    dry = _import(db, _workbook(_sheet(tmp_path)), dry_run=True)
+    said = ((dry.get("sheet_sync") or {}).get("subjects") or {}).get("death_undone") or []
+    assert [u["subject_id"] for u in said] == [ANIMALS[0]]
+    assert _subject_state(db, ANIMALS[0]) == (0, date(2026, 3, 20))   # a dry run writes nothing
+
+    r = _import(db, _workbook(_sheet(tmp_path)))                      # Y, Y
+
+    assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}
+    assert _subject_state(db, ANIMALS[0]) == (1, None)
+    undone = ((r.get("sheet_sync") or {}).get("subjects") or {}).get("death_undone") or []
+    assert [u["subject_id"] for u in undone] == [ANIMALS[0]]
+    assert "survived" in undone[0]["because"]
+    with db.session() as s:
+        logged = [json.loads(e.new_values or "{}") for e in s.query(AuditLog).filter_by(
+            table_name="subjects", record_id=ANIMALS[0])]
+    assert any(v.get("is_active") == 1 for v in logged)
+
+
+def test_a_death_the_metadata_tab_records_is_not_undone_by_a_survived_cell(tmp_path):
+    """When 0a_Metadata gives the animal a Date_of_Death, the death is the
+    sheet's own statement: a contusion row corrected to Y does not bring the
+    animal back, and a warning says which two cells disagree."""
+    db = _db(tmp_path)
+
+    def with_death(path):
+        wb = openpyxl.load_workbook(path)
+        m = wb.create_sheet("0a_Metadata")
+        m.append(["SubjectID", "Date_of_Death"])
+        m.append([ANIMALS[0], date(2026, 3, 20)])
+        m.append([ANIMALS[1], None])
+        wb.save(path)
+        return path
+
+    _import(db, with_death(_survived_cells(_workbook(_sheet(tmp_path)), ["N", "Y"])))
+    assert _subject_state(db, ANIMALS[0]) == (0, date(2026, 3, 20))
+
+    r = _import(db, with_death(_workbook(_sheet(tmp_path))))
+
+    assert _survived(db) == {ANIMALS[0]: 1, ANIMALS[1]: 1}
+    assert _subject_state(db, ANIMALS[0]) == (0, date(2026, 3, 20))
+    assert "death_undone" not in r["sheet_sync"].get("subjects", {})
+    assert any(ANIMALS[0] in w and "0a_Metadata" in w and "Date_of_Death" in w
+               for w in r["warnings"])
+
+
+def test_another_contusion_row_that_still_says_not_survived_keeps_the_death(tmp_path):
+    """Only the row that recorded the death can take it back: while another
+    contusion row of the animal still says N, the animal stays dead."""
+    db = _db(tmp_path)
+    day = date(2026, 3, 20)
+    rows = [(ANIMALS[0], day, 21.0, 60), (ANIMALS[1], day, 21.0, 61)]
+    _import(db, _survived_cells(_workbook(_sheet(tmp_path), surgeries=rows), ["N", "Y"]))
+    assert _subject_state(db, ANIMALS[0]) == (0, day)
+
+    p = _workbook(_sheet(tmp_path), surgeries=rows + [(ANIMALS[0], date(2026, 3, 27), 21.0, 62)])
+    wb = openpyxl.load_workbook(p)
+    wb["4_Contusion_Injury_Details"]["F4"] = "N"     # the extra row still says N
+    wb.save(p)
+    _import(db, p)
+
+    assert _subject_state(db, ANIMALS[0]) == (0, day)
+
+
 # --------------------------------------------------------------------------
 # the weight on the day of a contusion
 # --------------------------------------------------------------------------

@@ -498,6 +498,12 @@ class ExcelImporter:
             subject_id = self._resolve_subject_id(raw_id, cohort_id, '0a_Metadata')
             if not subject_id:
                 continue  # _resolve_subject_id recorded why
+            died = self._parse_date(row.get('Date_of_Death'))
+            if died is not None and died <= (getattr(self, 'today', None) or date.today()):
+                # Remembered so a contusion row's Survived cell can never undo
+                # a death the sheet records in its own right (_undo_copied_death).
+                # A date still ahead is a plan, not a death (_fill_subject_facts).
+                self.__dict__.setdefault('_sheet_deaths', set()).add(subject_id)
 
             # Check if subject already exists
             existing = session.query(Subject).filter_by(subject_id=subject_id).first()
@@ -1870,6 +1876,20 @@ class ExcelImporter:
                             {f: _jsonable(n) for f, (o, n) in diff.items()})
                 for f, (_o, n) in diff.items():
                     setattr(r, f, n)
+            if (table == 'surgeries' and r.surgery_type == 'contusion'
+                    and 'survived' in diff and diff['survived'][1] == 1
+                    and not self._blank(diff['survived'][0])
+                    and int(diff['survived'][0]) == 0):
+                # The sheet now says the animal SURVIVED this contusion (a
+                # mistyped N corrected to Y). The N had also marked the animal
+                # dead on that day; correcting only the surgery's flag left the
+                # database saying both "survived the surgery" and "died that
+                # day", and the death is what attrition counts and the exports
+                # read. So the death that row recorded is undone with it.
+                self._undo_copied_death(
+                    session, r, dry_run,
+                    because='the contusion row of that day now says the animal '
+                            'survived (its Survived cell was changed to yes)')
         for r in gone:
             old = {c.name: _jsonable(getattr(r, c.name)) for c in model.__table__.columns}
             report.setdefault('removed', []).append(dict(
@@ -1961,25 +1981,40 @@ class ExcelImporter:
             left -= hits
         return found
 
-    def _undo_copied_death(self, session, surgery, dry_run: bool):
-        """A contusion row being removed may be what marked its animal dead:
-        the contusion reader sets is_active = 0 and date_of_death = the
-        surgery's date when the row says the animal did not survive. A row
-        copied in from another cohort's workbook therefore also copied that
-        cohort's deaths onto living animals. When the removed row is the one
-        that did it -- the animal is marked inactive, its death is dated that
-        surgery's day, and nothing in this sheet marks it dead now -- the
-        death is undone, logged in the audit log and listed in sheet_sync."""
+    def _undo_copied_death(self, session, surgery, dry_run: bool,
+                           because: str = 'the contusion row of that day, which said '
+                                          'the animal did not survive, is no longer in '
+                                          'the sheet'):
+        """A contusion row that said the animal did not survive is what marked
+        it dead: the contusion reader sets is_active = 0 and date_of_death =
+        the surgery's date. When that row is removed from the sheet (a row
+        copied in from another cohort's workbook copied that cohort's deaths
+        onto living animals) or its Survived cell is corrected to yes, the
+        death it recorded is undone -- but only when it is that row's doing:
+        the animal is marked inactive, its death is dated that surgery's day,
+        no contusion row of this sheet still says it did not survive, and the
+        sheet's 0a_Metadata gives it no Date_of_Death of its own. Logged in
+        the audit log and listed in sheet_sync.subjects.death_undone.
+
+        A death the metadata tab records is left as it is, with a warning:
+        whether the animal died is then the sheet's own statement, and which
+        of the two cells is wrong is for a person to settle."""
         subject = session.query(Subject).filter_by(subject_id=surgery.subject_id).first()
         if (subject is None or subject.is_active not in (0, False)
                 or subject.date_of_death != surgery.surgery_date
                 or subject.subject_id in self.__dict__.get('_marked_dead', set())):
             return
+        if subject.subject_id in self.__dict__.get('_sheet_deaths', set()):
+            self.warnings.append(self._ascii(
+                "%s: %s, but 0a_Metadata gives the animal a Date_of_Death, so it is "
+                "still recorded as dead on %s. If it is alive, clear that cell (and "
+                "correct the animal in the GUI); if it died, correct the contusion row"
+                % (subject.subject_id, because, _iso(subject.date_of_death))))
+            return
         report = self._sync_state().setdefault('subjects', {})
         report.setdefault('death_undone', []).append({
             'subject_id': subject.subject_id, 'date_of_death': _iso(subject.date_of_death),
-            'because': 'the contusion row of that day, which said the animal did not '
-                       'survive, is no longer in the sheet'})
+            'because': because})
         if not dry_run:
             self._audit(session, 'UPDATE', 'subjects', subject.subject_id,
                         {'is_active': 0, 'date_of_death': _iso(subject.date_of_death)},
@@ -3265,6 +3300,7 @@ class ExcelImporter:
         for name in ('_unimported', '_placeholder_starts', '_warned_once',
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
                      '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead',
+                     '_sheet_deaths',
                      '_facts_seen', '_seen_rows', '_unread_tabs',
                      '_notes_cleared', '_named_subjects',
                      # A tray's "Weight %" as read from this workbook, and
