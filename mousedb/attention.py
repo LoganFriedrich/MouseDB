@@ -20,8 +20,10 @@ WHAT IS GATHERED
    sheets folder, its last import if it failed, every date that import
    had to repair (its REPAIRED warnings) -- correct those in the sheet --
    every table it refused to bring in step with the sheet because the
-   sheet read as broken (its NOT SYNCED lines), and every animal fact
-   (birth, death, sex) the sheet gives differently from the database.
+   sheet read as broken (its NOT SYNCED lines), every animal fact
+   (birth, death, sex) the sheet gives differently from the database, and
+   every animal the database holds that the sheet no longer names and that
+   nothing is recorded for.
 Frozen workbooks (the letter cohorts) are not listed: nobody corrects them.
 
 THE FIX THESE FILE
@@ -100,6 +102,15 @@ def sheet_items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
                 "database value was kept. Correct whichever is wrong -- the sheet, or the "
                 "animal in the GUI" % (d.get("subject_id"), str(d.get("field")).replace("_", " "),
                                        d.get("database"), d.get("sheet")))})
+        # An animal the database holds, that the sheet no longer names and
+        # that nothing is recorded for: a person decides whether it is real
+        # (importers._report_animals_not_in_sheet). Nothing removes it.
+        for sid in (((e.get("sheet_sync") or {}).get("subjects") or {}).get("not_in_sheet") or []):
+            out.append({"cohort_id": cid, "source": "sheet import", "says": (
+                "%s is in the database but not in %s's sheet, and nothing is recorded "
+                "for it. If the animal exists, add it to the sheet; if it never did, it "
+                "has to be removed from the database by hand (an import never removes "
+                "an animal)" % (sid, cid))})
         for w in e.get("warnings") or []:
             if str(w).startswith("REPAIRED"):
                 out.append({"cohort_id": cid, "source": "sheet import", "says": str(w)})

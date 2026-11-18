@@ -1287,6 +1287,9 @@ def sync_summary(entry: dict) -> Optional[str]:
         if what.get("differs"):
             bits.append("%d fact%s differ from the sheet (database kept; see warnings)" % (
                 len(what["differs"]), "" if len(what["differs"]) == 1 else "s"))
+        if what.get("not_in_sheet"):
+            bits.append("%d animal%s not in the sheet and holding no data (kept; see warnings)" % (
+                len(what["not_in_sheet"]), "" if len(what["not_in_sheet"]) == 1 else "s"))
         if what.get("death_undone"):
             bits.append("%d death%s undone (recorded only by a removed contusion row)" % (
                 len(what["death_undone"]), "" if len(what["death_undone"]) == 1 else "s"))

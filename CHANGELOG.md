@@ -76,6 +76,11 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Sheet import: an animal the database holds, that its cohort's sheet no
+  longer names and that nothing is recorded for (an id typed into the sheet,
+  imported, then taken out again) is named in a warning, on the cohort's
+  line, in the red attention box and in the cohort's FIX THESE file. It used
+  to stay in the cohort silently. It is still never removed by an import.
 - Sheet import: a contusion's weight on the day (`Subject_Weight (g)`) is
   stored on the contusion (`surgeries.pre_surgery_weight_grams`), as an
   injection's always was, and kept in step with the sheet. Contusions

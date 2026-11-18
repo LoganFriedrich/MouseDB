@@ -263,6 +263,9 @@ class ExcelImporter:
             # rows earlier imports wrote are brought in step with the sheet.
             for table in ('weights', 'ramp_entries', 'surgeries'):
                 self._sync_table(session, cohort_id, table, dry_run)
+            # Animals are never removed; an empty one the sheet no longer
+            # names is put in front of a person instead.
+            self._report_animals_not_in_sheet(session, cohort_id)
             if self.sync_blocked:
                 # Said even when no table held an earlier row to refuse over
                 # (a first import): the cohort stays NOT SYNCED until pinned.
@@ -1884,6 +1887,70 @@ class ExcelImporter:
         if gone:
             self.imported_counts['%s_removed' % table] = len(gone)
 
+    def _report_animals_not_in_sheet(self, session, cohort_id: str):
+        """Name every animal of this cohort that the database holds, that the
+        sheet just read names nowhere, and that nothing is recorded for -- no
+        row in any table that carries an animal id (weights, scores, surgeries,
+        ramp days, sheet records, a video's reaches ...). Nothing is removed.
+
+        WHY: an import never removes an animal, because an animal can exist
+        from its videos alone (it exists from its first mention), and a
+        subject row does not record where it came from. So an id typed into a
+        sheet, imported, and then taken out of the sheet again (a row added
+        for an animal that was never allocated, say) stayed in the database as
+        an empty animal, counted in the cohort, with nothing saying it is not
+        real. Only a person can tell an animal that never existed from one
+        whose data has not arrived yet, so it is put in front of one: a
+        warning, sheet_sync.subjects.not_in_sheet, and through the import
+        ledger the red attention box and the cohort's FIX THESE file.
+
+        Not judged when the read cannot be trusted to name every animal: a
+        workbook that may not be the cohort's sheet (sync_blocked), a tab that
+        could not be read, or a table refused as a broken read. Nor when the
+        sheet named no animal at all."""
+        if self.sync_blocked or self.__dict__.get('_unread_tabs') \
+                or self._sync_state().get('refused'):
+            return
+        named = self.__dict__.get('_named_subjects', set())
+        if not named:
+            return
+        held = [sid for (sid,) in session.query(Subject.subject_id)
+                .filter_by(cohort_id=cohort_id).order_by(Subject.subject_id)]
+        absent = [sid for sid in held if sid not in named]
+        if not absent:
+            return
+        empty = [sid for sid in absent if not self._animal_has_rows(session, sid)]
+        if not empty:
+            return
+        report = self._sync_state().setdefault('subjects', {})
+        report['not_in_sheet'] = empty
+        for sid in empty:
+            self.warnings.append(self._ascii(
+                "%s is in the database but not in this cohort's sheet, and nothing is "
+                "recorded for it (no weights, scores, surgeries, videos or reaches). If "
+                "the animal exists, add it to the sheet; if it never did, it has to be "
+                "removed from the database by hand -- an import never removes an animal"
+                % sid))
+
+    @staticmethod
+    def _animal_has_rows(session, subject_id: str) -> bool:
+        """Whether any table other than subjects holds a row for this animal.
+        Every table with a subject_id column is asked, read from the database
+        itself, so a table added later is never forgotten."""
+        from sqlalchemy import inspect as sa_inspect, text as sa_text
+        insp = sa_inspect(session.get_bind())
+        for table in insp.get_table_names():
+            if table == 'subjects':
+                continue
+            if 'subject_id' not in {c['name'] for c in insp.get_columns(table)}:
+                continue
+            hit = session.execute(
+                sa_text('SELECT 1 FROM "%s" WHERE subject_id = :s LIMIT 1'
+                        % table.replace('"', '""')), {'s': subject_id}).first()
+            if hit is not None:
+                return True
+        return False
+
     def _undo_copied_death(self, session, surgery, dry_run: bool):
         """A contusion row being removed may be what marked its animal dead:
         the contusion reader sets is_active = 0 and date_of_death = the
@@ -3189,7 +3256,7 @@ class ExcelImporter:
                      '_dry_run_subjects', '_dry_run_cohorts', '_not_saved_counts',
                      '_sheet_sync', '_phase_refresh', '_pellets_relabelled', '_marked_dead',
                      '_facts_seen', '_seen_rows', '_unread_tabs',
-                     '_notes_cleared',
+                     '_notes_cleared', '_named_subjects',
                      # A tray's "Weight %" as read from this workbook, and
                      # "the pin warning has been said": both belong to one
                      # workbook's import and must not reach the next one's.
@@ -3284,6 +3351,9 @@ class ExcelImporter:
                      "from its own cohort's workbook" % (home, cohort_id),
                 subject_id)
             return None
+        # Every animal of this cohort the sheet names, on any tab, whether or
+        # not its row is then imported (_report_animals_not_in_sheet).
+        self.__dict__.setdefault('_named_subjects', set()).add(subject_id)
         return subject_id
 
     def _ensure_cohort(self, session, cohort_id: str, dry_run: bool,
@@ -3396,6 +3466,8 @@ class ExcelImporter:
 
         if not self._ensure_cohort(session, cohort_id, dry_run, first_seen):
             return False
+        # Named by the workbook, also for callers that build ids themselves.
+        self.__dict__.setdefault('_named_subjects', set()).add(subject_id)
 
         existing = session.query(Subject).filter_by(subject_id=subject_id).first()
         if not existing:

@@ -1372,7 +1372,10 @@ cohort's sheet wrote -- pellet scores, weights, ramp days and surgeries:
 An animal's date of birth, date of death and sex are filled in from the
 sheet's metadata tab only where the database has nothing for them; a value
 already there is kept, and a difference from the sheet is listed in the red
-attention box for a person to settle.
+attention box for a person to settle. Animals themselves are never removed
+by an import; an animal that the sheet no longer names and that nothing is
+recorded for (an id typed into the sheet and later taken out) is listed in
+the same red box, for a person to add to the sheet or have removed by hand.
 
 When a removal takes a session date out of a cohort's schedule (or an import
 adds one), the cohort's phases -- training, baseline, post-injury tests --

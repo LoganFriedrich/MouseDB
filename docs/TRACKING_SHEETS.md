@@ -218,7 +218,20 @@ imports of that cohort's sheet wrote:
   from the sheet; the hand-typed values stand ...`): correct it by hand if
   the sheet is right.
 - **Animals are never removed** by an import, even when the sheet no longer
-  lists them: an animal can exist because of its videos alone. One thing
+  lists them: an animal can exist because of its videos alone. But an
+  animal that the database holds, that the sheet names nowhere (on any tab)
+  and that NOTHING is recorded for -- no weight, score, surgery, ramp day,
+  sheet record, video or reach -- is named for a person: a warning
+  (`<animal> is in the database but not in this cohort's sheet, and nothing
+  is recorded for it ...`), `N animals not in the sheet and holding no data`
+  on the cohort's line, and a line in the red attention box and the
+  cohort's FIX THESE file. This is what is left when an id was typed into
+  the sheet, imported, and later taken out again. If the animal is real,
+  add it to the sheet; if it never existed, it has to be removed from the
+  database by hand -- the import still removes nothing. The check is skipped
+  when the import cannot trust its read to name every animal (a workbook
+  read on a guess, a tab that could not be read, a table refused as
+  NOT SYNCED). One thing
   about an animal IS corrected: a contusion row saying the animal did not
   survive marks it dead on that day, so when such a row is removed (a row
   copied in from another cohort's workbook, say) and nothing left in the
@@ -809,6 +822,9 @@ Some things only a person can fix, mostly in the sheet:
   to compare, so nothing can disagree -- and the video is filed;
 - a date the import had to read as a typo (`REPAIRED ...`, see "A year typed
   wrong on the tray-scoring tab"): correct it in the sheet;
+- an animal in the database that the sheet no longer names and that nothing
+  is recorded for (see "Animals are never removed" above): add it to the
+  sheet if it is real, or have it removed from the database by hand;
 - a sheet import that failed.
 
 They are shown in two places:
