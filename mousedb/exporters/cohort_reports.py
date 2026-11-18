@@ -31,8 +31,16 @@ from ..stats import (
 # from the snapshot) passes its decision in, so one refresh never mixes two.
 def _running_cohorts_in_db(session, cohort_ids) -> set:
     """The cohorts among ``cohort_ids`` that are still running, decided from
-    the database's reach rows (subject and video name; the video name carries
-    the session date)."""
+    the database's reach rows.
+
+    Only each subject's LAST reach date is read (MAX(session_date) per
+    subject, answered from the subject/date index), not every reach row: the
+    unified export covers every cohort, and the rule needs nothing but the
+    latest session. A reach row's session_date is the date at the front of its
+    video name (import_reaches.parse_video_metadata), so handing it to
+    running_cohorts in that same YYYYMMDD form is the same decision the
+    nightly files make from the video names."""
+    from sqlalchemy import func
     from ..schema import ReachData
     from .odc_reaches import running_cohorts
     ids = sorted({str(c) for c in cohort_ids if c})
@@ -42,10 +50,12 @@ def _running_cohorts_in_db(session, cohort_ids) -> set:
                    .filter(Subject.cohort_id.in_(ids)).all()]
     rows = []
     for i in range(0, len(subject_ids), 500):
-        rows += (session.query(ReachData.subject_id, ReachData.video_name)
+        rows += (session.query(ReachData.subject_id, func.max(ReachData.session_date))
                  .filter(ReachData.subject_id.in_(subject_ids[i:i + 500]))
-                 .distinct().all())
-    reach = pd.DataFrame([tuple(r) for r in rows], columns=["subject_id", "video_name"])
+                 .group_by(ReachData.subject_id).all())
+    reach = pd.DataFrame(
+        [(sid, str(last or "").replace("-", "")[:8] + "_") for sid, last in rows],
+        columns=["subject_id", "video_name"])
     return set(running_cohorts(reach, cohorts=ids))
 
 
