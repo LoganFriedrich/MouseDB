@@ -150,6 +150,26 @@ checked-in code, not what's planned.
   shows; no export reads them).
 
 ### Fixed
+- Brain import: a counts file with a region whose acronym mousedb's acronym
+  lookup does not know is refused (stored counts kept, `[FAIL]`, exit 1)
+  when it would change what the database holds. Such a region used to be
+  skipped with a warning, and because the import replaces a brain's counts
+  when its file changes, its stored cells were deleted while the eLife groups
+  still counted them, and the job exited 0. When the database already holds
+  exactly the file's other rows it stays a `[!]` warning.
+- Calibration runs: a stored run is updated only from columns the tracker's
+  file actually has, and a `calibration_runs.csv` without a `status`, a
+  `marked_best` (or `is_best`) or a `brain` (or `brain_id`) column is refused
+  whole. A file missing those columns (an older tracker, a hand edit) used to
+  turn every stored best run into "not best" and every status into "unknown"
+  in one night.
+- `mousedb import-brains --all` reports every brain with final counts in the
+  database and no counts file in MouseBrain's summary folder (renamed or
+  withdrawn in MouseBrain) -- in its output, in
+  `logs/brain_counts_without_file.json` and on the Where Is My Data tab. Such
+  counts used to stay in the database and every brain export unnoticed (a
+  renamed brain twice). Report only: nothing is removed and the exit code is
+  unchanged.
 - Sheet import: an animal the database holds, that its cohort's sheet no
   longer names and that nothing is recorded for (an id typed into the sheet,
   imported, then taken out again) is named in a warning, on the cohort's
