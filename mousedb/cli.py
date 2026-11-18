@@ -1030,6 +1030,13 @@ def cmd_missing_videos(args):
     raise SystemExit(main(args.rest))
 
 
+def cmd_sheet_progress(args):
+    """How far along the videos are, counted against the tracking sheets
+    (read only; mousedb.session_states)."""
+    from .session_states import main
+    raise SystemExit(main(args.rest))
+
+
 def cmd_recording_issues(args):
     """List the sessions whose recording failed (from the last pipeline
     census) and, with --import, bring the database's record of them up to
@@ -1936,6 +1943,14 @@ def main():
              '(--help for its options: --write, --acknowledge, --grace-days, --cohort)')
     mv_parser.add_argument('rest', nargs=argparse.REMAINDER)
     mv_parser.set_defaults(func=cmd_missing_videos)
+
+    # mousedb sheet-progress
+    sp_parser = subparsers.add_parser('sheet-progress', add_help=False,
+        help='How far along the videos are, counted against the tracking sheets: filed, '
+             'in processing, held for review, recording failed, not on the server yet '
+             '(read only; --help for --list, --json, --cohort)')
+    sp_parser.add_argument('rest', nargs=argparse.REMAINDER)
+    sp_parser.set_defaults(func=cmd_sheet_progress)
 
     # mousedb recording-issues
     ri_parser = subparsers.add_parser('recording-issues',
