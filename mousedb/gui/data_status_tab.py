@@ -41,7 +41,12 @@ only a person can fix, gathered from every tool --
   cannot run (a setting or file to fix);
 * a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
   in the sheet;
-* a sheet import that failed.
+* a sheet import that failed;
+* sessions scored by hand whose video is nowhere in the pipeline (one line
+  per cohort; each recording, with where to look for it, is in the FIX THESE
+  file and in exports/missing_videos/). A gap nobody can close is
+  acknowledged once: mousedb missing-videos --acknowledge ... (see
+  docs/WHERE_IS_MY_DATA.md, "Sessions scored by hand that have no video").
 Each cohort's list is also written beside its sheet, in
 "!! <cohort> - FIX THESE.xlsx" (rewritten after every import, removed when
 nothing is left).
