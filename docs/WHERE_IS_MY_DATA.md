@@ -695,7 +695,11 @@ already writing:
   `mousedb export-odc-reaches` up to 40 minutes (change those two with
   `MOUSEDB_LOCK_WAIT_MINUTES`). `mousedb export-odc-reaches` waits whenever it
   is about to write into the live exports folder -- also when `--out-dir`
-  names that folder; into a folder of your own it does not wait. If the other
+  names that folder; into a folder of your own it does not wait.
+  `mousedb export-example` does the same for its example folder (by default
+  `exports/current/Example`, inside the live folder): it reads and builds
+  first, then waits, holds the lock only for the few seconds it writes, and
+  into a folder of your own (`--out-dir`) it does not wait. If the other
   refresh is still writing when that time is up, or shows no sign of progress
   for 30 minutes (it may be stuck), they stop without changing anything, and
   the files stay those of the last refresh that finished. The nightly job then

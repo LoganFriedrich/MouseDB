@@ -1555,9 +1555,21 @@ def cmd_export_example(args):
     building it is look at some rows.
     """
     from .exporters import example_export as ex
+    from .exporters.current import (EXIT_LOCK_FOLDER, EXIT_LOCK_TIMEOUT,
+                                    lock_folder_message, lock_timeout_message)
+    from .task_mutex import LockFolderNotWritable, LockWaitTimeout
 
-    result = ex.build(cohort=args.cohort, target_rows=args.rows,
-                      out_dir=args.out_dir, use_cache=not args.no_cache)
+    # Inside the live exports folder the writing waits for a running refresh
+    # (example_export.build says why); a wait that runs out writes nothing.
+    try:
+        result = ex.build(cohort=args.cohort, target_rows=args.rows,
+                          out_dir=args.out_dir, use_cache=not args.no_cache)
+    except LockWaitTimeout as e:
+        print(lock_timeout_message(e), flush=True)
+        return EXIT_LOCK_TIMEOUT
+    except LockFolderNotWritable as e:
+        print(lock_folder_message(e), flush=True)
+        return EXIT_LOCK_FOLDER
     if not result["files"]:
         print("%s: %s" % (result["cohort"], result.get("reason", "nothing written")))
         return 1

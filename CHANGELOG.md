@@ -214,6 +214,14 @@ checked-in code, not what's planned.
   Two saves at once used to end with the later one writing back what it had
   read, losing the other's change, and every writer shared one fixed
   `<file>.tmp` name.
+- `mousedb export-example` writes into the live exports folder
+  (`exports/current/Example`, its default) only while holding the
+  current-exports lock, like every other writer of that folder: it waits for
+  a running refresh (nightly job, Where Is My Data button, export command) to
+  finish and keeps the next one out for the few seconds it writes. A wait
+  that runs out writes nothing and exits 4 (5 when the lock folder cannot be
+  written), with the same message as `mousedb export-odc-reaches`. A folder
+  given with `--out-dir` outside the live exports takes no lock.
 - Analysis exclusions: a MouseReach pipeline folder that is set but cannot be
   reached (share dropped, folder moved) now stops the checks, like a sheet
   folder that is set but gone. Before, every watcher database in it read as

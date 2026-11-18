@@ -124,9 +124,32 @@ def _sample_sessions(reach: pd.DataFrame, target_rows: int) -> pd.DataFrame:
     return reach[reach["video_name"].isin(chosen)]
 
 
+def _inside_live_exports(folder: Path) -> bool:
+    """True when ``folder`` is inside (or is) the live current-exports folder,
+    however it was spelled -- decided by where the files go, not by whether a
+    folder was typed (the same rule as ``mousedb export-odc-reaches``)."""
+    folder = Path(folder)
+    return any(odc_reaches._is_live_exports_folder(p) for p in (folder, *folder.parents))
+
+
 def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
-          out_dir: Optional[Path] = None, use_cache: bool = True) -> dict:
-    """Write the example folder. Returns what was written and how long it took."""
+          out_dir: Optional[Path] = None, use_cache: bool = True,
+          lock_wait_seconds: Optional[float] = None,
+          lock_dir: Optional[Path] = None) -> dict:
+    """Write the example folder. Returns what was written and how long it took.
+
+    ONE WRITER AT A TIME. The default folder is inside the live
+    current-exports folder, which the nightly job, the Where Is My Data button
+    and the export commands rewrite. Writing into it while one of those runs
+    could leave a half-written file or have this folder rearranged under it,
+    so the writing here holds the same lock they do (exporters.current,
+    EXPORTS_LOCK): it waits for a refresh that is running to finish
+    (``lock_wait_seconds`` None: this process's wait budget; 0: do not wait)
+    and keeps the next one out until the example is written. A wait that runs
+    out raises task_mutex.LockWaitTimeout and nothing is written. Reading and
+    building happen before the lock is taken, so a refresh is held up only for
+    the few seconds of writing. A folder outside the live exports takes no
+    lock: nothing else writes there."""
     started = time.time()
     cohort = cohort.upper()
     out_dir = Path(out_dir) if out_dir else (
@@ -170,6 +193,26 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
     sessions, session_rows = asess.build(reaches, reach_rows)
     built = time.time()
 
+    lock = None
+    if _inside_live_exports(out_dir):
+        from .current import hold_exports_lock
+        lock = hold_exports_lock(lock_wait_seconds, lock_dir)
+    try:
+        written = _write(out_dir, cohort, reaches, reach_rows, sessions, session_rows)
+    finally:
+        if lock is not None:
+            lock.release()
+
+    return {"cohort": cohort, "out_dir": str(out_dir), "files": written,
+            "sessions_sampled": int(reach["video_name"].nunique()),
+            "seconds": {"load": round(loaded - started, 1),
+                        "build": round(built - loaded, 1),
+                        "write": round(time.time() - built, 1),
+                        "total": round(time.time() - started, 1)}}
+
+
+def _write(out_dir: Path, cohort: str, reaches, reach_rows, sessions, session_rows) -> list:
+    """Write the example's files into ``out_dir``; build() holds the lock."""
     out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     for frame, rows, stem, dictionary in (
@@ -192,13 +235,7 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
                 continue
             written.append({"file": target, "rows": int(len(data)),
                             "columns": int(len(data.columns))})
-
-    return {"cohort": cohort, "out_dir": str(out_dir), "files": written,
-            "sessions_sampled": int(reach["video_name"].nunique()),
-            "seconds": {"load": round(loaded - started, 1),
-                        "build": round(built - loaded, 1),
-                        "write": round(time.time() - built, 1),
-                        "total": round(time.time() - started, 1)}}
+    return written
 
 
 def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None,
