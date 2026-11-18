@@ -452,9 +452,21 @@ def main(argv=None) -> int:
         # scheduled time (see task_mutex, "HOW LONG A JOB WAITS").
         print("  [FAIL] snapshot not refreshed: %s" % waited, flush=True)
         return 1
+    # Outside the database-task lock: a limited export reads only the export
+    # files and the snapshot, and building one can take minutes that the
+    # imports waiting for that lock should not spend waiting.
+    rc = _after_exports(rc)
     if not args.skip_census:
         retake_census()
     return rc
+
+
+def _after_exports(rc: int) -> int:
+    """This job's exit code once the saved limited exports have been remade --
+    only when the full export just written is complete (``rc`` 0)."""
+    if rc != 0:
+        return rc
+    return _remake_limited_exports()
 
 
 def retake_census() -> bool:
@@ -536,6 +548,44 @@ def _finish(counts: dict, force: bool) -> int:
     if not m["complete"]:
         print("  [FAIL] current exports are incomplete (MANIFEST.json says complete=False; "
               "the problems are listed above and in the manifest)", flush=True)
+        return 1
+    return 0
+
+
+def _remake_limited_exports() -> int:
+    """Remake every saved limited export (exporters.subsets) from the exports
+    just written. Returns 1 when one could not be made, else 0.
+
+    WHY here, nightly: a limited export is a filtered copy of the full export,
+    and a copy that is not remade goes stale the first night anything it holds
+    changes (a video leaves review, a sheet row is corrected) -- while still
+    looking current to whoever opens it. Remade right after the full export,
+    it is never older than the full export it was cut from.
+
+    WHY only when the full export is complete (_after_exports): a slice cut
+    from a partial export would be partial too.
+
+    WHY "if changed": each remake moves the previous slice into the archive
+    (never deleted), so remaking an unchanged slice every night would fill the
+    archive with identical copies. A slice whose files would come out byte for
+    byte the same is kept as it is (subsets.make, if_changed). A definition can
+    opt out with "nightly": false.
+
+    Runs after the database-task lock and the exports lock are both released
+    (main); each slice takes the exports lock again while it reads. A slice
+    that fails prints [FAIL], is recorded in exports/subsets/SUBSETS_STATUS.json
+    (shown on the Where Is My Data tab), and fails the job, because a slice
+    someone relies on has not been updated. The pipeline census is still
+    retaken after it."""
+    try:
+        from mousedb.exporters import subsets
+        failed = subsets.make_saved(nightly_only=True, if_changed=True,
+                                    log=lambda m: print(m, flush=True))
+    except Exception as e:
+        print("  [FAIL] limited exports not remade: %s: %s" % (type(e).__name__, e), flush=True)
+        return 1
+    if failed:
+        print("  [FAIL] %d limited export(s) could not be remade (see above)" % failed, flush=True)
         return 1
     return 0
 

@@ -310,6 +310,216 @@ always comes back the next night -- and the first night after new mousedb code
 is installed rewrites every one of them, which takes hours. `MANIFEST.json` says when the files were kept
 (`odc_reaches_skipped`).
 
+## Limited exports: just part of the data
+
+Often you need only part of the exports: a few cohorts, the last sessions
+before the injury, the pillar trays, a handful of columns, and a column saying
+which animals go into one analysis. A **limited export** is exactly that: a
+copy of part of `exports/current/`, made by mousedb, saved by name so it can be
+made again.
+
+**Nothing is calculated again.** Every value in a limited export is copied,
+unchanged, from the full export it was cut from. Only rows and columns are left
+out. So it can never disagree with the full export, and a correction that
+reaches the full export reaches the limited export the next time it is made.
+
+### Making one (no terminal)
+
+1. Open the MouseDB window, tab **11. Where Is My Data**, and press **Make a
+   limited export...**. A window opens.
+2. At the top, pick a saved limited export from the list to change or remake
+   it, or leave it on "(a new limited export)" and type a **Name** (letters,
+   digits, `-` and `_`; it becomes the folder name).
+3. **Cohorts**: tick the cohorts you want. The list is the cohorts the current
+   exports hold.
+4. **Tray types**: tick Pillar, Easy and/or Flat. None ticked = every tray.
+5. **Sessions**, one of:
+   - **All sessions**;
+   - **The last N [tray type] sessions before the cohort's first injury** --
+     see "Which sessions 'the last N before the injury' picks" below;
+   - **From** a date **to** a date (either may be left empty).
+6. **Kinds of file**: tick the files you want (the same kinds as the full
+   export: per-reach complete record, per-reach shareable, per-reach analysis,
+   per-session analysis, per-day ODC sessions). All are ticked to start with.
+7. **Columns**: pick a kind under "Columns of", then untick the columns you do
+   not want. All ticked means every column of that kind. Each kind keeps its
+   own choice. Only columns the full export has are listed.
+8. **Yes/no column per animal** (optional): type a column name to add a column
+   holding "yes" or "no" for each animal. Choose a rule to fill it, or leave
+   it on "(none -- leave it blank)" to fill it in later (see "The yes/no
+   column" below).
+9. **Remake nightly** (ticked to start with): make it again after the nightly
+   export, whenever anything it holds has changed.
+10. Press **Save and make now**. It is saved for everyone (in the lab settings
+    file), then made; the box at the bottom says what was written, with the
+    row count of every file. A large set of cohorts takes a few minutes.
+    **Check only (writes nothing)** counts the rows of what the window shows
+    now without writing any file -- it does not save the definition either.
+    **Open its folder** opens the result.
+
+If something is wrong (a cohort with no injury date, a column the full export
+does not have, the exports being rewritten right now) a box says so and
+**nothing is written**.
+
+From a terminal, the same thing (MouseDB environment active):
+
+```
+mousedb export-subset <name> --save --run --cohorts PROJA_01 PROJA_02 --tray-types Pillar --last-sessions 3
+mousedb export-subset <name> --run          # remake a saved one
+mousedb export-subset <name> --dry-run      # check and count; write nothing
+mousedb export-subset --list                # every saved one, and how its last attempt went
+mousedb export-subset <name> --remove       # forget the definition; files already made stay
+```
+
+Other options: `--project PROJA` (every cohort of a project), `--from` /
+`--to` (a date window), `--kinds`, `--columns KIND=col1,col2`,
+`--flag-column`, `--flag-rule`, `--not-nightly`. `mousedb export-subset --help`
+lists them all.
+
+### What you get
+
+`<mousedb_root>/exports/subsets/<name>/`:
+
+| file | what it is |
+|---|---|
+| `ODC_reaches_<name>.csv`, `reaches_<name>_summary.csv`, `reaches_<name>_analysis.csv`, `sessions_<name>_analysis.csv`, `ODC_sessions_<name>.csv` | the kinds you chose. Every chosen cohort is in the one file, cohort after cohort, rows in the same order as in the full export. In the analysis files, `entry_index` is counted again from 1 over the rows of this file |
+| `<kind>_DATA_DICTIONARY.csv` | the full export's dictionary of that kind, with only the columns you kept (in the same order as the file), plus the yes/no column if you asked for one |
+| `analysis_EXCLUSIONS.csv` | the entries the full export leaves out for a known problem, only those of your cohorts and sessions. One that covers a whole cohort (no video named) is kept for that cohort |
+| `SUBSET_MANIFEST.json` | the definition, the full export it was cut from (`source_exports_written_at`) and that export's snapshot (`source_snapshot_generation`), when it was written, the rows of each file and of each cohort in it, which sessions were chosen for each animal, and any problems |
+| `README.txt` | the same, in plain words |
+
+A column one of your cohorts does not have (for example a surgery column only
+some cohorts' sheets record) is filled for that cohort with the file's word
+for absent: `Not recorded` in the ODC and summary files, `NA` in the analysis
+files. `SUBSET_MANIFEST.json` lists which cohorts and columns, under
+`columns_filled_for_cohorts_without_them`.
+
+**Making it again never deletes anything.** The previous files are moved to
+`<mousedb_root>/_archived/exports_subsets/<name>/<date_time>/` first, then the
+new files are put in place.
+
+### Which sessions "the last N before the injury" picks
+
+The tracking sheet decides when things happened. For each animal:
+
+1. take the dates on which the sheet records hand scores for a tray of the
+   chosen type (for example Pillar);
+2. keep the dates strictly before the cohort's **first injury**: the earliest
+   contusion date of any animal of that cohort, from the sheet's injury tab
+   (so an animal injured a day later than its cage mates still uses the
+   cohort's first date);
+3. keep the last N of those dates.
+
+Then every row of those animal-days is kept -- of the tray types you ticked
+(tick the same tray type to get only those trays). An animal with fewer than N
+such dates keeps the ones it has; `SUBSET_MANIFEST.json` lists it under
+`animals_with_fewer_sessions`. A cohort whose sheet has no injury date yet has
+no such sessions, so its animals have no rows; the manifest lists it under
+`cohorts_without_injury_date`, and README.txt says so.
+
+A chosen session can still have no rows in a file: the sheet has the day, but
+the full export does not (no recording of it was found, its video is still in
+review, or the animal did not reach). Each file's entry in
+`SUBSET_MANIFEST.json` lists those animal-days under
+`chosen_sessions_with_no_rows`, and README.txt gives their number, so a slice
+short of sessions is not mistaken for a complete one.
+
+The sessions are read from the same snapshot the full export was made from.
+Between the two steps of the nightly job (the snapshot is new, the full export
+not rewritten yet) a limited export is refused with "the sessions would be
+chosen from a different night's records than the files" -- try again once the
+full export has been rewritten.
+
+### Which rows a filter keeps, file by file
+
+- Per-reach and per-session files: a row is kept when its animal, date and tray
+  type pass. The animal is read from the row's video name, so a cohort shown
+  with letter ids (`D01`) is matched the same way as any other.
+- `ODC_sessions` (one row per animal per day, up to four trays across the row):
+  the day is kept when it is in the session window and ANY of its trays is of a
+  ticked type. The row is copied whole, so it can still show a tray of another
+  type that day.
+
+### The yes/no column
+
+It holds, for each animal, `yes` or `no`, the same on every row of that
+animal. Its entry in the data dictionary says how it was filled. With no rule
+chosen it is left blank (written as the file's word for absent, because an
+ODC file may not hold an empty cell) -- the column to fill once the rule is
+decided.
+
+A rule is defined once in the lab settings file, under
+`export_subset_flag_rules`, and then picked by name. Two kinds exist:
+
+```
+"export_subset_flag_rules": {
+  "<rule name>": {"type": "listed", "animals": ["PROJA_01_03", "PROJA_02_11"]},
+  "<rule name>": {"type": "share_at_least", "kind": "sessions_analysis",
+                  "numerator": "manual_retrieved", "denominator": "pellets_hand_scored",
+                  "percent": 30}
+}
+```
+
+`listed`: yes for the animals named (the pipeline's ids, `PROJECT_CC_SS`), no
+for every other. `share_at_least`: yes when the animal's total of one column
+divided by its total of another, over the rows of the limited export (its
+cohorts, sessions and trays) of that kind of file, is at least the percent; no
+when below; blank for an animal with no such rows. A rule only reads the slice;
+it never changes a value in it.
+
+### When it is made again by itself
+
+Each night, after the full export has been rewritten **completely** (and
+after the job has let go of the database, so imports never wait for it),
+every saved limited export with "Remake nightly" ticked is checked:
+
+- if nothing it is cut from changed -- its source files, the dictionaries, the
+  exclusions, the sheet's sessions and injury dates, its definition, its rule,
+  mousedb's own code -- it is left as it is;
+- otherwise it is built again. If every file comes out byte for byte the same
+  as the one already there (the full export rewrites many of its files each
+  night with the same content), the files already there are kept;
+- only when a file comes out different are the previous files moved to the
+  archive and the new ones put in place.
+
+WHY: a limited export that is not remade goes stale the first night something
+it holds changes -- a video leaves review, a sheet row is corrected -- while
+still looking current. Putting new files in place only when they differ keeps
+the archive from filling with identical copies. A night the full export is
+incomplete, nothing is remade: a slice of a partial export would be partial
+too. A remake you start yourself (the button or `--run`) always writes the
+files.
+
+The Where Is My Data tab shows one line per saved limited export below the
+export files: when it was last made, or `[FAIL] <name>: ...` with the reason
+(for example a column that the full export no longer has). A limited export
+that cannot be made also makes the nightly job report a failure. The record
+behind those lines is `exports/subsets/SUBSETS_STATUS.json`.
+
+### Where the definitions are kept
+
+In the lab settings file, `<mousedb_root>/config/mousedb_lab_config.json` (or
+the file named by `MOUSEDB_LAB_CONFIG`), under `export_subsets` -- one file
+for every computer and every login, beside the database. Never in mousedb's
+code. A definition looks like this:
+
+```
+"export_subsets": {
+  "<name>": {
+    "cohorts": ["PROJA_01", "PROJA_02"],
+    "tray_types": ["P"],
+    "window": {"type": "last_before_injury", "n": 3, "tray_type": "P"},
+    "kinds": ["ODC_reaches", "reaches_summary", "reaches_analysis", "sessions_analysis", "ODC_sessions"],
+    "columns": {"ODC_reaches": ["subject_id", "video_name", "start_frame", "end_frame"]},
+    "flag": {"column": "<column name>", "rule": null},
+    "nightly": true
+  }
+}
+```
+
+A column named here that the full export does not have is refused by name
+when the limited export is made -- never silently left out.
+
 ## The longer answer: the "Where Is My Data" tab
 
 Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
@@ -327,7 +537,8 @@ Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
 | Reaches | rows the cohort contributes to `reach_data.csv` |
 
 Below the table: the export folder, when it was last written, whether it is
-complete for an ODC upload, the row count of each file, and any problems.
+complete for an ODC upload, the row count of each file, one line per saved
+limited export (when it was last made, or `[FAIL]` and why), and any problems.
 
 Buttons: **Refresh** re-reads everything. **Open exports folder** opens the
 folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`,
@@ -336,7 +547,9 @@ each project's combined files of those kinds, immediately from the latest
 snapshot. It takes as long as the scheduled run's reach part: hours for the
 whole lab. The per-cohort ODC session files, and their combined file, refresh
 only on the scheduled run, which is the only time the database may be read
-safely.
+safely. **Make a limited export...** opens the window described in
+"Limited exports: just part of the data" above; the tab re-reads itself when
+that window is closed.
 
 **One job of the tab at a time.** Refresh, Update the database now, Refresh
 pipeline view and Refresh exports now each run in the background while the
