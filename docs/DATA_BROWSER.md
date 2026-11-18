@@ -129,7 +129,7 @@ want it; it refuses anything that is not a question.)
 
 ## Not here, on purpose
 
-- The per-reach **extended features** (about 165 extra measurements per reach)
+- The per-reach **extended features** (about 174 extra measurements per reach)
   are stored in the database as one block of text per reach, which cannot be
   sorted or filtered. They are in the exported reach files, one column each.
 - The data browser has no "download the whole database" link. The files to keep

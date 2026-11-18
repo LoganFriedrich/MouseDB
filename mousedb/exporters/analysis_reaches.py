@@ -89,8 +89,15 @@ IDENTITY: List[Tuple[str, str]] = [
 # Session totals, repeated on every row of that session. Both scoring streams are
 # carried: the algorithm's and the hand scores'. They disagree sometimes, and
 # which is right is the reader's question, not ours to settle by dropping one.
+#
+# The per-video reach count is not taken from here: the sessions exporter counts
+# it from these very rows as reaches_in_video and it is carried back onto every
+# row (_carry_session_totals). It was also published as total_swipes_ai until
+# 2026-11-17 -- the same number twice, one of them under an earlier program's
+# per-DAY name. The per-day count is day_total_reaches.
 SESSION_TOTALS: List[Tuple[str, str]] = [
-    ("Total_Swipes_AI", "total_swipes_ai"),
+    ("Day_Total_Reaches_AI", "day_total_reaches"),
+    ("Day_Total_Reaches_Complete", "day_total_reaches_complete"),
     ("Attention_AI", "attention_ai"),
     ("Video_Pellets", "pellets_in_video"),
     ("Video_Displaced", "video_displaced"),
@@ -117,7 +124,10 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
 # the two documents cannot drift apart about what is carried or what it is
 # called. Only the per-reach measurements are taken: the frame numbers and
 # durations this document already has under its own names are skipped.
-FLAT_ALREADY_HERE = {"duration_frames"}
+# duration_frames was skipped here while swipe_duration_frames carried it; since
+# swipe_duration_frames holds the earlier definition (see NAMED_KINEMATICS), the
+# reach detector's own duration comes back under its own name.
+FLAT_ALREADY_HERE: set = set()
 
 
 def flat_kinematics() -> List[Tuple[str, str]]:
@@ -219,14 +229,49 @@ REACH_CONTEXT: List[Tuple[str, str]] = [
     ("pellet_position_idealness", "pellet_position_idealness"),
 ]
 
+# THE EARLIER PROGRAM'S NAMES HOLD THE EARLIER PROGRAM'S DEFINITIONS.
+#
+# swipe_length, swipe_breadth, swipe_area, swipe_speed, path_length,
+# swipe_duration_frames and path_over_frames are what an earlier reach program
+# called its per-swipe measures. The kinematics extractor (2.6.0 and later)
+# reproduces those measures, frame rule and formulas, as legacy_swipe_*; the
+# names here take those values, so an analysis written against the earlier
+# program's files is continued with the same quantities in the same units.
+#
+# Until 2026-11-17 these names held the pipeline's OWN measures instead
+# (extension past the nose in mm, lateral deviation, swept area, peak speed per
+# frame, anchored path length, reach duration): different quantities, in
+# different units, under a name that said otherwise. Those now keep the
+# extractor's own names (FORMERLY_NAMED below says which was which, and the
+# dictionary repeats it on both columns).
+#
+# A reach whose features were written before extractor 2.6.0 has no legacy
+# value, so these cells are NA there. They are NEVER filled from the pipeline's
+# own measure: that would put two definitions in one column without saying so.
+# The columns are written even when no row has a legacy value yet, so a script
+# reading them by name finds NA rather than a missing column.
 NAMED_KINEMATICS: List[Tuple[str, str]] = [
-    ("ext_righthand_extension_past_nose_mm", "swipe_length"),
-    ("ext_righthand_lateral_deviation_mm", "swipe_breadth"),
-    ("ext_righthand_swept_area_mm2", "swipe_area"),
-    ("ext_righthand_peak_speed_mm_per_frame", "swipe_speed"),
-    ("ext_righthand_total_path_mm", "path_length"),
-    ("duration_frames", "swipe_duration_frames"),
+    ("ext_legacy_swipe_length_px", "swipe_length"),
+    ("ext_legacy_swipe_breadth_px", "swipe_breadth"),
+    ("ext_legacy_swipe_area_px2", "swipe_area"),
+    ("ext_legacy_swipe_speed_px_div4_per_sec", "swipe_speed"),
+    ("ext_legacy_swipe_path_length_px", "path_length"),
+    ("ext_legacy_swipe_duration_frames", "swipe_duration_frames"),
+    ("ext_legacy_swipe_path_over_frames_px_per_frame", "path_over_frames"),
 ]
+
+# What the swipe_* names held until 2026-11-17, and what those columns are
+# called now: {name now: name it was published under}. Kept so a reader holding
+# an older file can line the two up; each side's dictionary entry says so.
+FORMERLY_NAMED = {
+    "righthand_extension_past_nose_mm": "swipe_length",
+    "righthand_lateral_deviation_mm": "swipe_breadth",
+    "righthand_swept_area_mm2": "swipe_area",
+    "righthand_peak_speed_mm_per_frame": "swipe_speed",
+    "righthand_total_path_mm": "path_length",
+    "duration_frames": "swipe_duration_frames",
+}
+RENAMED_ON = "2026-11-17"
 
 # The columns that ask about a pellet. On an easy or flat tray none of them has
 # an answer (trays.py says why): the words there read "Not applicable" and the
@@ -254,7 +299,45 @@ TEXT_COLUMNS = {
     "anchor_start_in_neighbour_reach", "anchor_end_in_neighbour_reach",
     # The name of a paw point, so the same applies: as a number it is NA on every row.
     "paw_leading_point",
+    # yes / no: is the day's reach total complete.
+    "day_total_reaches_complete",
 }
+
+
+DAY_TOTAL_COLUMNS = ("day_total_reaches", "day_total_reaches_complete")
+DAY_TOTAL_EXCLUSION_NOTE = (
+    "In this file there is a third reason a day reads no and its total is NA: a "
+    "tray of that day was left out of this file as a known problem (listed in "
+    "analysis_EXCLUSIONS.csv), so the total would otherwise count reaches this "
+    "file does not hold.")
+
+
+def void_day_totals_after_exclusion(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
+    """Empty the day total wherever the exclusion pass left out a tray of that day.
+
+    The analysis documents leave out entries known to be wrong (export_exclusions).
+    day_total_reaches is counted over every filed tray of the animal's day, so a
+    day that lost a tray to an exclusion would still count that tray's reaches --
+    the doubtful reaches would be back in through the total. So on the rows that
+    remain, that day reads incomplete and its total NA, exactly as for a day with
+    a tray not filed.
+    """
+    need = {"subject_id", "test_date", "video_name", "day_total_reaches"}
+    if after.empty or not need <= set(before.columns) or not need <= set(after.columns):
+        return after
+    key = ["subject_id", "test_date"]
+    had = before.groupby(key)["video_name"].nunique()
+    kept = after.groupby(key)["video_name"].nunique()
+    lost = {k for k, n in kept.items() if had.get(k, n) > n}
+    if not lost:
+        return after
+    out = after.copy()
+    hit = pd.Series([k in lost for k in zip(out["subject_id"], out["test_date"])],
+                    index=out.index)
+    out.loc[hit, "day_total_reaches"] = MISSING
+    if "day_total_reaches_complete" in out.columns:
+        out.loc[hit, "day_total_reaches_complete"] = "no"
+    return out
 
 
 
@@ -424,6 +507,13 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     present = [(src, name) for src, name in pairs if src in full.columns]
 
     data: Dict[str, pd.Series] = {name: full[src] for src, name in present}
+    # The earlier definition's columns exist whether or not any row has a
+    # value yet (rows from before extractor 2.6.0 have none): NA, never a
+    # stand-in from another measure.
+    for src, name in NAMED_KINEMATICS:
+        if src not in full.columns:
+            data[name] = pd.Series([None] * len(full), index=full.index, dtype="object")
+            present.append((src, name))
 
     # The committed answer for this reach, in the same words the shareable table
     # uses, so two documents can never disagree about an outcome.
@@ -632,6 +722,8 @@ def _dictionary_rows(present: List[Tuple[str, str]], order: List[str]) -> List[d
                 if name not in TEXT_COLUMNS
                 else "Absent values are written as NA.")
         pair = _unit_partner(name, order)
+        if name in DAY_TOTAL_COLUMNS:
+            pair = (pair + " " + DAY_TOTAL_EXCLUSION_NOTE).strip()
         # A reader comparing this file with another of ours needs to know the
         # numbers were rounded, and to what -- otherwise a difference in the
         # seventh digit looks like a difference in the data.
@@ -676,26 +768,21 @@ def _session_totals():
     return analysis_sessions._DERIVED
 
 
-# The five measurements this document renames to the names the analysis
-# collaborator's own file used. A reader of the file sees, for instance,
-# righthand_extension_past_nose_px with no millimetre partner beside it, and
-# cannot tell that the millimetre version is the column called swipe_length --
-# the two descriptions are identical and neither mentions the other. So each
-# half is told about the other half, by name.
+# The measurements this document carries under the earlier program's names
+# (swipe_length and the rest): {name here: the extractor's own name}.
 _RENAMED_FROM = {new_name: src[len(extended.PREFIX):]
                  for src, new_name in NAMED_KINEMATICS
                  if src.startswith(extended.PREFIX)}
-_UNIT_SUFFIXES = [("_mm2", "_px2"), ("_mm_per_frame", "_px_per_frame"),
-                  ("_mm", "_px")]
 
 
 def _unit_partner(name: str, columns) -> str:
     """A sentence naming what this column is called elsewhere, when that differs.
 
-    Two reasons a name differs, and a reader needs both: the five measurements
-    renamed to the analysis collaborator's own words (swipe_length and the rest),
-    and the word changed because the extractor's was misleading (visibility ->
-    confidence).
+    Three reasons a name differs, and a reader needs all of them: the earlier
+    program's measures carried under that program's names (swipe_length and the
+    rest), the pipeline's own measures that were published under those names
+    until 2026-11-17, and the word changed because the extractor's was
+    misleading (visibility -> confidence).
     """
     present = set(columns)
     for ours, theirs in RENAMED_WORDS.items():
@@ -710,24 +797,19 @@ def _unit_partner(name: str, columns) -> str:
                     "the paw could be seen." % extractor)
     original = _RENAMED_FROM.get(name)
     if original:
-        for mm, px in _UNIT_SUFFIXES:
-            if original.endswith(mm):
-                other = original[: -len(mm)] + px
-                if other in present:
-                    # The name carries its own unit (_mm / _mm2 /
-                    # _mm_per_frame), so the sentence does not restate it and
-                    # cannot restate it wrongly.
-                    return ("This is the measurement the kinematics extractor "
-                            "calls %s; the same measurement in pixels is the "
-                            "column %s." % (original, other))
-        return "Named %s by the kinematics extractor." % original
-    for mm, px in _UNIT_SUFFIXES:
-        if name.endswith(px):
-            stem = name[: -len(px)] + mm
-            for renamed, source in _RENAMED_FROM.items():
-                if source == stem:
-                    return ("The same measurement in millimetres is carried in "
-                            "this file under the name %s, which is what the "
-                            "analysis collaborator's own file called it."
-                            % renamed)
+        held = {old: now for now, old in FORMERLY_NAMED.items()}.get(name)
+        text = ("Named %s by the kinematics extractor (2.6.0 and later): the "
+                "earlier swipe-measure definition, under the name the earlier "
+                "program gave it." % original)
+        if held:
+            text += (" Until %s this column held a different measurement, the "
+                     "pipeline's own %s, which is now the column %s; a file "
+                     "written before then holds that measurement here."
+                     % (RENAMED_ON, held, held))
+        return text
+    former = FORMERLY_NAMED.get(name)
+    if former:
+        return ("This column was formerly named %s in this document (until %s); "
+                "that name now holds the earlier swipe-measure definition, which "
+                "is a different measurement." % (former, RENAMED_ON))
     return ""

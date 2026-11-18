@@ -200,7 +200,11 @@ def extra_kinematics(columns: Iterable[str]) -> List[Tuple[str, str]]:
 
 
 SESSION_TOTALS: List[Tuple[str, str]] = [
-    ("Total_Swipes_AI", "reaches_in_session"),
+    # The per-video count was named reaches_in_session until 2026-11-17; a
+    # session here is one tray's video, which the name did not say.
+    ("Video_Reaches_AI", "reaches_in_video"),
+    ("Day_Total_Reaches_AI", "day_total_reaches"),
+    ("Day_Total_Reaches_Complete", "day_total_reaches_complete"),
     ("Video_Pellets", "pellets_in_video"),
     ("Video_Retrieved", "pellets_retrieved_in_session"),
     ("Video_Displaced", "pellets_displaced_in_session"),
@@ -231,6 +235,9 @@ REASONS: Dict[str, str] = {
     "pellets_retrieved_hand_scored": missing.NOT_RECORDED,
     "pellets_hand_scored": missing.NOT_RECORDED,
     "pellets_in_video": missing.NOT_RECORDED,          # no per-pellet rows yet (e.g. out for review)
+    # A tray of the day is not filed (or the day has no hand scores), so the
+    # day's count cannot be committed to yet.
+    "day_total_reaches": missing.UNDETERMINED,
     "pellets_displaced_hand_scored": missing.NOT_RECORDED,
     "pellets_moved_hand_scored": missing.NOT_RECORDED,
     "head_width_at_apex_mm": missing.NOT_RECORDED,
@@ -319,6 +326,13 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     return out, _dictionary_rows(present, reasons)
 
 
+# Names this table used before, so a reader holding an older file can line the
+# columns up: {name now: name it had, the date it changed}.
+FORMERLY_NAMED: Dict[str, Tuple[str, str]] = {
+    "reaches_in_video": ("reaches_in_session", "2026-11-17"),
+}
+
+
 def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) -> List[dict]:
     # The extended measurements' own dictionary rows are included, keyed by their
     # ext_ names. Without them every extended column would fall through to the
@@ -337,6 +351,9 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
         note = missing.dictionary_comment(reasons, name)
         if name in PELLET_QUESTIONS:
             note = (note + " " + EASY_FLAT_NOTE).strip()
+        if name in FORMERLY_NAMED:
+            note = ("In this table formerly named %s (until %s); same values. %s"
+                    % (FORMERLY_NAMED[name] + (note,))).strip()
         if base:
             row = dict(base)
             row["VariableName"] = name

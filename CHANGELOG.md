@@ -55,6 +55,44 @@ checked-in code, not what's planned.
   optional extra `pip install -e ".[browse]"`. Guide: docs/DATA_BROWSER.md.
 
 ### Changed
+- Data dictionaries: the nine `legacy_swipe_*` values the kinematics
+  extractor writes from version 2.6.0 (an earlier program's swipe measures,
+  carried for continuity) each have a written definition and their real unit.
+  Before, all nine read "No written definition yet", and
+  `ext_legacy_swipe_speed_px_div4_per_sec` was described as seconds; its unit
+  is "(pixels / 4) per second". The `extended_features` entry counts 174
+  values (165 on rows from an extractor before 2.6.0, 161 before 2.3.0).
+- **Analysis table (`reaches_<cohort>_analysis.csv`): the swipe names now hold
+  the earlier program's swipe measures.** `swipe_length`, `swipe_breadth`,
+  `swipe_area`, `swipe_speed`, `path_length` and `swipe_duration_frames` are
+  that program's names, but held the pipeline's own measures, which are
+  different quantities in different units. They now hold the extractor's
+  `legacy_swipe_*` values (pixels; speed in (pixels / 4) per second), and
+  `path_over_frames` is added beside them. The pipeline's own measures keep
+  the extractor's names. To read an older file: `swipe_length` was
+  `righthand_extension_past_nose_mm`, `swipe_breadth` was
+  `righthand_lateral_deviation_mm`, `swipe_area` was
+  `righthand_swept_area_mm2`, `swipe_speed` was
+  `righthand_peak_speed_mm_per_frame`, `path_length` was
+  `righthand_total_path_mm`, `swipe_duration_frames` was `duration_frames`
+  (each dictionary entry says so too). A reach filed before extractor 2.6.0
+  reads NA in the swipe columns, never the pipeline's measure; the columns
+  are written even when no row has a value yet.
+- **Reach counts per video and per testing day, each named for what it
+  counts.** The per-video count `Total_Swipes_AI` (complete record) is renamed
+  `Video_Reaches_AI`, same values: an earlier program's Total Swipes counted
+  one animal's reaches over a whole testing day, every tray, not one video.
+  In the shareable table `reaches_in_session` is renamed `reaches_in_video`,
+  same values; in the analysis tables `reaches_in_session` is renamed
+  `reaches_in_video` and the duplicate `total_swipes_ai` is removed (it held
+  the same number). New in all three: `Day_Total_Reaches_AI` /
+  `day_total_reaches`, the animal's reaches on that date over every tray of
+  the day, and `Day_Total_Reaches_Complete` / `day_total_reaches_complete`,
+  yes when every tray the hand-score sheet records for that animal and date
+  is filed. When it is no, the total is left empty (`Undetermined`, or NA in
+  the analysis tables) rather than reporting a partial count; a day with no
+  hand scores reads no. In the analysis tables a day whose tray was left out
+  as a known problem also reads no.
 - **The sheet wins.** The tracking-sheet import no longer only adds: for the
   rows earlier imports of a cohort's sheet wrote (pellet scores, weights, ramp
   days, surgeries) it corrects a value the sheet now gives differently and

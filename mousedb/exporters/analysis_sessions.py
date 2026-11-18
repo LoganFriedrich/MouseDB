@@ -43,7 +43,7 @@ PER_SESSION: List[str] = [
     "test_type", "test_type_grouped", "experiment_stage", "days_post_injury",
     "injury_type", "injury_level", "study_group", "sex", "strain",
     "survived_all_surgeries", "excluded_in_origin_study", "video_name",
-    "total_swipes_ai", "attention_ai",
+    "day_total_reaches", "day_total_reaches_complete", "attention_ai",
     "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
     "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",
 ]
@@ -107,7 +107,7 @@ def build(reaches: pd.DataFrame,
             if column in group.columns:
                 row[column] = group[column].iloc[0]
 
-        row["reaches_in_session"] = int(len(group))
+        row["reaches_in_video"] = int(len(group))
         # Two different numbers, both kept, each under a name that says what it
         # is. Until 2026-10-16 the second was published as "pellets_presented"
         # and used as the denominator of every percentage, so a session in which
@@ -166,10 +166,14 @@ def build(reaches: pd.DataFrame,
 
 
 _DERIVED = {
-    "reaches_in_session": (
-        "Reaches in this session", "integer",
-        "How many reaches the session contains -- the number of rows this session "
-        "has in the per-reach file."),
+    "reaches_in_video": (
+        "Reaches in this video", "integer",
+        "How many reaches this session's video (one tray) contains -- the number of "
+        "rows it has in the per-reach file. Not the animal's whole testing day: for "
+        "that, day_total_reaches. Formerly named reaches_in_session (until "
+        "2026-11-17; same values), and the same count was also published as "
+        "total_swipes_ai, which is retired: an earlier reach program's Total Swipes "
+        "counted the whole day, not one tray."),
     "pellets_presented": (
         "Pellets presented", "integer",
         "How many pellets the tray held in this session: 20, the tray's capacity. "
