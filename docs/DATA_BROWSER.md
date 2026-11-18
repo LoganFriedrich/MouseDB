@@ -166,7 +166,9 @@ Every problem is reported in a message box saying what to do. The common ones:
 - **Commands:** `mousedb-data-browser` opens it from a terminal;
   `--build-only` makes (or reuses) your copy and prints where it is and when
   each table was taken; `--make-shortcut` puts your own desktop shortcut in place;
-  `--no-browser` opens the window without starting the web browser. (Not to be
+  `--no-browser` opens the window without starting the web browser;
+  `--port N` serves on that port of this computer only (127.0.0.1) instead of
+  any free one. (Not to be
   confused with the older `mousedb browse`, a terminal table printer that reads
   the live database.)
 - **Where the copies live:** `%LOCALAPPDATA%\mousedb\data_browser\<fingerprint>\mousedb.sqlite`
