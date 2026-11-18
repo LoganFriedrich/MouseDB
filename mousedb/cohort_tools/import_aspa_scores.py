@@ -41,12 +41,12 @@ USAGE
     python -m mousedb.cohort_tools.import_aspa_scores --cohort J --apply
 
 Every run (with --apply) is recorded in the sheet-import ledger the
-Tracking Sheets tab reads, keyed by the cohort id (ASPA_10). With --apply each
+Tracking Sheets tab reads, keyed by the cohort id (<cohort>). With --apply each
 cohort is imported under the cross-task database lock (waiting while another
 import holds it), and the run ends with the step every writing import ends
 with: the hand-scores file for the reaching pipeline and each cohort's FIX
 THESE file are rewritten (mousedb.sheet_sync._after_import) -- exactly as
-`mousedb-sheets import --cohort ASPA_10` does.
+`mousedb-sheets import --cohort <cohort>` does.
 """
 from __future__ import annotations
 

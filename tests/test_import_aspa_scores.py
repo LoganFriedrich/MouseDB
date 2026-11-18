@@ -208,7 +208,7 @@ def _command_route(tmp_path, monkeypatch, hand_scores_error=None):
 
     def import_cohort(letter, apply=False):
         events.append(("import", letter, apply, state["locked"]))
-        return {"cohort_id": "ASPA_10", "sheet_name": "J.xlsx", "success": True,
+        return {"cohort_id": "PROJECT_A_01", "sheet_name": "<letter>.xlsx", "success": True,
                 "warnings": [], "imported": {"pellet_scores": 20}, "scores_saved": apply}
 
     def after_import(results, sheets_dir=None, folder_ids=None, full_run=False):
@@ -233,19 +233,19 @@ def test_the_command_waits_for_the_lock_and_rewrites_the_hand_scores(tmp_path, m
     waiting for the cross-task lock, and never rewrote the hand-scores file or
     the FIX THESE files afterwards, so the reaching pipeline went on comparing
     videos with the previous hand scores until the next scheduled import. It
-    now goes the way `mousedb-sheets import --cohort ASPA_10` goes: the import
+    now goes the way `mousedb-sheets import --cohort PROJECT_A_01` goes: the import
     under the lock, then the after-import step once the lock is released."""
     events, code = _command_route(tmp_path, monkeypatch)
 
     assert events == ["lock", ("import", "J", True, True), "unlock",
-                      ("after", ["ASPA_10"], False, False)]
+                      ("after", ["PROJECT_A_01"], False, False)]
     assert code == 0
 
 
 def test_the_command_fails_when_the_hand_scores_were_not_rewritten(tmp_path, monkeypatch):
     events, code = _command_route(tmp_path, monkeypatch, hand_scores_error="OSError: disk full")
 
-    assert ("after", ["ASPA_10"], False, False) in events
+    assert ("after", ["PROJECT_A_01"], False, False) in events
     assert code == 1
 
 
@@ -258,7 +258,7 @@ def test_a_dry_run_of_the_command_takes_no_lock_and_rewrites_nothing(tmp_path, m
     monkeypatch.setattr(cs, "aspa_data_dir", lambda: tmp_path)
     monkeypatch.setattr(cs, "available_aspa_cohorts", lambda: ["J"])
     monkeypatch.setattr(ias, "import_cohort", lambda letter, apply=False: events.append(
-        ("import", apply)) or {"cohort_id": "ASPA_10", "success": True, "warnings": []})
+        ("import", apply)) or {"cohort_id": "PROJECT_A_01", "success": True, "warnings": []})
     monkeypatch.setattr(tm, "hold", lambda *a, **k: events.append("lock"))
     monkeypatch.setattr(ss, "_after_import", lambda *a, **k: events.append("after"))
 
