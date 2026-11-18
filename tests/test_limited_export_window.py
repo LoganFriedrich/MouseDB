@@ -1,0 +1,91 @@
+"""A limited export can be defined, saved and made from the Where Is My Data tab.
+
+WHY: routine lab work never needs a terminal. The window must save the same
+definition the command takes, offer only cohorts and columns the full export
+has, and the tab must show a limited export the nightly job failed to remake
+without anyone opening a log.
+"""
+import json
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+
+from mousedb.exporters import layout, subsets  # noqa: E402
+
+_APP = []
+
+
+@pytest.fixture
+def qt():
+    from PyQt5.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        _APP.append(QApplication([]))
+
+
+@pytest.fixture
+def lab(tmp_path, monkeypatch):
+    root = tmp_path / "db"
+    monkeypatch.setenv("MOUSEDB_ROOT", str(root))
+    cur = root / "exports" / "current"
+    for cohort in ("PROJA_01", "PROJA_02"):
+        f = layout.cohort_file(cur, "ODC_reaches", cohort, cohort)
+        f.parent.mkdir(parents=True)
+        f.write_text("subject_id,video_name\n", encoding="utf-8")
+    pd.DataFrame({"VariableName": ["subject_id", "video_name", "start_frame"]}).to_csv(
+        cur / "ODC_reaches_DATA_DICTIONARY.csv", index=False)
+    return root
+
+
+def test_the_form_becomes_the_definition_the_command_saves():
+    p = subsets.validate("pre", __import__("mousedb.gui.limited_export_dialog", fromlist=["x"])
+                         .profile_from_form({
+                             "cohorts": ["PROJA_01"], "tray_types": ["P"], "window": "last_before_injury",
+                             "n": 3, "window_tray": "P", "kinds": ["ODC_reaches"],
+                             "columns": {"ODC_reaches": ["video_name"], "ODC_sessions": ["Date"]},
+                             "flag_column": " used_for_x ", "flag_rule": None, "nightly": False}),
+                         rules={})
+    assert p == {"cohorts": ["PROJA_01"], "tray_types": ["P"],
+                 "window": {"type": "last_before_injury", "n": 3, "tray_type": "P"},
+                 "kinds": ["ODC_reaches"], "columns": {"ODC_reaches": ["video_name"]},
+                 "flag": {"column": "used_for_x", "rule": None}, "nightly": False}
+
+
+def test_the_window_offers_the_exports_cohorts_and_columns_and_saves_for_everyone(qt, lab):
+    from PyQt5.QtCore import Qt
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    d = LimitedExportDialog()
+    assert [d.cohorts.item(i).text() for i in range(d.cohorts.count())] == ["PROJA_01", "PROJA_02"]
+    assert [d.col_list.item(i).text() for i in range(d.col_list.count())] == [
+        "subject_id", "video_name", "start_frame"]
+    d.name.setText("pre")
+    d.cohorts.item(0).setCheckState(Qt.Checked)
+    d.trays["P"].setChecked(True)
+    d.w_last.setChecked(True)
+    d.col_list.item(2).setCheckState(Qt.Unchecked)
+    assert d.save()
+    from mousedb import sheet_projects
+    cfg = json.loads(sheet_projects.config_path().read_text())
+    saved = cfg["export_subsets"]["pre"]
+    assert saved["cohorts"] == ["PROJA_01"] and saved["window"]["n"] == 3
+    assert saved["columns"] == {"ODC_reaches": ["subject_id", "video_name"]}
+    # Reopened, it shows what was saved.
+    d2 = LimitedExportDialog()
+    d2.saved.setCurrentText("pre")
+    assert d2.w_last.isChecked() and d2.trays["P"].isChecked()
+    assert d2.col_list.item(2).checkState() == Qt.Unchecked
+
+
+def test_the_tab_has_the_button_and_shows_a_failed_remake(qt, lab, monkeypatch):
+    from mousedb.gui import data_status_tab
+    assert hasattr(data_status_tab.DataStatusTab, "limited_export")
+    subsets.save_profile("pre", {"cohorts": ["PROJA_01"]})
+    out = lab / "exports" / "subsets"
+    out.mkdir(parents=True)
+    (out / subsets.STATUS_NAME).write_text(json.dumps({"pre": {
+        "ok": False, "last_attempt": "2026-05-02T00:30:00",
+        "result": "SubsetRefused: no column ghost"}}))
+    lines = data_status_tab.limited_export_lines()
+    assert any(l.strip().startswith("[FAIL] pre") and "ghost" in l for l in lines)

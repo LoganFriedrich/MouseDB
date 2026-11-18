@@ -114,6 +114,18 @@ version. While any job of this tab is running, the buttons say "still
 running" instead of starting another.
 Terminal equivalents: mousedb-data-status, mousereach-census
 
+MAKE A LIMITED EXPORT: a copy of PART of the current exports -- some cohorts,
+some sessions (e.g. each animal's last 3 pillar sessions before the injury),
+some tray types, some columns, and an optional yes/no column per animal.
+Nothing is calculated again: every value is copied from the full export. The
+window saves the definition by name (for everyone) and makes the files in
+exports\\subsets\\<name>\\, with their data dictionaries, the exclusions for
+those sessions and a SUBSET_MANIFEST.json saying what was chosen. Making it
+again archives the previous files, never deletes them; saved ones are remade
+after the nightly export when anything they hold changed. Each saved one has
+a line below the export files: when it was last made, or "[FAIL]" and why.
+Terminal: mousedb export-subset --list
+
 BROWSE THE DATA: opens the data browser -- every table the database holds,
 in your web browser, read-only, no code. A small window appears while it
 makes your own copy of the snapshot (under a minute, once a day), then your
@@ -181,6 +193,34 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
     out = proc.stdout.decode("utf-8", errors="replace")
     return {"returncode": proc.returncode, "busy": proc.returncode == EXIT_BUSY,
             "lock_folder": proc.returncode == EXIT_LOCK_FOLDER, "output": out}
+
+
+def limited_export_lines() -> list:
+    """One line per saved limited export: when it was last made, or [FAIL] and
+    why (exports/subsets/SUBSETS_STATUS.json). WHY on this tab: the nightly job
+    remakes them while nobody watches, and a failure must be seen without
+    opening a log."""
+    try:
+        from ..exporters import subsets
+        saved = subsets.profiles()
+        status = subsets.read_status()
+    except Exception as e:
+        return ["  [!] limited exports: the saved definitions could not be read: %s" % e]
+    if not saved:
+        return []
+    lines = ["LIMITED EXPORTS (exports\\subsets):"]
+    for name in sorted(saved):
+        s = status.get(name) or {}
+        if not s:
+            lines.append("  %-38s not made yet" % name)
+        elif s.get("ok"):
+            lines.append("  %-38s made %s%s" % (name, s.get("written_at") or "?",
+                                                "" if s.get("result") == "written"
+                                                else " (last check: unchanged)"))
+        else:
+            lines.append("  [FAIL] %s: last attempt %s: %s"
+                         % (name, s.get("last_attempt"), s.get("result")))
+    return lines
 
 
 class _Worker(QThread):
@@ -300,6 +340,12 @@ class DataStatusTab(QWidget):
              "snapshot, never the live database, so leaving it open is harmless. "
              "A small window appears first; closing it closes the browser.",
              "background:#5a3d7a; color:white; font-weight:bold;"),
+            ("Make a limited export...", self.limited_export,
+             "Make a copy of PART of the current exports -- chosen cohorts, sessions (for "
+             "example the last 3 pillar sessions before the injury), tray types and "
+             "columns -- saved by name so it can be made again. Nothing is calculated "
+             "again; every value is copied from the full export. Files go to "
+             "exports\\subsets\\<name>.", ""),
             ("Refresh exports now", self.refresh_exports,
              "Rewrite reach_data.csv, manual_scores.csv, every cohort's reach files and "
              "each project's combined reach files from the latest snapshot right now "
@@ -598,6 +644,7 @@ class DataStatusTab(QWidget):
             lines.append("  [!] %d collages could not be parsed into sessions (their "
                          "videos are invisible to the workload count until renamed)"
                          % len(d["collages_that_parsed_to_nothing"]))
+        lines.extend(limited_export_lines())
         if ex.get("skipped"):
             lines.append("  per-reach files not rewritten: %s" % ex["skipped"])
         for note in ex.get("notes") or []:
@@ -605,6 +652,14 @@ class DataStatusTab(QWidget):
         for prob in list(st.get("problems", [])) + list(ex.get("problems", [])):
             lines.append("  [!] %s" % prob)
         self.exports.setPlainText("\n".join(lines))
+
+    def limited_export(self):
+        """Open the limited-export window (gui.limited_export_dialog); refresh
+        this tab when it closes, so the lines about limited exports are current."""
+        from .limited_export_dialog import LimitedExportDialog
+        LimitedExportDialog(self).exec_()
+        if not self._busy():
+            self.refresh()
 
     def open_exports(self):
         d = (self._status.get("exports") or {}).get("folder")
