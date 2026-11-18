@@ -1030,6 +1030,37 @@ def cmd_missing_videos(args):
     raise SystemExit(main(args.rest))
 
 
+def cmd_recording_issues(args):
+    """List the sessions whose recording failed (from the last pipeline
+    census) and, with --import, bring the database's record of them up to
+    date (recording_issues.import_from_census)."""
+    from .recording_issues import import_from_census, load_census, recordings
+    try:
+        census = load_census()
+    except (OSError, ValueError) as e:
+        print("[FAIL] the pipeline view could not be read: %s" % e)
+        raise SystemExit(1)
+    if census is None:
+        print("[FAIL] no pipeline view has been taken yet (press 'Refresh pipeline view' on "
+              "the Where Is My Data tab, or wait for the nightly snapshot job)")
+        raise SystemExit(1)
+    recs = recordings(census)
+    print("Failed recordings in the pipeline view of %s: %d" % (census.get("generated_at"),
+                                                               len(recs)))
+    for r in recs:
+        print("  recording failed: %s, %s (%d session(s))" % (
+            str(r.get("collage")).encode("ascii", "replace").decode(),
+            str(r.get("reason")).encode("ascii", "replace").decode(),
+            len(r.get("sessions") or [])))
+    if args.do_import:
+        c = import_from_census(census)
+        if c.get("skipped"):
+            print("Nothing imported: %s" % c["skipped"])
+        else:
+            print("[OK] database: %d added, %d updated, %d removed"
+                  % (c["added"], c["updated"], c["removed"]))
+
+
 def cmd_hand_scores(args):
     """Write the hand pellet scores file the reaching pipeline reads."""
     from .hand_scores_file import main
@@ -1905,6 +1936,15 @@ def main():
              '(--help for its options: --write, --acknowledge, --grace-days, --cohort)')
     mv_parser.add_argument('rest', nargs=argparse.REMAINDER)
     mv_parser.set_defaults(func=cmd_missing_videos)
+
+    # mousedb recording-issues
+    ri_parser = subparsers.add_parser('recording-issues',
+        help='Sessions whose recording FAILED (set aside by the reaching pipeline); '
+             '--import brings the database record up to date')
+    ri_parser.add_argument('--import', dest='do_import', action='store_true',
+                           help='Write the database record (session_recording_status) '
+                                'from the last pipeline view')
+    ri_parser.set_defaults(func=cmd_recording_issues)
 
     # mousedb import-brains
     brain_parser = subparsers.add_parser('import-brains',

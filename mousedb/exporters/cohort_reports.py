@@ -159,10 +159,17 @@ def export_odc_format(db: Database, cohort_id: str,
 
         summaries = calculate_cohort_summary(session, cohort_id)
 
+        # What happened to the day's recording, when something did
+        # (mousedb.recording_issues): a failed recording has no kinematics,
+        # and the session row is where a reader finds out why. The hand
+        # scores on the row are unaffected.
+        from ..recording_issues import by_subject_day, session_columns
         rows = []
         for subject_id, summary in sorted(summaries.items()):
+            failed = by_subject_day(session, subject_id)
             for sess in summary.sessions:
                 row = _build_odc_row(summary, sess)
+                row.update(session_columns(failed.get(sess.session_date, [])))
                 rows.append(row)
 
         if rows:

@@ -662,6 +662,9 @@ def _no_production_hand_scores(_isolated_from_this_machine, monkeypatch):
     monkeypatch.setattr(sheet_sync, "WRITE_FIX_THESE", False)
     # nor rewrites the list of hand-scored sessions with no video
     monkeypatch.setattr(sheet_sync, "WRITE_MISSING_VIDEOS", False, raising=False)
+    # nor imports the pipeline's failed recordings into a database
+    from mousedb.exporters import refresh_snapshot
+    monkeypatch.setattr(refresh_snapshot, "IMPORT_RECORDING_ISSUES", False, raising=False)
 
 
 @pytest.fixture(autouse=True)

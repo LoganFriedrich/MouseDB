@@ -365,6 +365,31 @@ def _odc_session_rows() -> List[dict]:
         word = "untouched (named 'Miss' as in the workbooks)" if k == "Miss" else k.lower()
         rows.append(_row("Daily_%s_Pct" % k, "Daily percent %s" % word, "Session total for that category / pellets presented x 100.", "percent", "number", "", "", "0", "100"))
         rows.append(_row("Avg_%s_Pct" % k, "Average per-tray percent %s" % word, "Mean of the per-tray percentages for that category.", "percent", "number", "", "", "0", "100"))
+    rows += [
+        _row("Recording_Status", "Recording status",
+             "Whether a video recording of one of this session's trays FAILED: the "
+             "reaching pipeline found the recording empty, a fraction of a second long, "
+             "unreadable or broken, set it aside and never analyzed it. Such a tray has "
+             "no reach data and no kinematics, ever; its hand pellet scores (the tray "
+             "columns of this row) are real and are kept. 'no_issue_recorded' says only "
+             "that no failure is on record, not that a video was analyzed.",
+             "", "text", "recording_failed; no_issue_recorded",
+             "recording_failed=a recording of this session failed and has no reach data; "
+             "no_issue_recorded=no recording failure is on record",
+             "", "",
+             "Why reaches are absent is said HERE, on the session row: the per-reach files "
+             "(ODC_reaches, reaches_*_analysis, reach_data) and the session file built "
+             "from them (sessions_*_analysis) have no rows for a failed "
+             "recording, because no reach was ever measured in it. Filled from the "
+             "database table session_recording_status, which the nightly census step "
+             "imports from the reaching pipeline."),
+        _row("Recording_Issue_Reason", "Recording issue reason",
+             "For a session with Recording_Status 'recording_failed': which tray's "
+             "recording failed, why in plain words (as the pipeline's recording check or "
+             "the person who set it aside wrote it, e.g. '4 frames, 0.08 s -- the "
+             "recording failed') and the recording's file name. Empty otherwise.",
+             "", "text"),
+    ]
     return rows
 
 

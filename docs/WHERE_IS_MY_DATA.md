@@ -1615,10 +1615,12 @@ name -- correct whichever is wrong.
 
 The full list, one row per session, is
 `<mousedb_root>\exports\missing_videos\missing_session_videos.csv` (columns:
-cohort, animal, day, tray, session name, `missing` or `acknowledged`, days
-since the session, other trays the pipeline holds for that animal and day,
-the recording name to look for, what to do, and who acknowledged it, when and
-why). mousedb rewrites it after every sheet import and after the nightly
+cohort, animal, day, tray, session name, `missing`, `recording_failed` or
+`acknowledged`, days since the session, other trays the pipeline holds for
+that animal and day, the recording name to look for, what to do, who
+acknowledged it, when and why, and -- for a recording that failed -- the
+reason, the recording and whether it was scored; see "A recording that
+failed" below). mousedb rewrites it after every sheet import and after the nightly
 pipeline scan; nothing else writes it.
 
 **What is checked, and against what.**
@@ -1661,6 +1663,79 @@ silences new ones.
 count per cohort and every missing recording, and changes nothing;
 `--write` also rewrites the CSV; `--cohort <id>` limits it to one cohort;
 `--grace-days <n>` overrides the setting for that run.
+
+## A recording that failed
+
+Sometimes a recording fails: the recording program stopped after a fraction
+of a second, or the file is empty or cannot be opened. The reaching pipeline
+checks every multi-animal recording before cutting it, and a recording that
+fails the check is a **recording issue**: it is set aside (in the pipeline's
+`Processing\Review\_Problematic` folder, with a reason file), never cut and
+never reviewed. (The pipeline side is explained in MouseReach's
+`docs/RECORDING_ISSUES.md`, including how to set one aside by hand.)
+
+**What it means for your data.** The sessions on that recording (each animal,
+that day, that tray) will never have reaches or kinematics. Their hand pellet
+scores, if the trays were scored at the bench, are real and are kept: they
+stay in `manual_scores.csv` and in the session files like any other.
+
+**What you see.**
+
+- On the Where Is My Data tab, in red, and in the cohort's
+  `!! <cohort> - FIX THESE.xlsx`: one line per failed recording,
+
+      recording failed: <recording file name>, <reason>. Its sessions (...) will never have a video to analyze; ...
+
+  Nothing needs fixing; the line is there so you know.
+- In the list of hand-scored sessions without a video
+  (`exports\missing_videos\missing_session_videos.csv`): each session of the
+  recording with status `recording_failed` -- not `missing` -- and the
+  columns `recording_issue_reason`, `recording` and `hand_scored` (whether the
+  trays were scored). Nobody is told to go looking for these on the recording
+  PC: there is nothing to find. They are listed at once (no 3-day wait: the
+  failure is known), scored or not, for every cohort with a live sheet.
+- In the pipeline counts: "Recording failed (set aside, never analyzed): N",
+  and those sessions are not counted as still to do.
+- In the database: one row per session in the table
+  `session_recording_status` (the session, `recording_failed`, the reason,
+  the recording's name, who or what flagged it and when).
+- In the exports: every `ODC_sessions_<cohort>.csv` row (one animal, one day)
+  has two columns, `Recording_Status` (`recording_failed`, or
+  `no_issue_recorded`) and `Recording_Issue_Reason` (which tray, why, and the
+  recording's name). The per-reach files (`ODC_reaches`, `reaches_*_analysis`,
+  `sessions_*_analysis`, `reach_data.csv`) have NO rows for a failed recording,
+  because no reach was ever measured in it: the session row is where the
+  reason is written. The data dictionary says the same.
+
+**Acknowledging it.** Once a person has seen it, acknowledge it once with the
+same command as a missing video; the recording's file name is a selector:
+
+    mousedb missing-videos --acknowledge "<recording file name>" --by "<name>" --reason "<why>"
+
+It then leaves the red line and the FIX THESE file. It stays in the CSV (marked
+`acknowledged`), in the database and in the exports, because what happened to
+the recording is a fact about the data. (The pipeline's own dashboard lists set
+-aside recordings without an alarm; the acknowledgement lives here.)
+
+**When it shows up, and why it can lag a day.** mousedb learns of a failed
+recording only from the pipeline census (`logs\pipeline_census.json`): the
+census lists each recording issue with its reason and sessions. mousedb never
+reads the pipeline's code and never writes into its folders.
+
+- The tab and the FIX THESE file read the census directly, so they show a
+  failure as soon as the census has been retaken (every night, or **Refresh
+  pipeline view**) and the next sheet import has rewritten the FIX THESE file.
+- The database and the export files are brought up to date by the nightly
+  snapshot job right after it retakes the census (it prints "Failed recordings
+  imported: N added, M updated, K removed", or `[FAIL]` and why). That census
+  is taken AFTER the night's exports are written, so a recording flagged today
+  reaches the export files after the NEXT night's refresh.
+- By hand (MouseDB environment): `mousedb recording-issues` lists the failed
+  recordings in the last census and changes nothing; `mousedb recording-issues
+  --import` also writes the database record (it waits for the database-task
+  lock like every other write).
+- If a person releases a recording (puts it back to be cut), the next import
+  removes its rows.
 
 ## The "Update the database now" button
 

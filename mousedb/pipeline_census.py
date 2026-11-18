@@ -46,7 +46,8 @@ CACHE_NAME = "pipeline_census.json"
 
 # Elements in pipeline order, as the census emits them.
 ELEMENT_ORDER = ["unanalyzed", "crop_dlc", "mousereach", "triage",
-                 "deep_review", "quarantined", "analyzed", "session_only"]
+                 "deep_review", "quarantined", "recording_issue", "analyzed",
+                 "session_only"]
 
 OUTCOME_FREE_TRAYS = ("E", "F")
 

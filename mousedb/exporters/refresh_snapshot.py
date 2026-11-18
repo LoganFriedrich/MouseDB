@@ -457,8 +457,32 @@ def main(argv=None) -> int:
     # imports waiting for that lock should not spend waiting.
     rc = _after_exports(rc)
     if not args.skip_census and retake_census():
+        import_recording_issues()
         write_missing_videos_list()
     return rc
+
+
+# Whether the census step imports the pipeline's recording issues into the
+# database (recording_issues.import_from_census). Off in the test suite, like
+# the other writes a test must not make to a configured database.
+IMPORT_RECORDING_ISSUES = True
+
+
+def import_recording_issues() -> None:
+    """Bring the database's record of failed recordings
+    (session_recording_status) in step with the census just taken. Takes the
+    database-task lock for the write. Never raises and never changes this
+    job's exit code, for the same reason as retake_census; a failure is
+    printed as [FAIL]. WHY here: the census is the one place mousedb learns
+    of recording issues, and it is taken here, after the exports -- so a
+    recording flagged today reaches the export files after the next night's
+    refresh."""
+    if not IMPORT_RECORDING_ISSUES:
+        return
+    from mousedb.recording_issues import import_quietly
+    said = import_quietly()
+    print(("  [FAIL] failed recordings not imported: %s" % said)
+          if said.startswith("FAILED") else ("Failed recordings %s" % said), flush=True)
 
 
 def write_missing_videos_list() -> None:
