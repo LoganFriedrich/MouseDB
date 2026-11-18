@@ -42,6 +42,10 @@ only a person can fix, gathered from every tool --
 * a date the sheet import had to read as a typo ("REPAIRED ..."): correct it
   in the sheet;
 * a sheet import that failed;
+* a recording that FAILED and was set aside by the pipeline (one line per
+  recording: "recording failed: <recording>, <reason>"; acknowledged once with
+  the same command as a missing video -- docs/WHERE_IS_MY_DATA.md, "A
+  recording that failed");
 * sessions scored by hand whose video is nowhere in the pipeline (one line
   per cohort; each recording, with where to look for it, is in the FIX THESE
   file and in exports/missing_videos/). A gap nobody can close is
@@ -500,9 +504,11 @@ class DataStatusTab(QWidget):
             % (pc.get("generated_at") or "?", pc.get("age") or "unknown",
                pc.get("scan_seconds"), exp, fin, pct, an_txt),
             "Remaining: %d not started, %d in crop/pose, %d in algorithms, "
-            "%d + %d waiting on a person (triage + deep review), %d quarantined"
+            "%d + %d waiting on a person (triage + deep review), %d quarantined. "
+            "Recording failed (set aside, never analyzed): %d"
             % (be.get("unanalyzed", 0), be.get("crop_dlc", 0), be.get("mousereach", 0),
-               be.get("triage", 0), be.get("deep_review", 0), be.get("quarantined", 0)),
+               be.get("triage", 0), be.get("deep_review", 0), be.get("quarantined", 0),
+               be.get("recording_issue", 0)),
         ]
         eta = pc.get("eta") or {}
         pace = []
@@ -603,7 +609,9 @@ class DataStatusTab(QWidget):
             if p:
                 exp = p.get("expected", 0)
                 done = (p.get("analyzed", 0) or 0) + p.get("session_only", 0)
-                left = exp - done
+                # A session whose recording failed is not left to do: it will
+                # never have a video (mousedb.recording_issues).
+                left = exp - done - p.get("recording_issue", 0)
                 stages = "%d / %d / %d / %d" % (
                     p.get("unanalyzed", 0), p.get("crop_dlc", 0),
                     p.get("mousereach", 0), p.get("quarantined", 0))

@@ -21,6 +21,19 @@ checked-in code, not what's planned.
   guarded. Guide: INSTALL.md, "The tests never touch your real data".
 
 ### Added
+- **Recordings that failed** (`mousedb/recording_issues.py`,
+  `mousedb recording-issues [--import]`, table `session_recording_status`).
+  The reaching pipeline now sets aside a recording that is empty, a fraction
+  of a second long or unreadable ("recording issue") and lists it in its
+  census with the reason and its sessions. mousedb reads that list: the
+  sessions are `recording_failed` (not `missing`) in the missing-videos list;
+  the Where Is My Data tab and the FIX THESE file say "recording failed:
+  <recording>, <reason>", acknowledged once with `mousedb missing-videos
+  --acknowledge "<recording>"`; the nightly census step imports one row per
+  session into the database; and each `ODC_sessions_<cohort>.csv` row carries
+  `Recording_Status` and `Recording_Issue_Reason` (the per-reach files have no
+  rows for such a session; the dictionary says so). Guide: WHERE_IS_MY_DATA.md,
+  "A recording that failed".
 - **Hand-scored sessions with no video** (`mousedb/missing_videos.py`,
   `mousedb missing-videos`). Every session the hand-scores file holds for a
   cohort with a live tracking sheet is looked for in the pipeline census;

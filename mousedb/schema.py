@@ -1168,6 +1168,42 @@ class ArchivedSummary(Base):
     imported_at = Column(DateTime, default=datetime.now)
 
 
+class SessionRecordingStatus(Base):
+    """What happened to one session's RECORDING, when something did.
+
+    One row per single-animal session (animal, day, tray) whose multi-animal
+    recording failed and was set aside by the reaching pipeline as a
+    "recording issue" (empty, a fraction of a second long, unreadable). Such a
+    session never has kinematics; its hand pellet scores, when it was scored,
+    are kept and exported as usual. The row says why there are no kinematics.
+
+    WHY keyed by the session name and with no foreign key to subjects: the
+    pipeline knows the session from the recording's file name, often before
+    the animal's sheet row has been imported; a record that had to wait for
+    the subject would lose exactly the information it exists to keep
+    (accessory information never holds up what the pipeline reports).
+
+    Written only by mousedb.recording_issues.import_from_census, from the
+    pipeline census (which reads the pipeline's reason files). A row whose
+    recording is no longer set aside (a person released it) is removed by the
+    next import.
+    """
+    __tablename__ = 'session_recording_status'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    video_key = Column(String(80), nullable=False, unique=True)  # 20250101_PROJ0101_P2
+    subject_id = Column(String(20))          # PROJ_01_01, when the name could be read
+    session_date = Column(Date)
+    tray_type = Column(String(5))
+    tray_number = Column(Integer)
+    status = Column(String(30), nullable=False)    # 'recording_failed'
+    reason = Column(Text)                          # plain words, from the pipeline
+    collage_name = Column(String(300))             # the multi-animal recording's file
+    flagged_by = Column(String(200))               # the intake check, or a person
+    detected_at = Column(String(40))               # when the pipeline flagged it (ISO)
+    imported_at = Column(DateTime, default=datetime.now)
+
+
 class AuditLog(Base):
     """Audit trail for all data modifications."""
     __tablename__ = 'audit_log'

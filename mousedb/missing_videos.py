@@ -67,6 +67,19 @@ WHAT HAPPENS TO A MISSING SESSION
   said too: one of the two names (the sheet's or the video's) is wrong, and
   the recording is probably there under the other name.
 
+A RECORDING THAT FAILED IS NOT A MISSING VIDEO
+----------------------------------------------
+When the reaching pipeline set a session's recording aside as a RECORDING
+ISSUE (the recording is empty, a fraction of a second long, or unreadable --
+see recording_issues.py), the census says so. Such a session is listed with
+status "recording_failed", never "missing": there is no video to look for.
+It is judged at once (no grace period: the failure is known), whether or not
+the trays were scored by hand, and only for cohorts with a live sheet. The
+Where Is My Data tab and the cohort's FIX THESE file get one line per failed
+recording: "recording failed: <recording>, <reason>". Nothing can be fixed;
+the line is there so a person knows, and it is acknowledged once like a gap
+(a recording's file name is a selector too).
+
 ACKNOWLEDGING A GAP
 -------------------
     mousedb missing-videos --acknowledge <cohort>:<YYYY-MM-DD> --by "<name>" --reason "<why>"
@@ -95,10 +108,12 @@ KIND = "missing_video"
 ACK_NAME = "missing_videos_acknowledged.json"
 CSV_DIR_NAME = "missing_videos"
 CSV_NAME = "missing_session_videos.csv"
+KIND_FAILED = "recording_failed"
 CSV_COLUMNS = ["cohort_id", "subject_id", "session_date", "tray", "video_key",
                "status", "days_after_session", "pipeline_has_instead",
                "expected_recording", "what_to_do", "acknowledged_by",
-               "acknowledged_at", "acknowledged_reason", "pipeline_view_of"]
+               "acknowledged_at", "acknowledged_reason", "pipeline_view_of",
+               "recording_issue_reason", "recording", "hand_scored"]
 
 
 class CannotCheck(RuntimeError):
@@ -183,6 +198,13 @@ def live_sheet_cohorts(scores_file: Path) -> Optional[Set[str]]:
 
 def read_census(census: Optional[dict] = None):
     """(set of session names the pipeline knows, when that view was taken)."""
+    known, taken, _census = read_census_full(census)
+    return known, taken
+
+
+def read_census_full(census: Optional[dict] = None):
+    """(set of session names the pipeline knows, when that view was taken,
+    the census itself)."""
     if census is None:
         from .pipeline_census import cache_path, load_cached
         try:
@@ -201,7 +223,7 @@ def read_census(census: Optional[dict] = None):
     sessions = census.get("sessions")
     if not isinstance(sessions, dict):
         raise CannotCheck("the pipeline view holds no session list")
-    return set(sessions), taken
+    return set(sessions), taken, census
 
 
 def read_acks(path: Path) -> Dict[str, dict]:
@@ -227,23 +249,57 @@ def _compact(day: str) -> str:
 
 def find_gaps(hand: Dict[str, dict], known: Set[str], view_taken: datetime,
               cohorts: Optional[Set[str]], grace: int,
-              acks: Optional[Dict[str, dict]] = None) -> List[dict]:
-    """Every judged hand-scored session the pipeline does not know, sorted by
-    cohort, day, tray, animal. Each: the session's fields plus status
-    ('missing' or 'acknowledged'), days_after_session (counted to the view),
+              acks: Optional[Dict[str, dict]] = None,
+              failed: Optional[Dict[str, dict]] = None) -> List[dict]:
+    """Every judged hand-scored session the pipeline does not know, and every
+    session whose recording failed (``failed``: recording_issues.from_census),
+    sorted by cohort, day, tray, animal. Each: the session's fields plus kind
+    ('missing' or 'recording_failed'), status ('missing', 'recording_failed'
+    or 'acknowledged'), days_after_session (counted to the view),
     pipeline_has_instead (other trays of that animal and day the pipeline
-    does hold) and the acknowledgement, if any."""
+    does hold), the recording issue's reason and recording, and the
+    acknowledgement, if any."""
     acks = acks or {}
+    failed = failed or {}
     trays_by_animal_day = defaultdict(set)
     for name in known:
         parts = name.split("_")
         if len(parts) == 3:
             trays_by_animal_day[(parts[0], parts[1])].add(parts[2])
     out = []
+    for key, info in failed.items():
+        s = hand.get(key)
+        if s is None:
+            from .recording_issues import parse_key
+            pk = parse_key(key)
+            if not pk["subject_id"] or pk["session_date"] is None:
+                continue
+            s = {"cohort_id": pk["subject_id"].rsplit("_", 1)[0],
+                 "subject_id": pk["subject_id"],
+                 "session_date": pk["session_date"].isoformat(),
+                 "tray": "%s%s" % (pk["tray_type"], pk["tray_number"])}
+        if cohorts is not None and s["cohort_id"] not in cohorts:
+            continue
+        try:
+            day = date.fromisoformat(s["session_date"])
+            after = (view_taken.date() - day).days
+        except ValueError:
+            after = ""
+        a = acks.get(key) or {}
+        out.append(dict(s, video_key=key, kind=KIND_FAILED,
+                        status="acknowledged" if a else KIND_FAILED,
+                        days_after_session=after, pipeline_has_instead="",
+                        recording_issue_reason=info.get("reason", ""),
+                        recording=info.get("collage", ""),
+                        hand_scored="yes" if key in hand else "no",
+                        acknowledged_by=a.get("by", ""),
+                        acknowledged_at=a.get("at", ""),
+                        acknowledged_reason=a.get("reason", ""),
+                        pipeline_view_of=view_taken.isoformat(timespec="minutes")))
     for key, s in hand.items():
         if cohorts is not None and s["cohort_id"] not in cohorts:
             continue
-        if key in known:
+        if key in known or key in failed:
             continue
         try:
             day = date.fromisoformat(s["session_date"])
@@ -256,8 +312,9 @@ def find_gaps(hand: Dict[str, dict], known: Set[str], view_taken: datetime,
         instead = sorted(trays_by_animal_day.get((parts[0], parts[1]), set())
                          - {parts[-1]}) if len(parts) == 3 else []
         a = acks.get(key) or {}
-        out.append(dict(s, video_key=key,
+        out.append(dict(s, video_key=key, kind="missing",
                         status="acknowledged" if a else "missing",
+                        recording_issue_reason="", recording="", hand_scored="yes",
                         days_after_session=(view_taken.date() - day).days,
                         pipeline_has_instead=",".join(instead),
                         acknowledged_by=a.get("by", ""),
@@ -273,6 +330,8 @@ def recordings(gaps: Iterable[dict], include_acknowledged: bool = False) -> List
     cohort, day and tray, with its missing animals."""
     groups: "OrderedDict[tuple, dict]" = OrderedDict()
     for g in gaps:
+        if g.get("kind", "missing") != "missing":
+            continue
         if g["status"] != "missing" and not include_acknowledged:
             continue
         k = (g["cohort_id"], g["session_date"], g["tray"])
@@ -321,6 +380,39 @@ def says(rec: dict, intake: Optional[str] = None) -> str:
                 "it" if n == 1 else "them", what_to_do(rec, intake)))
 
 
+def failed_recordings(gaps: Iterable[dict], include_acknowledged: bool = False) -> List[dict]:
+    """The failed-recording rows grouped into recordings: one per cohort and
+    recording, with its sessions, animals and reason. A recording is listed
+    while any of its sessions is not acknowledged (or always, with
+    ``include_acknowledged``)."""
+    groups: "OrderedDict[tuple, dict]" = OrderedDict()
+    for g in gaps:
+        if g.get("kind") != KIND_FAILED:
+            continue
+        k = (g["cohort_id"], g.get("recording") or g["video_key"])
+        r = groups.setdefault(k, {"cohort_id": k[0], "recording": g.get("recording") or "",
+                                  "reason": g.get("recording_issue_reason") or "",
+                                  "session_date": g["session_date"], "tray": g["tray"],
+                                  "animals": [], "video_keys": [], "open": 0})
+        r["animals"].append(g["video_key"].split("_")[1])
+        r["video_keys"].append(g["video_key"])
+        if g["status"] == KIND_FAILED:
+            r["open"] += 1
+    return [r for r in groups.values() if include_acknowledged or r["open"]]
+
+
+def says_failed(rec: dict) -> str:
+    """One FIX THESE / tab line for a failed recording."""
+    shown = rec["animals"] if len(rec["animals"]) <= 8 else rec["animals"][:8] + ["..."]
+    return ("recording failed: %s, %s. Its sessions (%s %s tray %s; animals %s) will never "
+            "have a video to analyze; their hand scores, where the trays were scored, are "
+            "kept. Nothing needs fixing. To stop this line: mousedb missing-videos "
+            "--acknowledge \"%s\" --by <your name> --reason <why>"
+            % (rec["recording"] or "?", rec["reason"] or "no reason recorded",
+               rec["cohort_id"], rec["session_date"], rec["tray"], ", ".join(shown),
+               rec["recording"] or rec["video_keys"][0]))
+
+
 def _intake() -> Optional[str]:
     try:
         from .config import mousereach_pipeline_root
@@ -337,14 +429,16 @@ def check(cohort_ids: Optional[Iterable[str]] = None, mousedb_root: Optional[Pat
     root = Path(mousedb_root) if mousedb_root else _root()
     sp = scores_path(root)
     hand = read_hand_sessions(sp)
-    known, taken = read_census(census)
+    known, taken, census = read_census_full(census)
+    from .recording_issues import from_census
+    failed = from_census(census)
     grace = grace_days() if grace is None else grace
     live = live_sheet_cohorts(sp)
     if live is None:
         from .cohort_sheets import available_cohorts
         live = set(available_cohorts())
     cohorts = live if cohort_ids is None else live & set(cohort_ids)
-    gaps = find_gaps(hand, known, taken, cohorts, grace, read_acks(ack_path(root)))
+    gaps = find_gaps(hand, known, taken, cohorts, grace, read_acks(ack_path(root)), failed)
     return {"gaps": gaps, "view_taken": taken, "grace_days": grace,
             "cohorts": sorted(cohorts)}
 
@@ -361,9 +455,12 @@ def items(cohort_ids: Optional[List[str]] = None) -> List[dict]:
         return [{"cohort_id": None, "source": SOURCE, "kind": KIND,
                  "says": "Could not check for hand-scored sessions without a video: %s." % e}]
     intake = _intake()
-    return [{"cohort_id": r["cohort_id"], "source": SOURCE, "kind": KIND,
-             "sessions": len(r["animals"]), "session_date": r["session_date"],
-             "says": says(r, intake)} for r in recordings(res["gaps"])]
+    return ([{"cohort_id": r["cohort_id"], "source": SOURCE, "kind": KIND,
+              "sessions": len(r["animals"]), "session_date": r["session_date"],
+              "says": says(r, intake)} for r in recordings(res["gaps"])]
+            + [{"cohort_id": r["cohort_id"], "source": SOURCE, "kind": KIND_FAILED,
+                "sessions": len(r["animals"]), "session_date": r["session_date"],
+                "says": says_failed(r)} for r in failed_recordings(res["gaps"])])
 
 
 def fold_for_tab(found: List[dict]) -> List[dict]:
@@ -409,6 +506,8 @@ def write_csv(result: Optional[dict] = None, dest: Optional[Path] = None) -> Pat
             w.writeheader()
             for g in result["gaps"]:
                 name, do = todo.get(g["video_key"], ("", ""))
+                if g.get("kind") == KIND_FAILED:
+                    name, do = g.get("recording", ""), ""
                 w.writerow(dict(g, expected_recording=name,
                                 what_to_do=do if g["status"] == "missing" else ""))
         os.replace(tmp, dest)
@@ -428,7 +527,9 @@ def write_list_quietly() -> str:
         res = check()
         p = write_csv(res)
         n = sum(1 for g in res["gaps"] if g["status"] == "missing")
-        return "written: %s (%d missing, %d acknowledged)" % (p, n, len(res["gaps"]) - n)
+        f = sum(1 for g in res["gaps"] if g["status"] == KIND_FAILED)
+        return "written: %s (%d missing, %d recording failed, %d acknowledged)" % (
+            p, n, f, len(res["gaps"]) - n - f)
     except Exception as e:
         return "FAILED: %s: %s" % (type(e).__name__, e)
 
@@ -436,10 +537,14 @@ def write_list_quietly() -> str:
 # --- acknowledging ------------------------------------------------------------
 
 def select(gaps: List[dict], selector: str) -> List[dict]:
-    """The currently missing (unacknowledged) gaps a selector names: a cohort,
-    <cohort>:<YYYY-MM-DD>, or one session's video key."""
+    """The currently open (unacknowledged: missing, or recording failed) gaps a
+    selector names: a cohort, <cohort>:<YYYY-MM-DD>, one session's video key,
+    or a failed recording's file name."""
     sel = selector.strip()
-    missing = [g for g in gaps if g["status"] == "missing"]
+    missing = [g for g in gaps if g["status"] in ("missing", KIND_FAILED)]
+    by_recording = [g for g in missing if g.get("recording") and g["recording"] == sel]
+    if by_recording:
+        return by_recording
     if ":" in sel:
         cid, day = sel.split(":", 1)
         return [g for g in missing if g["cohort_id"] == cid and g["session_date"] == day]
@@ -460,7 +565,8 @@ def acknowledge(selectors: List[str], by: str, reason: str,
     for s in selectors:
         hit = select(result["gaps"], s)
         if not hit:
-            raise ValueError("%r names no session that is missing now" % s)
+            raise ValueError("%r names no session that is missing or whose recording "
+                             "failed now" % s)
         chosen += hit
     path = ack_path(root)
     acks = read_acks(path)
@@ -511,15 +617,17 @@ def main(argv=None) -> int:
     gaps = res["gaps"]
     print("Hand-scored sessions with no video (pipeline view of %s, grace %d days):"
           % (res["view_taken"].isoformat(timespec="minutes"), res["grace_days"]))
-    counts = defaultdict(lambda: [0, 0])
+    counts = defaultdict(lambda: [0, 0, 0])
     for g in gaps:
-        counts[g["cohort_id"]][0 if g["status"] == "missing" else 1] += 1
+        counts[g["cohort_id"]][{"missing": 0, KIND_FAILED: 2}.get(g["status"], 1)] += 1
     for cid in res["cohorts"]:
-        m, k = counts.get(cid, [0, 0])
-        print("  %-10s %4d missing, %4d acknowledged" % (cid, m, k))
+        m, k, f = counts.get(cid, [0, 0, 0])
+        print("  %-10s %4d missing, %4d recording failed, %4d acknowledged" % (cid, m, f, k))
     for r in recordings(gaps):
         print("  [!] %s %s %s: %s" % (r["cohort_id"], r["session_date"], r["tray"],
                                       ", ".join(r["animals"])))
+    for r in failed_recordings(gaps):
+        print("  [!] recording failed: %s, %s" % (r["recording"], r["reason"]))
     if a.write:
         print("Written: %s" % write_csv(res))
     return 0
