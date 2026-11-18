@@ -33,8 +33,8 @@ synthetic inputs, the same on any machine. So:
     files itself, nor child processes -- the hidden configuration is what
     keeps those away from the live folders;
   * the code's own checkout (the folder holding this tests/ folder) is NOT
-    lab data, even when it sits inside a live folder -- the lab keeps its
-    working copy inside the database folder. Its files are exempt; the
+    lab data, even when it sits inside a live folder (a working copy may be
+    kept inside the database folder). Its files are exempt; the
     folders and files beside it (exports, logs, the database) stay guarded.
 
 A unit test must also never contend for the PRODUCTION database-task lock:
@@ -246,7 +246,7 @@ def _real_live_roots():
         if not v or not os.path.isabs(v):
             continue
         n = os.path.normcase(os.path.abspath(v))
-        # A bare drive ("Y:\") is not a data location: it would make every
+        # A bare drive ("Q:\") is not a data location: it would make every
         # path on that drive count.
         if os.path.dirname(n.rstrip("\\/")) == n.rstrip("\\/") or len(n.rstrip("\\/")) <= 2:
             continue
@@ -264,7 +264,7 @@ def _real_live_roots():
 # WHY: the guard compares strings (an audit hook must not touch the disk), and
 # one folder has many spellings: upper/lower case and "/" or "\" (normcase
 # folds those), a Windows short name per part ("PROGRA~1"), the server path of
-# a mapped network drive ("\\server\share\..." for "Y:\..."), and what
+# a mapped network drive ("\\server\share\..." for "Q:\..."), and what
 # realpath resolves to. All of them are worked out HERE, once, when this file
 # is imported, so the hook itself stays pure string work.
 
@@ -346,6 +346,17 @@ def _spellings(path, drive_map=None, resolve=True):
             pass
     unc_to_drive = {v: k for k, v in drive_map.items()}
     out = set()
+    # The whole-path forms go in first, before the part-by-part mixes below,
+    # which are capped: a deep folder must never lose its plain long or
+    # plain short spelling to the cap.
+    for base in list(bases):
+        whole = {base}
+        if resolve:
+            whole |= {_norm(alt) for alt in _short_and_long(base)}
+        for w in whole:
+            drive, rest = os.path.splitdrive(w)
+            for anchor in {drive, drive_map.get(drive), unc_to_drive.get(drive)} - {None}:
+                out.add((anchor + rest).rstrip("\\/") or os.sep)
     for base in list(bases):
         drive, parts = _split_anchor(base)
         anchors = {drive}

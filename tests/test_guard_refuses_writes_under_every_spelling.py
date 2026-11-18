@@ -13,7 +13,7 @@ WHY each half matters:
   * the runner usually points HOME, PROGRAMDATA and friends at a scratch
     folder before the suite starts, which would leave a guard that reads
     only the environment with nothing to guard;
-  * the lab keeps its working copy of the code inside the database folder:
+  * a working copy of the code may be kept inside the database folder:
     a guard that treats the checkout as lab data fails every test run from
     there, and a real hit drowns among the false ones.
 
@@ -166,6 +166,26 @@ def test_the_server_form_of_a_mapped_drive_is_the_same_folder():
     want_letter = os.path.normcase("q:\\lab_data\\results")
     assert want_server in by_letter
     assert want_letter in by_server
+
+
+def test_a_deep_folder_keeps_its_plain_long_and_short_spellings(tmp_path, monkeypatch):
+    """The part-by-part mixes of a deep folder are capped; its plain long and
+    plain short spellings must survive the cap, so a write through either
+    is still refused."""
+    deep = tmp_path
+    for i in range(12):
+        deep = deep / ("deep_level_folder_%02d" % i)
+    deep.mkdir(parents=True)
+    monkeypatch.setattr(suite, "LIVE_ROOTS", suite.LIVE_ROOTS + _spellings_of(deep))
+    short = _short_name(deep)
+    if short is None:
+        pytest.skip("this volume makes no short names")
+    for base in (str(deep), short):
+        with pytest.raises(Exception) as raised:
+            open(os.path.join(base, "new.csv"), "w").close()
+        assert "refused" in str(raised.value), (base, raised.value)
+    assert os.listdir(deep) == []
+    suite._GUARD["hits"].clear()
 
 
 def test_the_checkout_is_code_and_the_folders_beside_it_stay_guarded(monkeypatch):

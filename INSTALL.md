@@ -167,7 +167,7 @@ does two things before any test runs (in `tests/conftest.py`):
 The guard recognizes a real folder **however it is written**: upper or lower
 case, `/` or `\`, the Windows short name of any part of it (`PROGRA~1`), the
 server path of a mapped network drive (`\\server\share\...` for a drive
-letter), or the path a shortcut/link resolves to. All of these are worked
+letter), or the real folder behind a folder link (junction or symbolic link). All of these are worked
 out once, when the tests start.
 
 **The code's own folder is not lab data.** If you run the tests from a
