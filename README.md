@@ -2,15 +2,14 @@
 
 Database and data management tools for mouse experiments. SQLAlchemy ORM
 on top of `connectome.db` (the lab's single source of truth), Excel/Parquet
-import + export, a PyQt5 GUI for data entry, a FastAPI web dashboard, and
-analytical sub-packages.
+import + export, a PyQt5 GUI for data entry, a FastAPI web dashboard and a
+read-only data browser.
 
 ## Subpackages
 
 | Subpackage | Purpose |
 |---|---|
-| [`mousedb/`](mousedb/) | Core database, importers, exporters, GUI, web, figures, validators, CLI. |
-| [`mousedb/endpoint_ck_analysis/`](mousedb/endpoint_ck_analysis/) | Self-contained endpoint statistical analysis pipeline (PCA, PLS, LMM, clustering) on the SCI cohort. Has its own `pyproject.toml` and notebooks. |
+| [`mousedb/`](mousedb/) | Core database, importers, exporters, GUI, web dashboard, data browser, validators, CLI. |
 
 ## Install
 
@@ -38,10 +37,11 @@ The suite covers:
 - `tests/test_region_priors.py` — predicted-importance ordering invariants.
 - `tests/test_validators.py` — ID-format and data-validator coverage; this
   is the front line for every import path.
-- `mousedb/endpoint_ck_analysis/tests/test_smoke.py` — integration test that
-  executes `00_setup.ipynb` end-to-end against the bundled database.
+- ...and one file per further behavior in `tests/`. Every test builds
+  synthetic inputs; none needs the lab's database (INSTALL.md, "The tests
+  never touch your real data").
 
-`testpaths` in `pyproject.toml` keeps discovery scoped to those directories;
+`testpaths` in `pyproject.toml` keeps discovery scoped to `tests/`;
 running `pytest` from the repo root will not crawl `.venv/` or any of the
 stray `pytest-cache-files-*/` directories.
 
@@ -57,23 +57,18 @@ mousedb/
 ├── pyproject.toml       # pip / pytest / ruff / coverage config
 ├── manual_setup_check.py  # interactive smoke-script (not collected by pytest)
 ├── tests/               # unit tests
-├── mousedb/             # core package source
-│   └── endpoint_ck_analysis/   # statistical analysis sibling package
-└── .github/workflows/   # CI
+└── mousedb/             # core package source
 ```
 
 ## For first-time contributors
 
 1. `pip install -e ".[dev]"` so `pytest`, `nbclient`, `papermill`, `black`,
    and `ruff` are available.
-2. `pytest` — full suite should pass against a populated `connectome.db`.
-   Tests that require the database (the smoke notebook) skip gracefully when
-   `nbclient` isn't installed.
+2. `pytest` -- the full suite runs on synthetic data only; a test that
+   tries to write into a real database or exports folder is refused and fails.
 3. Read the module docstrings for orientation: every module under `mousedb/`
    opens with WHY it exists and what it touches, and `INSTALL.md`
    ("Configuration") explains the per-machine settings.
-4. Read `mousedb/endpoint_ck_analysis/QUICKSTART.md` if you're going to
-   touch the analysis pipeline.
 
 ## Reporting bugs
 
