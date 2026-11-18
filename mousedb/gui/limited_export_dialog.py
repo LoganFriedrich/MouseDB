@@ -92,7 +92,10 @@ The files go to exports\\subsets\\<name>\\: the data files, their data
 dictionaries (only the kept columns), analysis_EXCLUSIONS.csv for these
 sessions, SUBSET_MANIFEST.json (what was chosen, from which export, row counts)
 and README.txt. Making it again moves the previous files to
-_archived\\exports_subsets\\<name>\\<time>\\ -- never deleted. Saved limited
+_archived\\exports_subsets\\<name>\\<time>\\ -- never deleted. If making it
+again fails part way (a file open in another program, a full share), the
+previous files are put back and you are told; a NOT_COMPLETE.txt in the folder
+means even that failed: make it again. Saved limited
 exports with "remake nightly" ticked are made again after the nightly export
 whenever anything they hold has changed.
 Full guide: docs/WHERE_IS_MY_DATA.md, "Limited exports".
@@ -577,10 +580,16 @@ class LimitedExportDialog(QDialog):
             QMessageBox.information(self, "Limited export",
                                     "The full exports are being rewritten right now -- try again "
                                     "when that finishes. Nothing was changed.")
-        elif r.get("returncode") not in (0, None):
+        elif r.get("refused"):
             QMessageBox.warning(self, "Limited export",
                                 "It was not made. Nothing was changed. The reason:\n\n%s"
                                 % r.get("output", "")[-1500:])
+        elif r.get("returncode") not in (0, None):
+            # Not a refusal: the program says what state the folder was left in
+            # (almost always "nothing was changed"), so that is shown, not assumed.
+            QMessageBox.warning(self, "Limited export",
+                                "It was not made. What happened, and the state of its "
+                                "folder:\n\n%s" % r.get("output", "")[-1500:])
 
     def open_folder(self):
         try:

@@ -29,9 +29,10 @@ WHAT IT WRITES
                                    written, row counts, which sessions were chosen
     README.txt                     the same, in plain words
 
-A previous slice of the same name is MOVED to the archive before the new one is
+A previous slice of the same name is MOVED to the archive when the new one is
 put in place, never deleted: ``<mousedb_root>/_archived/exports_subsets/<name>/
-<time>/``. ``exports/subsets/SUBSETS_STATUS.json`` records every attempt to make
+<time>/``. A remake that cannot put every new file in place puts the previous
+slice back (see _place), so the folder holds one complete set or the other. ``exports/subsets/SUBSETS_STATUS.json`` records every attempt to make
 each slice -- including one that failed, and why -- so the Where Is My Data tab
 can show it.
 
@@ -173,6 +174,11 @@ EXIT_OK, EXIT_FAILED, EXIT_BUSY, EXIT_REFUSED = 0, 1, 3, 6
 class SubsetRefused(ValueError):
     """The definition, or the state of the exports, does not allow this slice.
     Nothing was written; the message says what to change."""
+
+
+class SubsetNotPlaced(RuntimeError):
+    """The new files of a slice could not be put in place. The message says what
+    state the slice's folder was left in (see _place)."""
 
 
 class DefinitionExists(SubsetRefused):
@@ -1016,26 +1022,165 @@ def _previous_signature(folder: Path) -> Optional[dict]:
         return None
 
 
+# The name a new file is copied under inside the slice's folder before it is
+# put in place. Starts with "_" so it is never taken for a file of the
+# previous slice (those are what gets archived).
+INCOMING_PREFIX = "_incoming_"
+# Left in a slice's folder only when a remake failed half way AND the previous
+# files could not be put back; the next remake archives it with the rest.
+NOT_COMPLETE_NAME = "NOT_COMPLETE.txt"
+# The manifest and README go in last: a folder that has them has every file.
+_LAST = (MANIFEST_NAME, "README.txt")
+
+
+def _move(src: Path, dst: Path) -> None:
+    """One rename (a function of its own so a test can make it fail)."""
+    Path(src).replace(dst)
+
+
 def _place(staging: Path, folder: Path, out_root: Path, name: str) -> List[str]:
-    """Move the previous slice to the archive, then put the new files in place
-    (each copied under a temporary name and renamed, so a reader never meets a
-    half-written file). Returns what was archived."""
-    archived = []
+    """Put a new slice in place of the previous one. Returns what was archived.
+
+    WHY THREE STEPS: a remake used to move the previous slice into the archive
+    first and then copy the new files in. A copy that failed part way (a full
+    share; a file held open by a spreadsheet program) left the folder with
+    part of a new set, no manifest and no README, while the window said
+    nothing was changed. Now:
+
+    1. every new file is copied into the folder under a temporary name
+       (``_incoming_<file>.tmp``). A failure here removes those copies:
+       nothing was changed;
+    2. the previous files are moved to the archive. A failure here (a file
+       held open cannot be moved) moves the ones already moved back:
+       nothing was changed;
+    3. the new files are renamed into place, the manifest and README last.
+       A failure here moves the new files back out and the previous files
+       back in: nothing was changed.
+
+    Only if putting things back ALSO fails is the folder left part-way; then a
+    NOT_COMPLETE.txt there says so and where the previous files are, and the
+    error says the same. Either way SubsetNotPlaced is raised, saying which."""
+    out_root = Path(out_root)
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    if folder.is_dir():
-        old = [f for f in folder.iterdir() if not f.name.startswith("_")]
-        if old:
-            dest = archive_root(out_root) / name / stamp
-            dest.mkdir(parents=True, exist_ok=True)
-            for f in old:
-                f.replace(dest / f.name)
-                archived.append(str(dest / f.name))
+    made_folder = not folder.is_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    for f in sorted(staging.iterdir()):
-        tmp = folder / (f.name + ".tmp")
-        shutil.copyfile(f, tmp)
-        tmp.replace(folder / f.name)
-    return archived
+    for left in folder.glob(INCOMING_PREFIX + "*.tmp"):
+        # A copy an earlier, interrupted attempt left behind: the files it
+        # copied are still in that attempt's staging or the archive.
+        try:
+            left.unlink()
+        except OSError:
+            pass
+    new = sorted((f for f in staging.iterdir() if f.is_file()),
+                 key=lambda f: (f.name in _LAST, _LAST.index(f.name) if f.name in _LAST else 0,
+                                f.name))
+    incoming: List[Tuple[Path, Path]] = []      # (temporary copy, final name)
+
+    def drop_incoming() -> None:
+        for tmp, _ in incoming:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        if made_folder:
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+
+    # 1. copy in under temporary names
+    try:
+        for f in new:
+            tmp = folder / (INCOMING_PREFIX + f.name + ".tmp")
+            incoming.append((tmp, folder / f.name))
+            shutil.copyfile(f, tmp)
+    except OSError as e:
+        drop_incoming()
+        raise SubsetNotPlaced(
+            "limited export %s: the new files could not be copied into %s (%s: %s). Nothing "
+            "was changed: the previous files are still there." % (name, folder,
+                                                                 type(e).__name__, e)) from None
+    # 2. move the previous files to the archive
+    old = [f for f in folder.iterdir() if not f.name.startswith("_") and f.is_file()]
+    dest = archive_root(out_root) / name / stamp
+    moved: List[Tuple[Path, Path]] = []         # (where it was, where it is now)
+    which = "folder"
+    try:
+        if old:
+            dest.mkdir(parents=True, exist_ok=True)
+        for f in old:
+            which = "file " + f.name
+            _move(f, dest / f.name)
+            moved.append((f, dest / f.name))
+    except OSError as e:
+        restored = _undo(moved)
+        drop_incoming()
+        _drop_empty(dest)
+        if restored:
+            raise SubsetNotPlaced(
+                "limited export %s: the previous %s could not be moved to the archive "
+                "(%s: %s; is it open in another program?). Nothing was changed: the previous "
+                "files are still there. Close it and make the limited export again."
+                % (name, which, type(e).__name__, e)) from None
+        _not_complete(folder, name, dest, e)
+    # 3. rename the new files into place
+    placed: List[Tuple[Path, Path]] = []        # (temporary copy, final name)
+    try:
+        for tmp, final in incoming:
+            _move(tmp, final)
+            placed.append((tmp, final))
+    except OSError as e:
+        back = _undo([(tmp, final) for tmp, final in placed])
+        restored = back and _undo(moved)
+        if restored:
+            drop_incoming()
+            _drop_empty(dest)
+            raise SubsetNotPlaced(
+                "limited export %s: a new file could not be put in place in %s (%s: %s). "
+                "Nothing was changed: the previous files are back where they were."
+                % (name, folder, type(e).__name__, e)) from None
+        _not_complete(folder, name, dest, e)
+    return [str(now) for _, now in moved]
+
+
+def _undo(moves: List[Tuple[Path, Path]]) -> bool:
+    """Move each (was, now) pair back, last first. True when all went back."""
+    ok = True
+    for was, now in reversed(moves):
+        try:
+            _move(now, was)
+        except OSError:
+            ok = False
+    return ok
+
+
+def _drop_empty(folder: Path) -> None:
+    """Remove the archive folder made for this attempt if nothing is in it."""
+    try:
+        folder.rmdir()
+        folder.parent.rmdir()       # the name's folder, if this was its first
+    except OSError:
+        pass
+
+
+def _not_complete(folder: Path, name: str, archive: Path, error: Exception) -> None:
+    """The last resort: the folder holds part of a set and the previous files
+    could not all be put back. Say so in the folder and in the error."""
+    text = ("THIS FOLDER IS NOT COMPLETE. Making limited export %s again failed part way "
+            "(%s: %s) and the previous files could not all be put back. Do not use these "
+            "files. The previous ones are in %s. Make the limited export again; that "
+            "archives this folder's files, this note included, and writes a complete set.\n"
+            % (name, type(error).__name__, error, archive))
+    try:
+        (folder / NOT_COMPLETE_NAME).write_text(text, encoding="utf-8")
+        said = "NOT_COMPLETE.txt in it says so"
+    except OSError:
+        said = "and a note saying so could not be written there either"
+    raise SubsetNotPlaced(
+        "limited export %s: the new files could not be put in place in %s (%s: %s), and the "
+        "previous files could not all be put back: the folder is NOT complete (%s). The "
+        "previous files are in %s. Make it again." % (name, folder, type(error).__name__,
+                                                     error, said, archive))
 
 
 def _record_status(out_root: Path, name: str, entry: dict) -> None:
@@ -1356,6 +1501,9 @@ def run_args(a) -> int:
         return EXIT_BUSY
     except (LockWaitTimeout, LockFolderNotWritable) as e:
         print("[!] the exports lock could not be taken: %s. Nothing was written." % e, flush=True)
+        return EXIT_FAILED
+    except SubsetNotPlaced as e:
+        print("[FAIL] %s" % e, flush=True)
         return EXIT_FAILED
     m = r["manifest"]
     print("Limited export %s: %s%s" % (a.name, r["status"],

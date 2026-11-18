@@ -557,3 +557,104 @@ def test_a_replaced_or_forgotten_definition_is_kept(lab, capsys):
     assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_01"]
     assert subsets.main(["pre", "--save", "--replace", "--cohorts", "PROJA_02"]) == subsets.EXIT_OK
     assert subsets.profiles()["pre"]["cohorts"] == ["PROJA_02"]
+
+
+def _folder_state(folder):
+    return {f.name: f.read_bytes() for f in sorted(folder.iterdir())}
+
+
+def _archived_files(lab):
+    arch = lab["root"] / "_archived" / "exports_subsets" / "pre"
+    return sorted(str(f) for f in arch.rglob("*") if f.is_file()) if arch.is_dir() else []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="an open file blocks a rename only on Windows")
+def test_a_remake_blocked_by_an_open_file_leaves_the_previous_slice_whole(lab):
+    """A file of the slice open in another program cannot be moved. The remake
+    must then leave the folder holding the complete previous slice -- not part
+    of a new set with no manifest or README."""
+    folder = Path(lab["make"]("pre", LAST2_PILLAR)["folder"])
+    before = _folder_state(folder)
+    arch_before = _archived_files(lab)
+    with open(folder / "SUBSET_MANIFEST.json", "rb"):
+        with pytest.raises(Exception, match="(?i)nothing was changed|denied|being used"):
+            lab["make"]("pre", LAST2_PILLAR)
+        assert _folder_state(folder) == before
+    assert _archived_files(lab) == arch_before
+    status = subsets.read_status(lab["out"])["pre"]
+    assert status["ok"] is False
+
+
+def test_a_remake_whose_copy_fails_part_way_changes_nothing(lab, monkeypatch):
+    """The share fills up while the new files are copied in."""
+    import shutil
+    folder = Path(lab["make"]("pre", LAST2_PILLAR)["folder"])
+    before = _folder_state(folder)
+    arch_before = _archived_files(lab)
+    real = shutil.copyfile
+    calls = []
+
+    def full(src, dst, *a, **k):
+        if Path(dst).parent == folder:
+            calls.append(dst)
+            if len(calls) == 3:
+                raise OSError(28, "No space left on device")
+        return real(src, dst, *a, **k)
+    monkeypatch.setattr(shutil, "copyfile", full)
+    with pytest.raises(Exception, match="No space left"):
+        lab["make"]("pre", LAST2_PILLAR)
+    assert _folder_state(folder) == before
+    assert _archived_files(lab) == arch_before
+
+
+def test_a_new_file_that_cannot_be_put_in_place_puts_the_previous_slice_back(lab, monkeypatch):
+    folder = Path(lab["make"]("pre", LAST2_PILLAR)["folder"])
+    before = _folder_state(folder)
+    real = subsets._move
+    calls = []
+
+    def flaky(src, dst):
+        if Path(src).name.startswith(subsets.INCOMING_PREFIX):
+            calls.append(src)
+            if len(calls) == 2:
+                raise PermissionError(13, "Permission denied")
+        return real(src, dst)
+    monkeypatch.setattr(subsets, "_move", flaky)
+    with pytest.raises(subsets.SubsetNotPlaced, match="Nothing was changed"):
+        lab["make"]("pre", LAST2_PILLAR)
+    assert _folder_state(folder) == before
+    assert _archived_files(lab) == []
+
+
+def test_a_folder_left_part_way_says_so_and_the_next_make_mends_it(lab, monkeypatch, capsys):
+    monkeypatch.setenv("MOUSEDB_ROOT", str(lab["root"] / "db"))     # the command's lock folder
+    folder = Path(lab["make"]("pre", LAST2_PILLAR)["folder"])
+    real = subsets._move
+    state = {"new": 0}
+
+    def broken(src, dst):
+        src = Path(src)
+        if src.name.startswith(subsets.INCOMING_PREFIX):
+            state["new"] += 1
+            if state["new"] == 2:
+                raise PermissionError(13, "Permission denied")
+        elif src.parent == folder and dst.name.startswith(subsets.INCOMING_PREFIX):
+            raise PermissionError(13, "Permission denied")          # cannot move it back
+        return real(src, dst)
+    monkeypatch.setattr(subsets, "_move", broken)
+    f = lab["root"] / "def.json"
+    f.write_text(json.dumps(LAST2_PILLAR))
+    code = subsets.main(["pre", "--run", "--definition-file", str(f),
+                         "--current-dir", str(lab["cur"]), "--out-dir", str(lab["out"]),
+                         "--snapshot-dir", str(lab["snap"])])
+    assert code == subsets.EXIT_FAILED
+    out = capsys.readouterr().out
+    assert "[FAIL]" in out and "NOT complete" in out
+    note = (folder / subsets.NOT_COMPLETE_NAME).read_text()
+    assert "NOT COMPLETE" in note and "_archived" in note
+    assert subsets.read_status(lab["out"])["pre"]["ok"] is False
+    monkeypatch.setattr(subsets, "_move", real)
+    lab["make"]("pre", LAST2_PILLAR)
+    assert not (folder / subsets.NOT_COMPLETE_NAME).exists()
+    assert (folder / subsets.MANIFEST_NAME).is_file() and (folder / "README.txt").is_file()
+    assert any(Path(p).name == subsets.NOT_COMPLETE_NAME for p in _archived_files(lab))

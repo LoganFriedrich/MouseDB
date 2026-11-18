@@ -486,8 +486,25 @@ files. `SUBSET_MANIFEST.json` lists which cohorts and columns, under
 `columns_filled_for_cohorts_without_them`.
 
 **Making it again never deletes anything.** The previous files are moved to
-`<mousedb_root>/_archived/exports_subsets/<name>/<date_time>/` first, then the
-new files are put in place.
+`<mousedb_root>/_archived/exports_subsets/<name>/<date_time>/` and the new
+files are put in place.
+
+**The folder always holds one complete set.** The new files are first copied
+into the folder under temporary names (`_incoming_<file>.tmp`); only when all
+of them are there are the previous files moved to the archive and the new ones
+renamed into place, the manifest and README last. If anything fails on the way
+-- the share is full, or a file of the limited export is open in another
+program (a spreadsheet program holds the file it shows) -- what was done is
+undone: the previous files are back where they were, and the window (or the
+command) says "Nothing was changed" with the reason. Close the file, or make
+room, and make it again.
+
+Only if undoing ALSO fails is the folder left part-way. Then a file
+`NOT_COMPLETE.txt` in it says so and where the previous files went, the
+window shows the same message (starting `[FAIL]`), and the Where Is My Data
+tab shows the failure. Do not use the files there; make the limited export
+again -- that moves everything in the folder, the note included, to the
+archive and writes a complete set.
 
 ### Which sessions "the last N before the injury" picks
 

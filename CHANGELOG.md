@@ -170,6 +170,14 @@ checked-in code, not what's planned.
   counts used to stay in the database and every brain export unnoticed (a
   renamed brain twice). Report only: nothing is removed and the exit code is
   unchanged.
+- Limited exports: a remake puts its files in place in three undoable steps
+  (copy in under temporary names, archive the previous files, rename the new
+  ones in, manifest and README last). A remake that failed part way (a full
+  share, a file open in another program) used to have archived the previous
+  slice already and left part of a new set with no manifest or README, while
+  the window said nothing was changed. Now the previous files are put back;
+  if even that fails, `NOT_COMPLETE.txt` in the folder and a `[FAIL]` line
+  say so. The window says "Nothing was changed" only for a refusal.
 - Limited-export window: a saved definition opened and saved again comes
   back as it was. A column or cohort the current exports no longer have is
   listed (marked "not in the current exports") instead of being dropped; a

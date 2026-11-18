@@ -188,3 +188,18 @@ def test_a_column_the_exports_lack_is_shown_and_can_be_taken_out(qt, lab, monkey
     d.col_list.item(2).setCheckState(Qt.Checked)                          # start_frame added
     assert d.save() is True
     assert subsets.profiles()["pre"]["columns"] == {"ODC_reaches": ["video_name", "start_frame"]}
+
+
+def test_the_window_does_not_claim_nothing_changed_for_a_failed_remake(qt, lab, monkeypatch):
+    """Only a refusal is known to have changed nothing; for a failure the
+    program's own account of the folder is shown."""
+    from PyQt5.QtWidgets import QMessageBox
+    from mousedb.gui.limited_export_dialog import LimitedExportDialog
+    shown = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: shown.append(a[2]))
+    d = LimitedExportDialog()
+    failed = "[FAIL] limited export pre: ... the folder is NOT complete (NOT_COMPLETE.txt)"
+    d._done({"returncode": subsets.EXIT_FAILED, "refused": False, "output": failed})
+    assert shown and "Nothing was changed" not in shown[-1] and "NOT complete" in shown[-1]
+    d._done({"returncode": subsets.EXIT_REFUSED, "refused": True, "output": "[!] no column x"})
+    assert "Nothing was changed" in shown[-1]
