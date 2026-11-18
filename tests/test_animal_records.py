@@ -244,3 +244,84 @@ def test_an_odc_tab_without_its_header_is_reported(tmp_path):
     wb.save(p)
     r = ar.sync_cohort(db, "ASPA_26", p, "odc")
     assert _stored_by_tab(db).get("ODC") and [k["tab"] for k in r["kept"]] == ["ODC"]
+
+
+def _metadata_workbook(path, animals):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "0a_Metadata"
+    ws.append(["SubjectID", "Sex", "Date_of_Birth"])
+    for n in animals:
+        ws.append(["PROJA_01_%02d" % n, "F" if n % 2 else "M", datetime(2025, 1, n)])
+    wb.save(path)
+    return path
+
+
+def _metadata_animals(db):
+    from mousedb.schema import AnimalRecord
+    with db.session() as s:
+        return {sid for (sid,) in s.query(AnimalRecord.subject_id)
+                .filter(AnimalRecord.source_tab == "0a_Metadata").distinct()}
+
+
+def test_a_tab_that_reads_only_part_of_its_animals_keeps_its_details(tmp_path):
+    """WHY: the empty-read guard was zero-or-nothing, so a tab that read only
+    some of its rows (a shifted header, a file caught mid-save) still replaced
+    the cohort's details, and the left-out animals' sex and date of birth
+    vanished without a word. More than the importer's SYNC_SMALL animals and
+    more than its SYNC_MAX_REMOVED_FRACTION of them left out is now a broken
+    read, as it is for pellet scores, weights and surgeries."""
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    every = list(range(1, 17))
+    ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every))
+    assert len(_metadata_animals(db)) == 16
+
+    r = ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every[:8]))   # 8 of 16 left out
+
+    assert len(_metadata_animals(db)) == 16
+    assert [k["tab"] for k in r["kept"]] == ["0a_Metadata"]
+    assert "8 of the 16 animals" in r["kept"][0]["why"]
+    assert "PROJA_01_09" in r["kept"][0]["why"]
+
+
+def test_a_few_animals_taken_out_of_a_tab_is_an_edit(tmp_path):
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    every = list(range(1, 17))
+    ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every))
+
+    r = ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every[:-2]))  # 2 of 16 left out
+
+    assert r["kept"] == []
+    assert _metadata_animals(db) == {"PROJA_01_%02d" % n for n in every[:-2]}
+
+
+@pytest.mark.parametrize("permission", ["allow_large_removal", "allow_empty_tabs"])
+def test_a_partly_read_tab_is_replaced_when_a_person_allows_it(tmp_path, permission):
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    every = list(range(1, 17))
+    ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every))
+
+    r = ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every[:8]), **{permission: True})
+
+    assert r["kept"] == []
+    assert _metadata_animals(db) == {"PROJA_01_%02d" % n for n in every[:8]}
+
+
+def test_a_partly_read_tab_fails_the_sheet_import(tmp_path):
+    """The kept tab is reported with the importer's refusals, so the import is
+    not called a success (sheet_sync.import_succeeded)."""
+    from mousedb import sheet_sync
+    db = _scratch_db(tmp_path)
+    p = tmp_path / "PROJA_01.xlsx"
+    every = list(range(1, 17))
+    ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every))
+    rec = ar.sync_cohort(db, "PROJA_01", _metadata_workbook(p, every[:8]))
+    entry = {"cohort_id": "PROJA_01", "success": True, "warnings": []}
+
+    sheet_sync._report_kept_tabs(entry, rec)
+
+    assert any("0a_Metadata" in x for x in sheet_sync.sync_refused(entry))
+    assert not sheet_sync.import_succeeded({"cohorts": [entry]})

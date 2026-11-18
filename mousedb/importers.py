@@ -20,6 +20,7 @@ from typing import List, Dict, Optional
 # reader of the same surgery tabs; the importer keeps no copy of it, so the two
 # cannot store different surgeries for one sheet (see _performed_surgery).
 from .animal_records import (
+    BROKEN_READ_MAX_REMOVED_FRACTION, BROKEN_READ_SMALL,
     HELD, PLANNED, PLANNED_SURGERY_GRACE_DAYS, SURGERY_PROOF_COLUMNS,
     SURGERY_WEIGHT_COLUMNS, planned_surgery_overdue, surgery_date,
     surgery_verdict, surgery_weight,
@@ -1582,9 +1583,11 @@ class ExcelImporter:
     # nothing.
 
     SHEET_IMPORT_MARK = 'excel_import'
-    SYNC_MAX_REMOVED_FRACTION = 0.25
+    # The first and last are shared with the animal-details guard
+    # (animal_records.sync_cohort), so the two can never drift apart.
+    SYNC_MAX_REMOVED_FRACTION = BROKEN_READ_MAX_REMOVED_FRACTION
     SYNC_MAX_CHANGED_FRACTION = 0.25
-    SYNC_SMALL = 5
+    SYNC_SMALL = BROKEN_READ_SMALL
 
     # Set by the caller for ONE cohort a person has checked (see above).
     allow_large_removal = False

@@ -70,6 +70,14 @@ A tab's stored rows are left as they were -- not replaced -- when:
     a tab caught mid-save or columns shifted than every animal's details
     deleted on purpose -- the same reasoning as the importer's guard
     (importers: "The sheet wins");
+  * the tab was read but leaves out too many of the animals the database
+    holds details for from it: more than BROKEN_READ_SMALL animals AND more
+    than BROKEN_READ_MAX_REMOVED_FRACTION of them (the same numbers as the
+    importer's guard on pellet scores, weights and surgeries). Same permissions as above. WHY: the empty-read
+    rule alone was zero-or-nothing, so a tab that read only some of its rows
+    (a shifted header, a file caught mid-save) still replaced the cohort's
+    details, and the left-out animals' sex, date of birth, strain ... were
+    gone without a word. Fewer than that is an edit, and is replaced;
   * the caller asks for it (``keep_tabs``): the sheet import keeps the surgery
     tabs when the importer refused to sync the surgeries, and the tray tab when
     it refused the pellet scores, so the animal details never follow a read
@@ -174,6 +182,15 @@ SURGERY_READOUT_FIELDS = {"4_Contusion_Injury_Details": ("Actual_kd", "Actual_di
 SURGERY_TABS = {"contusion": "4_Contusion_Injury_Details", "tracing": "5_SC_Injection_Details"}
 
 PERFORMED, PLANNED, HELD = "performed", "planned", "held"
+
+# When a read that leaves rows out is taken as BROKEN rather than as an edit:
+# more than BROKEN_READ_SMALL of them AND more than this fraction of what is
+# stored. ONE pair of numbers for the sheet importer's guard (its SYNC_SMALL
+# and SYNC_MAX_REMOVED_FRACTION are these, see importers: "The sheet wins")
+# and for the animal-details guard in sync_cohort, kept here because the
+# importer already reads this module and this module must not read it.
+BROKEN_READ_SMALL = 5
+BROKEN_READ_MAX_REMOVED_FRACTION = 0.25
 
 # How many days a DATED planned surgery row may sit without its weight before a
 # person is told about it. WHY: a planned row is not a problem -- the sheet is
@@ -725,6 +742,31 @@ def stored_counts(db, cohort_id: str, tabs) -> Dict[str, int]:
     return {tab: n for tab, n in rows}
 
 
+def stored_animals(db, cohort_id: str, tabs) -> Dict[str, set]:
+    """{tab: the animals this cohort has stored records for from it}. Reads
+    only, like stored_counts."""
+    from sqlalchemy import inspect
+    if db is None or not tabs or not inspect(db.engine).has_table("animal_records"):
+        return {}
+    AnimalRecord = _table()
+    out: Dict[str, set] = {}
+    with db.session() as s:
+        for tab, sid in (s.query(AnimalRecord.source_tab, AnimalRecord.subject_id)
+                         .filter(AnimalRecord.cohort_id == cohort_id,
+                                 AnimalRecord.source_tab.in_(list(tabs)))
+                         .distinct().all()):
+            out.setdefault(tab, set()).add(sid)
+    return out
+
+
+def _too_many_left_out(n_left_out: int, n_stored: int) -> bool:
+    """The importer's broken-read rule (importers.ExcelImporter._sync_guard),
+    counted in animals: more than BROKEN_READ_SMALL and more than
+    BROKEN_READ_MAX_REMOVED_FRACTION of those stored."""
+    return (n_left_out > BROKEN_READ_SMALL
+            and n_left_out > BROKEN_READ_MAX_REMOVED_FRACTION * n_stored)
+
+
 def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: bool = False,
                 allow_large_removal: bool = False,
                 keep_tabs: Optional[Dict[str, str]] = None,
@@ -758,9 +800,11 @@ def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: 
             records = read_cnt_workbook(sheet, cohort_id, warnings, tabs_read)
         expected = (ODC_TAB,) if kind == "odc" else CNT_TABS + (TRAY_TAB,)
         stored = stored_counts(db, cohort_id, sorted(set(tabs_read) | set(expected)))
-        given = {}
+        given, given_animals = {}, {}
         for r in records:
             given[r["source_tab"]] = given.get(r["source_tab"], 0) + 1
+            given_animals.setdefault(r["source_tab"], set()).add(r["subject_id"])
+        held = stored_animals(db, cohort_id, [t for t in tabs_read if stored.get(t)])
         replace = []
         # A tab this reader copies that was NOT read this time (missing,
         # renamed, empty, no animal id column; the tray tab without a Sex
@@ -791,6 +835,19 @@ def sync_cohort(db, cohort_id: str, sheet: Path, kind: str = "cohort", dry_run: 
                     "holds %d of this cohort's from it; that looks like a broken read "
                     "(a tab caught mid-save, shifted columns), not every row deleted on "
                     "purpose" % (tab, stored[tab]))})
+            elif (given.get(tab) and held.get(tab)
+                  and not (allow_large_removal or allow_empty_tabs)
+                  and _too_many_left_out(len(held[tab] - given_animals[tab]),
+                                         len(held[tab]))):
+                # Read, but only part of it: see the module docstring.
+                missing = sorted(held[tab] - given_animals[tab])
+                kept.append({"tab": tab, "why": (
+                    "the '%s' tab read details for only %d of the %d animals the "
+                    "database holds this cohort's details for from it (left out: %s); "
+                    "that looks like a broken read (a tab caught mid-save, a shifted "
+                    "header), not that many animals deleted on purpose"
+                    % (tab, len(held[tab]) - len(missing), len(held[tab]),
+                       ", ".join(missing[:10]) + (" ..." if len(missing) > 10 else "")))})
             else:
                 replace.append(tab)
         records = [r for r in records if r["source_tab"] in replace]

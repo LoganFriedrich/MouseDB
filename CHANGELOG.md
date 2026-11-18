@@ -229,6 +229,13 @@ checked-in code, not what's planned.
   and a contested video was left out alone while the other animals of its
   recording went into the analysis files. The skip signature records whether
   the folder could be reached, so the files are rebuilt once it can.
+- Sheet import, animal details: a tab that reads only part of its animals
+  (more than 5 and more than a quarter of those the database holds details
+  for from it are left out) is kept as it was and reported as
+  `NOT SYNCED animal details '<tab>'`, naming the left-out animals, like a
+  tab that reads as empty. It used to replace the cohort's details, so the
+  left-out animals' details vanished without a warning. The two numbers are
+  now one setting shared with the importer's own broken-read guard.
 - `mousedb-import-aspa-scores --apply` now waits for the cross-task database
   lock and, once its cohorts are imported, rewrites the hand-scores file and
   the FIX THESE files, like `mousedb-sheets import --cohort ASPA_xx`. It

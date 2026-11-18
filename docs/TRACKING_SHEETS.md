@@ -679,6 +679,16 @@ details are left exactly as they were when:
 - the tab is there but gives **no animal's details at all** while the
   database holds some from it -- most likely a tab caught mid-save or shifted
   columns, not every row deleted on purpose;
+- the tab is there but leaves out **too many of the animals** the database
+  holds details for from it: more than 5 animals AND more than a quarter of
+  them (the same rule as for pellet scores, weights and surgeries in "The
+  sheet wins"). A shifted header or a file caught mid-save can read only
+  part of a tab; until 2026-11 such a read still replaced the cohort's
+  details and the left-out animals' sex, date of birth, strain ... were gone
+  without a word. Taking out a few animals (5 or fewer, or a quarter or
+  less) is an edit and is copied. The line names the left-out animals:
+  `[!] NOT SYNCED animal details '0a_Metadata': the '0a_Metadata' tab read
+  details for only 8 of the 16 animals ... (left out: ...)`;
 - the import **refused to sync** the table fed by the same tab (see "The
   sheet wins"): the two surgery tabs stay as they were when the surgeries were
   refused, the tray tab's `Sex` when the pellet scores were refused.
@@ -697,10 +707,13 @@ Each such tab is listed with the other refusals, under the cohort's line:
 and it counts as a refusal: the cohort is listed as NOT SYNCED in the
 closing line and the scheduled job's run shows as failed. What to do: if the
 sheet is wrong (a tab renamed, a column moved), fix it and import again. If
-the tab really is empty -- or gone -- now on purpose, import that cohort alone
+the tab really is empty -- or gone, or those animals really were taken out
+-- now on purpose, import that cohort alone
 with `mousedb-sheets import --cohort <cohort> --allow-large-removal`: a tab
-that reads as empty then has its details replaced by none, and a tab that is
-gone has its stored details removed.
+that reads as empty then has its details replaced by none, a tab that reads
+only some animals has its details replaced by theirs, and a tab that is
+gone has its stored details removed. (Replace in Cohort Setup also copies
+an empty or partly read tab as it reads.)
 
 On a letter workbook (the `ODC` tab, refreshed by **Import all sheets** and
 by the ASPA score import) a kept tab is reported the same way -- a
