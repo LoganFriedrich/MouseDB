@@ -9,6 +9,7 @@ Run via::
 
     python -m mousedb.migrations add-contact-group
     python -m mousedb.migrations contact-columns       # bring them to the current definition
+    python -m mousedb.migrations surgery-injections    # table for several viruses/sites per surgery
 
 or programmatically::
 
@@ -127,6 +128,54 @@ def add_contact_group_columns(db: Database | None = None) -> List[str]:
     return added
 
 
+# --- surgery_injections: several viruses at several sites per surgery -------
+
+def ensure_surgery_injections(engine) -> bool:
+    """Create the surgery_injections table if this database predates it.
+    Returns True when it was created. Adds a table; changes nothing else.
+
+    WHY here and not only in init_db: the scheduled sheet import opens the
+    database without init_db (it never creates tables), so the importer calls
+    this before it writes, the way animal_records creates its own table."""
+    from sqlalchemy import inspect
+    from .schema import SurgeryInjection
+    if SurgeryInjection.__tablename__ in inspect(engine).get_table_names():
+        return False
+    SurgeryInjection.__table__.create(engine, checkfirst=True)
+    return True
+
+
+def backfill_surgery_injections(session) -> int:
+    """Give every tracing surgery recorded before surgery_injections existed
+    its one injection row, from the virus and site the Surgery row holds.
+    Returns how many rows were added. Idempotent: a surgery that already has
+    an injection row is left alone.
+
+    WHY: so surgery_injections is the one place that lists what every tracing
+    surgery injected, whichever sheet layout it came from. The older layout
+    has one virus and one site per animal, kept on the Surgery row
+    (virus_name; the titre in virus_lot, where the older importer put the
+    sheet's Virus_Titer cell; the target in injection_site); the Surgery row
+    itself is not changed."""
+    from .schema import Surgery, SurgeryInjection
+    have = {sid for (sid,) in session.query(SurgeryInjection.surgery_id).distinct()}
+    added = 0
+    for s in session.query(Surgery).filter(Surgery.surgery_type == 'tracing').all():
+        if s.id in have or not (s.virus_name or s.injection_site or s.virus_lot):
+            continue
+        titer_text = str(s.virus_lot).strip() if s.virus_lot else None
+        try:
+            titer = float(titer_text) if titer_text else None
+        except ValueError:
+            titer = None
+        session.add(SurgeryInjection(
+            surgery_id=s.id, site_tab='5_SC_Injection_Details', slot=1,
+            virus_name=s.virus_name, virus_titer=titer, virus_titer_text=titer_text,
+            injection_target=s.injection_site, entered_by='migration'))
+        added += 1
+    return added
+
+
 # --- CLI -------------------------------------------------------------------
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -145,7 +194,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Give the contact columns their current definition (easy/flat empty; "
              "a pellet nobody touched is 'untouched').",
     )
+    sub.add_parser(
+        "surgery-injections",
+        help="Create the surgery_injections table and give each earlier tracing "
+             "surgery its one injection row (the sheet import also does this).",
+    )
     args = parser.parse_args(argv)
+
+    if args.migration == "surgery-injections":
+        from .task_mutex import hold
+        db = get_db()
+        with hold(waiting_for="another database task"):
+            created = ensure_surgery_injections(db.engine)
+            with db.session() as session:
+                added = backfill_surgery_injections(session)
+        print("surgery_injections: %s; %d earlier tracing surgery row(s) added."
+              % ("table created" if created else "table already there", added))
+        return 0
 
     if args.migration == "contact-columns":
         from .task_mutex import hold

@@ -654,6 +654,9 @@ class Surgery(Base):
 
     # Relationships
     subject = relationship("Subject", back_populates="surgeries")
+    # Where it injected and what: one row per site per virus (see SurgeryInjection).
+    injections = relationship("SurgeryInjection", back_populates="surgery",
+                              cascade="all, delete-orphan")
 
     @validates('surgery_type')
     def validate_surgery_type(self, key, value):
@@ -661,6 +664,52 @@ class Surgery(Base):
         if value.lower() not in valid_types:
             raise ValueError(f"Surgery type must be one of {valid_types}: {value}")
         return value.lower()
+
+
+class SurgeryInjection(Base):
+    """One virus injected at one site during one surgery.
+
+    WHY its own table (2026-11-03): a Surgery row has room for ONE virus at ONE
+    site (virus_name, injection_site). A tracing surgery can inject several
+    viruses -- mixed into one solution -- at more than one site in the same
+    sitting (a spinal cord site and a brain site, say), and each site has its
+    own mix, targets and coordinates. Squeezing that into the Surgery row lost
+    every virus but one and every site but one. So the surgery stays one
+    Surgery row (one animal, one day, one anaesthesia, one survival) and each
+    (site, virus) it delivered is a row here.
+
+    ``site_tab`` is the workbook tab the site was read from (a
+    ``5_<SITE>_Injection_Details`` tab), so a row can always be traced back to
+    the sheet. ``slot`` is the virus's position at that site (1 = the first
+    virus column of the tab). The site's own fields (target, depths,
+    coordinates) repeat on each of its viruses' rows: one table instead of two,
+    which is all a handful of rows per animal needs.
+
+    ``virus_titer`` is the titre as a number when the cell reads as one;
+    ``virus_titer_text`` keeps the cell as written (older sheets type titres
+    as text such as '5x10^12').
+    """
+    __tablename__ = 'surgery_injections'
+    __table_args__ = (
+        UniqueConstraint('surgery_id', 'site_tab', 'slot', name='unique_virus_slot_per_site'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    surgery_id = Column(Integer, ForeignKey('surgeries.id'), nullable=False, index=True)
+    site_tab = Column(String(60), nullable=False)
+    slot = Column(Integer, nullable=False, default=1)
+    virus_name = Column(String(200))
+    virus_titer = Column(Float)
+    virus_titer_text = Column(String(60))
+    total_viral_titer = Column(Float)      # the whole mix at this site, as the sheet sums it
+    injection_target = Column(String(200))
+    depths_dv = Column(String(60))
+    coordinates_ml = Column(String(60))
+    coordinates_ap = Column(String(60))
+    entered_by = Column(String(50))
+    entered_at = Column(DateTime, default=datetime.now)
+
+    surgery = relationship("Surgery", back_populates="injections")
 
 
 class AnimalRecord(Base):
