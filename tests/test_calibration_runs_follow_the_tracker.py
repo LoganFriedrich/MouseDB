@@ -101,3 +101,50 @@ def test_a_run_without_a_tracker_id_is_never_rewritten(db, tmp_path):
     with db.session() as s:
         statuses = {r.run_id: r.status for r in s.query(CalibrationRun)}
     assert statuses[made_up] == 'started'
+
+
+# --- a file missing columns never overwrites what is stored --------------------
+
+def best_finished_run(db, tmp_path):
+    BrainGlobeImporter(db).import_calibration_runs(tracker(tmp_path, [run(
+        status='completed', det_cells_found=1234, duration_seconds=12.5, marked_best='True')]))
+    got = stored(db)
+    assert (got['status'], got['best'], got['ball_xy']) == ('completed', 1, 6)
+    return got
+
+
+@pytest.mark.parametrize('dropped', [('marked_best',), ('status',), ('status', 'marked_best')])
+def test_a_file_without_the_trackers_status_or_best_column_is_refused(db, tmp_path, dropped):
+    """A copy written by an older tracker (which drops columns it does not
+    know) or edited by hand: every stored best would become 'not best' and
+    every status 'unknown'. Refused whole instead, stored runs untouched."""
+    before = best_finished_run(db, tmp_path)
+    row = {k: v for k, v in run(status='completed', det_cells_found=999,
+                                marked_best='True').items() if k not in dropped}
+    result = BrainGlobeImporter(db).import_calibration_runs(tracker(tmp_path, [row]))
+    assert not result['success']
+    assert all(name in ' '.join(result['errors']) for name in dropped), result['errors']
+    assert stored(db) == before
+
+
+def test_a_column_the_file_lacks_leaves_the_stored_value(db, tmp_path):
+    """Only fields whose column is in the file are updated."""
+    best_finished_run(db, tmp_path)
+    row = {k: v for k, v in run(status='completed', det_cells_found=1300, duration_seconds=12.5,
+                                marked_best='True').items()
+           if k not in ('det_ball_xy', 'created_at')}
+    result = BrainGlobeImporter(db).import_calibration_runs(tracker(tmp_path, [row]))
+    assert result['success'], result['errors']
+    got = stored(db)
+    assert got['cells'] == 1300                       # a column that is there: updated
+    assert got['ball_xy'] == 6                        # a column that is not: kept
+    assert got['when'] == datetime(2026, 2, 3, 10, 20, 30, 123456)
+
+
+def test_a_cleared_best_cell_still_unmarks_the_run(db, tmp_path):
+    """The tracker clears marked_best with an empty cell when another run of
+    the brain becomes best: that is a real change, not a missing value."""
+    best_finished_run(db, tmp_path)
+    BrainGlobeImporter(db).import_calibration_runs(tracker(tmp_path, [run(
+        status='completed', det_cells_found=1234, duration_seconds=12.5, marked_best='')]))
+    assert stored(db)['best'] == 0

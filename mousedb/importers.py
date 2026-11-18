@@ -3910,6 +3910,25 @@ class BrainGlobeImporter:
             self.errors.append(f"Failed to read CSV: {e}")
             return self._get_result()
 
+        # A file without the columns the tracker always writes is refused
+        # whole. WHY: stored runs are UPDATED from this file on every import.
+        # A copy written by an older tracker that drops columns it does not
+        # know, or a hand-edited file, would otherwise turn every stored best
+        # run into "not best" and every status into "unknown" in one night,
+        # with the job exiting 0. Each group is satisfied by the tracker's
+        # name or the older one this importer also reads.
+        missing = [" or ".join(names) for names in self.CALIBRATION_REQUIRED_COLUMNS
+                   if not any(n in df.columns for n in names)]
+        if missing:
+            self.errors.append(
+                f"{csv_path.name} has no {', no '.join(missing)} column, which the "
+                f"tracker always writes; no calibration run was added or changed. It "
+                f"was written by an older MouseBrain or edited by hand: let the current "
+                f"MouseBrain tracker write it again (or put the column back)")
+            return self._get_result()
+        present = {field for field, names in self.CALIBRATION_COLUMNS.items()
+                   if any(n in df.columns for n in names)}
+
         # Runs whose "brain" is not a brain (training data, test runs) are
         # skipped and reported ONCE, by name. WHY: the tracker records every
         # calibration run, including runs on training cubes and test data; one
@@ -3970,9 +3989,14 @@ class BrainGlobeImporter:
                     # that first state for good. A run WITHOUT a tracker id
                     # got a made-up one (brain + running number) that need not
                     # name the same run next time, so it is never touched.
+                    # Only fields whose column is IN the file are compared:
+                    # a column the file lacks says nothing about the run, so
+                    # the stored value stays (a blank cell in a column that
+                    # is there does count: the tracker clears marked_best
+                    # with an empty cell).
                     if from_tracker:
                         changed = {k: v for k, v in fields.items()
-                                   if getattr(existing, k) != v}
+                                   if k in present and getattr(existing, k) != v}
                         if changed:
                             if not dry_run:
                                 for k, v in changed.items():
@@ -4003,6 +4027,28 @@ class BrainGlobeImporter:
                 "runs, by name and count): %s" % (sum(not_brains.values()), names))
         return self._get_result()
 
+    # CalibrationRun column -> the tracker CSV columns it is read from, the
+    # tracker's own name first, then older names this importer also reads.
+    CALIBRATION_COLUMNS = {
+        'ball_xy_um': ('det_ball_xy', 'ball_xy', 'ball_xy_um'),
+        'ball_z_um': ('det_ball_z', 'ball_z', 'ball_z_um'),
+        'soma_diameter_um': ('det_soma_diameter', 'soma_diameter'),
+        'threshold': ('det_threshold', 'threshold'),
+        'cells_detected': ('det_cells_found', 'cells_detected'),
+        'detection_time_s': ('duration_seconds', 'detection_time_s'),
+        'status': ('status',),
+        'is_best': ('marked_best', 'is_best'),
+        'run_date': ('created_at', 'timestamp', 'run_date'),
+        'user': ('user',),
+        'notes': ('notes',),
+    }
+    # Columns a calibration_runs.csv must have, each satisfied by any one of
+    # its names (see import_calibration_runs): which brain a run is of, and
+    # the two fields that a missing column would silently overwrite with a
+    # default for every stored run ('unknown', not best).
+    CALIBRATION_REQUIRED_COLUMNS = (('brain', 'brain_id'), ('status',),
+                                    ('marked_best', 'is_best'))
+
     def _calibration_fields(self, row) -> Dict:
         """The CalibrationRun columns one row of the tracker's
         calibration_runs.csv gives.
@@ -4014,8 +4060,8 @@ class BrainGlobeImporter:
         database with no detection settings, no duration, and is_best 0 --
         a run marked best in the tracker was never best here.
         """
-        def first(*names):
-            for name in names:
+        def first(field):
+            for name in self.CALIBRATION_COLUMNS[field]:
                 value = row.get(name)
                 if value is not None and not (isinstance(value, float) and pd.isna(value)):
                     if not (isinstance(value, str) and value.strip() == ''):
@@ -4025,17 +4071,17 @@ class BrainGlobeImporter:
         status = first('status')
         user = first('user')
         notes = first('notes')
-        best = first('marked_best', 'is_best')
+        best = first('is_best')
         return {
-            'ball_xy_um': self._parse_float(first('det_ball_xy', 'ball_xy', 'ball_xy_um')),
-            'ball_z_um': self._parse_float(first('det_ball_z', 'ball_z', 'ball_z_um')),
-            'soma_diameter_um': self._parse_float(first('det_soma_diameter', 'soma_diameter')),
-            'threshold': self._parse_float(first('det_threshold', 'threshold')),
-            'cells_detected': self._parse_int(first('det_cells_found', 'cells_detected')),
-            'detection_time_s': self._parse_float(first('duration_seconds', 'detection_time_s')),
+            'ball_xy_um': self._parse_float(first('ball_xy_um')),
+            'ball_z_um': self._parse_float(first('ball_z_um')),
+            'soma_diameter_um': self._parse_float(first('soma_diameter_um')),
+            'threshold': self._parse_float(first('threshold')),
+            'cells_detected': self._parse_int(first('cells_detected')),
+            'detection_time_s': self._parse_float(first('detection_time_s')),
             'status': str(status) if status is not None else 'unknown',
             'is_best': 1 if best in (True, 1, '1', 'True', 'true') else 0,
-            'run_date': self._parse_datetime(first('created_at', 'timestamp', 'run_date')),
+            'run_date': self._parse_datetime(first('run_date')),
             'user': str(user) if user is not None else None,
             'notes': str(notes) if notes is not None else None,
         }

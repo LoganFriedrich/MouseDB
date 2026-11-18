@@ -24,7 +24,9 @@ def db(tmp_path, monkeypatch):
 def test_non_brain_runs_are_one_warning_naming_each_once(db, tmp_path):
     csv = tmp_path / "calibration_runs.csv"
     pd.DataFrame({"brain": ["training_data", "training_data", "TEST_VERIFICATION_BRAIN_001"],
-                  "exp_id": ["a", "b", "c"]}).to_csv(csv, index=False)
+                  "exp_id": ["a", "b", "c"],
+                  # columns the tracker always writes (a file without them is refused)
+                  "status": ["completed"] * 3, "marked_best": [""] * 3}).to_csv(csv, index=False)
     imp = BrainGlobeImporter(db)
     imp.import_calibration_runs(csv)
     lines = [w for w in imp.warnings if "name no brain" in w]

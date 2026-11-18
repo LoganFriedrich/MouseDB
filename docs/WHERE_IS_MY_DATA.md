@@ -1390,6 +1390,21 @@ and updated runs separately. A row with no `exp_id` gets a made-up id when it
 is first imported and is never changed afterwards, because the same made-up
 id need not name the same run the next time.
 
+Only what the file actually has is brought in line. A field whose column is
+not in `calibration_runs.csv` at all (an older tracker wrote the file, or
+someone edited it by hand and removed a column) keeps the value the
+database holds; an EMPTY cell in a column that is there does count (the
+tracker empties `marked_best` when another run of the brain becomes best).
+And a `calibration_runs.csv` that has no `status` column, no `marked_best`
+(or older `is_best`) column, or no `brain` (or `brain_id`) column is refused
+whole: the `Calibration runs` block says `[FAIL]` and names the missing
+column, no run is added or changed, and the job ends with a `[FAIL]` line
+(the region counts are still imported). Without that, one such file would
+mark every stored run "not best" and "unknown" in a single night. To fix
+it, let the current MouseBrain write the file again (any new calibration
+run does), or put the column back; never run an older copy of MouseBrain
+against the live file.
+
 The first run after this change updates nearly every stored calibration run
 once: older imports read column names the tracker does not write, so stored
 runs are missing their date, duration and detection settings, and a run
