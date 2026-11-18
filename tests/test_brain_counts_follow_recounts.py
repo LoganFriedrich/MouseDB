@@ -392,19 +392,84 @@ def test_a_new_brain_disagreeing_with_region_counts_is_not_added(env, capsys):
 
 # --- warnings are printed -----------------------------------------------------
 
-def test_a_region_left_out_is_printed(env, capsys, monkeypatch):
-    """A region whose acronym the atlas does not know is left out of the
-    counts; the import says so under the brain's line."""
+# --- a region the acronym lookup does not know -------------------------------
+
+KNOWS_BOTH = {'RN': {'id': 1, 'name': 'Red Nucleus'}, 'ZZQ': {'id': 9, 'name': 'Region nine'}}
+KNOWS_RN = {'RN': {'id': 1, 'name': 'Red Nucleus'}}
+
+
+def write_acronym_counts(summary, *rows, age=OLD):
+    """A counts file in step 6's own layout: acronyms, no region_id."""
+    path = summary / (BRAIN + '_counts.csv')
+    lines = ['region_acronym,region_name,cell_count,left_count,right_count'] + list(rows)
+    path.write_text(''.join(line + '\n' for line in lines))
+    os.utime(path, (age, age))
+    return path
+
+
+def test_an_unknown_acronym_never_deletes_a_stored_region(env, capsys, monkeypatch):
+    """Imported where the lookup knows every acronym, then re-read where it
+    does not know one (another atlas, mousedb's built-in file): the region
+    would be left out and, since the import REPLACES a brain's counts, its
+    stored cells deleted. Refused instead: [FAIL], exit 1, stored counts kept."""
     from mousedb.importers import BrainGlobeImporter
-    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache',
-                        {'RN': {'id': 1, 'name': 'Red Nucleus'}})
-    path = env["summary"] / (BRAIN + '_counts.csv')
-    path.write_text('region_acronym,region_name,cell_count,left_count,right_count\n'
-                    'RN,Red Nucleus,100,60,40\nZZQ,Nowhere,5,5,0\n')
-    os.utime(path, (OLD, OLD))
+    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache', KNOWS_BOTH)
+    write_acronym_counts(env["summary"], 'RN,Red Nucleus,100,60,40', 'ZZQ,Region nine,50,50,0')
+    write_elife(env["summary"], 100, 60, 40)
+    assert run(env, capsys)[0] == 0
+    before = stored(env)
+    assert before[0][(9, 'both')] == 50
+
+    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache', KNOWS_RN)
+    write_acronym_counts(env["summary"], 'RN,Red Nucleus,120,70,50', 'ZZQ,Region nine,50,50,0')
+    rc, out = run(env, capsys)
+    assert rc == 1, out
+    assert stored(env) == before, out                 # nothing deleted, nothing replaced
+    assert 'ZZQ' in out and 'REPLACED' not in out
+    assert out.strip().splitlines()[-1].startswith('[FAIL]') and BRAIN in out
+
+
+def test_a_new_brain_with_an_unknown_acronym_is_not_added(env, capsys, monkeypatch):
+    """Stored without the region it would be marked final with cells missing."""
+    from mousedb.importers import BrainGlobeImporter
+    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache', KNOWS_RN)
+    write_acronym_counts(env["summary"], 'RN,Red Nucleus,100,60,40', 'ZZQ,Nowhere,5,5,0')
     write_elife(env["summary"], 100, 60, 40)
     rc, out = run(env, capsys)
-    assert '[!] %s: Unknown acronym: ZZQ' % BRAIN in out, out
+    assert rc == 1, out
+    assert stored(env)[:2] == ({}, {})
+    with env["db"].session() as s:
+        assert s.query(BrainSample).count() == 0
+    assert 'ZZQ' in out
+
+
+def test_an_unknown_acronym_on_an_unchanged_brain_is_printed_not_failed(
+        env, capsys, monkeypatch):
+    """The database already holds exactly the file's other rows: nothing
+    would change, so the run does not fail; the region is still named."""
+    from mousedb.importers import BrainGlobeImporter
+    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache', KNOWS_RN)
+    write_acronym_counts(env["summary"], 'RN,Red Nucleus,100,60,40')
+    write_elife(env["summary"], 100, 60, 40)
+    assert run(env, capsys)[0] == 0
+    before = stored(env)
+    write_acronym_counts(env["summary"], 'RN,Red Nucleus,100,60,40', 'ZZQ,Nowhere,5,5,0')
+    rc, out = run(env, capsys)
+    assert rc == 0, out
+    assert stored(env) == before
+    assert any(line.strip().startswith('[!] %s:' % BRAIN) and 'ZZQ' in line
+               for line in out.splitlines()), out
+
+
+def test_the_add_only_import_still_names_an_unknown_acronym(env, monkeypatch):
+    """import_region_counts only adds rows, so a region left out deletes
+    nothing there: it stays a warning naming the acronym."""
+    from mousedb.importers import BrainGlobeImporter
+    monkeypatch.setattr(BrainGlobeImporter, '_acronym_to_id_cache', KNOWS_RN)
+    path = write_acronym_counts(env["summary"], 'RN,Red Nucleus,100,60,40', 'ZZQ,Nowhere,5,5,0')
+    result = BrainGlobeImporter(env["db"]).import_region_counts(path, brain_id=BRAIN)
+    assert result['success'], result['errors']
+    assert 'Unknown acronym: ZZQ' in result['warnings']
 
 
 def test_an_unknown_elife_group_is_printed(env, capsys):

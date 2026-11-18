@@ -1320,6 +1320,28 @@ Rules that keep a replacement safe:
   `unchanged [OK]` and the disagreement is printed under it as a `[!]` line
   instead -- an unchanged brain never fails the nightly job. If you see that
   `[!]` line, run step 6 for the brain again so both files agree.
+- **Unknown acronym.** A counts file names each region by its atlas
+  acronym (`RN`, ...). mousedb turns each acronym into the atlas's region
+  number with a lookup: the BrainGlobe atlas where `brainglobe-atlasapi` is
+  installed in the MouseDB environment, otherwise a copy of the atlas's
+  region list built into mousedb. If the file has a region the lookup does
+  not know, that region cannot be stored, and replacing the brain's counts
+  would DELETE its cells from the database (while the eLife groups and
+  MouseBrain's `region_counts.csv` still count them). So such a file is
+  refused: the brain keeps the counts it has, and its line says `[FAIL]`,
+  names the acronyms and which lookup did not know them, and the run ends
+  with a `[FAIL]` line. It means the file was made with another atlas, or
+  another version of it, than the lookup mousedb has now (for example the
+  brain was counted on a machine with a newer atlas). Nothing in the file is
+  wrong; a person who looks after the database has to make mousedb's lookup
+  know the acronyms (install the same atlas in the MouseDB environment, or
+  update mousedb's built-in list), then run the import again. As with the
+  check above, when the database already holds exactly the file's other
+  rows, nothing would change: the brain's line says `unchanged [OK]` and the
+  unknown acronyms are printed under it as a `[!]` line.
+  (`mousedb import-brains --csv` behaves the same. Only the older add-only
+  path, `BrainGlobeImporter.import_region_counts`, which never deletes,
+  still stores the other regions and prints `Unknown acronym: X`.)
 - Two counts files that name the same brain (for example an old
   `<brain>_counts.csv` left beside step 6's `<mouse>_<brain>_counts.csv`):
   neither is imported, the brain keeps the counts it has, and the run ends
@@ -1353,9 +1375,9 @@ Rules that keep a replacement safe:
   cannot be read ...) writes nothing at all, not even its animal or its
   brain row.
 - Warnings are printed under the brain's line, as lines starting `[!]` (at
-  most ten per brain, then a count of the rest). `Unknown acronym: X` means
-  region X is NOT in the brain's counts: the atlas mousedb uses does not
-  know it. `group ... is not a known eLife group name` means a group in
+  most ten per brain, then a count of the rest). An unknown acronym printed
+  there belongs to a brain whose stored counts did not change (see
+  "Unknown acronym" above): region X is not among them. `group ... is not a known eLife group name` means a group in
   `elife_counts.csv` was stored under the name it has there. Neither fails
   the run.
 

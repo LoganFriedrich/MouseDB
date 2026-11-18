@@ -1285,8 +1285,10 @@ BRAIN_WARNINGS_SHOWN = 10
 def _print_brain_warnings(brain_id, result):
     """Print a brain's warnings under its line, as '[!]' lines.
 
-    WHY: a warning here is data left out or stored on trust -- 'Unknown
-    acronym: X' is a region whose counts did NOT go in, and a group name
+    WHY: a warning here is data left out or stored on trust -- an unknown
+    acronym on an unchanged brain is a region not among its stored counts
+    (on a brain whose counts would change it is an error, and the file is
+    refused: BrainGlobeImporter.sync_brain_counts), and a group name
     elife_counts.csv carries that mousedb does not know is stored as written.
     Nothing fails silently, so they are shown, not just collected."""
     warnings = result.get('warnings') or []

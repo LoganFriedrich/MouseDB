@@ -3778,8 +3778,10 @@ class BrainGlobeImporter:
         r'^(\d+)_([A-Z]+)_(\d{2})_(\d{2})_(\d+p?\d*)x_z(\d+)$'
     )
 
-    # Cached acronym -> {id, name} lookup
+    # Cached acronym -> {id, name} lookup, and where it came from (named in
+    # the error that refuses a counts file with acronyms it does not know).
     _acronym_to_id_cache = None
+    _acronym_source = None
 
     @classmethod
     def get_acronym_to_id(cls, atlas_name='allen_mouse_10um'):
@@ -3804,6 +3806,7 @@ class BrainGlobeImporter:
                 if acr:
                     lookup[acr] = {'id': int(rid), 'name': info.get('name', acr)}
             cls._acronym_to_id_cache = lookup
+            cls._acronym_source = f"the BrainGlobe atlas {atlas_name}"
             return lookup
         except (ImportError, Exception):
             pass
@@ -3814,6 +3817,7 @@ class BrainGlobeImporter:
             import json
             with open(json_path, 'r') as f:
                 cls._acronym_to_id_cache = json.load(f)
+            cls._acronym_source = f"mousedb's built-in file {json_path.name}"
             return cls._acronym_to_id_cache
 
         return {}
@@ -3823,6 +3827,8 @@ class BrainGlobeImporter:
         self.errors: List[str] = []
         self.warnings: List[str] = []
         self.imported_counts: Dict[str, int] = {}
+        # Acronyms the last _region_count_rows could not resolve (see there).
+        self.unknown_acronyms: List[str] = []
 
     @contextmanager
     def _import_session(self, dry_run: bool):
@@ -4113,6 +4119,12 @@ class BrainGlobeImporter:
                 self._insert_region_count(session, brain_sample, row,
                                           calibration_run_id, is_final, csv_path, dry_run)
 
+        # This import only ADDS rows a brain does not have yet, so a region
+        # left out here deletes nothing; it is still reported, one line each.
+        # (sync_brain_counts, which REPLACES, refuses such a file instead.)
+        for acronym in self.unknown_acronyms:
+            self.warnings.append(f"Unknown acronym: {acronym}")
+
         if not dry_run and not self.errors:
             print(f"  Committed {self.imported_counts['region_counts']} region counts")
 
@@ -4129,10 +4141,16 @@ class BrainGlobeImporter:
           left_count, right_count (acronyms resolved to Allen Atlas ids;
           a 'both' row for the total plus a 'left'/'right' row for each
           hemisphere with cells)
-        A row whose acronym the atlas does not know is skipped with a warning.
+        A row whose acronym the lookup does not know is left out of the rows
+        and its acronym listed in ``self.unknown_acronyms`` (file order, each
+        once); the CALLER decides what that means. WHY not a warning here:
+        for an import that only adds, a region left out is data missing; for
+        sync_brain_counts, which REPLACES a brain's stored counts, it is the
+        region's stored cells DELETED, so that one refuses the file.
         When the file names the same region and hemisphere twice, the first
         one counts (the database holds one row per region and hemisphere).
         """
+        self.unknown_acronyms = []
         col_map = self._detect_region_csv_format(df)
         if not col_map:
             self.errors.append("Could not detect CSV format")
@@ -4191,7 +4209,8 @@ class BrainGlobeImporter:
                     if not region_name:
                         region_name = info['name']
                 else:
-                    self.warnings.append(f"Unknown acronym: {acronym}")
+                    if acronym not in self.unknown_acronyms:
+                        self.unknown_acronyms.append(acronym)
                     continue
 
             cell_count = self._parse_int(row.get(col_map.get('cell_count', '__none__')))
@@ -4573,6 +4592,11 @@ class BrainGlobeImporter:
         What it never does:
           - It never touches a brain whose counts file is gone: the stored
             counts stay (only files that exist are read).
+          - It never stores a file with a region whose acronym the acronym
+            lookup does not know (``unknown_acronyms``): that region would be
+            left out, its stored cells deleted. Refused with an error, the
+            stored counts kept (a warning only when the database already
+            holds exactly the file's other rows).
           - It never replaces counts from a file that may be half written: a
             file (or MouseBrain's elife_counts.csv) changed less than
             RECENT_WRITE_S seconds ago, one that cannot be read, one that
@@ -4673,8 +4697,13 @@ class BrainGlobeImporter:
         if rows is None:
             return done()
         if not rows:
-            self.errors.append(f"{csv_path.name} holds no region rows; the counts the "
-                               f"database holds for {brain_id} are kept")
+            unknown = (f" (every region has an acronym "
+                       f"{self._acronym_source or 'the acronym lookup'} does not know: "
+                       f"{', '.join(self.unknown_acronyms[:10])}"
+                       f"{' ...' if len(self.unknown_acronyms) > 10 else ''})"
+                       if self.unknown_acronyms else "")
+            self.errors.append(f"{csv_path.name} holds no region rows{unknown}; the counts "
+                               f"the database holds for {brain_id} are kept")
             return done()
         unfinished = self._unfinished_count_rows(csv_path, df)
         if unfinished:
@@ -4732,6 +4761,35 @@ class BrainGlobeImporter:
             new_rc = [dict(row, is_final=1) for row in rows]
             content_changes = (not stored_rc
                                or _content(stored_rc, _RC_FIELDS) != _content(new_rc, _RC_FIELDS))
+            if self.unknown_acronyms:
+                # WHY: a region whose acronym the lookup does not know is not
+                # among ``rows``. Storing the file would REPLACE the brain's
+                # counts and so DELETE that region's cells from the database,
+                # while the eLife groups (computed from every acronym) and
+                # MouseBrain's region_counts.csv still count them -- the region
+                # table and the group table would disagree, and nothing would
+                # say a region had gone. This happens when the file was made
+                # with another atlas (version) than the lookup mousedb has now:
+                # the BrainGlobe atlas where it is installed, mousedb's
+                # built-in file where it is not. Same rule as ``disagrees``
+                # below: refused when it would change what is stored, a
+                # warning when the database already holds exactly these rows.
+                unknown = self.unknown_acronyms
+                shown = ", ".join(unknown[:10]) + (" ..." if len(unknown) > 10 else "")
+                what = (f"{csv_path.name}: {len(unknown)} region(s) have an acronym "
+                        f"{self._acronym_source or 'the acronym lookup'} does not know "
+                        f"({shown})")
+                if content_changes:
+                    self.errors.append(
+                        f"{what}. Storing the file would leave those regions' cells out of "
+                        f"{brain_id}'s counts, so it is left as it is and the counts the "
+                        f"database holds for it are kept. The file was made with another "
+                        f"atlas than mousedb's lookup: see 'Unknown acronym' in "
+                        f"docs/WHERE_IS_MY_DATA.md")
+                    return done()
+                self.warnings.append(
+                    f"{what}. The database already holds exactly this file's other "
+                    f"counts, so nothing was changed")
             if disagrees:
                 if content_changes:
                     # The file would add or replace counts, and it looks cut
