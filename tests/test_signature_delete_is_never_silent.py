@@ -19,7 +19,7 @@ def test_a_refused_delete_of_the_skip_record_is_a_problem(tmp_path, monkeypatch)
     sig_file = out / ".odc_reaches_signature.json"
     sig_file.write_text(json.dumps({"signature": {"old": True}, "files": {}}), encoding="utf-8")
 
-    def export(snapshot_dir, out_dir, manifest, staging_dir=None):
+    def export(snapshot_dir, out_dir, manifest, staging_dir=None, **_k):
         # A run with a problem that does not follow from its inputs: no new
         # skip record may be saved, and the old one must go.
         manifest["problems"].append("ODC_reaches_PROJ_01: OSError: could not write")

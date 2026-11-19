@@ -398,13 +398,21 @@ def odc_reaches_signature(snapshot_dir: Path) -> dict:
     return json.loads(json.dumps(sig, default=str))     # as it will read back
 
 
-def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
+def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict,
+                      rebuild_all: bool = False) -> None:
     """Per-cohort per-reach ODC files (see exporters.odc_reaches).
 
     Skipped when nothing they are built from has changed since the last write
     (``odc_reaches_signature``): they are large, and every refresh would
     otherwise rewrite hundreds of MB on the share for no change. The manifest
     then carries the previous run's entries, problems and notes.
+
+    When something HAS changed, only the cohorts it touches are rewritten
+    (exporters.incremental: the ledger .export_units.json beside the files
+    says what each cohort was built from); MANIFEST.json's "incremental"
+    record says which cohorts were rewritten and why, which videos in them
+    were appended, replaced or removed, and which were kept. ``rebuild_all``
+    rebuilds every file (``mousedb export-current --full``).
 
     The signature is saved only after a run whose every problem follows from
     the signed inputs alone (``from_inputs``: a check that could not run, a
@@ -417,7 +425,7 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
         old = json.loads(sig_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         old = {}
-    if old.get("signature") == sig and old.get("files") and all(
+    if not rebuild_all and old.get("signature") == sig and old.get("files") and all(
             (out_dir / n).exists() for n in old["files"] if old["files"][n].get("rows")):
         manifest["files"].update(old["files"])
         manifest["problems"].extend(old.get("problems", []))
@@ -427,9 +435,14 @@ def _odc_reaches_csvs(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None
             "written then were kept" % old.get("saved_at", "the last full export"))
         return
     part = {"files": {}, "problems": [], "notes": []}
-    odc_reaches.export(snapshot_dir, out_dir, manifest=part, staging_dir=_staging_dir(snapshot_dir))
+    # Its own staging folder: the top of the staging folder also holds
+    # reach_data.csv and manual_scores.csv, which the per-reach export copies
+    # every *.csv of into the exports folder -- it copied those two again.
+    odc_reaches.export(snapshot_dir, out_dir, manifest=part,
+                       staging_dir=_staging_dir(snapshot_dir) / "odc_reaches",
+                       incremental=True, rebuild_all=rebuild_all)
     for k in ("archived_flat_layout_files", "archived_per_cohort_dictionaries",
-              "archived_cohorts_without_reaches", "archived_combined_files"):
+              "archived_cohorts_without_reaches", "archived_combined_files", "incremental"):
         if k in part:
             manifest[k] = part[k]
     manifest["files"].update(part["files"])
@@ -606,7 +619,7 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
 
 def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
                     db_ok: bool = False, lock_wait_seconds: Optional[float] = None,
-                    lock_dir: Optional[Path] = None) -> dict:
+                    lock_dir: Optional[Path] = None, rebuild_all: bool = False) -> dict:
     """Rewrite the current-exports folder. Returns the manifest.
 
     ``db_ok``: the caller vouches that reading connectome.db is safe right
@@ -616,7 +629,10 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
 
     Only one refresh writes at a time (EXPORTS_LOCK): ``lock_wait_seconds``
     says how long to wait for another one to finish (see hold_exports_lock;
-    0 raises ExportsBusy at once), ``lock_dir`` where the lock is (tests)."""
+    0 raises ExportsBusy at once), ``lock_dir`` where the lock is (tests).
+
+    ``rebuild_all``: rebuild every per-reach file from nothing instead of only
+    the cohorts that changed (exporters.incremental)."""
     snapshot_dir = snapshot_dir or require("snapshot_dir")
     out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
@@ -625,12 +641,13 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     # is emptied only when no other run can be writing into it.
     mutex = hold_exports_lock(lock_wait_seconds, lock_dir)
     try:
-        return _refresh_current_locked(snapshot_dir, out_dir, db_ok)
+        return _refresh_current_locked(snapshot_dir, out_dir, db_ok, rebuild_all)
     finally:
         mutex.release()
 
 
-def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool) -> dict:
+def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool,
+                            rebuild_all: bool = False) -> dict:
     """refresh_current's work, run only while the exports lock is held."""
     out_dir.mkdir(parents=True, exist_ok=True)
     # Every export is built from ONE snapshot generation (see
@@ -664,7 +681,10 @@ def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool) -> d
     # and the Where Is My Data tab judge the exports by.
     for fn in (_reach_data_csv, _manual_scores_csv, _odc_reaches_csvs):
         try:
-            fn(snapshot_dir, out_dir, manifest)
+            if fn is _odc_reaches_csvs and rebuild_all:
+                fn(snapshot_dir, out_dir, manifest, rebuild_all=True)
+            else:
+                fn(snapshot_dir, out_dir, manifest)
         except Exception as e:
             manifest["complete"] = False
             manifest["problems"].append("%s: %s: %s" % (fn.__name__, type(e).__name__, e))
@@ -748,11 +768,16 @@ def main(argv=None) -> int:
                     help="If another refresh is writing the exports right now, stop at "
                          "once (exit code %d) instead of waiting for it to finish."
                          % EXIT_BUSY)
+    ap.add_argument("--full", action="store_true",
+                    help="Rebuild every per-reach file from nothing instead of only the "
+                         "cohorts whose inputs changed (exporters.incremental). Not needed "
+                         "after an install of new code: that rebuilds everything by itself.")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     try:
         m = refresh_current(args.snapshot_dir, args.out_dir, db_ok=args.db_ok,
-                            lock_wait_seconds=0 if args.no_wait else None)
+                            lock_wait_seconds=0 if args.no_wait else None,
+                            rebuild_all=args.full)
     except ExportsBusy as e:
         print("[!] %s" % e, flush=True)
         return EXIT_BUSY

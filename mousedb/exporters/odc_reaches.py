@@ -917,15 +917,198 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     return t
 
 
+class _Incremental:
+    """The bookkeeping of an incremental export (exporters.incremental says why).
+
+    Disabled (``enabled`` False) it keeps nothing and writes no ledger: every
+    cohort is rebuilt and every combined file written, exactly as before.
+    Enabled, it decides per cohort whether its files can be kept, records what
+    each rebuilt cohort contributed, and at the end writes the ledger and the
+    manifest's "incremental" record."""
+
+    def __init__(self, final_dir: Path, t: dict, wanted: List[str], exclusions, lab: str,
+                 enabled: bool, rebuild_all: bool = False):
+        from . import incremental
+        from .current import exporter_code_hash
+        self.final_dir, self.enabled = Path(final_dir), enabled
+        self.started = __import__("datetime").datetime.now().isoformat(timespec="seconds")
+        self.old: dict = {}
+        self.why_full: Optional[str] = None
+        self.records: Dict[str, dict] = {}
+        self.kept_ids: List[str] = []
+        self.rebuilt_ids: List[str] = []
+        self.failed_ids: set = set()
+        self.fps: Dict[str, dict] = {}
+        self.kept_combined: Dict[str, dict] = {}
+        self.gone: List[str] = []
+        if not enabled:
+            return
+        self.code = exporter_code_hash()
+        if rebuild_all:
+            self.why_full = "a full rebuild was asked for"
+        else:
+            self.old, self.why_full = incremental.load_ledger(self.final_dir, self.code)
+        # Fingerprints are taken before any cohort is written: writing one adds
+        # notes and whole-cohort blanks to ``exclusions``.
+        self.fps = incremental.cohort_fingerprints(t, wanted, exclusions, self.final_dir, lab)
+
+    def kept(self, cid: str) -> Optional[dict]:
+        """The ledger's record of ``cid`` (entry and notes, ready to use) when its
+        files can be kept; None when it must be rebuilt."""
+        from . import incremental
+        if not self.enabled or self.why_full:
+            return None
+        rec = (self.old.get("cohorts") or {}).get(cid)
+        if (not rec or rec.get("fingerprint") != self.fps[cid]["fingerprint"]
+                or not incremental.files_match(self.final_dir, rec.get("files"))):
+            return None
+        # ... and no file of the cohort's kinds beside them that the ledger does
+        # not know of (put there by hand, or left by an older layout).
+        label = cohort_label(cid)
+        on_disk = {layout.key(self.final_dir, layout.cohort_file(self.final_dir, k, cid, label))
+                   for k in layout.REACH_KINDS
+                   if layout.cohort_file(self.final_dir, k, cid, label).is_file()}
+        if on_disk != set(rec["files"]):
+            return None
+        self.records[cid] = rec
+        self.kept_ids.append(cid)
+        return {"entry": incremental.normalized(rec["entry"]), "notes": list(rec.get("notes", []))}
+
+    def rebuilt(self, cid: str, entry: dict, notes: List[str]) -> dict:
+        """Record a cohort written this run; return its entry as the ledger will
+        hold it (normalized), for the caller to use in place of the original."""
+        from . import incremental
+        entry = incremental.normalized(entry)
+        self.rebuilt_ids.append(cid)
+        if self.enabled:
+            fp = self.fps[cid]
+            self.records[cid] = {"fingerprint": fp["fingerprint"], "parts": fp["parts"],
+                                 "videos": fp["videos"], "entry": incremental.normalized(entry),
+                                 "notes": list(notes), "written_at": self.started}
+        return entry
+
+    def failed(self, cid: str) -> None:
+        self.failed_ids.add(cid)
+        self.records.pop(cid, None)
+
+    def rebuilt_cohorts(self) -> List[str]:
+        return [c for c in self.rebuilt_ids if c not in self.failed_ids]
+
+    def combine_plan(self, projects: set, gone: set, build_failed: set):
+        """(projects whose combined files are written this run, manifest entries
+        of the combined files kept as they are)."""
+        from . import incremental
+        self.gone = sorted(gone)
+        if not self.enabled or self.why_full:
+            return set(projects), {}
+        touched = {layout.project_of(c) for c in
+                   set(self.rebuilt_ids) | set(gone) | set(build_failed) | self.failed_ids}
+        old = self.old.get("combined") or {}
+        kept_entries: Dict[str, dict] = {}
+        write = set()
+        for project in sorted(set(projects)):
+            if project in touched:
+                write.add(project)
+                continue
+            mine = {}
+            for kind in layout.REACH_KINDS:
+                name = layout.key(self.final_dir, layout.combined_file(self.final_dir, kind, project))
+                rec = old.get(name)
+                has_cohort_files = bool(layout._cohort_files(self.final_dir, kind, project))
+                if not has_cohort_files and rec is None:
+                    continue
+                if rec is None or incremental.stamp(self.final_dir / name) != rec.get("stamp"):
+                    mine = None
+                    break
+                mine[name] = rec
+            if mine is None:
+                write.add(project)
+            else:
+                for name, rec in mine.items():
+                    kept_entries[name] = incremental.normalized(rec["entry"])
+                    self.kept_combined[name] = rec
+        return write, kept_entries
+
+    def combined_reuse(self) -> Optional[Dict[str, dict]]:
+        if not self.enabled or self.why_full:
+            return None
+        return self.old.get("combined") or {}
+
+    def finish(self, manifest: dict, combined_records: Dict[str, dict]) -> None:
+        """Write the ledger (only now, with every file in place) and the
+        manifest's "incremental" record."""
+        from . import incremental
+        if not self.enabled:
+            return
+        for cid in self.rebuilt_cohorts():
+            rec = self.records.get(cid)
+            if rec is None:
+                continue
+            label = cohort_label(cid)
+            rec["files"] = {}
+            for kind in layout.REACH_KINDS:
+                f = layout.cohort_file(self.final_dir, kind, cid, label)
+                if f.is_file():
+                    rec["files"][layout.key(self.final_dir, f)] = incremental.stamp(f)
+        # A combined file that failed is not in combined_records (combine_all
+        # leaves it out), so it is written whole next time.
+        combined = dict(self.kept_combined)
+        combined.update(combined_records)
+        ledger = {"format": incremental.LEDGER_FORMAT, "code": self.code,
+                  "saved_at": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+                  "cohorts": {c: r for c, r in self.records.items()
+                              if c not in self.failed_ids and r.get("files")},
+                  "combined": combined}
+        rewritten = {}
+        for cid in self.rebuilt_cohorts():
+            old = (self.old.get("cohorts") or {}).get(cid)
+            fp = self.fps.get(cid, {})
+            why = incremental.changed_parts(old and old.get("parts"), fp.get("parts", {}))
+            if old and old.get("fingerprint") == fp.get("fingerprint"):
+                why = ["its files on disk are not the ones the ledger recorded"]
+            rewritten[cid] = dict({"why": self.why_full and [self.why_full] or why},
+                                  **incremental.video_changes(old and old.get("videos"),
+                                                              fp.get("videos", {})))
+        manifest["incremental"] = {
+            "mode": "full" if self.why_full else "incremental",
+            "why_full": self.why_full,
+            "at": self.started,
+            "cohorts_rewritten": rewritten,
+            "cohorts_kept": {c: self.records[c].get("written_at") for c in self.kept_ids},
+            "cohorts_failed": sorted(self.failed_ids),
+            "cohorts_removed": list(self.gone),
+            "combined_rewritten": sorted(combined_records),
+            "combined_kept": sorted(self.kept_combined),
+            "combined_front_kept": {k: v.get("kept_cohorts", 0) for k, v in combined_records.items()
+                                    if v.get("kept_cohorts")},
+        }
+        try:
+            incremental.save_ledger(self.final_dir, ledger)
+        except OSError as e:
+            manifest["problems"].append(
+                "the export ledger could not be saved (%s: %s); the next refresh rebuilds "
+                "every file" % (type(e).__name__, e))
+            problem = incremental.drop_ledger(self.final_dir)
+            if problem:
+                manifest["problems"].append(problem)
+                manifest.setdefault("failures", []).append(problem)
+
+
 def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = None,
            manifest: Optional[dict] = None, analysis_only: bool = False,
-           staging_dir: Optional[Path] = None) -> dict:
+           staging_dir: Optional[Path] = None, incremental: bool = False,
+           rebuild_all: bool = False) -> dict:
     """Write the per-reach ODC files for ``cohorts`` (all with reaches if None).
 
     staging_dir: write every file there first and copy the finished set into
     out_dir at the end. Writing a table straight to a network share runs at a
     small fraction of local-disk speed; copying a finished file is far cheaper
     than formatting it onto the share a number at a time.
+
+    incremental: rewrite only the cohorts whose inputs changed, keeping the
+    rest (exporters.incremental; the nightly refresh and the Where Is My Data
+    button use it). rebuild_all: with incremental, ignore the ledger and
+    rebuild everything (then write a new ledger).
     """
     from .. import study_facts
     from ..config import lab_name
@@ -965,21 +1148,41 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         return manifest
     exclusion_report = []
     built_empty, build_failed = set(), set()
+    # INCREMENTAL (exporters.incremental says why and how): a cohort whose
+    # fingerprint and files on disk are exactly what the ledger recorded is
+    # KEPT -- its files stay, and what it contributes to the manifest, the
+    # shared dictionaries and the exclusions report is replayed from the
+    # ledger, so the result is the same as rebuilding it. Only a whole export
+    # (no ``cohorts``) is incremental; a named-cohort export rebuilds what it
+    # names, as before.
+    inc = _Incremental(final_dir, t, wanted, exclusions, lab_name(),
+                       enabled=incremental and not cohorts and not analysis_only,
+                       rebuild_all=rebuild_all)
     for cid in wanted:
         try:
-            df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
-                                    study_facts.facts, lab_name(),
-                                    video_pellets=t.get("video_pellets"))
             label = cohort_label(cid)
             # The name of each document in the manifest is its path inside the
             # exports folder (CNT/CNT_05/ODC_reaches_CNT_05.csv).
             name = lambda kind: layout.key(final_dir, layout.cohort_file(final_dir, kind, cid, label))
-            if df.empty:
-                manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
-                built_empty.add(cid)
-                continue
-            entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
-                                        analysis_only=analysis_only)
+            kept = inc.kept(cid)
+            if kept is not None:
+                entry = kept["entry"]
+                exclusions.notes.extend(kept["notes"])
+            else:
+                df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
+                                        study_facts.facts, lab_name(),
+                                        video_pellets=t.get("video_pellets"))
+                if df.empty:
+                    manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
+                    built_empty.add(cid)
+                    continue
+                notes_before = len(exclusions.notes)
+                entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
+                                            analysis_only=analysis_only)
+                del df
+                # As it reads back from the ledger: a rebuilt cohort and a kept
+                # one then contribute exactly the same values (incremental.normalized).
+                entry = inc.rebuilt(cid, entry, exclusions.notes[notes_before:])
             exclusion_report.extend(entry.pop("_exclusion_report", []) or [])
             for key, store in (("_analysis_dictionary", analysis_dict),
                                ("_sessions_dictionary", sessions_dict)):
@@ -1013,6 +1216,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             manifest["problems"].append(msg)
             manifest.setdefault("failures", []).append(msg)
             build_failed.add(cid)
+            inc.failed(cid)
 
     # One dictionary for every analysis file of each kind. Their columns do not
     # vary by cohort, so thirteen copies under thirteen names would be thirteen
@@ -1116,14 +1320,36 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         manifest.setdefault("from_inputs", []).append("analysis exclusions: " + note)
 
     if write_dir != final_dir:
-        import shutil
+        from .incremental import copy_if_changed
         final_dir.mkdir(parents=True, exist_ok=True)
+        # Each file through a temporary name; a small file that already holds
+        # exactly these bytes is left alone, so its time does not change and
+        # the limited exports cut from it are not remade for nothing.
         for f in sorted(write_dir.rglob("*.csv")):
-            target = final_dir / f.relative_to(write_dir)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            tmp = target.with_name(target.name + ".tmp")
-            shutil.copyfile(f, tmp)
-            tmp.replace(target)
+            copy_if_changed(f, final_dir / f.relative_to(write_dir))
+
+    # A rebuilt cohort's files are exactly the ones this run wrote. A file of a
+    # kind it did not write this time -- its sessions file, when every reach of
+    # the cohort was left out of the analysis files -- would otherwise stay
+    # from an earlier run and claim sessions that are not there. Archived,
+    # never deleted. (write_cohort checks for this too, but it looks in the
+    # staging folder, where an earlier run's file never is.)
+    if not analysis_only:
+        for cid in inc.rebuilt_cohorts():
+            label = cohort_label(cid)
+            stale = [layout.key(final_dir, layout.cohort_file(final_dir, kind, cid, label))
+                     for kind in layout.REACH_KINDS
+                     if layout.cohort_file(final_dir, kind, cid, label).is_file()
+                     and not layout.cohort_file(write_dir, kind, cid, label).is_file()]
+            if stale:
+                try:
+                    archive_old_names(final_dir, stale, "not_written_this_run")
+                except OSError as e:
+                    msg = ("%s: an old file this run did not rewrite could not be moved to the "
+                           "archive (%s: %s)" % (cid, type(e).__name__, e))
+                    manifest["problems"].append(msg)
+                    manifest.setdefault("failures", []).append(msg)
+                    inc.failed(cid)
 
     # A cohort that has no reaches any more keeps no reach files. WHY: files
     # are written only for cohorts with reaches, so a cohort whose reaches all
@@ -1181,8 +1407,19 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     # disk -- so a one-cohort export still yields a combined file holding every
     # cohort (see exporters.layout). Then the per-cohort files the layout before
     # 2026-10-29 left at the top of the folder are archived.
+    #
+    # Incremental: a project none of whose cohorts was rebuilt, archived or
+    # failed keeps its combined files as they are (their manifest entries come
+    # from the ledger), and a project that is written again keeps the front of
+    # each old combined file up to its first changed cohort (layout.combine).
+    combine_projects, kept_combined = inc.combine_plan(combine_projects, gone if len(t["reach"]) else set(),
+                                                       build_failed)
+    manifest["files"].update(kept_combined)
+    combined_records: Dict[str, dict] = {}
     layout.combine_all(final_dir, layout.REACH_KINDS, combine_projects,
-                       manifest, staging=(Path(staging_dir) / "_combined") if staging_dir else None)
+                       manifest, staging=(Path(staging_dir) / "_combined") if staging_dir else None,
+                       reuse=inc.combined_reuse(), ledger_out=combined_records)
+    inc.finish(manifest, combined_records)
     if not analysis_only:
         moved = layout.archive_flat_layout(final_dir)
         if moved:

@@ -1650,6 +1650,17 @@ def cmd_export_odc_reaches(args):
     raise SystemExit(_main(argv))
 
 
+def cmd_export_incremental_check(args):
+    """mousedb export-incremental-check (see mousedb.exporters.incremental)."""
+    from .exporters.incremental import main as _main
+    argv = ['--snapshot-dir', args.snapshot_dir, '--work', args.work]
+    if args.previous:
+        argv += ['--previous', args.previous]
+    if args.base_snapshot:
+        argv += ['--base-snapshot', args.base_snapshot]
+    raise SystemExit(_main(argv))
+
+
 def cmd_export_subset(args):
     """mousedb export-subset (see mousedb.exporters.subsets)."""
     from .exporters.subsets import run_args
@@ -1773,6 +1784,20 @@ def main():
     odc_r.add_argument('--cohort', action='append', help='Cohort id (repeatable; default all)')
     odc_r.add_argument('--out-dir', help='Folder to write into (default: the current exports folder)')
     odc_r.set_defaults(func=cmd_export_odc_reaches)
+
+    # mousedb export-incremental-check -- prove the nightly incremental export
+    # writes exactly what a full rebuild would (exporters.incremental)
+    eic = subparsers.add_parser(
+        'export-incremental-check',
+        help='Build the current exports incrementally and from nothing, from one snapshot '
+             'COPY, in a scratch folder, and compare them byte for byte (and time both)')
+    eic.add_argument('--snapshot-dir', required=True,
+                     help='A COPY of the snapshot to export (never the live one)')
+    eic.add_argument('--work', required=True, help='An empty scratch folder for the two builds')
+    eic.add_argument('--previous', help="A copy of the previous night's current exports")
+    eic.add_argument('--base-snapshot',
+                     help='Instead of --previous: an earlier snapshot copy to build it from')
+    eic.set_defaults(func=cmd_export_incremental_check)
 
     # mousedb export-subset -- a saved, filtered copy of the current exports
     xs = subparsers.add_parser(

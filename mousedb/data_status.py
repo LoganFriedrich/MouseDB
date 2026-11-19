@@ -702,6 +702,7 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
                               "notes": m.get("notes", []),
                               "snapshot_generation": m.get("snapshot_generation"),
                               "skipped": m.get("odc_reaches_skipped"),
+                              "incremental": incremental_summary(m.get("incremental")),
                               "files": {k: v.get("rows") for k, v in m.get("files", {}).items()}}
         except Exception as e:
             out["problems"].append("exports manifest unreadable: %s" % e)
@@ -785,6 +786,10 @@ def _print(st: dict) -> None:
               "in the GUI, or run mousereach-census")
     ex = st.get("exports") or {}
     print("Exports: %s  written %s  ODC-complete=%s" % (ex.get("folder"), ex.get("generated_at"), ex.get("complete")))
+    if ex.get("skipped"):
+        print("  per-reach files not rewritten: %s" % ex["skipped"])
+    elif ex.get("incremental"):
+        print("  %s" % ex["incremental"])
     for line in analysis_lines(st.get("analyses") or []):
         print(line)
     for line in session_list_lines(st.get("session_lists") or []):
@@ -795,6 +800,20 @@ def _print(st: dict) -> None:
         print("  [note] %s" % n)
     for p in st.get("problems", []) + list(ex.get("problems", [])):
         print("  [!] %s" % p)
+
+
+def incremental_summary(rec) -> str:
+    """One line saying how the last export refresh treated the per-reach files
+    (exporters.incremental): rebuilt from nothing and why, or which cohorts were
+    rewritten and how many kept. "" when the manifest has no such record."""
+    if not rec:
+        return ""
+    done = sorted(rec.get("cohorts_rewritten") or {})
+    kept = rec.get("cohorts_kept") or {}
+    if rec.get("mode") == "full":
+        return "per-reach files rebuilt from nothing at %s (%s)" % (rec.get("at"), rec.get("why_full"))
+    return "per-reach files at %s: %s rewritten, %d cohort(s) kept as they were" % (
+        rec.get("at"), ", ".join(done) if done else "no cohort", len(kept))
 
 
 def main(argv=None) -> int:

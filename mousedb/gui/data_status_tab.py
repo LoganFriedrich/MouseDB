@@ -739,6 +739,8 @@ class DataStatusTab(QWidget):
         lines.extend(limited_export_lines())
         if ex.get("skipped"):
             lines.append("  per-reach files not rewritten: %s" % ex["skipped"])
+        elif ex.get("incremental"):
+            lines.append("  %s" % ex["incremental"])
         for note in ex.get("notes") or []:
             lines.append("  [note] %s" % note)
         for prob in list(st.get("problems", [])) + list(ex.get("problems", [])):
