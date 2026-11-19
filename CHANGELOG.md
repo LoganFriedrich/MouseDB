@@ -9,8 +9,8 @@ checked-in code, not what's planned.
 - **The nightly export rewrites only the cohorts that changed**
   (`mousedb/exporters/incremental.py`, `odc_reaches.export(incremental=...)`,
   `layout.combine`). When anything the per-reach files are built from changed,
-  every cohort's files and every combined file used to be rebuilt -- about two
-  hours a night. Now each cohort has a fingerprint (its reach rows, animals,
+  every cohort's files and every combined file used to be rebuilt -- hours a
+  night. Now each cohort has a fingerprint (its reach rows, animals,
   sheet records, hand scores, per-pellet rows, exclusions, study facts,
   running status, folder, and the lab-wide settings); a cohort whose
   fingerprint and files on disk match the ledger

@@ -5,9 +5,9 @@ WHY THIS EXISTS
 The per-reach export files (each cohort's complete record, summary, analysis
 and sessions files, and each project's combined files) used to be rebuilt
 from scratch whenever ANY of their inputs changed -- one new video, one
-corrected sheet cell -- and rebuilding took about two hours a night, almost
-all of it spent re-making files whose content had not changed (Logan,
-2026-11-18: "Only add new records, don't rebuild.").
+corrected sheet cell -- and rebuilding took hours, almost all of it spent
+re-making files whose content had not changed. The request was: only add
+new records, don't rebuild.
 
 Records are not only ever ADDED, though: a video can be analyzed again, cut
 again, withdrawn; a sheet cell can be corrected; a cohort ends and its phase
@@ -68,8 +68,8 @@ THE COMBINED FILES
 <PROJECT>/*_all_cohorts* are the project's cohort files one after the other.
 When the cohorts at the front of the list are unchanged and the combined
 columns are the same, the new combined file starts with exactly the bytes of
-the old one up to the first changed cohort; that front part is copied (on
-the file server itself where it can) and only the rest is written. The file
+the old one up to the first changed cohort; that front part is copied as it is
+(no parsing, no rewriting of cells) and only the rest is written. The file
 is still put in place whole, under a temporary name first.
 
 THE LEDGER

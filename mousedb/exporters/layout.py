@@ -244,9 +244,8 @@ def combine(root: Path, kind: str, project: str, staging: Optional[Path] = None,
     tmp = final.with_name(final.name + ".tmp")
     prefix = _reusable_prefix(final, sources, columns, reuse)
     if prefix:
-        # Copy the unchanged front of the old file (a copy on the file server
-        # itself where it supports one), cut it where the first changed cohort
-        # began, and write from there on.
+        # Copy the unchanged front of the old file as bytes (no parsing),
+        # cut it where the first changed cohort began, and write from there on.
         cut, rows, kept = prefix
         shutil.copyfile(final, tmp)
         write_to, mode = tmp, "r+b"

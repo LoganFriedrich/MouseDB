@@ -1,8 +1,8 @@
 """The nightly export rewrites only what changed -- and what it writes is exactly
 what a full rebuild from the same inputs would write.
 
-WHY (Logan, 2026-11-18): rebuilding every per-reach file whenever anything
-changed took about two hours a night; "only add new records, don't rebuild".
+WHY: rebuilding every per-reach file whenever anything changed took hours a
+night; the request was "only add new records, don't rebuild".
 But records also CHANGE (a video analyzed again, a sheet corrected, a cohort's
 phase labels released, an exclusion appearing), so keeping a file is only
 safe if keeping it can never keep a wrong byte. This is the gate for that:
