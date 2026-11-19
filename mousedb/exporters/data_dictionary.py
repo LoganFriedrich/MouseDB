@@ -237,12 +237,12 @@ REACH_DATA = [
     _row("video_name", "Video name", "Session video the reach was detected in: YYYYMMDD_{PROJECT}{CCSS}_{tray type}{run}, e.g. 20250624_CNT0115_P2.", "", "text"),
     _row("session_date", "Session date", "Date of the recording, from the video name.", "", "date"),
     _row("tray_type", "Tray type", "Which tray was presented: P = pillar (the scored task), E = easy, F = flat (training trays).", "", "text", "P; E; F", "P=pillar; E=easy; F=flat"),
-    _row("run_number", "Run number", "Which run of that tray type in the session (1-4).", "", "integer", "", "", "1", "4"),
+    _row("run_number", "Run number", "Which run of that tray type on the day (1-4); each run is one session (one tray, one video).", "", "integer", "", "", "1", "4"),
     _row("segment_num", "Segment number", "Which pellet presentation the reach belongs to; segment N contains pellet N. Segment boundaries are the frames where the scoring area advances.", "count", "integer", "", "", "1"),
     _row("reach_id", "Reach id", "Number of this reach, unique within the video.", "count", "integer"),
     _row("reach_num", "Reach number in segment", "Position of this reach within its segment, counting from 1.", "count", "integer", "", "", "1"),
-    _row("outcome", "Pellet outcome (causal reach only)", "What happened to the pellet, recorded on the reach that decided it: retrieved, displaced_sa (knocked into the scoring area), displaced_outside, untouched, or a non-committal label. Empty on every reach that was not the causal reach.", "", "text", "retrieved; displaced_sa; displaced_outside; untouched; missed; triaged; uncertain; abnormal_exception", "retrieved=eaten; displaced_sa=knocked into scoring area; displaced_outside=knocked out of the apparatus; untouched=still on its pillar, no reach moved it; missed=the same, as older files wrote it; triaged/uncertain=algorithm did not commit; abnormal_exception=pellet moved by something other than a reach"),
-    _row("causal_reach", "Is the causal reach", "True if this is the reach that decided the pellet's fate (moved or retrieved it, or was the last reach at an untouched pellet).", "", "boolean", "TRUE; FALSE", "TRUE=this reach decided the outcome"),
+    _row("outcome", "What this reach did (reach outcome)", "What THIS reach did to the pellet it was aimed at, on every reach: the credited (causal) reach carries the pellet's outcome (retrieved, displaced_sa, displaced_outside); every other reach at that pellet missed, because naming the reach that moved a pellet answers every other reach at it; every reach at an untouched pellet missed, and so did every reach at a pellet a person saw moved by something other than a reach. Undetermined when the pellet was not decided, or when it was moved and no reach is credited with it (one of its reaches moved it and which one is not recorded, so calling them all missed would be false). The pellet's own outcome, the same on every reach of it, is segment_outcome.", "", "text", "retrieved; displaced_sa; displaced_outside; missed", "retrieved=this reach got the pellet; displaced_sa=this reach knocked it into the scoring area; displaced_outside=this reach knocked it out of the apparatus; missed=this reach did not move the pellet", comments="Until 2026-11-19 this column (then named outcome) held a value only on the credited reach and was empty ('Not recorded') on every other reach."),
+    _row("causal_reach", "Is the causal reach", "1 on the one reach credited with moving the pellet (retrieving or displacing it), 0 on every other reach. No reach is credited at a pellet nothing moved, so every reach of an untouched pellet reads 0.", "", "boolean", "1; 0", "1=this reach moved the pellet; 0=it did not"),
     _row("interaction_frame", "Interaction frame", "Video frame at which the paw met the pellet. Recorded on the causal reach only.", "frame index", "integer"),
     _row("distance_to_interaction", "Frames from apex to interaction", NEVER_COMPUTED, "frames", "integer", "", "", "", "", "Always empty (see KINEMATICS_FIELDS.md 5.2)."),
     _row("is_first_reach", "First reach of segment", "True if this is the first reach in its segment.", "", "boolean", "TRUE; FALSE"),
@@ -296,7 +296,7 @@ REACH_DATA = [
     _row("algo_causal_reach_id", "Algorithm's original causal reach", "Reach id the algorithm blamed before a human overrode it. Empty on current data.", "count", "integer"),
     _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (see manual_scores dictionary for values)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...)." + RUNNING_PHASE_NOTE, "", "text"),
-    _row("contact_group", "Did this reach meet the pellet (algorithm)", "What THIS reach did, in the words for a reach: contacted when the pipeline identified the frame at which its paw met the pellet (only ever on the reach credited with the pellet), otherwise missed.", "", "text", "missed; contacted", "missed=this reach did not meet the pellet; contacted=it did"),
+    _row("contact_group", "Did this reach move the pellet", "What THIS reach did, in two words, derived from the reach outcome so the two can never disagree: contacted when this reach retrieved or displaced the pellet, missed when it did not move it. Undetermined where the reach outcome is.", "", "text", "missed; contacted", "missed=this reach did not move the pellet; contacted=this reach retrieved or displaced it", comments="Until 2026-11-19 this read contacted only when the pipeline had recorded a contact frame, so a credited reach a person picked (no contact frame is recorded for those) read missed beside a pellet it retrieved."),
     _row("segment_contact_group", "Was the pellet moved (algorithm)", "What happened to the pellet this reach was aimed at, in the words for a pellet, on every reach at that pellet: contacted when it was retrieved or displaced, untouched when nothing moved it, empty when the algorithm has no answer (a pellet a person saw moved by something other than a reach).", "", "text", "untouched; contacted", "untouched=no reach moved the pellet; contacted=retrieved or displaced"),
     _row("extended_features", "Extended features (JSON)", "The full per-reach extended feature block as a JSON string: 174 values, the per-paw-point kinematics, four recording how the reach's anchors were placed and nine reproducing an earlier swipe-measure definition (legacy_swipe_*, extractor 2.6.0). Rows from an extractor before 2.6.0 hold 165 (no legacy_swipe_*); before 2.3.0, 161 (no anchor values either). See KINEMATICS_FIELDS.md section 6.", "", "text (JSON)"),
 ]
@@ -313,11 +313,11 @@ for _r in REACH_DATA:
 
 MANUAL_SCORES = [
     _row("subject_id", "Subject identifier", "Animal id in PROJECT_CC_SS form, e.g. CNT_05_03.", "", "text"),
-    _row("session_date", "Session date", "Date of the testing session.", "", "date"),
+    _row("session_date", "Test date", "Date of the testing day the tray was scored on.", "", "date"),
     _row("test_phase", "Test phase", "Phase of the experiment the session belongs to, derived from the cohort's date structure (not the operator's entry)." + RUNNING_PHASE_NOTE, "", "text", "Flat_Training; Pillar_Training; Pillar; Post_Injury_1; Post_Injury_2; Post_Injury_3; Post_Injury_4; Rehab_Easy; Rehab_Flat; Rehab_Pillar; unassigned", "Training phases precede injury; Pillar=pre-injury baseline; Post_Injury_N=post-injury test N; Rehab_*=rehabilitation on that tray; unassigned=could not be derived"),
     _row("phase_group", "Phase group", "Statistical grouping of test_phase (Baseline, Post_Injury_2-4, Post_Rehab_Test, ...)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("tray_type", "Tray type", "P = pillar, E = easy, F = flat.", "", "text", "P; E; F", "P=pillar; E=easy; F=flat"),
-    _row("tray_number", "Tray number", "Which tray of the session (1-4).", "", "integer", "", "", "1", "4"),
+    _row("tray_number", "Tray number", "Which tray of the day (1-4); each tray is one session (one video).", "", "integer", "", "", "1", "4"),
     _row("pellet_number", "Pellet number", "Pellet position on the tray (1-20).", "", "integer", "", "", "1", "20"),
     _row("score", "Manual score", "Post-hoc tray inspection score: 0 = untouched (still on its pillar), 1 = displaced (moved but not eaten), 2 = retrieved (eaten). Kept as scored on every tray, easy and flat included.", "", "integer", "0; 1; 2", "0=untouched; 1=displaced; 2=retrieved", "0", "2"),
     _row("contact_group", "Was the pellet moved (hand score)", "untouched if the hand score is 0, contacted if it is 1 or 2 -- on every tray, easy and flat included.", "", "text", "untouched; contacted", "untouched=score 0; contacted=score 1 or 2"),
@@ -335,10 +335,10 @@ def _odc_session_rows() -> List[dict]:
         _row("Animal", "Animal", "Animal id in PROJECT_CC_SS form.", "", "text"),
         _row("Cohort", "Cohort", "Cohort id, e.g. CNT_05.", "", "text"),
         _row("Sex", "Sex", "Animal sex.", "", "text", "M; F", "M=male; F=female"),
-        _row("Date", "Session date", "Date of the testing session.", "", "date"),
-        _row("Test_Phase", "Test phase", "Phase of the experiment the session belongs to (see manual_scores dictionary for values)." + RUNNING_PHASE_NOTE, "", "text"),
+        _row("Date", "Test date", "Date of the testing day. Each row of this file is ONE ANIMAL ON ONE DAY (all its trays, Tray1..Tray4); everywhere else in these exports a session is one tray (one video).", "", "date"),
+        _row("Test_Phase", "Test phase", "Phase of the experiment the day belongs to (see manual_scores dictionary for values)." + RUNNING_PHASE_NOTE, "", "text"),
         _row("Days_Post_Injury", "Days post injury", "Days since the injury surgery; empty before injury.", "days", "integer"),
-        _row("Weight_g", "Body weight", "Body weight recorded for the session.", "g", "number", "", "", "0"),
+        _row("Weight_g", "Body weight", "Body weight recorded on the day.", "g", "number", "", "", "0"),
         _row("Weight_Pct", "Body weight, percent of baseline", "Weight as a percentage of the animal's baseline weight.", "percent", "number", "", "", "0"),
         _row("Injury_Date", "Injury date", "Date of the contusion injury surgery; empty if not yet injured.", "", "date"),
         _row("Injury_Force_kDyn", "Injury force", "Impactor force of the contusion.", "kilodyne", "number"),
@@ -360,10 +360,10 @@ def _odc_session_rows() -> List[dict]:
         ]
     for k, t in (("Presented", "presented"), ("Missed", "untouched (scored 0; the column keeps the workbooks' name)"), ("Displaced", "scored displaced"),
                  ("Retrieved", "scored retrieved"), ("Contacted", "contacted (displaced + retrieved)")):
-        rows.append(_row("Daily_" + k, "Daily %s" % k.lower(), "Pellets %s across all trays in the session." % t, "count", "integer", "", "", "0"))
+        rows.append(_row("Daily_" + k, "Daily %s" % k.lower(), "Pellets %s across all trays of the day (every tray, easy and flat included)." % t, "count", "integer", "", "", "0"))
     for k in ("Miss", "Displaced", "Retrieved", "Contacted"):
         word = "untouched (named 'Miss' as in the workbooks)" if k == "Miss" else k.lower()
-        rows.append(_row("Daily_%s_Pct" % k, "Daily percent %s" % word, "Session total for that category / pellets presented x 100.", "percent", "number", "", "", "0", "100"))
+        rows.append(_row("Daily_%s_Pct" % k, "Daily percent %s" % word, "The day's total for that category / pellets presented that day x 100.", "percent", "number", "", "", "0", "100"))
         rows.append(_row("Avg_%s_Pct" % k, "Average per-tray percent %s" % word, "Mean of the per-tray percentages for that category.", "percent", "number", "", "", "0", "100"))
     rows += [
         _row("Recording_Status", "Recording status",
@@ -452,31 +452,56 @@ ODC_REACH_ANIMAL = [
 
 ODC_REACH_SESSION = [
     _row("Test_Date", "Test date", "Date of the recording session (YYYY-MM-DD).", "", "date"),
-    _row("Tray_ID", "Tray id", "Tray type letter and run number within the session: P = pillar, E = easy, F = flat; P2 = the second pillar tray that day.", "", "text"),
+    _row("Tray_ID", "Tray id", "The session's tray: tray type letter and run number within the day: P = pillar, E = easy, F = flat; P2 = the second pillar tray that day. A session is one tray (one video).", "", "text"),
     _row("Session_ID", "Session id", "SubjectID-YYYYMMDD-Tray_ID; unique per animal, day and tray.", "", "text"),
     _row("Injury_Type", "Injury type", "Injury type from the tracking sheet, with the intended force for a contusion (e.g. Contusion-60kD).", "", "text"),
     _row("Test_Type", "Test type", "Phase of the experiment the session belongs to (same as test_phase; see manual_scores dictionary)." + RUNNING_PHASE_NOTE, "", "text"),
     _row("Test_Type_Grouped", "Test type grouped", "Statistical grouping of Test_Type (same as phase_group)." + RUNNING_PHASE_NOTE, "", "text"),
-    _row("Days_Post_Injury", "Days post injury", "Days from the injury surgery date to the session; empty before the injury or when no injury date is recorded.", "days", "integer", "", "", "0"),
+    _row("Days_Post_Injury", "Days post injury", "Days from the injury surgery date to the testing day; empty before the injury or when no injury date is recorded.", "days", "integer", "", "", "0"),
 ]
 
 ODC_REACH_TOTALS = [
-    _row("Video_Reaches_AI", "Reaches in the video", "Number of reaches the pipeline detected in this video: one tray, not the animal's whole testing day (for that, Day_Total_Reaches_AI).", "count", "integer", "", "", "0",
-         comments="In the complete record (ODC_reaches files) formerly named Total_Swipes_AI (until 2026-11-17); same values. Renamed because an earlier reach program's Total Swipes counted the whole testing day, not one tray."),
-    _row("Day_Total_Reaches_AI", "Reaches by this animal on this testing day", "Number of reaches the pipeline detected for this animal on this date, over every tray of the day (the reach rows with the same SubjectID and Test_Date). This is the per-session count an earlier reach program reported as Total Swipes. Given only when Day_Total_Reaches_Complete is yes; otherwise empty, because a count missing a tray would look like a real total.", "count", "integer", "", "", "0",
+    # Internal names (left) are published under level-first names by
+    # exporters.levels.COMPLETE: Session_* = this tray (one video), Day_* = the
+    # animal's whole testing day. The texts below use the published names.
+    _row("Video_Reaches_AI", "Reaches in this session (tray)", "Number of reaches the pipeline detected in this session's video: one tray, not the animal's whole testing day (for that, Day_Reaches_AI).", "count", "integer", "", "", "0",
+         comments="Named Video_Reaches_AI until 2026-11-19 and Total_Swipes_AI until 2026-11-17; same values. An earlier reach program's Total Swipes counted the whole testing day, not one tray."),
+    _row("Day_Total_Reaches_AI", "Reaches by this animal on this testing day", "Number of reaches the pipeline detected for this animal on this date, over every tray of the day (the reach rows with the same SubjectID and Test_Date). This is the per-day count an earlier reach program reported as Total Swipes. Given only when Day_Complete is yes; otherwise empty, because a count missing a tray would look like a real total.", "count", "integer", "", "", "0",
          comments="Repeated on every reach row of that animal and date. Not limited to one tray type: a day with pillar and easy or flat trays counts all of them."),
-    _row("Day_Total_Reaches_Complete", "Is the day's total complete", "yes when every tray the hand-score sheet records for this animal on this date is filed (has reach rows, or rows in the per-pellet table: a filed pillar tray with no reaches counts as 0); no otherwise, and then Day_Total_Reaches_AI is empty. A day with no hand-score rows reads no: there is nothing to check the filed trays against. An easy or flat tray that is filed but has no reaches has no rows to show it is filed, so its day reads no.", "", "text", "yes; no",
-         "yes=every hand-scored tray of the day is filed, so Day_Total_Reaches_AI is the whole day; no=a tray of the day is not filed (still in review, not recorded) or the day has no hand scores, so no total is given"),
-    _row("Attention_AI", "Mean attention score", "Mean over the video's pellet segments of the outcome detector's attention score (same scale as attention_score). For Easy and Flat trays, which are not cut per pellet, it is the attention over the whole session.", "", "number", "", "", "0"),
-    _row("Video_Pellets", "Pellets found in the video", "How many pellets the pipeline cut this session video into: one per pellet the tray presented, whether or not the animal reached for it. 20 unless something went wrong (a tray holds 20); a session where it is not 20 is left out of the analysis files. Empty when the per-pellet record has no rows for the video: it is filled from the results files in the pipeline, and a video that is out for review (sent back to a person after it was first imported) has none there until it returns; it fills in when the video is next imported. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
-    _row("Video_Displaced", "Pellets displaced (video)", "Pellets of this video whose outcome is displaced_sa or displaced_outside, counted over every pellet of the video including those with no detected reach. Counts pellets, not reaches. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
-    _row("Video_Retrieved", "Pellets retrieved (video)", "Pellets of this video whose outcome is retrieved, counted over every pellet of the video including those with no detected reach. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
-    _row("Video_Contacted", "Pellets contacted (video)", "Video_Displaced + Video_Retrieved. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
-    _row("Manual_Pellets", "Pellets hand scored", "How many pellets of this tray have a hand score in the tracking sheet (same animal, date, tray type and tray number). 20 unless a score was left out or typed twice; where it is not 20 the hand-score columns of the analysis files are left empty for that session.", "count", "integer", "", "", "0", "20"),
-    _row("Manual_Displaced", "Pellets displaced (hand score)", "Pellets scored 1 (displaced) by post-hoc tray inspection for the same animal, date, tray type and tray number.", "count", "integer", "", "", "0", "20"),
-    _row("Manual_Retrieved", "Pellets retrieved (hand score)", "Pellets scored 2 (retrieved) for the same tray.", "count", "integer", "", "", "0", "20"),
-    _row("Manual_Contacted", "Pellets contacted (hand score)", "Manual_Displaced + Manual_Retrieved.", "count", "integer", "", "", "0", "20"),
-    _row("Contacted_Match", "Contacted difference", "Absolute difference between Manual_Contacted and Video_Contacted; empty when either is missing.", "count", "integer", "", "", "0", "20"),
+    _row("Day_Total_Reaches_Complete", "Is the day complete", "yes when every tray the hand-score sheet records for this animal on this date is filed (has reach rows, or rows in the per-pellet table: a filed pillar tray with no reaches counts as 0); no otherwise, and then Day_Reaches_AI and the Day_*_AI pellet totals are empty. A day with no hand-score rows reads no: there is nothing to check the filed trays against. An easy or flat tray that is filed but has no reaches has no rows to show it is filed, so its day reads no.", "", "text", "yes; no",
+         "yes=every hand-scored tray of the day is filed, so the Day_*_AI columns are the whole day; no=a tray of the day is not filed (still in review, not recorded) or the day has no hand scores, so no algorithm day total is given"),
+    _row("Day_Pellets_AI", "Pellets on this day's pillar trays (algorithm)", "How many pellets the pipeline cut this animal's pillar trays of this date into, summed over the day's pillar trays. Pillar trays only: the algorithm decides no pellet on an easy or flat tray, and the hand-score day totals beside it count the same trays so the two can be compared. Empty when Day_Complete is no, when a filed pillar tray of the day has no per-pellet record, or when the day had no pillar tray.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Retrieved_AI", "Pellets retrieved this day (algorithm)", "Pellets of this animal's pillar trays of this date whose outcome is retrieved, summed over the day. Empty exactly when Day_Pellets_AI is.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Displaced_AI", "Pellets displaced this day (algorithm)", "Pellets of this animal's pillar trays of this date whose outcome is displaced_sa or displaced_outside, summed over the day. Empty exactly when Day_Pellets_AI is.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Contacted_AI", "Pellets contacted this day (algorithm)", "Day_Displaced_AI + Day_Retrieved_AI.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Untouched_AI", "Pellets untouched this day (algorithm)", "Day_Pellets_AI - Day_Contacted_AI: pellets of the day's pillar trays no reach of the animal moved (a pellet a person saw moved by something other than a reach is counted here: the animal neither retrieved nor displaced it).", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Pellets_Hand", "Pellets hand scored this day (pillar trays)", "How many pillar-tray pellets the tracking sheet holds a hand score for, for this animal on this date, all pillar trays of the day. Pillar trays only (see Day_Pellets_AI). Given whenever the sheet holds them: hand scores are complete at the bench, whatever is filed. The ODC day file (ODC_sessions) Daily_* columns count every tray, easy and flat included.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Retrieved_Hand", "Pellets retrieved this day (hand score)", "Pillar-tray pellets scored 2 (retrieved) for this animal on this date.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Displaced_Hand", "Pellets displaced this day (hand score)", "Pillar-tray pellets scored 1 (displaced) for this animal on this date.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Contacted_Hand", "Pellets contacted this day (hand score)", "Day_Displaced_Hand + Day_Retrieved_Hand.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Day_Untouched_Hand", "Pellets untouched this day (hand score)", "Pillar-tray pellets scored 0 (untouched) for this animal on this date.", "count", "integer", "", "", "0",
+         comments="Repeated on every reach row of that animal and date."),
+    _row("Attention_AI", "Mean attention score in this session", "Mean over the session video's pellet segments of the outcome detector's attention score (same scale as attention_score). For Easy and Flat trays, which are not cut per pellet, it is the attention over the whole session.", "", "number", "", "", "0"),
+    _row("Video_Pellets", "Pellets in this session (algorithm)", "How many pellets the pipeline cut this session video (one tray) into: one per pellet the tray presented, whether or not the animal reached for it. 20 unless something went wrong (a tray holds 20); a session where it is not 20 is left out of the analysis files. Empty when the per-pellet record has no rows for the video: it is filled from the results files in the pipeline, and a video that is out for review (sent back to a person after it was first imported) has none there until it returns; it fills in when the video is next imported. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Displaced", "Pellets displaced in this session (algorithm)", "Pellets of this session video whose outcome is displaced_sa or displaced_outside, counted over every pellet of the video including those with no detected reach. Counts pellets, not reaches. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Retrieved", "Pellets retrieved in this session (algorithm)", "Pellets of this session video whose outcome is retrieved, counted over every pellet of the video including those with no detected reach. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
+    _row("Video_Contacted", "Pellets contacted in this session (algorithm)", "Session_Displaced_AI + Session_Retrieved_AI. Blank for Easy and Flat trays: their pellets are presented but not tracked, and no outcome is computed for them.", "count", "integer", "", "", "0", "20"),
+    _row("Session_Untouched_AI", "Pellets untouched in this session (algorithm)", "Session_Pellets_AI - Session_Contacted_AI: pellets of this session video no reach of the animal moved (a pellet a person saw moved by something other than a reach is counted here: the animal neither retrieved nor displaced it). Blank for Easy and Flat trays, and empty when Session_Pellets_AI is.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Pellets", "Pellets hand scored in this session", "How many pellets of this tray have a hand score in the tracking sheet (same animal, date, tray type and tray number). 20 unless a score was left out or typed twice; where it is not 20 the hand-score columns of the analysis files are left empty for that session.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Displaced", "Pellets displaced in this session (hand score)", "Pellets scored 1 (displaced) by post-hoc tray inspection for the same animal, date, tray type and tray number.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Retrieved", "Pellets retrieved in this session (hand score)", "Pellets scored 2 (retrieved) for the same tray.", "count", "integer", "", "", "0", "20"),
+    _row("Manual_Contacted", "Pellets contacted in this session (hand score)", "Session_Displaced_Hand + Session_Retrieved_Hand.", "count", "integer", "", "", "0", "20"),
+    _row("Session_Untouched_Hand", "Pellets untouched in this session (hand score)", "Pellets scored 0 (untouched) for the same tray.", "count", "integer", "", "", "0", "20"),
+    _row("Contacted_Match", "Contacted difference in this session", "Absolute difference between Session_Contacted_Hand and Session_Contacted_AI; empty when either is missing.", "count", "integer", "", "", "0", "20"),
 ]
 
 

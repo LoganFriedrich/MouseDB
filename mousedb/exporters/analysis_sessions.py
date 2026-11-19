@@ -46,7 +46,8 @@ PER_SESSION: List[str] = [
     "day_total_reaches", "day_total_reaches_complete", "attention_ai",
     "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
     "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",
-]
+    "session_untouched_ai", "session_untouched_hand",
+] + [c.lower() for c in ar.DAY_OUTCOME_SOURCES]
 
 # What one session is identified by. The video is the session's recording, so it
 # identifies it exactly; subject is carried too so a group is readable on its own.

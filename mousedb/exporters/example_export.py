@@ -191,6 +191,9 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
 
     reaches, reach_rows = ar.build(full)
     sessions, session_rows = asess.build(reaches, reach_rows)
+    # Published under the level-first names, as the nightly files are.
+    reaches, reach_rows, sessions, session_rows, _ = ar.publish(
+        reaches, reach_rows, sessions, session_rows)
     built = time.time()
 
     lock = None
@@ -266,8 +269,8 @@ def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None
     clean = frame
     if "test_type" in frame.columns:
         clean = clean[clean["test_type"] != "Unscheduled"]
-    if "manual_retrieved" in clean.columns:
-        clean = clean[clean["manual_retrieved"] != MISSING_WORD]
+    if "session_retrieved_hand" in clean.columns:
+        clean = clean[clean["session_retrieved_hand"] != MISSING_WORD]
     if clean.empty:
         clean = frame
     picked = clean.sample(min(rows, len(clean)), random_state=seed)

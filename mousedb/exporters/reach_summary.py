@@ -94,7 +94,7 @@ PELLET_QUESTIONS = [
     "is_first_reach_at_pellet", "is_last_reach_at_pellet",
     "reach_result", "pellet_result", "reach_decided_the_pellet",
     "pellets_in_video", "pellets_retrieved_in_session",
-    "pellets_displaced_in_session", "pellets_moved_in_session",
+    "pellets_displaced_in_session", "pellets_moved_in_session", "session_untouched_ai",
 ]
 EASY_FLAT_NOTE = ("On an easy or flat training tray this reads 'Not applicable': its "
                   "pellets are not tracked, no outcome is computed, and the video is "
@@ -209,11 +209,16 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Video_Retrieved", "pellets_retrieved_in_session"),
     ("Video_Displaced", "pellets_displaced_in_session"),
     ("Video_Contacted", "pellets_moved_in_session"),
+    ("Session_Untouched_AI", "session_untouched_ai"),
     ("Manual_Pellets", "pellets_hand_scored"),
     ("Manual_Retrieved", "pellets_retrieved_hand_scored"),
     ("Manual_Displaced", "pellets_displaced_hand_scored"),
     ("Manual_Contacted", "pellets_moved_hand_scored"),
-]
+    ("Session_Untouched_Hand", "session_untouched_hand"),
+] + [(c, c.lower()) for c in (
+    "Day_Pellets_AI", "Day_Retrieved_AI", "Day_Displaced_AI", "Day_Contacted_AI",
+    "Day_Untouched_AI", "Day_Pellets_Hand", "Day_Retrieved_Hand", "Day_Displaced_Hand",
+    "Day_Contacted_Hand", "Day_Untouched_Hand")]
 
 # Which word fills an empty cell, per column of THIS document. Each is a judgement
 # about WHY the cell is empty, taken from the measurement's own definition in the data
@@ -242,6 +247,11 @@ REASONS: Dict[str, str] = {
     # A tray of the day is not filed (or the day has no hand scores), so the
     # day's count cannot be committed to yet.
     "day_total_reaches": missing.UNDETERMINED,
+    # Same for the algorithm's day pellet totals, which are also empty on a day
+    # with no pillar tray (odc_reaches.day_outcome_totals).
+    "day_pellets_ai": missing.UNDETERMINED, "day_retrieved_ai": missing.UNDETERMINED,
+    "day_displaced_ai": missing.UNDETERMINED, "day_contacted_ai": missing.UNDETERMINED,
+    "day_untouched_ai": missing.UNDETERMINED,
     "pellets_displaced_hand_scored": missing.NOT_RECORDED,
     "pellets_moved_hand_scored": missing.NOT_RECORDED,
     "head_width_at_apex_mm": missing.NOT_RECORDED,
@@ -263,7 +273,8 @@ def _pellet_result(segment_outcome: pd.Series) -> pd.Series:
     return words.where(words.notna(), missing.UNDETERMINED)
 
 
-def _reach_result(causal: pd.Series, pellet_result: pd.Series) -> pd.Series:
+def _reach_result(causal: pd.Series, pellet_result: pd.Series,
+                  segments: "pd.Series" = None) -> pd.Series:
     """What THIS reach did to the pellet: missed, displaced it, or retrieved it.
 
     Those three are the only things a reach can do. Which one applies follows from
@@ -271,7 +282,16 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series) -> pd.Series:
       * the segment could not be decided        -> Undetermined
       * this reach decided a pellet that moved  -> displaced (either destination)
                                                    or retrieved
+      * the pellet moved and NO reach is
+        credited with it (``segments`` given)   -> Undetermined: one of its
+                                                   reaches moved it, which one is
+                                                   not recorded, so "Missed" on
+                                                   all of them would be false
       * anything else                           -> Missed
+
+    ``segments``: one key per pellet (levels.segment_keys). Without it the
+    credited-reach check cannot be made and a moved pellet's uncredited reaches
+    read Missed, as before 2026-11-19.
 
     MISSED IS AN ANSWER, NOT AN ABSENCE. The animal reached and the pellet stayed
     where it was, either because a different reach is the one that moved it or
@@ -284,6 +304,9 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series) -> pd.Series:
     out = out.where(pellet_result != missing.UNDETERMINED, missing.UNDETERMINED)
     moved_here = is_causal & pellet_result.isin(MOVED)
     out[moved_here] = pellet_result[moved_here]
+    if segments is not None:
+        credited = is_causal.groupby(segments).transform("any").astype(bool)
+        out[pellet_result.isin(MOVED) & ~credited] = missing.UNDETERMINED
     return out
 
 
@@ -303,7 +326,8 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
         else pd.Series(missing.UNDETERMINED, index=full.index, dtype="object")
     causal = full["causal_reach"] if "causal_reach" in full.columns \
         else pd.Series(0, index=full.index)
-    data["reach_result"] = _reach_result(causal, pellet)
+    from . import levels
+    data["reach_result"] = _reach_result(causal, pellet, levels.segment_keys(full))
     data["pellet_result"] = pellet
     data["reach_decided_the_pellet"] = causal.map(
         lambda v: "Yes" if str(v).strip().lower() in ("1", "true", "t", "yes") else "No")
@@ -374,7 +398,11 @@ def _dictionary_rows(present: List[Tuple[str, str]], reasons: Dict[str, str]) ->
                 "'Missed' is an answer, not a missing value: the animal reached and the "
                 "pellet stayed where it was, because another reach moved it or because "
                 "none did. It is not a claim that the paw never touched the pellet, "
-                "which is not measured on a reach that moved nothing.",
+                "which is not measured on a reach that moved nothing. When a person "
+                "or the algorithm names the reach that moved a pellet, every other "
+                "reach at that pellet is answered too: it missed. Undetermined when "
+                "the pellet was moved and no reach is credited with it (which reach "
+                "moved it is not recorded), or when the pellet was not decided.",
                 "", "text", REACH_RESULT_PV,
                 "Missed=the reach did not move the pellet; "
                 "Displaced into the scoring area=knocked into the scoring area; "

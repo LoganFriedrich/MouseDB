@@ -5,6 +5,23 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Changed
+- **Every per-reach row carries four levels under level-first names**
+  (`mousedb/exporters/levels.py`; Where Is My Data guide, "Four levels on every
+  reach row"). Every reach says what it did: the credited reach its outcome,
+  every other reach at that pellet `missed` (naming the reach that moved a
+  pellet answers the others), every reach at an untouched pellet `missed`;
+  `Undetermined` where a pellet moved and no reach is credited (before, the
+  complete record and `reach_data.csv` left non-credited reaches empty and the
+  other files called the uncredited case `Missed`). The per-reach contact
+  column is derived from the reach outcome (it meant "a contact frame was
+  recorded", so person-picked credited reaches read `missed`). New tray
+  untouched counts and day totals (pellets, retrieved, displaced, contacted,
+  untouched; algorithm and hand scores, pillar trays). Columns above the reach
+  are named `reach_`/`segment_`/`session_`/`day_` first; the guide has the
+  old-to-new table and each dictionary entry names its old name. Changes the
+  exporter code, so the next nightly export is a full rebuild.
+
 ### Added
 - **The nightly export rewrites only the cohorts that changed**
   (`mousedb/exporters/incremental.py`, `odc_reaches.export(incremental=...)`,

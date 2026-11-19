@@ -18,11 +18,11 @@ each with a data dictionary beside it:
 |---|---|---|
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
 | `manual_scores.csv` | pellet scored by hand from the tray (0 untouched / 1 displaced / 2 retrieved) with the session's phase -- on every tray, easy and flat included | `manual_scores_DATA_DICTIONARY.csv` |
-| `ODC_sessions_<cohort>.csv` | animal per session, in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
+| `ODC_sessions_<cohort>.csv` | animal per DAY (one date, all its trays; everywhere else a session is one tray), in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
-| `sessions_<cohort>_analysis.csv` | animal per session, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator | `sessions_analysis_DATA_DICTIONARY.csv` |
+| `sessions_<cohort>_analysis.csv` | session = one tray (one video) of one animal, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator | `sessions_analysis_DATA_DICTIONARY.csv` |
 | `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot (`snapshot_generation`), row counts, any problems, notes that need no action, and whether the per-reach files were kept from an earlier run because nothing they are built from changed (`odc_reaches_skipped`) |
 | `README.txt` | -- | the same explanation as this table |
@@ -205,6 +205,106 @@ said `missed` too).
 
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.
+
+### Four levels on every reach row, and what each column is called (changed 2026-11-19)
+
+Every row of a per-reach file (`reach_data.csv`, `ODC_reaches_<cohort>.csv`,
+`reaches_<cohort>_summary.csv`, `reaches_<cohort>_analysis.csv`, and the same
+kinds in a limited export) is **one reach**, and it repeats the three levels
+above it so you never have to join files:
+
+| level | what it is | example columns (analysis table) |
+|---|---|---|
+| reach | what THIS reach did | `reach_outcome`, `reach_number`, `reach_pellet_state` |
+| segment | one pellet: the same on every reach aimed at it | `segment_number`, `segment_outcome`, `segment_reaches` |
+| session | one tray = one video: its totals | `session_pellets_ai`, `session_retrieved_hand`, `session_untouched_ai` |
+| day | one animal on one date, all its pillar trays | `day_reaches_ai`, `day_retrieved_ai`, `day_untouched_hand` |
+
+**The naming rule.** A column that belongs to a level above the reach starts
+with that level's word: `reach_`, `segment_`, `session_` or `day_`
+(`Session_`/`Day_` in the complete record). "Session" means ONE TRAY (one
+video) everywhere in these files. A column with no level word is either an
+identity column (`subject_id`, `video_name`, `test_date`, `tray_type`,
+`session_id`, `tray_id`: kept as they were, because limited exports, the
+exclusion list and your own scripts find rows by them) or a measurement of the
+reach itself (frames and kinematics; the earlier program's `swipe_*` names stay
+as they are). The ODC-SCI animal fields (`SubjectID`, `SpeciesTyp`, `AgeVal`,
+`BodyWgtMeasrVal`, `SexTyp`, `InjGroupAssignTyp`) keep ODC's exact spelling,
+which ODC requires. `_ai` = counted by the pipeline from the video, `_hand` =
+counted from the hand scores in the tracking sheet.
+
+The one file whose row is a whole day is `ODC_sessions_<cohort>.csv` (one
+animal, one date, Tray1..Tray4 across the row, `Daily_*` totals). It keeps its
+name because it is the ODC-SCI animal-tracking shape and saved limited-export
+definitions name it; its dictionary says each row is an animal-day.
+
+**What a reach did.** On every reach, not only the credited one:
+
+- the reach credited with moving a pellet reads what it did (`Retrieved`,
+  `Displaced ...`; `retrieved`/`displaced_sa`/`displaced_outside` in the
+  complete record and `reach_data.csv`);
+- every other reach at that pellet reads `Missed` -- naming the reach that moved
+  a pellet answers every other reach at it, watched or not;
+- every reach at an untouched pellet reads `Missed`, and so does every reach at a
+  pellet a person saw moved by something other than a reach;
+- `Undetermined` when the pellet was not decided, or when it moved and NO reach
+  is credited with it (one of its reaches moved it and which one is not
+  recorded; calling them all `Missed` would be false). These pellets are a
+  defect to fix in the reaching pipeline, by a person naming the reach.
+
+Until 2026-11-19 the complete record and `reach_data.csv` left this empty
+(`Not recorded`) on every reach except the credited one, and the other files said
+`Missed` even when no reach was credited.
+
+`reach_contact_group` (was `contact_group`) is now worked out from the reach
+outcome, so the two can never disagree: `contacted` when this reach retrieved or
+displaced the pellet, `missed` when it did not. Until 2026-11-19 it meant "a
+contact frame was recorded", so a credited reach a person picked (no contact
+frame is recorded for those) read `missed` beside a pellet it retrieved.
+
+**New totals.** Untouched pellets per tray (`session_untouched_ai`,
+`session_untouched_hand`) and the day's pellets, retrieved, displaced, contacted
+and untouched from both streams (`day_pellets_ai` ... `day_untouched_hand`).
+The day totals count **pillar trays only** in both streams, so the algorithm's
+and the hand scores' can be compared (the algorithm decides no pellet on easy or
+flat trays; `ODC_sessions` `Daily_*` counts every tray). The algorithm's day
+totals are empty exactly when `day_reaches_ai` is (a tray of the day not filed,
+or no hand scores for the day -- below), and also when a filed pillar tray of
+the day has no per-pellet record or the day had no pillar tray. The hand-score
+day totals are given whenever the sheet holds them. In the analysis tables every
+day column is emptied for a day that lost a tray to a known problem.
+
+**Renamed columns** (an older file uses the left-hand names):
+
+| file | was | now |
+|---|---|---|
+| complete record, `reach_data.csv` | `outcome`, `causal_reach`, `contact_group` | `reach_outcome`, `reach_causal`, `reach_contact_group` |
+| complete record | `Session_Weight_g`, `Session_Weight_Pct` | `Day_Weight_g`, `Day_Weight_Pct` |
+| complete record | `Video_Reaches_AI`, `Attention_AI` | `Session_Reaches_AI`, `Session_Attention_AI` |
+| complete record | `Video_Pellets/Displaced/Retrieved/Contacted` | `Session_Pellets/Displaced/Retrieved/Contacted_AI` |
+| complete record | `Manual_Pellets/Displaced/Retrieved/Contacted`, `Contacted_Match` | `Session_Pellets/Displaced/Retrieved/Contacted_Hand`, `Session_Contacted_Difference` |
+| complete record | `Day_Total_Reaches_AI`, `Day_Total_Reaches_Complete` | `Day_Reaches_AI`, `Day_Complete` |
+| analysis | `pellet_number`, `swipe_id` | `segment_number`, `reach_number` |
+| analysis | `pellet_outcome`, `pellet_state_at_this_reach` | `segment_outcome`, `reach_pellet_state` |
+| analysis | `reaches_at_this_pellet`, `is_first/last_reach_at_pellet`, `pellet_position_idealness` | `segment_reaches`, `reach_is_first/last_in_segment`, `segment_pellet_position_idealness` |
+| analysis | `attention_at_this_reach`, `attention_ai` | `reach_attention`, `session_attention_ai` |
+| analysis | `body_weight_g`, `body_weight_percent_of_free_feeding` | `day_body_weight_g`, `day_body_weight_percent_of_free_feeding` |
+| analysis | `pellets_in_video`, `video_displaced/retrieved/contacted` | `session_pellets_ai`, `session_displaced/retrieved/contacted_ai` |
+| analysis | `pellets_hand_scored`, `manual_displaced/retrieved/contacted` | `session_pellets_hand`, `session_displaced/retrieved/contacted_hand` |
+| analysis | `reaches_in_video`, `day_total_reaches`, `day_total_reaches_complete` | `session_reaches_ai`, `day_reaches_ai`, `day_complete` |
+| sessions analysis | `pellets_presented`, `pellets_reached_for`, `reaches_that_decided_a_pellet`, `reaches_after_the_pellet_was_gone` | `session_` + the same name |
+| sessions analysis | `percent_<x>_video`, `percent_<x>_hand_scored` (`missed` = untouched) | `session_percent_<x>_ai`, `session_percent_<x>_hand` (`untouched`) |
+| shareable table | `pellet_number`, `reach_number_in_pellet`, `reaches_at_this_pellet`, `is_first/last_reach_at_pellet` | `segment_number`, `reach_number`, `segment_reaches`, `reach_is_first/last_in_segment` |
+| shareable table | `reach_result`, `pellet_result`, `reach_decided_the_pellet` | `reach_outcome`, `segment_outcome`, `reach_causal` |
+| shareable table | `mean_attention_score_in_session`, `reaches_in_video`, `day_total_reaches(_complete)` | `session_attention_ai`, `session_reaches_ai`, `day_reaches_ai`, `day_complete` |
+| shareable table | `pellets_in_video`, `pellets_retrieved/displaced/moved_in_session` | `session_pellets_ai`, `session_retrieved/displaced/contacted_ai` |
+| shareable table | `pellets_hand_scored`, `pellets_retrieved/displaced/moved_hand_scored` | `session_pellets_hand`, `session_retrieved/displaced/contacted_hand` |
+
+Every renamed column's dictionary entry says what it was called before. The
+first nightly export after this change rewrites every file (a change to the
+exporter's code always does), so all files carry the new names from that night.
+The names in the sections below that predate this change are the old ones; this
+table converts them.
 
 ### Swipe measures and reach counts: which column is which (changed 2026-11-17)
 

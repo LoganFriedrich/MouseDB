@@ -95,6 +95,8 @@ IDENTITY: List[Tuple[str, str]] = [
 # row (_carry_session_totals). It was also published as total_swipes_ai until
 # 2026-11-17 -- the same number twice, one of them under an earlier program's
 # per-DAY name. The per-day count is day_total_reaches.
+# The day's pellet totals (odc_reaches.day_outcome_totals), from both streams.
+DAY_OUTCOME_SOURCES = ('Day_Pellets_AI', 'Day_Retrieved_AI', 'Day_Displaced_AI', 'Day_Contacted_AI', 'Day_Untouched_AI', 'Day_Pellets_Hand', 'Day_Retrieved_Hand', 'Day_Displaced_Hand', 'Day_Contacted_Hand', 'Day_Untouched_Hand')
 SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Day_Total_Reaches_AI", "day_total_reaches"),
     ("Day_Total_Reaches_Complete", "day_total_reaches_complete"),
@@ -103,11 +105,13 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
     ("Video_Displaced", "video_displaced"),
     ("Video_Retrieved", "video_retrieved"),
     ("Video_Contacted", "video_contacted"),
+    ("Session_Untouched_AI", "session_untouched_ai"),
     ("Manual_Pellets", "pellets_hand_scored"),
     ("Manual_Displaced", "manual_displaced"),
     ("Manual_Retrieved", "manual_retrieved"),
     ("Manual_Contacted", "manual_contacted"),
-]
+    ("Session_Untouched_Hand", "session_untouched_hand"),
+] + [(c, c.lower()) for c in DAY_OUTCOME_SOURCES]
 
 # The measures that analysis used, under its names, so a script written against
 # that file keeps working. Everything else follows under our own names.
@@ -281,6 +285,7 @@ PELLET_NUMBER_QUESTIONS = (
     "pellet_number", "reaches_at_this_pellet", "is_first_reach_at_pellet",
     "is_last_reach_at_pellet", "pellet_position_idealness", "interaction_frame",
     "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
+    "session_untouched_ai",
 )
 EASY_FLAT_NOTE = ("On an easy or flat training tray this is %s: its pellets are not "
                   "tracked, no outcome is computed, and the video is not cut into one "
@@ -304,7 +309,8 @@ TEXT_COLUMNS = {
 }
 
 
-DAY_TOTAL_COLUMNS = ("day_total_reaches", "day_total_reaches_complete")
+DAY_TOTAL_COLUMNS = ("day_total_reaches", "day_total_reaches_complete") + tuple(
+    c.lower() for c in DAY_OUTCOME_SOURCES)
 DAY_TOTAL_EXCLUSION_NOTE = (
     "In this file there is a third reason a day reads no and its total is NA: a "
     "tray of that day was left out of this file as a known problem (listed in "
@@ -313,7 +319,10 @@ DAY_TOTAL_EXCLUSION_NOTE = (
 
 
 def void_day_totals_after_exclusion(before: pd.DataFrame, after: pd.DataFrame) -> pd.DataFrame:
-    """Empty the day total wherever the exclusion pass left out a tray of that day.
+    """Empty the day totals wherever the exclusion pass left out a tray of that day.
+
+    Every day column is emptied (the reach count and both streams' pellet
+    totals): the safe direction, since a day missing a tray is not the day.
 
     The analysis documents leave out entries known to be wrong (export_exclusions).
     day_total_reaches is counted over every filed tray of the animal's day, so a
@@ -334,7 +343,10 @@ def void_day_totals_after_exclusion(before: pd.DataFrame, after: pd.DataFrame) -
     out = after.copy()
     hit = pd.Series([k in lost for k in zip(out["subject_id"], out["test_date"])],
                     index=out.index)
-    out.loc[hit, "day_total_reaches"] = MISSING
+    for column in DAY_TOTAL_COLUMNS:
+        if column in out.columns and column != "day_total_reaches_complete":
+            out[column] = out[column].astype(object)
+            out.loc[hit, column] = MISSING
     if "day_total_reaches_complete" in out.columns:
         out.loc[hit, "day_total_reaches_complete"] = "no"
     return out
@@ -529,7 +541,9 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
         pellet = reach_summary._pellet_result(full["segment_outcome"])
         causal = (full["causal_reach"] if "causal_reach" in full.columns
                   else pd.Series(0, index=full.index))
-        data["reach_outcome"] = reach_summary._reach_result(causal, pellet)
+        from . import levels
+        data["reach_outcome"] = reach_summary._reach_result(
+            causal, pellet, levels.segment_keys(full))
         data["pellet_outcome"] = pellet
     data["pellet_state_at_this_reach"] = pellet_state(full)
     for source in ("Test_Type_Grouped", "Test_Type"):
@@ -824,3 +838,28 @@ def _unit_partner(name: str, columns) -> str:
                 "that name now holds the earlier swipe-measure definition, which "
                 "is a different measurement." % (former, RENAMED_ON))
     return ""
+
+
+def publish(reaches: pd.DataFrame, reach_rows: List[dict], sessions: pd.DataFrame,
+            session_rows: List[dict], exclusion_report: List[dict] = None):
+    """Both analysis documents under their published, level-first names
+    (exporters.levels.ANALYSIS), with their dictionary rows; the exclusion
+    report's column lists are renamed the same way, so analysis_EXCLUSIONS.csv
+    names the columns a reader actually has.
+
+    Built under the internal names and renamed only here, at the last step,
+    because the exclusion pass and the sessions file find their columns by the
+    internal names. (reaches, reach_rows, sessions, session_rows, report)
+    """
+    from . import levels
+    reaches, reach_rows = levels.publish(reaches, reach_rows, levels.ANALYSIS)
+    if len(sessions):
+        sessions, session_rows = levels.publish(sessions, session_rows, levels.ANALYSIS)
+    report = []
+    for entry in exclusion_report or []:
+        entry = dict(entry)
+        if entry.get("fields"):
+            entry["fields"] = ", ".join(levels.published(f.strip(), levels.ANALYSIS)
+                                        for f in str(entry["fields"]).split(","))
+        report.append(entry)
+    return reaches, reach_rows, sessions, session_rows, report

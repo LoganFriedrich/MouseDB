@@ -158,10 +158,12 @@ def test_the_written_analysis_files_void_a_day_that_lost_a_tray(tmp_path, monkey
                                    analysis_only=True)
     reaches = pd.read_csv(next(tmp_path.rglob("reaches_*_analysis.csv")))
     sessions = pd.read_csv(next(tmp_path.rglob("sessions_*_analysis.csv")))
-    assert reaches["day_total_reaches"].isna().all()
-    assert (reaches["day_total_reaches_complete"] == "no").all()
-    assert sessions["day_total_reaches"].isna().all()
-    assert (sessions["day_total_reaches_complete"] == "no").all()
+    # Published names (exporters.levels): every day column is voided.
+    assert reaches["day_reaches_ai"].isna().all()
+    assert reaches["day_retrieved_ai"].isna().all() and reaches["day_retrieved_hand"].isna().all()
+    assert (reaches["day_complete"] == "no").all()
+    assert sessions["day_reaches_ai"].isna().all()
+    assert (sessions["day_complete"] == "no").all()
     for doc in ("_analysis_dictionary", "_sessions_dictionary"):
         by = {r["VariableName"]: r for r in entry[doc]}
-        assert "left out of this file" in by["day_total_reaches_complete"]["Comments"]
+        assert "left out of this file" in by["day_complete"]["Comments"]

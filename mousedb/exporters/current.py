@@ -104,7 +104,7 @@ manual_scores.csv         One row per pellet scored by hand from the tray
                           (0 untouched / 1 displaced / 2 retrieved), with the
                           session's derived phase. Definitions:
                           manual_scores_DATA_DICTIONARY.csv.
-ODC_sessions_<cohort>.csv One row per animal per session in the ODC-SCI
+ODC_sessions_<cohort>.csv One row per animal per DAY (all its trays) in the ODC-SCI
                           2_ODC_Animal_Tracking shape (per-tray and daily
                           counts and percentages, weight, injury). Definitions:
                           ODC_sessions_DATA_DICTIONARY.csv.
@@ -135,6 +135,16 @@ ASPA_NN_X in a file name  A frozen ASPA cohort. X is the cohort letter the lab
 MANIFEST.json             When these were written, from which snapshot, row
                           counts, and any problems (e.g. columns missing a
                           dictionary entry, which would fail an ODC upload).
+
+FOUR LEVELS ON EVERY REACH ROW (since 2026-11-19). Each per-reach row is one
+reach and repeats its segment (one pellet), session (one tray = one video) and
+day (the animal's date, all pillar trays). Columns above the reach start with
+their level: reach_, segment_, session_, day_ (Session_, Day_ in the complete
+record); _ai = counted by the pipeline, _hand = from the hand scores. Every
+reach says what it did: the credited reach its outcome, every other reach at
+that pellet "missed"; "Undetermined" where no reach is credited with a moved
+pellet. Renamed columns: see each dictionary's Comments, or the Where Is My
+Data guide, "Four levels on every reach row".
 
 PHASE LABELS OF A COHORT STILL RUNNING ARE EMPTY. A session's phase is worked
 out from all of its cohort's dates, so it can change until the cohort is over.
@@ -229,6 +239,16 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     # the CSV stays the ~200 MB a person can actually load.
     cols = [c for c in REACH_DATA_ORDER_FIRST if c in df.columns]
     cols += [c for c in df.columns if c not in cols and c not in REACH_DATA_ORDER_LAST and c != "id"]
+    # What THIS reach did, on every reach, and the contact column derived from
+    # it (exporters.levels.reach_outcome_codes says why): the same values as the
+    # per-cohort complete record. Empty where it is not known.
+    from . import levels
+    if "segment_outcome" in df.columns:
+        codes = levels.reach_outcome_codes(df)
+        if "outcome" in df.columns:
+            df["outcome"] = codes
+        if "contact_group" in df.columns:
+            df["contact_group"] = levels.reach_contact(codes)
     # Easy and flat trays: the algorithm's pellet and reach outcome columns read
     # "Not applicable" (trays.ALGO_PELLET_COLUMNS says which, and why).
     trays.blank_where(df, trays.outcome_free(df), trays.ALGO_PELLET_COLUMNS,
@@ -237,13 +257,17 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     running = _running_cohorts(snapshot_dir)
     _withhold_phases(df, running)
     out = out_dir / "reach_data.csv"
-    df[cols].to_csv(staging / out.name, index=False)
+    # Published under the level-first names (levels.COMPLETE), the dictionary
+    # with them.
+    published, rows = levels.publish(df[cols], dd.DICTIONARIES["reach_data"], levels.COMPLETE)
+    published.to_csv(staging / out.name, index=False)
     _place(staging / out.name, out)
-    dd.write_dictionary("reach_data", out_dir / "reach_data_DATA_DICTIONARY.csv")
+    dd.write_rows(rows, out_dir / "reach_data_DATA_DICTIONARY.csv")
+    known = {r["VariableName"] for r in rows}
     manifest["files"]["reach_data.csv"] = {
         "rows": int(len(df)), "columns": int(len(cols)),
         "source": str(src), "source_mtime": _mtime(src),
-        "undocumented_columns": dd.undocumented_columns("reach_data", cols),
+        "undocumented_columns": [c for c in published.columns if c not in known],
         "phase_withheld_for_running_cohorts": running,
     }
     if "extended_features" in df.columns:

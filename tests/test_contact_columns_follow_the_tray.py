@@ -97,10 +97,11 @@ def test_reach_data_csv_says_not_applicable_for_the_algorithm_on_easy_and_flat(t
     refresh_current(snap, out, db_ok=False)
     r = pd.read_csv(out / "reach_data.csv", dtype=str, keep_default_na=False)
     flat, pillar = r[r.tray_type == "F"].iloc[0], r[r.tray_type == "P"].iloc[0]
-    for column in ("outcome", "causal_reach", "segment_outcome", "contact_group",
+    # Published under level-first names since 2026-11-19 (exporters.levels).
+    for column in ("reach_outcome", "reach_causal", "segment_outcome", "reach_contact_group",
                    "segment_contact_group", "outcome_source"):
         assert flat[column] == missing.NOT_APPLICABLE, column
-    assert pillar["contact_group"] == "contacted" and pillar["segment_outcome"] == "retrieved"
+    assert pillar["reach_contact_group"] == "contacted" and pillar["segment_outcome"] == "retrieved"
     m = pd.read_csv(out / "manual_scores.csv", dtype=str)
     assert m.iloc[0]["contact_group"] == "untouched"            # the hand score, kept on a flat tray
 

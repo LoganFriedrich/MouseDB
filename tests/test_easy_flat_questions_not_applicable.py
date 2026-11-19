@@ -48,6 +48,7 @@ def _written(tmp_path):
         "complete": read("ODC_reaches_%s.csv" % label),
         "summary": read("reaches_%s_summary.csv" % label),
         "analysis": read("reaches_%s_analysis.csv" % label),
+        "sessions": read("sessions_%s_analysis.csv" % label),
     }
 
 
@@ -55,48 +56,55 @@ def test_the_shareable_table_says_not_applicable_on_a_flat_tray(tmp_path):
     _, f = _written(tmp_path)
     s = f["summary"]
     flat, pillar = s[s["session_video"] == FLAT], s[s["session_video"] == PILLAR]
-    for column in ("pellet_result", "reach_result", "reach_decided_the_pellet",
-                   "pellet_number", "reaches_at_this_pellet"):
+    # Published level-first names (exporters.levels.SUMMARY).
+    for column in ("segment_outcome", "reach_outcome", "reach_causal",
+                   "segment_number", "segment_reaches"):
         assert (flat[column] == missing.NOT_APPLICABLE).all(), column
-    assert missing.UNDETERMINED not in set(flat["pellet_result"])
-    assert list(pillar["reach_result"]) == ["Missed", "Retrieved"]
-    assert list(pillar["reach_decided_the_pellet"]) == ["No", "Yes"]
+    assert missing.UNDETERMINED not in set(flat["segment_outcome"])
+    assert list(pillar["reach_outcome"]) == ["Missed", "Retrieved"]
+    assert list(pillar["reach_causal"]) == ["No", "Yes"]
 
 
 def test_the_analysis_table_uses_words_for_words_and_na_for_numbers(tmp_path):
     _, f = _written(tmp_path)
     a = f["analysis"]
     flat, pillar = a[a["video_name"] == FLAT], a[a["video_name"] == PILLAR]
-    for column in ("reach_outcome", "pellet_outcome", "pellet_state_at_this_reach"):
+    # Published level-first names (exporters.levels.ANALYSIS).
+    for column in ("reach_outcome", "segment_outcome", "reach_pellet_state"):
         assert (flat[column] == missing.NOT_APPLICABLE).all(), column
-    for column in ("pellet_number", "reaches_at_this_pellet", "is_first_reach_at_pellet",
-                   "is_last_reach_at_pellet", "pellets_reached_for", "reaches_that_decided_a_pellet",
-                   "reaches_after_the_pellet_was_gone"):
+    for column in ("segment_number", "segment_reaches", "reach_is_first_in_segment",
+                   "reach_is_last_in_segment", "session_pellets_reached_for",
+                   "session_reaches_that_decided_a_pellet",
+                   "session_reaches_after_the_pellet_was_gone", "session_untouched_ai"):
         assert (flat[column] == "NA").all(), column
-    assert list(pillar["pellet_state_at_this_reach"]) == [
+    assert list(pillar["reach_pellet_state"]) == [
         "pellet still available", "this reach decided the pellet"]
-    assert set(pillar["reaches_that_decided_a_pellet"]) == {"1"}
+    assert set(pillar["session_reaches_that_decided_a_pellet"]) == {"1"}
 
 
 def test_the_complete_record_overrides_what_the_database_claims(tmp_path):
     _, f = _written(tmp_path)
     c = f["complete"]
     flat, pillar = c[c["video_name"] == FLAT], c[c["video_name"] == PILLAR]
-    for column in ("segment_outcome", "causal_reach", "contact_group",
-                   "segment_contact_group", "Video_Pellets"):
+    # Published level-first names (exporters.levels.COMPLETE).
+    for column in ("segment_outcome", "reach_causal", "reach_contact_group",
+                   "segment_contact_group", "Session_Pellets_AI", "Session_Untouched_AI"):
         assert (flat[column] == missing.NOT_APPLICABLE).all(), column
-    assert set(pillar["contact_group"]) == {"contacted"}
+    # The contact column follows what each reach did, whatever the database
+    # claimed: the credited reach met the pellet, the other one missed.
+    assert list(pillar["reach_contact_group"]) == ["missed", "contacted"]
     assert set(pillar["segment_outcome"]) == {"retrieved"}
 
 
 def test_the_sessions_table_counts_no_pellets_on_a_flat_tray(tmp_path):
     _, f = _written(tmp_path)
-    sessions, _ = analysis_sessions.build(f["analysis"], [])
+    from mousedb.exporters import levels
+    sessions = f["sessions"]
     flat = sessions[sessions["video_name"] == FLAT].iloc[0]
     for column in analysis_sessions.PELLET_COUNTS:
-        assert flat[column] == "NA", column
+        assert flat[levels.published(column, levels.ANALYSIS)] == "NA", column
     pillar = sessions[sessions["video_name"] == PILLAR].iloc[0]
-    assert pillar["pellets_reached_for"] == 1
+    assert pillar["session_pellets_reached_for"] == "1"
 
 
 def test_the_dictionaries_name_the_word_and_say_why():

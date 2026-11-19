@@ -41,6 +41,7 @@ from . import analysis_sessions
 from . import reach_summary
 from . import trays
 from . import layout
+from . import levels
 
 TAB_PREFIX = {"0a_Metadata": "Metadata", "3b_Manual_Tray": "Tray", "4_Contusion_Injury_Details": "Contusion",
               "5_SC_Injection_Details": "Injection", "ODC": "ODC"}
@@ -65,6 +66,16 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     # has no hand-score record to check against), so the count cannot be
     # committed to yet -- see day_reach_totals.
     "Day_Total_Reaches_AI": missing.UNDETERMINED,
+    # The algorithm's day pellet totals are empty for the same reason, or
+    # because the day had no pillar tray (day_outcome_totals).
+    **{c: missing.UNDETERMINED for c in ("Day_Pellets_AI", "Day_Retrieved_AI",
+                                         "Day_Displaced_AI", "Day_Contacted_AI",
+                                         "Day_Untouched_AI")},
+    # What the reach did is empty only where it is not known: the pellet was
+    # not decided, or it was moved and no reach is credited with it
+    # (levels.reach_outcome_codes).
+    "outcome": missing.UNDETERMINED,
+    "contact_group": missing.UNDETERMINED,
     # The session's phase is left empty while its cohort is still running
     # (running_cohorts says why): the label cannot be committed to until the
     # cohort's dates are all in, so it reads 'Undetermined', not 'Not recorded'.
@@ -79,6 +90,7 @@ NOT_APPLICABLE_WHEN_EMPTY = {
 # a pellet nobody tracked; the contact groups said 'missed' before 2026-10-26).
 EASY_FLAT_NOT_APPLICABLE = trays.ALGO_PELLET_COLUMNS + (
     "Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted",
+    "Session_Untouched_AI",
 )
 
 # Columns the dictionary does NOT mark as never-computed -- because a legacy detector
@@ -427,6 +439,114 @@ def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
     return total, flag
 
 
+# The day-level pellet totals, in the order they are written.
+DAY_AI_COLUMNS = ("Day_Pellets_AI", "Day_Retrieved_AI", "Day_Displaced_AI",
+                  "Day_Contacted_AI", "Day_Untouched_AI")
+DAY_HAND_COLUMNS = ("Day_Pellets_Hand", "Day_Retrieved_Hand", "Day_Displaced_Hand",
+                    "Day_Contacted_Hand", "Day_Untouched_Hand")
+
+
+def day_outcome_totals(rc: pd.DataFrame, test_date: pd.Series, per_video: pd.DataFrame,
+                       video_pellets: Optional[pd.DataFrame], pellets: Optional[pd.DataFrame],
+                       day_complete: pd.Series) -> Dict[str, pd.Series]:
+    """The animal's pellet totals over its whole day, on every reach row of it.
+
+    WHY. Every per-reach row carries four levels (exporters.levels): the reach,
+    its pellet, its tray, and its day. The day's reach count was there
+    (Day_Total_Reaches_AI); what the day's pellets came to was not, from either
+    the algorithm or the hand scores.
+
+    WHICH TRAYS. Pillar trays only, in both streams. The algorithm decides no
+    pellet on an easy or flat tray (trays.py), so a day total that counted their
+    hand scores would not be comparable with the algorithm's, which is the point
+    of carrying both. (The ODC day file, ODC_sessions_<cohort>.csv, counts every
+    tray in its Daily_* columns; these columns do not.)
+
+    WHEN THE ALGORITHM'S IS EMPTY. Exactly when the day's reach total is: a tray
+    of the day not filed, or no hand-score record to check the day against
+    (day_reach_totals) -- a partial day is never reported as the day. Also empty
+    when a filed pillar tray of the day has no per-pellet rows to count (an old
+    import), and on a day with no pillar tray at all.
+
+    The hand scores' totals are given whenever the sheet holds pillar scores for
+    the day: they are complete at the bench, independent of filing.
+    """
+    out: Dict[str, pd.Series] = {}
+    subject = rc["subject_id"].astype(str)
+    day = pd.Series(test_date, index=rc.index).astype(str)
+    pairs = list(zip(subject, day))
+
+    # Per pillar video of these animals: pellets cut, displaced, retrieved.
+    # From the per-pellet table (every filed video, including one with no reach
+    # rows), else from the reach rows' segments (pellets then unknown).
+    videos: Dict[str, dict] = {}
+    pv = per_video if per_video is not None else pd.DataFrame()
+    first = rc.drop_duplicates("video_name")
+    for v, s, d, t in zip(first["video_name"], first["subject_id"].astype(str),
+                          day.loc[first.index], first["tray_type"]):
+        videos[str(v)] = {"key": (s, d), "tray": str(t).strip().upper(), "n": None,
+                          "disp": pv["disp"].get(v) if "disp" in pv else None,
+                          "retr": pv["retr"].get(v) if "retr" in pv else None}
+    need = {"video_name", "subject_id", "session_date", "tray_type", "outcome"}
+    if video_pellets is not None and not video_pellets.empty and need <= set(video_pellets.columns):
+        vp = video_pellets[video_pellets["subject_id"].astype(str).isin(set(subject))]
+        if not vp.empty:
+            vday = pd.to_datetime(vp["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            vp = vp.assign(_d=vday)
+            for v, g in vp.groupby("video_name"):
+                o = g["outcome"].astype(str)
+                videos[str(v)] = {"key": (str(g["subject_id"].iloc[0]), str(g["_d"].iloc[0])),
+                                  "tray": str(g["tray_type"].iloc[0]).strip().upper(),
+                                  "n": int(len(g)), "disp": int(o.isin(DISPLACED).sum()),
+                                  "retr": int((o == "retrieved").sum())}
+    ai: Dict[tuple, Optional[tuple]] = {}
+    for rec in videos.values():
+        if rec["tray"] in trays.OUTCOME_FREE_TRAYS:
+            continue
+        k = rec["key"]
+        vals = (rec["n"], rec["disp"], rec["retr"])
+        if k in ai and ai[k] is None:
+            continue
+        if any(x is None or pd.isna(x) for x in vals):
+            ai[k] = None
+            continue
+        prev = ai.get(k) or (0, 0, 0)
+        ai[k] = tuple(int(a) + int(b) for a, b in zip(prev, vals))
+    complete = (pd.Series(day_complete, index=rc.index).astype(str) == DAY_COMPLETE).tolist()
+
+    def col(values):
+        return pd.Series(pd.array(values, dtype="Int64"), index=rc.index)
+
+    got = [ai.get(k) if ok else None for k, ok in zip(pairs, complete)]
+    n = [g[0] if g else None for g in got]
+    disp = [g[1] if g else None for g in got]
+    retr = [g[2] if g else None for g in got]
+    out["Day_Pellets_AI"] = col(n)
+    out["Day_Retrieved_AI"] = col(retr)
+    out["Day_Displaced_AI"] = col(disp)
+    out["Day_Contacted_AI"] = out["Day_Displaced_AI"] + out["Day_Retrieved_AI"]
+    out["Day_Untouched_AI"] = out["Day_Pellets_AI"] - out["Day_Contacted_AI"]
+
+    hand: Dict[tuple, tuple] = {}
+    if pellets is not None and not pellets.empty:
+        p = pellets[pellets["subject_id"].astype(str).isin(set(subject))]
+        p = p[~p["tray_type"].fillna("").astype(str).str.strip().str.upper()
+              .isin(trays.OUTCOME_FREE_TRAYS)]
+        if not p.empty:
+            pday = pd.to_datetime(p["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            score = pd.to_numeric(p["score"], errors="coerce")
+            for (s, d), sc in score.groupby([p["subject_id"].astype(str), pday]):
+                hand[(s, d)] = (int(len(sc)), int((sc == 2).sum()), int((sc == 1).sum()),
+                                int((sc == 0).sum()))
+    h = [hand.get(k) for k in pairs]
+    out["Day_Pellets_Hand"] = col([x[0] if x else None for x in h])
+    out["Day_Retrieved_Hand"] = col([x[1] if x else None for x in h])
+    out["Day_Displaced_Hand"] = col([x[2] if x else None for x in h])
+    out["Day_Contacted_Hand"] = out["Day_Displaced_Hand"] + out["Day_Retrieved_Hand"]
+    out["Day_Untouched_Hand"] = col([x[3] if x else None for x in h])
+    return out
+
+
 def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
                  records: pd.DataFrame, pellets: pd.DataFrame,
                  facts: Callable[[str], Dict[str, str]], lab: str = "",
@@ -492,6 +612,16 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
         cols[c] = pd.Series([wide.get(s, {}).get(c, "") for s in rc["subject_id"]], index=rc.index)
     for c in reach_cols:
         cols[c] = rc[c]
+    # The reach's own outcome on EVERY reach, not only the credited one, and
+    # the contact column derived from it so the two cannot disagree
+    # (levels.reach_outcome_codes says why: naming the reach that moved a
+    # pellet answers every other reach at it -- they missed).
+    if "segment_outcome" in rc.columns:
+        codes = levels.reach_outcome_codes(rc)
+        if "outcome" in cols:
+            cols["outcome"] = codes
+        if "contact_group" in cols:
+            cols["contact_group"] = levels.reach_contact(codes)
 
     # 5. session totals: per video (pipeline) and per tray (hand scores), and
     # the animal's reaches over the whole testing day (day_reach_totals says why)
@@ -525,15 +655,18 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     cols["Video_Displaced"] = video.map(disp).astype("Int64")
     cols["Video_Retrieved"] = video.map(retr).astype("Int64")
     cols["Video_Contacted"] = cols["Video_Displaced"] + cols["Video_Retrieved"]
+    # The tray's untouched pellets: presented (cut) and moved by nothing.
+    cols["Session_Untouched_AI"] = cols["Video_Pellets"] - cols["Video_Contacted"]
     # Easy and Flat: pellets are presented but not tracked and no outcome is
     # computed (lab decision, 2026-10-23), so their pellet and outcome counts
     # are unknown, not zero. Blank them; the reach count and attention stay.
     outcome_free = trays.outcome_free(rc)
-    for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted"):
+    for c in ("Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted",
+              "Session_Untouched_AI"):
         cols[c] = cols[c].mask(outcome_free)
     empty = pd.Series(pd.array([pd.NA] * len(rc), dtype="Int64"), index=rc.index)
     for c in ("Manual_Pellets", "Manual_Displaced", "Manual_Retrieved", "Manual_Contacted",
-              "Contacted_Match"):
+              "Session_Untouched_Hand", "Contacted_Match"):
         cols[c] = empty
     if pellets is not None and not pellets.empty:
         p = pellets[pellets["subject_id"].astype(str).str.startswith(cohort_id + "_")].copy()
@@ -541,7 +674,8 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
             p["d"] = pd.to_datetime(p["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
             keys = ["subject_id", "d", "tray_type", "tray_number"]
             g = p.groupby(keys)["score"].agg(n="size", disp=lambda s: int((s == 1).sum()),
-                                             retr=lambda s: int((s == 2).sum())).reset_index()
+                                             retr=lambda s: int((s == 2).sum()),
+                                             unt=lambda s: int((s == 0).sum())).reset_index()
             k = pd.DataFrame({"subject_id": rc["subject_id"], "d": cols["Test_Date"],
                               "tray_type": rc["tray_type"], "tray_number": rc["run_number"]})
             m = k.merge(g, on=keys, how="left")
@@ -550,7 +684,14 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
             cols["Manual_Displaced"] = m["disp"].astype("Int64")
             cols["Manual_Retrieved"] = m["retr"].astype("Int64")
             cols["Manual_Contacted"] = cols["Manual_Displaced"] + cols["Manual_Retrieved"]
+            cols["Session_Untouched_Hand"] = m["unt"].astype("Int64")
             cols["Contacted_Match"] = (cols["Manual_Contacted"] - cols["Video_Contacted"]).abs()
+
+    # 5b. the day: the same totals over every pillar tray of the animal's day
+    # (day_outcome_totals says why only pillar trays, and why the algorithm's
+    # can be empty).
+    cols.update(day_outcome_totals(rc, cols["Test_Date"], per_video, video_pellets, pellets,
+                                   cols["Day_Total_Reaches_Complete"]))
 
     # 4b. the extended per-reach measurements, one column each. They go last because
     # they are the widest block and a reader scanning the header should meet identity,
@@ -635,7 +776,7 @@ def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[s
 
 
 def _write(df: pd.DataFrame, rows: List[dict], data: Path,
-           dictionary: Optional[Path] = None) -> List[dict]:
+           dictionary: Optional[Path] = None, names: Optional[Dict[str, str]] = None) -> List[dict]:
     """One table, written through a temporary name; returns its dictionary rows.
 
     The dictionary is written beside the table only when ``dictionary`` is
@@ -655,6 +796,10 @@ def _write(df: pd.DataFrame, rows: List[dict], data: Path,
     break the lookups. (write_cohort applies the same rule to the analysis documents,
     which it writes itself.)
     """
+    # The published, level-first names (exporters.levels), renamed with their
+    # dictionary rows for the same reason.
+    if names:
+        df, rows = levels.publish(df, rows, names)
     df, rows = dd.apply_odc_names(df, rows)
     # And made safe to read back: a comma inside a data cell is the classic way a
     # CSV survives being written and dies in someone else's reader, and the
@@ -776,11 +921,13 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
                          if x).strip())
                      for r in rows]
         # No dictionary per cohort: export() writes one per kind from these rows.
-        complete_dictionary = _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label))
+        complete_dictionary = _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
+                                     names=levels.COMPLETE)
 
         summary, summary_rows = reach_summary.build(df)
         summary_dictionary = _write(summary, summary_rows,
-                                    out_dir / ("reaches_%s_summary.csv" % label))
+                                    out_dir / ("reaches_%s_summary.csv" % label),
+                                    names=levels.SUMMARY)
 
     # The analysis documents have the SAME columns for every cohort -- unlike the
     # complete record, whose columns follow each cohort's own tracking sheet. So
@@ -796,6 +943,12 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
         analysis, exclusion_report = export_exclusions.apply(analysis, exclusions,
                                                              cohort_id=cohort_id)
         analysis = analysis_reaches.void_day_totals_after_exclusion(before, analysis)
+    # The sessions file is built from the analysis rows under their internal
+    # names; both are published under the level-first names together below.
+    sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
+    (analysis, analysis_rows, sessions, session_rows,
+     exclusion_report) = analysis_reaches.publish(analysis, analysis_rows, sessions,
+                                                  session_rows, exclusion_report)
     # Named in code, so legal already -- but passed through the same rule as every
     # other document, so that stays true of a column added later by someone who has
     # not read ODC's naming guide.
@@ -805,7 +958,6 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
         csv_safety.note_substitutions(analysis_rows, changes))
     analysis.to_csv(out_dir / ("reaches_%s_analysis.csv" % label), index=False)
 
-    sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
     sessions_file = out_dir / ("sessions_%s_analysis.csv" % label)
     if len(sessions):
         sessions, session_rows = dd.apply_odc_names(sessions, session_rows)
