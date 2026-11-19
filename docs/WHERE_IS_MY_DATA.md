@@ -383,14 +383,50 @@ from. If the snapshot was left half-replaced (a refresh stopped in the middle
 of the swap), the exports are not rewritten at all -- the files stay those of
 the last good night -- and the job says so.
 
-**When the big per-reach files are not rewritten.** They are kept from the
-previous night when nothing they are built from has changed: the reaches, the
-animals, the hand scores, the sheet records, the per-pellet table, the weights,
-the lab's settings, everything the "left out" checks look at, and mousedb's
-own code. A change to any one of those rebuilds them, so a corrected entry
-always comes back the next night -- and the first night after new mousedb code
-is installed rewrites every one of them, which takes hours. `MANIFEST.json` says when the files were kept
-(`odc_reaches_skipped`).
+**Each night only the cohorts that changed are rewritten (since 2026-11-18).**
+The big per-reach files -- each cohort's complete record, summary, analysis
+and sessions files, and each project's combined `*_all_cohorts*` files -- are
+not rebuilt from nothing every night. What happens, in plain words:
+
+1. **Nothing at all changed** (no new video, no sheet correction, no new
+   setting): every per-reach file is kept as it was. `MANIFEST.json` says so
+   (`odc_reaches_skipped`).
+2. **Something changed**: mousedb works out, cohort by cohort, whether anything
+   that cohort's files are made from is different from last night -- its
+   reaches (a new video, a video analyzed again, a video withdrawn), its
+   animals' sheet records and hand scores, its per-pellet rows and weights,
+   what the "left out" checks say about it, the study facts for its project,
+   whether it is still running (its phase labels are withheld until it is
+   over, and that can change with the date alone), and where its folder is.
+   **A cohort with any difference has all its files rewritten. A cohort with
+   none keeps its files untouched** (same bytes, same time). A whole cohort is
+   rewritten, not just its new rows, because one new tray changes other rows
+   too -- the animal's day total, the running row number (`entry_index`),
+   a new column one video brought in.
+3. **The combined file of a project** is rewritten only when one of its
+   cohorts was; the part of it before the first changed cohort is copied as it
+   was, and only the rest is written again.
+4. **Everything is rebuilt from nothing** only when the mousedb code that
+   writes the files has changed (the first night after an install -- this
+   takes hours), when the record of what was written last night
+   (`.export_units.json`, a hidden file in this folder) is missing or
+   unreadable, or when someone runs `mousedb-current-exports --full`. A
+   change to a lab-wide setting (the lab name, the field definitions) touches
+   every cohort, so every cohort is rewritten too.
+5. **A file changed or deleted by hand** is noticed (its size or time is not
+   what was written) and that cohort is rewritten.
+
+The result is the same, byte for byte, as rebuilding everything: that is
+checked by the test suite for every kind of change above, and can be checked
+on real data with `mousedb export-incremental-check` (see INSTALL.md).
+
+`MANIFEST.json` says what happened under `incremental`: `mode` (`incremental`
+or `full`, and `why_full`), `at` (when), `cohorts_rewritten` (each with `why`
+-- which inputs changed -- and the videos appended, replaced and removed),
+`cohorts_kept` (each with when its files were written), `cohorts_removed`,
+and which combined files were rewritten or kept. On a night when many videos
+were analyzed again (a new MouseReach version), most cohorts change, and that
+night takes about as long as a full rebuild.
 
 ## Limited exports: just part of the data
 
@@ -2308,7 +2344,10 @@ From a terminal (MouseDB environment active):
 mousedb-data-status              # the table above, as text
 mousedb import-reaches           # pull new MouseReach results into reach_data
 mousedb import-analyses          # mirror MouseBrain's analysis registry (exports, figures, provenance)
-mousedb-current-exports          # rewrite reach_data.csv, manual_scores.csv, every cohort's reach and session-analysis files and each project's combined files (+ dictionaries): what "Refresh exports now" does
+mousedb-current-exports          # rewrite reach_data.csv and manual_scores.csv, and the per-reach files of every cohort that changed (+ the combined files of their projects and the dictionaries): what "Refresh exports now" does
+mousedb-current-exports --full   # the same, but every cohort's files rebuilt from nothing
+mousedb export-incremental-check --snapshot-dir <copy> --work <empty folder> --previous <copy of exports/current>
+                                 # prove on real data that the incremental export equals a full rebuild (INSTALL.md)
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
 mousedb-current-exports --no-wait  # stop at once (exit 3) if another refresh is writing
 ```

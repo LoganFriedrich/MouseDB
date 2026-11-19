@@ -6,6 +6,30 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- **The nightly export rewrites only the cohorts that changed**
+  (`mousedb/exporters/incremental.py`, `odc_reaches.export(incremental=...)`,
+  `layout.combine`). When anything the per-reach files are built from changed,
+  every cohort's files and every combined file used to be rebuilt -- about two
+  hours a night. Now each cohort has a fingerprint (its reach rows, animals,
+  sheet records, hand scores, per-pellet rows, exclusions, study facts,
+  running status, folder, and the lab-wide settings); a cohort whose
+  fingerprint and files on disk match the ledger
+  (`exports/current/.export_units.json`) keeps its files, and what it adds to
+  the manifest, the shared dictionaries and the exclusions report is replayed
+  from the ledger. A project's combined files are rewritten only when one of
+  its cohorts was, keeping the old file's bytes up to the first changed
+  cohort. A full rebuild happens when the exporter code changes, the ledger
+  is missing, or `mousedb-current-exports --full` is run. MANIFEST.json's
+  `incremental` record names the cohorts rewritten (why, and the videos
+  appended, replaced and removed) and kept. `mousedb export-incremental-check`
+  builds incrementally and from nothing on a snapshot copy and compares every
+  file byte for byte; the test suite does the same for a new video, a new
+  tray on an exported day, a changed, withdrawn or excluded video, a phase
+  relabel, a cohort that is still running, a corrected hand score, a new
+  measurement, a new sheet column, a new weight, an emptied cohort, a column
+  type change, new code, two nights in a row, a hand-edited file and a run
+  stopped before its ledger was saved.
+
 - **Limited exports: a per-day yes/no rule, `day_window`**
   (`mousedb/exporters/subsets.py`). The yes/no column of a limited export
   could only say yes or no per animal, so a column marking which DAYS of each
@@ -24,6 +48,18 @@ checked-in code, not what's planned.
   yes/no column".
 
 ### Fixed
+- **A cohort's sessions file no longer survives a night on which all its
+  reaches were left out** (`odc_reaches.export`). write_cohort archived such a
+  file only when it was beside the files being written -- the staging folder,
+  where an earlier night's file never is -- so the old sessions file stayed in
+  the exports folder claiming sessions that were not there. A rebuilt cohort's
+  files of a kind not written this run are now archived after the copy.
+- **reach_data.csv and manual_scores.csv were copied into the exports folder
+  twice each night** (`exporters.current`): the per-reach export copied every
+  CSV in the shared staging folder, theirs included. It has its own staging
+  folder now. Unchanged small files (dictionaries, the exclusions report) are
+  no longer rewritten with the same bytes, so the limited exports cut from
+  them are not remade for nothing.
 - **`mousedb missing-videos` and `mousedb sheet-progress` take their options
   again** (`mousedb/cli.py`, `missing_videos.build_parser`,
   `session_states.build_parser`). Both subcommands handed everything after

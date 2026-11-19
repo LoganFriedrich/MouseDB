@@ -783,6 +783,40 @@ that are easy to be caught by:
   (`python -m mousedb.exporters.current --no-wait`), so a window left open
   since before an install still exports with the installed code. A new input
   the exporter starts reading must be added to the signature in the same change.
+- **When the signature HAS changed, only the cohorts that changed are rewritten**
+  (`exporters/incremental.py`, since 2026-11-18). Each cohort's files are kept
+  when its fingerprint -- its reach rows, its animals' subject and sheet-record
+  rows, its hand scores, its per-pellet rows (weights ride on the reach rows),
+  what the exclusion checks say about its videos and the cohort, the
+  study-facts sections that apply to it, whether it is still running, its
+  folder and label, and the lab name and field definitions -- is the one
+  recorded last time, AND its files on disk have the size and time recorded
+  then. Otherwise all of that cohort's files are rebuilt. Each project's
+  combined files are rewritten only when one of its cohorts was (or one was
+  archived or failed), and keep the bytes of the old combined file up to the
+  first changed cohort. Small shared files (the dictionaries,
+  `analysis_EXCLUSIONS.csv`) are rewritten only when their bytes change, so
+  their times -- which the limited exports go by -- only move when they do.
+  The record of all this is `exports/current/.export_units.json` (the
+  "ledger"), written only after every file is in place; a run that stops
+  part-way leaves the old ledger, whose recorded sizes and times then no
+  longer match the files that were replaced, so those cohorts are rebuilt
+  next time. **A full rebuild happens when** the exporter code hash changed
+  (any install of new code), the ledger is missing or unreadable, or
+  `mousedb-current-exports --full` is run. Deleting the ledger is a safe way
+  to force one. What each night did is in `MANIFEST.json` under
+  `incremental`. A named-cohort export (`mousedb export-odc-reaches --cohort`)
+  is never incremental and does not touch the ledger.
+- **Checking that incremental equals full, on real data:**
+  `mousedb export-incremental-check --snapshot-dir <COPY of a snapshot>
+  --work <empty scratch folder> --previous <copy of last night's exports>`
+  (or `--base-snapshot <copy of an earlier snapshot>` to build "last night"
+  first). It builds the exports incrementally and from nothing in two folders
+  under `--work`, compares every file byte for byte (MANIFEST.json without its
+  times and run record), prints both times, and exits 0 only when they are
+  identical. Give it COPIES: the export writes its working files beside the
+  snapshot. It refuses the live exports folder as `--work`. It never reads
+  connectome.db.
 - **A failed or incomplete export fails the job.** If rewriting
   `exports/current/` raises, or any part of it failed (a cohort's file, a
   combined file, the exclusion checks), or `MANIFEST.json` comes out with
