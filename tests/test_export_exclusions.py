@@ -177,6 +177,74 @@ def test_one_video_name_from_two_recordings_is_left_out(tmp_path):
     assert ex.drop_videos["20260310_CNT0101_P1"].startswith("collision")
 
 
+def _two_names(tmp_path):
+    """A recording renamed by a correction: the watcher database keeps the old
+    name (box 1 / box 8 swapped) as well as the corrected one."""
+    a = "CNT_01_13"
+    snap = _snapshot(tmp_path, videos=[("20260310_CNT0113_P1", a, DAY, "P", 1, _vector(1))],
+                     hand=[(a, DAY, "P", 1, _vector(1))])
+    pipeline = tmp_path / "pipe"
+    pipeline.mkdir()
+    con = sqlite3.connect(pipeline / "watcher.db")
+    con.execute("CREATE TABLE collages (filename TEXT)")
+    con.executemany("INSERT INTO collages VALUES (?)",
+                    [("20260310_CNT0001,CNT0002,CNT0113_P1.mkv",),
+                     ("20260310_CNT0113,CNT0002,CNT0001_P1.mkv",)])
+    con.commit()
+    con.close()
+    return snap, pipeline
+
+
+def _correction(pipeline, files, folder="2026-03-11_name_typos"):
+    import json
+    d = pipeline / "Archive" / "manual_corrections" / folder
+    d.mkdir(parents=True)
+    (d / "record.json").write_text(json.dumps({"what": "box 1 / box 8 swapped",
+                                               "files": files}), encoding="utf-8")
+
+
+def test_without_a_correction_record_the_two_names_collide(tmp_path):
+    snap, pipeline = _two_names(tmp_path)
+    ex = ee.compute(snap, pipeline_root=pipeline)
+    assert ex.drop_videos["20260310_CNT0113_P1"].startswith("collision")
+
+
+def test_a_recorded_name_correction_resolves_the_identity(tmp_path):
+    # The corrected name wins; the old name is history, so the video is one
+    # recording's and nothing is left out.
+    snap, pipeline = _two_names(tmp_path)
+    _correction(pipeline, [{"original_name": "20260310_CNT0001,CNT0002,CNT0113_P1.mkv",
+                            "corrected_name": "20260310_CNT0113,CNT0002,CNT0001_P1.mkv"}])
+    ex = ee.compute(snap, pipeline_root=pipeline)
+    assert ex.drop_videos == {}
+    single_to_rec, _ = ee.collage_members(pipeline)
+    assert single_to_rec["20260310_CNT0113_P1"] == {"20260310_CNT0113,CNT0002,CNT0001_P1"}
+
+
+def test_a_correction_changes_the_skip_signature(tmp_path):
+    snap, pipeline = _two_names(tmp_path)
+    before = ee.input_signature(pipeline_root=pipeline)["name_corrections"]
+    _correction(pipeline, [{"original_name": "20260310_CNT0001,CNT0002,CNT0113_P1.mkv",
+                            "corrected_name": "20260310_CNT0113,CNT0002,CNT0001_P1.mkv"}])
+    assert ee.input_signature(pipeline_root=pipeline)["name_corrections"] != before
+
+
+def test_an_unreadable_correction_record_stops_the_checks(tmp_path):
+    snap, pipeline = _two_names(tmp_path)
+    d = pipeline / "Archive" / "manual_corrections" / "broken"
+    d.mkdir(parents=True)
+    (d / "record.json").write_text("{ not json", encoding="utf-8")
+    with pytest.raises(ee.ExclusionInputUnreadable, match="name-correction record"):
+        ee.compute(snap, pipeline_root=pipeline)
+
+
+def test_a_correction_folder_without_a_record_is_ignored(tmp_path):
+    snap, pipeline = _two_names(tmp_path)
+    (pipeline / "Archive" / "manual_corrections" / "notes_only").mkdir(parents=True)
+    ex = ee.compute(snap, pipeline_root=pipeline)
+    assert ex.drop_videos["20260310_CNT0113_P1"].startswith("collision")
+
+
 # ------------------------------------------------------------------- archive
 
 def test_a_recording_the_archive_cuts_name_differently_is_left_out_whole(tmp_path):

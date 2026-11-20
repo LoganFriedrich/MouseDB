@@ -39,6 +39,9 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
                 attached to the wrong tray. Those columns are blanked.
 3. collision -- one single-animal video name produced by two different
                 recordings: which recording the reaches came from is unknown.
+                A recording renamed by a recorded name correction is not a
+                second recording: the corrected name wins and the name it
+                replaced is history (name_corrections, below).
 4. death     -- reaches dated after a death the sheet itself proves (a surgery
                 with the day's weight typed, marked not survived). A proven death
                 outranks a video label.
@@ -66,6 +69,25 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
 
 Low-information pellet patterns (all the same value, or nearly) are never used
 as evidence: they match everything.
+
+RECORDED NAME CORRECTIONS
+-------------------------
+When a person corrects a typo in a multi-animal recording's name (two animals
+swapped, a missing digit), the watcher databases keep the recording's old name
+as well as the new one: the old one is a row nobody deletes. Read as two
+recordings, the old and the new name would both "produce" the animals they
+share, and check 3 would leave those videos out as a collision -- although the
+correction itself is the record of which name is right. So the corrections are
+read from the pipeline's correction records,
+``<pipeline>/Archive/manual_corrections/<folder>/record.json``, each listing
+``files`` with an ``original_name`` and a ``corrected_name``. A recording name
+that a record lists as an ``original_name`` (with a different corrected name)
+is left out of the recording list for every check: the corrected name wins,
+the old name is history. Nothing is hard-coded: a new record is picked up on
+the next export, and it is part of the skip signature (input_signature), so
+writing one rebuilds the files. A record that exists but cannot be read stops
+the checks like any unreadable input (below); a folder with no record.json is
+not a name correction and is ignored.
 
 AN INPUT THAT EXISTS BUT CANNOT BE READ STOPS THE CHECKS (fail closed)
 --------------------------------------------------------------------
@@ -173,7 +195,56 @@ def _single_name(date: str, animal: str, tray: str) -> str:
 _COLLAGE = re.compile(r"^(\d{8})_(.+)_([A-Za-z]+\d+)\.[A-Za-z0-9]+$")
 
 
-def collage_members(pipeline_root: Optional[Path], listing: Optional[Dict[str, object]] = None
+CORRECTIONS_DIR = ("Archive", "manual_corrections")
+
+
+def _stem(name: str) -> str:
+    """A recording's name without its file extension (.mkv and .mp4 of one
+    recording are one recording)."""
+    name = str(name).strip()
+    return re.sub(r"\.[A-Za-z0-9]+$", "", name)
+
+
+def name_corrections(pipeline_root: Optional[Path]) -> Dict[str, str]:
+    """{old recording name: corrected recording name}, both without extension,
+    from every ``<pipeline>/Archive/manual_corrections/*/record.json``.
+
+    Empty when there is no pipeline folder or no corrections folder. Raises
+    ExclusionInputUnreadable when a record exists but cannot be read or is not
+    the expected shape: the checks would otherwise count a corrected recording
+    as two and leave its animals out (module docstring, "RECORDED NAME
+    CORRECTIONS")."""
+    out: Dict[str, str] = {}
+    if pipeline_root is None:
+        return out
+    root = Path(pipeline_root).joinpath(*CORRECTIONS_DIR)
+    if not root.is_dir():
+        return out
+    import json
+    for rec in sorted(root.glob("*/record.json")):
+        try:
+            doc = json.loads(rec.read_text(encoding="utf-8"))
+            if not isinstance(doc, dict):
+                raise ValueError("the record is not an object")
+            files = doc.get("files") or []
+            if not isinstance(files, list):
+                raise ValueError("'files' is not a list")
+            for f in files:
+                if not isinstance(f, dict):
+                    raise ValueError("an entry of 'files' is not an object")
+                old, new = f.get("original_name"), f.get("corrected_name")
+                if old and new and _stem(old) != _stem(new):
+                    out[_stem(old)] = _stem(new)
+        except (OSError, ValueError) as e:
+            raise ExclusionInputUnreadable(
+                "the name-correction record %s exists but could not be read (%s: %s), so "
+                "which recording names are corrected is not known tonight -- fix or "
+                "restore the file" % (rec, type(e).__name__, e))
+    return out
+
+
+def collage_members(pipeline_root: Optional[Path], listing: Optional[Dict[str, object]] = None,
+                    corrections: Optional[Dict[str, str]] = None
                     ) -> Tuple[Dict[str, Set[str]], Dict[str, List[str]]]:
     """(single video -> recordings it was cut from, recording -> its singles).
 
@@ -183,11 +254,16 @@ def collage_members(pipeline_root: Optional[Path], listing: Optional[Dict[str, o
     unreadable contributes nothing HERE; compute() is what refuses to go on
     when one exists but cannot be read (see the module docstring).
     ``listing``: collage_listing's result, when the caller already has it.
+    ``corrections``: name_corrections' result; a recording whose name a
+    correction replaced is left out (the corrected name wins). Read here when
+    not given.
     """
     single_to_rec: Dict[str, Set[str]] = defaultdict(set)
     rec_to_singles: Dict[str, List[str]] = {}
     if listing is None:
         listing = collage_listing(pipeline_root)
+    if corrections is None:
+        corrections = name_corrections(pipeline_root)
     for names in listing.values():
         if not isinstance(names, list):
             continue                    # that database is absent or unreadable
@@ -199,6 +275,8 @@ def collage_members(pipeline_root: Optional[Path], listing: Optional[Dict[str, o
             # The recording's identity is its name without the file extension:
             # the same recording saved as .mkv and .mp4 is one recording.
             rec = "%s_%s_%s" % (date, animals, tray)
+            if rec in corrections:
+                continue                # renamed by a recorded correction: history
             singles = [_single_name(date, a.strip(), tray)
                        for a in animals.split(",") if a.strip()]
             rec_to_singles[rec] = singles
@@ -299,6 +377,11 @@ def input_signature(pipeline_root=None, sheets_dir=None) -> Dict[str, object]:
     listing = collage_listing(Path(pipeline_root) if pipeline_root else None)
     sig["collages"] = {db: (digest(v) if isinstance(v, list) else v)
                        for db, v in listing.items()}
+    try:
+        sig["name_corrections"] = digest(sorted(name_corrections(
+            Path(pipeline_root) if pipeline_root else None).items()))
+    except ExclusionInputUnreadable:
+        sig["name_corrections"] = "unreadable"
     record = (Path(pipeline_root) / "pipeline_records" / "archive_name_conflicts.json"
               if pipeline_root else None)
     if record is None or not record.is_file():
@@ -446,7 +529,8 @@ def compute(snapshot_dir, pipeline_root=None, sheets_dir=None) -> Exclusions:
             "video name made by two recordings may not be found"
             % ("is not in the pipeline folder" if pipeline else
                "-- no MouseReach pipeline folder is configured"))
-    single_to_rec, rec_to_singles = collage_members(pipeline, listing)
+    single_to_rec, rec_to_singles = collage_members(pipeline, listing,
+                                                    name_corrections(pipeline))
 
     def drop_recording(video: str, reason: str) -> None:
         recs = single_to_rec.get(video)
