@@ -86,6 +86,16 @@ IDENTITY: List[Tuple[str, str]] = [
     ("reach_num", "swipe_id"),
 ]
 
+# A person's Flag Session note (Yes / No, and who, when and why), repeated on
+# every row of the session. A MARKER ONLY (owner decision D5-10, 2026-11-19):
+# the exclusion pass and everything else here ignore it.
+SESSION_FLAG: List[Tuple[str, str]] = [
+    ("session_flag", "session_flag"),
+    ("session_flag_reason", "session_flag_reason"),
+    ("session_flag_by", "session_flag_by"),
+    ("session_flag_at", "session_flag_at"),
+]
+
 # Session totals, repeated on every row of that session. Both scoring streams are
 # carried: the algorithm's and the hand scores'. They disagree sometimes, and
 # which is right is the reader's question, not ours to settle by dropping one.
@@ -306,6 +316,8 @@ TEXT_COLUMNS = {
     "paw_leading_point",
     # yes / no: is the day's reach total complete.
     "day_total_reaches_complete",
+    # The session flag and its note (words and a time stamp).
+    "session_flag", "session_flag_reason", "session_flag_by", "session_flag_at",
 }
 
 
@@ -522,8 +534,8 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     """(frame, dictionary rows) from the complete per-reach frame."""
     extra = other_kinematics(full.columns)
     flat = flat_kinematics()
-    pairs = (IDENTITY + SESSION_WEIGHT + REACH_CONTEXT + NAMED_KINEMATICS + flat
-             + WHOLE_REACH + extra + SESSION_TOTALS)
+    pairs = (IDENTITY + SESSION_FLAG + SESSION_WEIGHT + REACH_CONTEXT + NAMED_KINEMATICS
+             + flat + WHOLE_REACH + extra + SESSION_TOTALS)
     present = [(src, name) for src, name in pairs if src in full.columns]
 
     data: Dict[str, pd.Series] = {name: full[src] for src, name in present}
@@ -561,6 +573,7 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
 
     order = ([ROW_NUMBER]
              + [n for _s, n in IDENTITY if n in data]
+             + [n for _s, n in SESSION_FLAG if n in data]
              + [n for n in ("experiment_stage", "reach_outcome", "pellet_outcome",
                             "pellet_state_at_this_reach") if n in data]
              + [n for _s, n in SESSION_WEIGHT if n in data]

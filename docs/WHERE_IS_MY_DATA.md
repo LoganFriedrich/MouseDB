@@ -306,6 +306,29 @@ exporter's code always does), so all files carry the new names from that night.
 The names in the sections below that predate this change are the old ones; this
 table converts them.
 
+### A session a person flagged (added 2026-11-19)
+
+In the reaching pipeline's review tools a person can use **Flag Session** on a
+video and write why. The note is saved in the video's features file
+(`session_flag`), the nightly reach import copies it onto every reach row of
+that session in the database (`reach_data.session_flag`, `_reason`, `_by`,
+`_at`; the columns are added to an older database by the import itself), and
+every per-reach file and the sessions analysis file carry it:
+
+| column | what it says |
+|---|---|
+| `session_flag` | `Yes` when a person flagged this session (one tray, one video), `No` otherwise |
+| `session_flag_reason` | the note as written |
+| `session_flag_by` | who flagged it |
+| `session_flag_at` | when |
+
+Where the session is not flagged the three note columns read `Not applicable`
+(`NA` in the analysis files; empty in `reach_data.csv`). **A flag is a marker
+only** (owner decision, 2026-11-19): nothing in the exports leaves out, blanks
+or treats a flagged row differently; it is recorded so that flagged sessions can
+be found later. A flag added or changed on a filed video changes its features
+file, so the next nightly import and export pick it up.
+
 ### Swipe measures and reach counts: which column is which (changed 2026-11-17)
 
 An earlier reach program reported its own per-swipe measures (swipe length,

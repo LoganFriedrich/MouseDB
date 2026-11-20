@@ -81,6 +81,10 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     # cohort's dates are all in, so it reads 'Undetermined', not 'Not recorded'.
     "Test_Type": missing.UNDETERMINED,
     "Test_Type_Grouped": missing.UNDETERMINED,
+    # Who, when and why a session was flagged: no flag, nothing to say.
+    "session_flag_reason": missing.NOT_APPLICABLE,
+    "session_flag_by": missing.NOT_APPLICABLE,
+    "session_flag_at": missing.NOT_APPLICABLE,
 }
 
 # Columns of the complete record that answer a question about a pellet. On an easy
@@ -371,6 +375,12 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     }
 
 
+def session_flag_word(values) -> pd.Series:
+    """Yes where the database holds a session flag (1), No everywhere else."""
+    flagged = pd.to_numeric(pd.Series(values), errors="coerce") == 1
+    return flagged.map({True: "Yes", False: "No"})
+
+
 DAY_COMPLETE = "yes"
 DAY_INCOMPLETE = "no"
 
@@ -622,6 +632,11 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
             cols["outcome"] = codes
         if "contact_group" in cols:
             cols["contact_group"] = levels.reach_contact(codes)
+
+    # A person's Flag Session note, as Yes/No on every reach of the session.
+    # A marker only (owner decision D5-10): nothing reads it to leave anything out.
+    if "session_flag" in cols:
+        cols["session_flag"] = session_flag_word(rc["session_flag"])
 
     # 5. session totals: per video (pipeline) and per tray (hand scores), and
     # the animal's reaches over the whole testing day (day_reach_totals says why)

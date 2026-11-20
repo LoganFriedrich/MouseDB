@@ -139,6 +139,11 @@ SESSION: List[Tuple[str, str]] = [
     # scored ones without being able to tell.
     ("tray_type", "tray_type"),
     ("Attention_AI", "mean_attention_score_in_session"),
+    # A person's Flag Session note: a marker only (owner decision D5-10).
+    ("session_flag", "session_flag"),
+    ("session_flag_reason", "session_flag_reason"),
+    ("session_flag_by", "session_flag_by"),
+    ("session_flag_at", "session_flag_at"),
 ]
 REACH_IDENTITY: List[Tuple[str, str]] = [
     ("video_name", "session_video"),
@@ -227,6 +232,10 @@ REASONS: Dict[str, str] = {
     # The question cannot apply to this row.
     "days_post_injury": missing.NOT_APPLICABLE,        # session before the injury
     "exclusion_reason": missing.NOT_APPLICABLE,        # the animal was not excluded
+    # The session was not flagged, so there is no note, person or time.
+    "session_flag_reason": missing.NOT_APPLICABLE,
+    "session_flag_by": missing.NOT_APPLICABLE,
+    "session_flag_at": missing.NOT_APPLICABLE,
     # The phase is withheld while the cohort is still running (its label can
     # still change; odc_reaches.running_cohorts): not decided yet, not missing.
     "test_phase": missing.UNDETERMINED,
