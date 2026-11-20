@@ -122,14 +122,23 @@ SEGMENT_COLUMNS = ['segment_outcome', 'segment_outcome_confidence', 'segment_out
                    'attention_score', 'pellet_position_idealness']
 PROVENANCE_COLUMNS = ['processed_by', 'mousereach_version', 'dlc_scorer', 'segmenter_version',
                       'reach_detector_version', 'outcome_detector_version']
+# A person's Flag Session note on the video (MouseReach's top-level
+# session_flag: null, or {session_key, reason, flagged_by, flagged_at}). A
+# MARKER ONLY (owner decision D5-10, 2026-11-19): recorded so it can be found
+# later, on every reach row of the session; nothing excludes or treats a
+# flagged row differently. session_flag is 1 when flagged, NULL otherwise.
+SESSION_FLAG_COLUMNS = ['session_flag', 'session_flag_reason', 'session_flag_by',
+                        'session_flag_at']
 ALL_COLUMNS = (['subject_id', 'video_name', 'session_date', 'tray_type', 'run_number', 'segment_num']
                + REACH_JSON_COLUMNS + SEGMENT_COLUMNS
                + ['source_file', 'extractor_version', 'imported_at', 'extended_features']
-               + PROVENANCE_COLUMNS)
+               + PROVENANCE_COLUMNS + SESSION_FLAG_COLUMNS)
 # Columns older databases may lack (added with ALTER TABLE, never destructive)
 MIGRATION_COLUMNS = [(c, 'TEXT') for c in PROVENANCE_COLUMNS + ['outcome_source', 'reviewed_by',
                      'algo_outcome', 'extended_features', 'test_phase', 'phase_group']] + \
-                    [('algo_causal_reach_id', 'INTEGER')]
+                    [('algo_causal_reach_id', 'INTEGER'), ('session_flag', 'INTEGER'),
+                     ('session_flag_reason', 'TEXT'), ('session_flag_by', 'TEXT'),
+                     ('session_flag_at', 'TEXT')]
 
 # Every pellet the pipeline cut a video into, one row each -- INCLUDING the
 # pellets nobody reached for, which reach_data cannot hold (it has one row per
@@ -532,6 +541,23 @@ def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
     return rows
 
 
+def session_flag_fields(flag) -> dict:
+    """The four session_flag columns from a features file's ``session_flag``.
+
+    Anything that is not a note (null, absent, an empty object) is "not
+    flagged": all four NULL. A note is recorded as written; only its
+    session_key is not copied, because the row's own video_name is that key.
+    """
+    out = {c: None for c in SESSION_FLAG_COLUMNS}
+    if isinstance(flag, dict) and flag:
+        out['session_flag'] = 1
+        for col, key in (('session_flag_reason', 'reason'), ('session_flag_by', 'flagged_by'),
+                         ('session_flag_at', 'flagged_at')):
+            v = flag.get(key)
+            out[col] = None if v is None else str(v)
+    return out
+
+
 def flatten(features_path: Path, subject_id: str, now: str,
             data: Optional[dict] = None) -> Tuple[str, List[dict]]:
     """(video_name, rows) -- one row per reach, exactly the old pusher's layout.
@@ -542,6 +568,7 @@ def flatten(features_path: Path, subject_id: str, now: str,
     meta = parse_video_metadata(video_name)
     prov = _load_provenance(features_path, video_name)
     extractor_version = data.get('extractor_version', 'unknown')
+    flag = session_flag_fields(data.get('session_flag'))
     rows = []
     for seg in data.get('segments', []):
         seg_ctx = {
@@ -567,6 +594,7 @@ def flatten(features_path: Path, subject_id: str, now: str,
             row['extractor_version'] = extractor_version
             row['imported_at'] = now
             row.update(prov)
+            row.update(flag)
             rows.append(row)
     return video_name, rows
 

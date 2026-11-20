@@ -43,6 +43,7 @@ PER_SESSION: List[str] = [
     "test_type", "test_type_grouped", "experiment_stage", "days_post_injury",
     "injury_type", "injury_level", "study_group", "sex", "strain",
     "survived_all_surgeries", "excluded_in_origin_study", "video_name",
+    "session_flag", "session_flag_reason", "session_flag_by", "session_flag_at",
     "day_total_reaches", "day_total_reaches_complete", "attention_ai",
     "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
     "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",

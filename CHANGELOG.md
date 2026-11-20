@@ -5,6 +5,14 @@ checked-in code, not what's planned.
 
 ## Unreleased
 
+### Added
+- **A person's Flag Session note is carried as a marker** (`import_reaches`,
+  per-reach exports). The features file's `session_flag` is imported onto every
+  reach row (`session_flag`, `_reason`, `_by`, `_at`; added to an older
+  database by `ensure_columns`) and exported as `session_flag` Yes/No with who,
+  when and why. Nothing excludes or treats a flagged row differently (owner
+  decision D5-10). The export fingerprint covers it.
+
 ### Changed
 - **Every per-reach measurement is published as `reach_<name>`, and the
   animal-day file is `ODC_days_<cohort>.csv`** (owner's decisions,

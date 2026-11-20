@@ -250,6 +250,10 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
             df["outcome"] = codes
         if "contact_group" in df.columns:
             df["contact_group"] = levels.reach_contact(codes)
+    # A person's session flag, as the per-cohort files write it (Yes / No).
+    if "session_flag" in df.columns:
+        from .odc_reaches import session_flag_word
+        df["session_flag"] = session_flag_word(df["session_flag"]).to_numpy()
     # Easy and flat trays: the algorithm's pellet and reach outcome columns read
     # "Not applicable" (trays.ALGO_PELLET_COLUMNS says which, and why).
     trays.blank_where(df, trays.outcome_free(df), trays.ALGO_PELLET_COLUMNS,
