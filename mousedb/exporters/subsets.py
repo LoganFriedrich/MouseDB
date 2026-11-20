@@ -20,7 +20,7 @@ WHAT IT WRITES
 ``<mousedb_root>/exports/subsets/<name>/``::
 
     ODC_reaches_<name>.csv, reaches_<name>_summary.csv, reaches_<name>_analysis.csv,
-    sessions_<name>_analysis.csv, ODC_sessions_<name>.csv
+    sessions_<name>_analysis.csv, ODC_days_<name>.csv
                                    the chosen kinds of file, every chosen cohort in one
                                    file per kind (cohort order, then the source order)
     <kind>_DATA_DICTIONARY.csv     the full export's dictionary of that kind, cut down to
@@ -174,7 +174,7 @@ ROW_KEYS = {
                          "animal": "subject_id"},
     "sessions_analysis": {"date": "test_date", "tray": "tray_type", "video": "video_name",
                           "animal": "subject_id"},
-    "ODC_sessions": {"date": "Date", "tray": None, "video": None, "animal": "Animal"},
+    "ODC_days": {"date": "Date", "tray": None, "video": None, "animal": "Animal"},
 }
 ODC_SESSION_TRAY_COLUMNS = ("Tray1_Type", "Tray2_Type", "Tray3_Type", "Tray4_Type")
 
@@ -335,7 +335,10 @@ def validate(name: str, profile: dict, rules: Optional[Dict[str, dict]] = None) 
         window = out
     else:
         window = {"type": "all"}
-    kinds = list(p.get("kinds") or ALL_KINDS)
+    # A kind's old name (layout.KIND_ALIASES) is read as its current one, so a
+    # definition saved before a rename keeps working: "ODC_sessions" is
+    # "ODC_days" since 2026-11-19. The stored form carries the current name.
+    kinds = [layout.KIND_ALIASES.get(str(k), str(k)) for k in (p.get("kinds") or ALL_KINDS)]
     bad = [k for k in kinds if k not in layout.KINDS]
     if bad:
         raise SubsetRefused("limited export %s: unknown kind(s) of file %s (known: %s)"
@@ -346,6 +349,7 @@ def validate(name: str, profile: dict, rules: Optional[Dict[str, dict]] = None) 
                             "{kind: [column, ...]}" % name)
     cols_out = {}
     for kind, cols in columns.items():
+        kind = layout.KIND_ALIASES.get(str(kind), str(kind))
         if kind not in kinds:
             raise SubsetRefused("limited export %s: columns are given for %s, which is not one "
                                 "of its kinds of file (%s)" % (name, kind, ", ".join(kinds)))
@@ -741,7 +745,7 @@ def _row_mask(frame: pd.DataFrame, kind: str, profile: dict, keep: Optional[set]
     mask = pd.Series(True, index=frame.index)
     trays = profile.get("tray_types") or []
     if trays:
-        if kind == "ODC_sessions":
+        if kind == "ODC_days":
             any_tray = pd.Series(False, index=frame.index)
             for c in ODC_SESSION_TRAY_COLUMNS:
                 if c in frame.columns:
@@ -902,7 +906,7 @@ def plan(name: str, profile: dict, current: Path, snapshot_dir: Optional[Path],
             raise SubsetRefused("limited export %s: its yes/no column '%s' is already a column of "
                                 "the %s files; give it another name" % (name, flag_col, kind))
         need = set(k for k in ROW_KEYS[kind].values() if k)
-        if kind == "ODC_sessions":
+        if kind == "ODC_days":
             need = {"Date", "Animal"}
         lacking_keys = [k for k in need if k not in union]
         if found and lacking_keys:

@@ -14,7 +14,7 @@ nightly refresh keeps current, one folder:
         reach_data_DATA_DICTIONARY.csv
         manual_scores.csv                 one row per hand-scored pellet
         manual_scores_DATA_DICTIONARY.csv
-        ODC_sessions_DATA_DICTIONARY.csv  (and one dictionary per other kind)
+        ODC_days_DATA_DICTIONARY.csv  (and one dictionary per other kind)
         MANIFEST.json                     when, from what, how many rows, problems
         README.txt                        what each file is, in plain words
         [<GRANT>/]<PROJECT>/<COHORT>/     each cohort's files (exporters.layout; a
@@ -104,10 +104,11 @@ manual_scores.csv         One row per pellet scored by hand from the tray
                           (0 untouched / 1 displaced / 2 retrieved), with the
                           session's derived phase. Definitions:
                           manual_scores_DATA_DICTIONARY.csv.
-ODC_sessions_<cohort>.csv One row per animal per DAY (all its trays) in the ODC-SCI
+ODC_days_<cohort>.csv     One row per animal per DAY (all its trays) in the ODC-SCI
                           2_ODC_Animal_Tracking shape (per-tray and daily
                           counts and percentages, weight, injury). Definitions:
-                          ODC_sessions_DATA_DICTIONARY.csv.
+                          ODC_days_DATA_DICTIONARY.csv. (Named ODC_sessions_*
+                          until 2026-11-19; the old files are archived.)
 ODC_reaches_<cohort>.csv  One row per reach, with that animal's details
                           (strain, sex, surgery columns copied from the tracking
                           sheet) and that session's details (date, tray, phase)
@@ -185,7 +186,7 @@ def _place(local: Path, final: Path) -> None:
 
 
 # The phase columns of the two all-cohort tables (reach_data.csv,
-# manual_scores.csv) and of the per-cohort session tables (ODC_sessions).
+# manual_scores.csv) and of the per-cohort day tables (ODC_days).
 PHASE_COLUMNS = ("test_phase", "phase_group")
 ODC_SESSIONS_PHASE_COLUMNS = ("Test_Phase",)
 
@@ -259,7 +260,8 @@ def _reach_data_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> None:
     out = out_dir / "reach_data.csv"
     # Published under the level-first names (levels.COMPLETE), the dictionary
     # with them.
-    published, rows = levels.publish(df[cols], dd.DICTIONARIES["reach_data"], levels.COMPLETE)
+    published, rows = levels.publish(df[cols], dd.DICTIONARIES["reach_data"],
+                                     levels.complete_names(cols))
     published.to_csv(staging / out.name, index=False)
     _place(staging / out.name, out)
     dd.write_rows(rows, out_dir / "reach_data_DATA_DICTIONARY.csv")
@@ -514,7 +516,7 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> Non
     with db.session() as s:
         cohorts = [c.cohort_id for c in s.query(Cohort).order_by(Cohort.cohort_id).all()]
     from .odc_reaches import cohort_label, cohort_source, archive_old_names
-    dd.write_dictionary("ODC_sessions", out_dir / "ODC_sessions_DATA_DICTIONARY.csv")
+    dd.write_dictionary("ODC_days", out_dir / "ODC_days_DATA_DICTIONARY.csv")
     running = set(_running_cohorts(snapshot_dir, cohorts))
     for cid in cohorts:
         xlsx = out_dir / ("_tmp_%s_ODC.xlsx" % cid)
@@ -525,27 +527,28 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> Non
             export_odc_format(db, cid, xlsx, running=running)
             if not xlsx.exists():
                 manifest["files"][layout.key(out_dir, layout.cohort_file(
-                    out_dir, "ODC_sessions", cid, label))] = {"rows": 0, "note": "no data"}
+                    out_dir, "ODC_days", cid, label))] = {"rows": 0, "note": "no data"}
                 continue
             df = pd.read_excel(xlsx)
             if cid in running:
                 for c in ODC_SESSIONS_PHASE_COLUMNS:
                     if c in df.columns:
                         df[c] = ""
-            out = layout.cohort_file(out_dir, "ODC_sessions", cid, label)
+            out = layout.cohort_file(out_dir, "ODC_days", cid, label)
             out.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(out, index=False)
             name = layout.key(out_dir, out)
             manifest["files"][name] = {
                 "rows": int(len(df)), "columns": int(len(df.columns)),
-                "undocumented_columns": dd.undocumented_columns("ODC_sessions", df.columns),
+                "undocumented_columns": dd.undocumented_columns("ODC_days", df.columns),
                 "phase_withheld_for_running_cohorts": [cid] if cid in running else [],
             }
             if label != cid:
                 manifest["files"][name]["cohort"] = cohort_source(cid) or label
-                archive_old_names(out_dir, ["ODC_sessions_%s.csv" % cid], label)
+                archive_old_names(out_dir, ["ODC_sessions_%s.csv" % cid,
+                                            "ODC_days_%s.csv" % cid], label)
         except Exception as e:
-            msg = "ODC_sessions_%s: %s: %s" % (cid, type(e).__name__, e)
+            msg = "ODC_days_%s: %s: %s" % (cid, type(e).__name__, e)
             manifest["problems"].append(msg)
             manifest.setdefault("failures", []).append(msg)
         finally:
@@ -556,6 +559,8 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> Non
     layout.combine_all(out_dir, layout.SESSION_KINDS, {layout.project_of(c) for c in cohorts}, manifest)
     layout.archive_flat_layout(out_dir)
     layout.archive_moved_project_folders(out_dir)
+    # Files still under the kind's name before 2026-11-19 (ODC_sessions_*).
+    layout.archive_renamed_kinds(out_dir)
 
 
 def _mtime(p: Path) -> Optional[str]:
@@ -720,7 +725,7 @@ def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool,
             manifest["problems"].append("ODC sessions: %s: %s" % (type(e).__name__, e))
     else:
         manifest["problems"].append(
-            "ODC_sessions_*.csv not refreshed this run (database not readable now); "
+            "ODC_days_*.csv not refreshed this run (database not readable now); "
             "the files present are from the previous refresh")
 
     if manifest.get("failures"):

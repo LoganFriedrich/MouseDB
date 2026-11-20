@@ -553,7 +553,7 @@ def _finish(counts: dict, force: bool) -> int:
     # my data?"). Rewrite them from the snapshot just taken.
     #
     # WHY db_ok follows the snapshot and not --force: the per-cohort
-    # ODC_sessions_*.csv files are the one export that needs the live
+    # ODC_days_*.csv files are the one export that needs the live
     # database. refresh() has just read that database safely -- it refused to
     # start if a watcher was running -- so after a successful snapshot the
     # database IS readable. The hourly scheduled task runs without --force,

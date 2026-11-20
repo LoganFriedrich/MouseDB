@@ -25,7 +25,7 @@ WHERE IT GOES
 * The database: one row per session in ``session_recording_status`` (status
   ``recording_failed``, the reason, the recording's name, when it was
   flagged), written by ``import_from_census`` right after the nightly census.
-  The exports read it: each ``ODC_sessions_<cohort>.csv`` row (one animal, one
+  The exports read it: each ``ODC_days_<cohort>.csv`` row (one animal, one
   day) carries ``Recording_Status`` and ``Recording_Issue_Reason``. The census
   is taken after that night's exports are written, so a recording flagged
   today shows in the export files after the NEXT night's refresh.

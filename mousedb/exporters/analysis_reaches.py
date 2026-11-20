@@ -852,14 +852,35 @@ def publish(reaches: pd.DataFrame, reach_rows: List[dict], sessions: pd.DataFram
     internal names. (reaches, reach_rows, sessions, session_rows, report)
     """
     from . import levels
-    reaches, reach_rows = levels.publish(reaches, reach_rows, levels.ANALYSIS)
+    names = levels.with_reach_prefix(levels.ANALYSIS, measurement_columns(reaches.columns))
+    reaches, reach_rows = levels.publish(reaches, reach_rows, names)
     if len(sessions):
-        sessions, session_rows = levels.publish(sessions, session_rows, levels.ANALYSIS)
+        sessions, session_rows = levels.publish(sessions, session_rows, names)
     report = []
     for entry in exclusion_report or []:
         entry = dict(entry)
         if entry.get("fields"):
-            entry["fields"] = ", ".join(levels.published(f.strip(), levels.ANALYSIS)
+            entry["fields"] = ", ".join(levels.published(f.strip(), names)
                                         for f in str(entry["fields"]).split(","))
         report.append(entry)
     return reaches, reach_rows, sessions, session_rows, report
+
+
+def measurement_columns(columns) -> List[str]:
+    """The per-reach measurements among this document's (internal) columns,
+    which are published as reach_<name> (exporters.levels).
+
+    Everything the document carries that is NOT a measurement is named here --
+    the row counter, identity, the outcome words, the day's weight, the
+    pellet-level context, the session and day totals -- and every other column
+    is a measurement of the reach (its frames, the earlier program's swipe_*
+    measures, the flat and extended kinematics, tracking confidence). Listed
+    this way round so a measurement the extractor adds later is prefixed
+    without anyone having to remember to add it."""
+    from . import analysis_sessions
+    not_measured = ({ROW_NUMBER, "experiment_stage", "reach_outcome", "pellet_outcome",
+                     "pellet_state_at_this_reach"}
+                    | {n for _s, n in IDENTITY + SESSION_WEIGHT + SESSION_TOTALS}
+                    | {n for _s, n in REACH_CONTEXT if not n.endswith("_frame")}
+                    | set(analysis_sessions._DERIVED))
+    return [c for c in columns if c not in not_measured]

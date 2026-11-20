@@ -459,7 +459,7 @@ def day_outcome_totals(rc: pd.DataFrame, test_date: pd.Series, per_video: pd.Dat
     WHICH TRAYS. Pillar trays only, in both streams. The algorithm decides no
     pellet on an easy or flat tray (trays.py), so a day total that counted their
     hand scores would not be comparable with the algorithm's, which is the point
-    of carrying both. (The ODC day file, ODC_sessions_<cohort>.csv, counts every
+    of carrying both. (The ODC day file, ODC_days_<cohort>.csv, counts every
     tray in its Daily_* columns; these columns do not.)
 
     WHEN THE ALGORITHM'S IS EMPTY. Exactly when the day's reach total is: a tray
@@ -922,12 +922,14 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
                      for r in rows]
         # No dictionary per cohort: export() writes one per kind from these rows.
         complete_dictionary = _write(full, full_rows, out_dir / ("ODC_reaches_%s.csv" % label),
-                                     names=levels.COMPLETE)
+                                     names=levels.complete_names(full.columns))
 
         summary, summary_rows = reach_summary.build(df)
         summary_dictionary = _write(summary, summary_rows,
                                     out_dir / ("reaches_%s_summary.csv" % label),
-                                    names=levels.SUMMARY)
+                                    names=levels.with_reach_prefix(
+                                        levels.SUMMARY,
+                                        reach_summary.measurement_columns(summary.columns)))
 
     # The analysis documents have the SAME columns for every cohort -- unlike the
     # complete record, whose columns follow each cohort's own tracking sheet. So

@@ -10,7 +10,7 @@ and a combined file per kind beside the cohort folders.
             <COHORT>/                                 e.g. PROJA_05, PROJC_04_D
                 ODC_reaches_<COHORT>.csv, reaches_<COHORT>_summary.csv,
                 reaches_<COHORT>_analysis.csv, sessions_<COHORT>_analysis.csv,
-                ODC_sessions_<COHORT>.csv
+                ODC_days_<COHORT>.csv
 
 WHY (Logan, 2026-10-29): with every cohort's files side by side in one folder, a
 person looking for one cohort, or one project, read past a hundred names. Grouped
@@ -54,10 +54,21 @@ KINDS = {
     "reaches_summary": ("reaches_{label}_summary.csv", missing.NOT_RECORDED, False),
     "reaches_analysis": ("reaches_{label}_analysis.csv", "NA", True),
     "sessions_analysis": ("sessions_{label}_analysis.csv", "NA", True),
-    "ODC_sessions": ("ODC_sessions_{label}.csv", missing.NOT_RECORDED, False),
+    # One row per animal per DAY (all its trays). Named ODC_sessions until
+    # 2026-11-19; everywhere else in the exports a session is one tray.
+    "ODC_days": ("ODC_days_{label}.csv", missing.NOT_RECORDED, False),
 }
 REACH_KINDS = ("ODC_reaches", "reaches_summary", "reaches_analysis", "sessions_analysis")
-SESSION_KINDS = ("ODC_sessions",)
+DAY_KINDS = ("ODC_days",)
+SESSION_KINDS = DAY_KINDS   # the name this tuple had before 2026-11-19
+
+# Kind names a saved definition may still use: {old: current}. A limited-export
+# definition saved before the rename names "ODC_sessions"; it is read as
+# "ODC_days" (subsets.validate), so it keeps working without being edited.
+KIND_ALIASES = {"ODC_sessions": "ODC_days"}
+# File-name prefixes of kinds that were renamed: files still carrying the old
+# prefix are archived by archive_renamed_kinds once the new ones are written.
+RENAMED_FILE_PREFIXES = {"ODC_sessions_": "ODC_days_"}
 
 # The entry index is "a plain counter over the rows of this file" (its dictionary
 # entry). In the combined file it is counted again over the combined rows, so it
@@ -66,7 +77,7 @@ ENTRY_INDEX = "entry_index"
 
 # A per-cohort file at the top of the folder: the layout before 2026-10-29.
 _FLAT_COHORT_FILE = re.compile(
-    r"^(ODC_reaches_[A-Z]+_\d{2}(_[A-Z])?|ODC_sessions_[A-Z]+_\d{2}(_[A-Z])?"
+    r"^(ODC_reaches_[A-Z]+_\d{2}(_[A-Z])?|ODC_(sessions|days)_[A-Z]+_\d{2}(_[A-Z])?"
     r"|(reaches|sessions)_[A-Z]+_\d{2}(_[A-Z])?_(summary|analysis))\.csv$")
 
 CHUNK_ROWS = 200_000
@@ -84,7 +95,8 @@ def project_of_label(label: str) -> str:
 
 
 def file_name(kind: str, label: str) -> str:
-    return KINDS[kind][0].format(label=label)
+    # A kind's old name (KIND_ALIASES) names the file under the current one.
+    return KINDS[KIND_ALIASES.get(kind, kind)][0].format(label=label)
 
 
 def project_dir(root: Path, project: str) -> Path:
@@ -374,6 +386,25 @@ def archive_flat_layout(root: Path) -> List[str]:
                     stale.append(f.name)
                 break
     return archive_old_names(root, stale, "flat_layout") if stale else []
+
+
+def archive_renamed_kinds(root: Path) -> List[str]:
+    """Move files left under a renamed kind's old name (ODC_sessions_*.csv,
+    its dictionary and the combined files included) into the archive, never
+    deleted, once the file under the new name sits beside it. One left behind
+    would look current and never be rewritten. Folders whose name starts with
+    an underscore (archives, staging) are not looked in."""
+    from .odc_reaches import archive_old_names
+    root = Path(root)
+    stale = []
+    for old, new in RENAMED_FILE_PREFIXES.items():
+        for f in sorted(root.rglob(old + "*.csv")):
+            rel = f.relative_to(root)
+            if any(part.startswith("_") for part in rel.parts[:-1]):
+                continue
+            if (f.parent / (new + f.name[len(old):])).is_file():
+                stale.append(rel.as_posix())
+    return archive_old_names(root, stale, "renamed_kind") if stale else []
 
 
 def archive_moved_project_folders(root: Path) -> List[str]:

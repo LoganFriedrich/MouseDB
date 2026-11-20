@@ -200,7 +200,7 @@ def test_published_names_are_level_first(tmp_path):
                 "manual_retrieved", "day_total_reaches", "reaches_in_video"):
         assert old not in analysis.columns, old
     # Identity columns that scripts and limited exports find rows by stay.
-    for key in ("subject_id", "test_date", "tray_type", "video_name", "start_frame", "end_frame"):
+    for key in ("subject_id", "test_date", "tray_type", "video_name"):
         assert key in analysis.columns
     sessions = pd.read_csv(files["sessions_PROJA_01_analysis.csv"], dtype=str)
     assert {"session_reaches_ai", "session_pellets_presented", "session_percent_untouched_ai",
@@ -221,3 +221,62 @@ def test_dictionary_no_longer_claims_untouched_pellets_have_a_causal_reach():
     text = [r for r in dd.REACH_DATA if r["VariableName"] == "causal_reach"][0]["Description"]
     assert "untouched pellet" not in text or "every reach of an untouched pellet reads 0" in text
     assert "last reach at an untouched pellet" not in text
+
+
+# --- 2026-11-19 follow-up (owner's decisions) ---------------------------------
+# Every per-reach measurement starts with reach_, in every per-reach file and
+# dictionary; the animal-day file is ODC_days_<cohort>.csv, and a saved
+# limited-export definition naming the old kind ODC_sessions keeps working.
+
+def test_every_reach_measurement_is_prefixed(tmp_path):
+    df, rows = _build()
+    entry, label = ox.write_cohort(tmp_path, "PROJA_01", df, rows)
+    files = {p.name: p for p in tmp_path.rglob("*.csv")}
+    complete = pd.read_csv(files["ODC_reaches_PROJA_01.csv"], nrows=1)
+    analysis = pd.read_csv(files["reaches_PROJA_01_analysis.csv"], nrows=1)
+    summary = pd.read_csv(files["reaches_PROJA_01_summary.csv"], nrows=1)
+    for frame, names in (
+            (complete, ("reach_start_frame", "reach_end_frame", "reach_interaction_frame")),
+            (analysis, ("reach_start_frame", "reach_end_frame", "reach_swipe_length",
+                        "reach_interaction_frame")),
+            (summary, ("reach_start_frame", "reach_end_frame"))):
+        for n in names:
+            assert n in frame.columns, n
+        assert not {"start_frame", "end_frame", "swipe_length", "interaction_frame"} & set(frame.columns)
+    # Identity and higher levels keep theirs; nothing gets reach_ twice.
+    assert {"subject_id", "video_name", "test_date", "session_id"} <= set(analysis.columns)
+    assert not [c for c in analysis.columns if c.startswith("reach_reach_")]
+    assert "reach_session_pellets_ai" not in analysis.columns
+    # The dictionaries carry the new names and say what each was called before.
+    by = {r["VariableName"]: r for r in entry["_analysis_dictionary"]}
+    assert "Named swipe_length in files written before" in by["reach_swipe_length"]["Comments"]
+    assert {r["VariableName"] for r in entry["_complete_dictionary"]} >= set(complete.columns)
+
+
+def test_a_saved_definition_naming_odc_sessions_is_read_as_odc_days():
+    from mousedb.exporters import subsets, layout
+    assert "ODC_days" in layout.KINDS and "ODC_sessions" not in layout.KINDS
+    assert layout.file_name("ODC_days", "PROJA_01") == "ODC_days_PROJA_01.csv"
+    clean = subsets.validate("x", {"cohorts": ["PROJA_01"],
+                                   "kinds": ["ODC_reaches", "ODC_sessions"],
+                                   "columns": {"ODC_sessions": ["Animal", "Date"]}}, rules={})
+    assert clean["kinds"] == ["ODC_reaches", "ODC_days"]
+    assert clean["columns"] == {"ODC_days": ["Animal", "Date"]}
+
+
+def test_files_under_the_old_day_name_are_archived_once_replaced(tmp_path):
+    from mousedb.exporters import layout
+    cohort = tmp_path / "current" / "PROJA" / "PROJA_01"
+    cohort.mkdir(parents=True)
+    root = tmp_path / "current"
+    (cohort / "ODC_sessions_PROJA_01.csv").write_text("a\n1\n")
+    (cohort / "ODC_days_PROJA_01.csv").write_text("a\n1\n")
+    (root / "ODC_sessions_DATA_DICTIONARY.csv").write_text("x\n")
+    (root / "ODC_days_DATA_DICTIONARY.csv").write_text("x\n")
+    (cohort / "ODC_sessions_PROJA_02.csv").write_text("a\n")   # no replacement: kept
+    moved = layout.archive_renamed_kinds(root)
+    assert len(moved) == 2
+    assert not (cohort / "ODC_sessions_PROJA_01.csv").exists()
+    assert not (root / "ODC_sessions_DATA_DICTIONARY.csv").exists()
+    assert (cohort / "ODC_sessions_PROJA_02.csv").exists()
+    assert (cohort / "ODC_days_PROJA_01.csv").exists()

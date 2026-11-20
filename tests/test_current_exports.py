@@ -75,7 +75,7 @@ def test_refresh_from_snapshot_alone_is_complete(tmp_path, monkeypatch):
     assert list(side.columns) == ["subject_id", "video_name", "segment_num", "reach_id", "extended_features"]
     assert m["files"]["reach_data_extended.parquet"]["rows"] == 2
     # ODC sessions honestly reported as not refreshed without db access
-    assert any("ODC_sessions" in p for p in m["problems"])
+    assert any("ODC_days" in p for p in m["problems"])
     assert json.loads((out / "MANIFEST.json").read_text())["odc_sessions_refreshed"] is False
 
 

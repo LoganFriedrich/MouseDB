@@ -88,7 +88,7 @@ def _write_current(cur: Path, generation: str) -> None:
                          "Daily_Retrieved": "3"})
         for kind, rows in (("ODC_reaches", odc), ("reaches_summary", summ),
                            ("reaches_analysis", ana), ("sessions_analysis", ses),
-                           ("ODC_sessions", odcs)):
+                           ("ODC_days", odcs)):
             f = layout.cohort_file(cur, kind, cohort, label)
             f.parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(rows).to_csv(f, index=False)
@@ -102,7 +102,7 @@ def _write_current(cur: Path, generation: str) -> None:
                        ("sessions_analysis", ["entry_index", "subject_id", "test_date", "tray_type",
                                               "video_name", "manual_retrieved",
                                               "pellets_hand_scored"]),
-                       ("ODC_sessions", ["Animal", "Date", "Tray1_Type", "Tray2_Type",
+                       ("ODC_days", ["Animal", "Date", "Tray1_Type", "Tray2_Type",
                                          "Daily_Retrieved"])):
         pd.DataFrame([{"VariableName": c, "Title": c, "Description": "about " + c,
                        "Unit_of_Measure": "", "DataType": "text", "PermittedValues": "",
@@ -248,9 +248,10 @@ def test_flag_rules_read_the_slice_and_never_change_it(lab):
 
 
 def test_an_odc_session_day_is_kept_when_any_of_its_trays_is_chosen(lab):
+    # The kind's old name (ODC_sessions) is read as ODC_days (layout.KIND_ALIASES).
     p = {"cohorts": ["PROJA_01"], "tray_types": ["E"], "kinds": ["ODC_sessions", "ODC_reaches"]}
     folder = Path(lab["make"]("easy", p)["folder"])
-    days = _read(folder / "ODC_sessions_easy.csv")
+    days = _read(folder / "ODC_days_easy.csv")
     assert list(days.Date) == ["2026-03-05"]
     assert set(_read(folder / "ODC_reaches_easy.csv").tray_type) == {"E"}
 
@@ -701,11 +702,11 @@ def test_a_day_window_rule_says_yes_on_every_row_of_the_chosen_days_and_no_elsew
         assert set(odc[(odc.subject_id == "PROJA_01_01") & (odc.session_date == d)].chosen_day) == {"no"}
     # No blank anywhere, in every kind of file (a letter cohort matched through its videos).
     for f in ("ODC_reaches_days.csv", "reaches_days_summary.csv", "reaches_days_analysis.csv",
-              "sessions_days_analysis.csv", "ODC_sessions_days.csv"):
+              "sessions_days_analysis.csv", "ODC_days_days.csv"):
         assert set(_read(folder / f).chosen_day) == {"yes", "no"}, f
     ana = _read(folder / "reaches_days_analysis.csv")
     assert set(ana[(ana.subject_id == "D01")].chosen_day) == {"yes"}
-    ses = _read(folder / "ODC_sessions_days.csv")
+    ses = _read(folder / "ODC_days_days.csv")
     assert set(zip(ses[ses.chosen_day == "yes"].Animal, ses[ses.chosen_day == "yes"].Date)) == yes
 
 

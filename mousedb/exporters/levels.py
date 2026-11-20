@@ -29,13 +29,14 @@ Before 2026-11-19 the files mixed these up in three ways a reader could not see:
 THE NAMING RULE (published names)
 ---------------------------------
 A column that belongs to a level above the reach starts with that level:
-``reach_``, ``segment_``, ``session_`` (= tray = video) or ``day_``. A column with
-no level word is either an identity key (subject_id, video_name, test_date,
+``reach_``, ``segment_``, ``session_`` (= tray = video) or ``day_``. Every
+measurement of the reach itself (its frames, kinematics, tracking confidence,
+the earlier program's swipe_* measures) starts with ``reach_`` too (owner's
+decision, 2026-11-19: reach_swipe_length, reach_start_frame ...). A column
+with no level word is an identity key (subject_id, video_name, test_date,
 tray_type, session_id, tray_id -- kept as they were, because the subset
-exports, the exclusion pass and readers' scripts find rows by them) or a
-measurement of the reach itself (frames, kinematics -- a reach measure needs
-no prefix, and the earlier program's swipe_* names stay as they are for the
-scripts written against them). The animal-level ODC common data elements
+exports, the exclusion pass and readers' scripts find rows by them), an
+animal-level column, or a provenance column of the complete record. The animal-level ODC common data elements
 (SubjectID, SpeciesTyp, AgeVal, BodyWgtMeasrVal, SexTyp, InjGroupAssignTyp)
 keep ODC's exact spelling: ODC requires its own variables to match it.
 
@@ -150,7 +151,52 @@ COMPLETE: Dict[str, str] = {
     "Contacted_Match": "Session_Contacted_Difference",
     "Day_Total_Reaches_AI": "Day_Reaches_AI",
     "Day_Total_Reaches_Complete": "Day_Complete",
+    "n_reaches_in_segment": "segment_reaches",
+    "is_first_reach": "reach_is_first_in_segment",
+    "is_last_reach": "reach_is_last_in_segment",
+    "flagged_for_review": "reach_flagged_for_review",
+    "flag_reason": "reach_flag_reason",
 }
+
+LEVEL_PREFIXES = ("reach_", "segment_", "session_", "day_")
+REACH = "reach_"
+
+# The complete record's and reach_data.csv's per-reach measurements (the
+# database's reach columns that measure the reach), published as reach_<name>.
+# Every extended measurement (ext_*) is one too; see complete_names.
+REACH_MEASUREMENTS = (
+    "start_frame", "apex_frame", "end_frame", "duration_frames",
+    "max_extent_pixels", "max_extent_ruler", "max_extent_mm",
+    "velocity_at_apex_px_per_frame", "velocity_at_apex_mm_per_sec",
+    "peak_velocity_px_per_frame", "mean_velocity_px_per_frame",
+    "trajectory_straightness", "trajectory_smoothness",
+    "hand_angle_at_apex_deg", "hand_rotation_total_deg",
+    "grasp_aperture_max_mm", "grasp_aperture_at_contact_mm",
+    "head_width_at_apex_mm", "nose_to_slit_at_apex_mm",
+    "head_angle_at_apex_deg", "head_angle_change_deg",
+    "apex_distance_to_pellet_mm", "lateral_deviation_mm",
+    "mean_likelihood", "frames_low_confidence", "tracking_quality_score",
+    "interaction_frame", "distance_to_interaction",
+)
+EXTENDED_PREFIX = "ext_"
+
+
+def with_reach_prefix(names: Dict[str, str], measurements) -> Dict[str, str]:
+    """``names`` plus reach_<name> for every measurement it does not already
+    rename and that does not already start with a level word."""
+    out = dict(names)
+    for m in measurements:
+        if m in out or str(m).lower().startswith(LEVEL_PREFIXES):
+            continue
+        out[m] = REACH + str(m)
+    return out
+
+
+def complete_names(columns) -> Dict[str, str]:
+    """The complete record's (and reach_data.csv's) published names for these
+    columns: COMPLETE, plus reach_ on every per-reach measurement."""
+    return with_reach_prefix(COMPLETE, [c for c in columns if c in REACH_MEASUREMENTS
+                                        or str(c).startswith(EXTENDED_PREFIX)])
 
 # The shareable table (reaches_<cohort>_summary.csv).
 SUMMARY: Dict[str, str] = {

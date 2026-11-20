@@ -202,9 +202,9 @@ def test_the_odc_session_file_withholds_a_running_cohort_s_phase(tmp_path, monke
     # Through the refresh, as the nightly job runs it (the database may be read).
     manifest = current.refresh_current(snap, out, db_ok=True)
     assert not [p for p in manifest["problems"] if "ODC" in p], manifest["problems"]
-    running = pd.read_csv(next(out.rglob("ODC_sessions_%s.csv" % RUNNING)),
+    running = pd.read_csv(next(out.rglob("ODC_days_%s.csv" % RUNNING)),
                           dtype=str, keep_default_na=False)
-    over = pd.read_csv(next(out.rglob("ODC_sessions_%s.csv" % OVER)),
+    over = pd.read_csv(next(out.rglob("ODC_days_%s.csv" % OVER)),
                        dtype=str, keep_default_na=False)
     assert set(running["Test_Phase"]) == {""}
     assert set(over["Test_Phase"]) == {"Post_Injury_1"}

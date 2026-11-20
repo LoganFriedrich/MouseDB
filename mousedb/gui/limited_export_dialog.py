@@ -52,7 +52,7 @@ KIND_WORDS = {
     "reaches_summary": "Per reach, plain words, to share (reaches_..._summary)",
     "reaches_analysis": "Per reach, for statistics (reaches_..._analysis)",
     "sessions_analysis": "Per tray session, for statistics (sessions_..._analysis)",
-    "ODC_sessions": "Per animal-day, ODC shape (ODC_sessions)",
+    "ODC_days": "Per animal-day, ODC shape (ODC_days)",
 }
 TRAYS = (("P", "Pillar"), ("E", "Easy"), ("F", "Flat"))
 NEW = "(a new limited export)"

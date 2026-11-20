@@ -6,6 +6,13 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Changed
+- **Every per-reach measurement is published as `reach_<name>`, and the
+  animal-day file is `ODC_days_<cohort>.csv`** (owner's decisions,
+  2026-11-19). Frames, kinematics, tracking confidence and the contact frame
+  start with `reach_` in every per-reach file and dictionary (each entry names
+  its old name). `ODC_sessions_*.csv` files are archived once their
+  `ODC_days_*` replacement is written; a saved limited-export definition that
+  names the kind `ODC_sessions` is read as `ODC_days` (`layout.KIND_ALIASES`).
 - **Every per-reach row carries four levels under level-first names**
   (`mousedb/exporters/levels.py`; Where Is My Data guide, "Four levels on every
   reach row"). Every reach says what it did: the credited reach its outcome,

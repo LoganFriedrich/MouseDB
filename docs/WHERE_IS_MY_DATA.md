@@ -18,7 +18,7 @@ each with a data dictionary beside it:
 |---|---|---|
 | `reach_data.csv` | reach the pipeline detected (kinematics, the pellet outcome of its segment, and where that outcome came from) | `reach_data_DATA_DICTIONARY.csv` |
 | `manual_scores.csv` | pellet scored by hand from the tray (0 untouched / 1 displaced / 2 retrieved) with the session's phase -- on every tray, easy and flat included | `manual_scores_DATA_DICTIONARY.csv` |
-| `ODC_sessions_<cohort>.csv` | animal per DAY (one date, all its trays; everywhere else a session is one tray), in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_sessions_DATA_DICTIONARY.csv` |
+| `ODC_days_<cohort>.csv` | animal per DAY (one date, all its trays; everywhere else a session is one tray), in the ODC-SCI `2_ODC_Animal_Tracking` shape (per-tray and daily counts and percentages, weight, injury) | `ODC_days_DATA_DICTIONARY.csv` |
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
@@ -38,11 +38,11 @@ exports/current/
         PROJA/                            one folder per project
             ODC_reaches_PROJA_all_cohorts.csv   every PROJA cohort in one file, one per kind
             reaches_PROJA_all_cohorts_summary.csv, reaches_PROJA_all_cohorts_analysis.csv,
-            sessions_PROJA_all_cohorts_analysis.csv, ODC_sessions_PROJA_all_cohorts.csv
+            sessions_PROJA_all_cohorts_analysis.csv, ODC_days_PROJA_all_cohorts.csv
             PROJA_05/                     one folder per cohort
                 ODC_reaches_PROJA_05.csv, reaches_PROJA_05_summary.csv,
                 reaches_PROJA_05_analysis.csv, sessions_PROJA_05_analysis.csv,
-                ODC_sessions_PROJA_05.csv
+                ODC_days_PROJA_05.csv
         PROJAB/                           the grant's second project, laid out the same way
     PROJC/                                a project in no grant: at the top, laid out the same way
 ```
@@ -94,7 +94,7 @@ exports/current/
   ```
 
   The kinds are `ODC_reaches`, `reaches_summary`, `reaches_analysis`,
-  `sessions_analysis` and `ODC_sessions`. If the file has not been written yet,
+  `sessions_analysis` and `ODC_days`. If the file has not been written yet,
   it stops with a message saying which file and where it looked.
 - Until 2026-10-29 every cohort's file sat at the top of the folder. Those are
   moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first
@@ -123,7 +123,7 @@ exports/current/
   dictionaries -- is still written. Close the file; the next nightly run, or
   **Refresh exports now**, moves it.
 
-**A cohort that is still running has no phase labels yet.** A session's phase (training, baseline, post-injury test N, rehabilitation ...) is worked out from ALL of its cohort's dates, so while the cohort is still being tested a later date can change the label of a session that was already exported -- and a file you saved last week would carry the old label with nothing to say it changed. So every export leaves the phase EMPTY for every session of a running cohort: `test_phase` and `phase_group` in `reach_data.csv` and `manual_scores.csv`, `Test_Phase` in `ODC_sessions_<cohort>.csv`, `Test_Type` and `Test_Type_Grouped` in the complete record (written `Undetermined` there and in the summary's `test_phase` / `test_phase_group`, because those files carry no empty cells), and `test_type`, `test_type_grouped` and `experiment_stage` in the analysis files (`NA`). The first export after the cohort is over fills them in, with nothing for you to do. (The same columns are also empty, in the same way, for a session of any cohort whose phase has not been derived yet -- see `reach_imports_phases_pending.json` below; `mousedb backfill-phases` derives it.) "Running" is decided the same way the exports already decide whether to name an animal's cause of death: what the lab has written for that cohort -- `"Study_Status": "in_progress"` or `"completed"` for that exact cohort in the study-facts file -- and, where nothing is written, whether the cohort's last recorded session is less than 30 days old (a cohort with no dated session at all counts as running). To get a finished cohort's labels before the 30 days are up, run `mousedb study-facts --set PROJA_05 Study_Status completed` (with your cohort's id; in the MouseDB environment); to keep a paused cohort's labels empty, set it to `in_progress`; `mousedb study-facts --unset PROJA_05 Study_Status` goes back to deciding by date. The next nightly run, or **Refresh exports now**, uses it. The exports you run by hand with `mousedb export` (the tracking-sheet workbook, the ODC workbook, `--all-formats` and `--unified`) follow the same rule: they read the database instead of the snapshot, so they decide "running" from the database's own reach rows, leave `Test_Phase` (or `test_phase` in the unified parquet) empty for a running cohort, and print `Phase left empty (cohort still running): <cohorts>` so an empty column is not mistaken for missing data. `MANIFEST.json` lists the cohorts whose phase was left empty under `reach_data.csv` and `manual_scores.csv` (and under each running cohort's `ODC_sessions` file), as `phase_withheld_for_running_cohorts`; the same cohorts are left empty in every other file of that refresh.
+**A cohort that is still running has no phase labels yet.** A session's phase (training, baseline, post-injury test N, rehabilitation ...) is worked out from ALL of its cohort's dates, so while the cohort is still being tested a later date can change the label of a session that was already exported -- and a file you saved last week would carry the old label with nothing to say it changed. So every export leaves the phase EMPTY for every session of a running cohort: `test_phase` and `phase_group` in `reach_data.csv` and `manual_scores.csv`, `Test_Phase` in `ODC_days_<cohort>.csv`, `Test_Type` and `Test_Type_Grouped` in the complete record (written `Undetermined` there and in the summary's `test_phase` / `test_phase_group`, because those files carry no empty cells), and `test_type`, `test_type_grouped` and `experiment_stage` in the analysis files (`NA`). The first export after the cohort is over fills them in, with nothing for you to do. (The same columns are also empty, in the same way, for a session of any cohort whose phase has not been derived yet -- see `reach_imports_phases_pending.json` below; `mousedb backfill-phases` derives it.) "Running" is decided the same way the exports already decide whether to name an animal's cause of death: what the lab has written for that cohort -- `"Study_Status": "in_progress"` or `"completed"` for that exact cohort in the study-facts file -- and, where nothing is written, whether the cohort's last recorded session is less than 30 days old (a cohort with no dated session at all counts as running). To get a finished cohort's labels before the 30 days are up, run `mousedb study-facts --set PROJA_05 Study_Status completed` (with your cohort's id; in the MouseDB environment); to keep a paused cohort's labels empty, set it to `in_progress`; `mousedb study-facts --unset PROJA_05 Study_Status` goes back to deciding by date. The next nightly run, or **Refresh exports now**, uses it. The exports you run by hand with `mousedb export` (the tracking-sheet workbook, the ODC workbook, `--all-formats` and `--unified`) follow the same rule: they read the database instead of the snapshot, so they decide "running" from the database's own reach rows, leave `Test_Phase` (or `test_phase` in the unified parquet) empty for a running cohort, and print `Phase left empty (cohort still running): <cohorts>` so an empty column is not mistaken for missing data. `MANIFEST.json` lists the cohorts whose phase was left empty under `reach_data.csv` and `manual_scores.csv` (and under each running cohort's `ODC_days` file), as `phase_withheld_for_running_cohorts`; the same cohorts are left empty in every other file of that refresh.
 
 **A tray presents 20 pellets; anything else is an error, and it is handled like one.** A video the pipeline cut into some other number of pellets has the wrong pellet number on its reaches, so that session is left out of the analysis files. A tray whose hand scores number other than 20 keeps its reaches but has its hand-score columns left empty. Both are listed in `analysis_EXCLUSIONS.csv` with the count that was found, and both come back on their own once the video is reprocessed or the sheet is corrected.
 
@@ -226,17 +226,28 @@ with that level's word: `reach_`, `segment_`, `session_` or `day_`
 video) everywhere in these files. A column with no level word is either an
 identity column (`subject_id`, `video_name`, `test_date`, `tray_type`,
 `session_id`, `tray_id`: kept as they were, because limited exports, the
-exclusion list and your own scripts find rows by them) or a measurement of the
-reach itself (frames and kinematics; the earlier program's `swipe_*` names stay
-as they are). The ODC-SCI animal fields (`SubjectID`, `SpeciesTyp`, `AgeVal`,
+exclusion list and your own scripts find rows by them), an animal column, or a
+provenance column of the complete record (tool versions, source file). **Every
+measurement of the reach itself starts with `reach_` too** (since the second
+change of 2026-11-19): its frames (`reach_start_frame`, `reach_end_frame`,
+`reach_apex_frame`), every kinematic measure (`reach_swipe_length`,
+`reach_speed_at_apex_mm_per_sec`, `reach_righthand_peak_speed_mm_per_frame`
+...; in the complete record the extended block keeps its `ext_` after it:
+`reach_ext_...`), tracking confidence and the contact frame. Each dictionary
+entry names the column's old name. The ODC-SCI animal fields (`SubjectID`, `SpeciesTyp`, `AgeVal`,
 `BodyWgtMeasrVal`, `SexTyp`, `InjGroupAssignTyp`) keep ODC's exact spelling,
 which ODC requires. `_ai` = counted by the pipeline from the video, `_hand` =
 counted from the hand scores in the tracking sheet.
 
-The one file whose row is a whole day is `ODC_sessions_<cohort>.csv` (one
-animal, one date, Tray1..Tray4 across the row, `Daily_*` totals). It keeps its
-name because it is the ODC-SCI animal-tracking shape and saved limited-export
-definitions name it; its dictionary says each row is an animal-day.
+The one file whose row is a whole day is `ODC_days_<cohort>.csv` (one
+animal, one date, Tray1..Tray4 across the row, `Daily_*` totals). It was named
+`ODC_sessions_<cohort>.csv` until 2026-11-19; the first export after the change
+writes the new name and moves every file still under the old name (cohort
+files, combined files, the dictionary) into the archive. **A saved limited
+export that lists the kind `ODC_sessions` keeps working unchanged**: the old
+kind name is read as `ODC_days` (an alias, `layout.KIND_ALIASES`), so nobody
+has to edit a definition; its next slice holds `ODC_days_<name>.csv` and the
+previous slice (with `ODC_sessions_<name>.csv`) goes to the archive as usual.
 
 **What a reach did.** On every reach, not only the credited one:
 
@@ -267,7 +278,7 @@ frame is recorded for those) read `missed` beside a pellet it retrieved.
 and untouched from both streams (`day_pellets_ai` ... `day_untouched_hand`).
 The day totals count **pillar trays only** in both streams, so the algorithm's
 and the hand scores' can be compared (the algorithm decides no pellet on easy or
-flat trays; `ODC_sessions` `Daily_*` counts every tray). The algorithm's day
+flat trays; `ODC_days` `Daily_*` counts every tray). The algorithm's day
 totals are empty exactly when `day_reaches_ai` is (a tray of the day not filed,
 or no hand scores for the day -- below), and also when a filed pillar tray of
 the day has no per-pellet record or the day had no pillar tray. The hand-score
@@ -663,7 +674,7 @@ them all.
 
 | file | what it is |
 |---|---|
-| `ODC_reaches_<name>.csv`, `reaches_<name>_summary.csv`, `reaches_<name>_analysis.csv`, `sessions_<name>_analysis.csv`, `ODC_sessions_<name>.csv` | the kinds you chose. Every chosen cohort is in the one file, cohort after cohort, rows in the same order as in the full export. In the analysis files, `entry_index` is counted again from 1 over the rows of this file |
+| `ODC_reaches_<name>.csv`, `reaches_<name>_summary.csv`, `reaches_<name>_analysis.csv`, `sessions_<name>_analysis.csv`, `ODC_days_<name>.csv` | the kinds you chose. Every chosen cohort is in the one file, cohort after cohort, rows in the same order as in the full export. In the analysis files, `entry_index` is counted again from 1 over the rows of this file |
 | `<kind>_DATA_DICTIONARY.csv` | the full export's dictionary of that kind, with only the columns you kept (in the same order as the file), plus the yes/no column if you asked for one |
 | `analysis_EXCLUSIONS.csv` | the entries the full export leaves out for a known problem, only those of your cohorts and sessions. One that covers a whole cohort (no video named) is kept for that cohort |
 | `SUBSET_MANIFEST.json` | the definition, the full export it was cut from (`source_exports_written_at`) and that export's snapshot (`source_snapshot_generation`), when it was written, the rows of each file and of each cohort in it, which sessions were chosen for each animal, and any problems |
@@ -736,7 +747,7 @@ from"): press **Refresh exports now** once, and try again.
 - Per-reach and per-session files: a row is kept when its animal, date and tray
   type pass. The animal is read from the row's video name, so a cohort shown
   with letter ids (`D01`) is matched the same way as any other.
-- `ODC_sessions` (one row per animal per day, up to four trays across the row):
+- `ODC_days` (one row per animal per day, up to four trays across the row; `ODC_sessions` is accepted as its old name):
   the day is kept when it is in the session window and ANY of its trays is of a
   ticked type. The row is copied whole, so it can still show a tray of another
   type that day.
@@ -887,8 +898,8 @@ each save locks the file for the fraction of a second it takes (see "Which proje
     "cohorts": ["PROJA_01", "PROJA_02"],
     "tray_types": ["P"],
     "window": {"type": "last_before_injury", "n": 3, "tray_type": "P"},
-    "kinds": ["ODC_reaches", "reaches_summary", "reaches_analysis", "sessions_analysis", "ODC_sessions"],
-    "columns": {"ODC_reaches": ["subject_id", "video_name", "start_frame", "end_frame"]},
+    "kinds": ["ODC_reaches", "reaches_summary", "reaches_analysis", "sessions_analysis", "ODC_days"],
+    "columns": {"ODC_reaches": ["subject_id", "video_name", "reach_start_frame", "reach_end_frame"]},
     "flag": {"column": "<column name>", "rule": null},
     "nightly": true
   }
@@ -2157,7 +2168,7 @@ anything is written):
   nightly snapshot job, or `mousedb missing-videos --write`), where the
   session stays, marked `acknowledged`.
 - **The exports**: nothing changes. A missing session has no rows there
-  anyway, and a failed recording stays in `ODC_sessions_*.csv` with its
+  anyway, and a failed recording stays in `ODC_days_*.csv` with its
   `Recording_Status` -- what happened to it is a fact about the data.
 
 **Undoing an acknowledgement.** There is no command or button for it. Open
@@ -2206,7 +2217,7 @@ stay in `manual_scores.csv` and in the session files like any other.
 - In the database: one row per session in the table
   `session_recording_status` (the session, `recording_failed`, the reason,
   the recording's name, who or what flagged it and when).
-- In the exports: every `ODC_sessions_<cohort>.csv` row (one animal, one day)
+- In the exports: every `ODC_days_<cohort>.csv` row (one animal, one day)
   has two columns, `Recording_Status` (`recording_failed`, or
   `no_issue_recorded`) and `Recording_Issue_Reason` (which tray, why, and the
   recording's name). The per-reach files (`ODC_reaches`, `reaches_*_analysis`,

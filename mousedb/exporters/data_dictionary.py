@@ -480,7 +480,7 @@ ODC_REACH_TOTALS = [
          comments="Repeated on every reach row of that animal and date."),
     _row("Day_Untouched_AI", "Pellets untouched this day (algorithm)", "Day_Pellets_AI - Day_Contacted_AI: pellets of the day's pillar trays no reach of the animal moved (a pellet a person saw moved by something other than a reach is counted here: the animal neither retrieved nor displaced it).", "count", "integer", "", "", "0",
          comments="Repeated on every reach row of that animal and date."),
-    _row("Day_Pellets_Hand", "Pellets hand scored this day (pillar trays)", "How many pillar-tray pellets the tracking sheet holds a hand score for, for this animal on this date, all pillar trays of the day. Pillar trays only (see Day_Pellets_AI). Given whenever the sheet holds them: hand scores are complete at the bench, whatever is filed. The ODC day file (ODC_sessions) Daily_* columns count every tray, easy and flat included.", "count", "integer", "", "", "0",
+    _row("Day_Pellets_Hand", "Pellets hand scored this day (pillar trays)", "How many pillar-tray pellets the tracking sheet holds a hand score for, for this animal on this date, all pillar trays of the day. Pillar trays only (see Day_Pellets_AI). Given whenever the sheet holds them: hand scores are complete at the bench, whatever is filed. The ODC day file (ODC_days) Daily_* columns count every tray, easy and flat included.", "count", "integer", "", "", "0",
          comments="Repeated on every reach row of that animal and date."),
     _row("Day_Retrieved_Hand", "Pellets retrieved this day (hand score)", "Pillar-tray pellets scored 2 (retrieved) for this animal on this date.", "count", "integer", "", "", "0",
          comments="Repeated on every reach row of that animal and date."),
@@ -543,7 +543,8 @@ def write_rows(rows: List[dict], out_path: Path) -> Path:
 DICTIONARIES: Dict[str, List[dict]] = {
     "reach_data": REACH_DATA,
     "manual_scores": MANUAL_SCORES,
-    "ODC_sessions": ODC_SESSIONS,
+    "ODC_days": ODC_SESSIONS,
+    "ODC_sessions": ODC_SESSIONS,   # the kind's name before 2026-11-19
 }
 
 

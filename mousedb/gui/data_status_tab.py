@@ -143,7 +143,7 @@ every cohort), and MANIFEST.json saying when they were written and whether
 they are complete for an ODC-SCI upload. Then one folder per project (CNT,
 ASPA, ...) -- inside its grant's folder when the lab lists the project under
 a grant ("mousedb grants") -- and inside it one folder per cohort (CNT_05) holding that
-cohort's files: ODC_sessions (one row per animal per session, ODC-SCI
+cohort's files: ODC_days (one row per animal per day, ODC-SCI
 shape), ODC_reaches (one row per reach with the animal's surgery details and
 the session repeated on every row), the shareable summary and the analysis
 tables. Beside the cohort folders, the *_all_cohorts* files hold every
@@ -153,7 +153,7 @@ in Explorer.
 The folder is rewritten each time the scheduled snapshot job runs (the
 panel says when that last was). "Refresh exports now" rewrites reach_data,
 manual_scores, every cohort's reach files and each project's combined reach
-files immediately from the latest snapshot; the ODC_sessions files (and
+files immediately from the latest snapshot; the ODC_days files (and
 their combined file) wait for the scheduled job, because they read the
 database itself. Only one refresh writes the exports at a time: if another
 is already writing (often the nightly job), the button changes nothing and

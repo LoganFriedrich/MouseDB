@@ -354,6 +354,16 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     return out, _dictionary_rows(present, reasons)
 
 
+def measurement_columns(columns) -> List[str]:
+    """The per-reach measurements among this table's (internal) columns, which
+    are published as reach_<name> (exporters.levels): every column that is not
+    animal, session or reach identity, an answer word, or a session or day
+    total. Listed this way round so a measurement added later is prefixed too."""
+    not_measured = ({n for _s, n in ANIMAL + SESSION + REACH_IDENTITY + SESSION_TOTALS}
+                    | {"reach_result", "pellet_result", "reach_decided_the_pellet"})
+    return [c for c in columns if c not in not_measured]
+
+
 # Names this table used before, so a reader holding an older file can line the
 # columns up: {name now: name it had, the date it changed}.
 FORMERLY_NAMED: Dict[str, Tuple[str, str]] = {
