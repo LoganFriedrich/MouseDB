@@ -66,7 +66,7 @@ DEFAULT_SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured
 TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records",
           "weights", "video_pellets", "video_sessions",
           "projects", "surgeries", "brain_samples", "region_counts",
-          "elife_region_counts"]
+          "elife_region_counts", "session_recording_status"]
 # "video_pellets" (2026-10-16): one row per pellet the pipeline cut each video
 # into, reached for or not. Without it the exports could only count pellets that
 # had a reach, and "pellets presented" came out below 20 in most sessions.
@@ -74,6 +74,13 @@ TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records"
 # "video_sessions" (2026-11-24): one row per filed tray session, reached at or
 # not. Without it a tray with no reach left no trace in any export, and the
 # sessions files dropped it (a post-injury tray with 0 reaches is a result).
+#
+# "session_recording_status" (2026-11-24): one row per session whose recording
+# FAILED (mousedb.recording_issues). The sessions export reports, on each row,
+# whether a recording of that animal-day failed; it reads the snapshot only, so
+# the table has to be in it. Small (one row per failed recording). A database
+# without the table yet is skipped like any other table newer than it, and the
+# export then writes NA (unknown), never "no issue".
 #
 # "projects" .. "elife_region_counts" (2026-11-12): read by the data browser
 # (mousedb.data_browser), which shows the snapshot and NEVER the live
