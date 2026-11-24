@@ -78,7 +78,8 @@ def test_sent_back_taken_out_then_filed_again_comes_back(tmp_path, monkeypatch):
     assert _count(db, VIDEO) == (0, 0)
     assert _count(db, OTHER) == (2, 20)                 # nothing else touched
     copies = list((tmp_path / "dbroot" / "_archived" / ir.WITHDRAWALS_DIR).rglob("*.csv"))
-    assert sorted(c.name for c in copies) == [VIDEO + "_reach_data.csv", VIDEO + "_video_pellets.csv"]
+    assert sorted(c.name for c in copies) == [VIDEO + "_reach_data.csv", VIDEO + "_video_pellets.csv",
+                                                  VIDEO + "_video_sessions.csv"]
     assert any("back in the triage queue" in m for m in res.messages)
 
     # Filed again, file unchanged: imported again because its ledger entry went.

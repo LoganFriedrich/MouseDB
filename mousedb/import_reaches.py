@@ -47,6 +47,13 @@ WHAT IT DOES
      outcome. That is where "how many pellets were presented" is MEASURED (20
      unless something went wrong); reach_data cannot say, because a pellet
      nobody reached for has no reach row.
+     It also replaces the video's ONE row in ``video_sessions``: the tray
+     session itself (animal, date, tray, how many reaches, the session's
+     attention score, the session flag). WHY: a tray at which the animal never
+     reached has no reach row, and an Easy or Flat tray has no pellet rows
+     either, so without this row the session left no trace at all and the
+     sessions export dropped it. A tray with no reaches is a result (after an
+     injury it is often THE result); see ``session_row``.
   6. Re-derives test_phase / phase_group for every cohort touched
      (``mousedb.backfill.backfill_phases``). The cohorts still to do are kept
      in ``<mousedb_root>/logs/reach_imports_phases_pending.json`` until each
@@ -67,7 +74,8 @@ Usage:
     mousedb import-reaches --all           # ignore the ledger, re-import everything
     mousedb import-reaches --include-processing
     mousedb import-reaches --verbose       # also name the filed videos held back by review
-    mousedb import-reaches --pellets-only  # (re)fill video_pellets from every filed file
+    mousedb import-reaches --pellets-only  # (re)fill video_pellets and video_sessions
+                                           # from every filed file
                                            # (not a video whose newer run is in review)
 """
 from __future__ import annotations
@@ -170,6 +178,42 @@ CREATE TABLE IF NOT EXISTS video_pellets (
 VIDEO_PELLET_COLUMNS = ['video_name', 'segment_num', 'subject_id', 'session_date', 'tray_type',
                         'run_number', 'outcome', 'outcome_confidence', 'outcome_flagged',
                         'n_reaches', 'source_file', 'imported_at']
+
+# One row per tray session (one features file), whatever it holds -- INCLUDING
+# a session with no reach at all, which neither reach_data (one row per reach)
+# nor, on an Easy or Flat tray, video_pellets (pillar trays only) can hold.
+#
+# WHY THIS TABLE EXISTS (2026-11-24, owner: "No reaches means no REACH rows.
+# Session rows should still exist in the session files."): the sessions export
+# was built from reach rows only, so every filed tray at which the animal never
+# reached vanished from it -- a post-injury animal that no longer reaches was
+# simply missing, instead of showing 0 reaches. The session's own measurements
+# that do not depend on reaches (its attention score, its session flag) were
+# lost with it. This table is where the session itself is recorded.
+# Created on first use; replaced per video together with the video's other rows.
+VIDEO_SESSIONS_DDL = """
+CREATE TABLE IF NOT EXISTS video_sessions (
+    video_name           TEXT    NOT NULL PRIMARY KEY,
+    subject_id           TEXT    NOT NULL,
+    session_date         TEXT,
+    tray_type            TEXT,
+    run_number           INTEGER,
+    n_segments           INTEGER,
+    n_reaches            INTEGER,
+    attention_score      REAL,
+    attention_segments   INTEGER,
+    extractor_version    TEXT,
+    session_flag         INTEGER,
+    session_flag_reason  TEXT,
+    session_flag_by      TEXT,
+    session_flag_at      TEXT,
+    source_file          TEXT,
+    imported_at          TEXT
+)"""
+VIDEO_SESSION_COLUMNS = ['video_name', 'subject_id', 'session_date', 'tray_type', 'run_number',
+                         'n_segments', 'n_reaches', 'attention_score', 'attention_segments',
+                         'extractor_version'] + SESSION_FLAG_COLUMNS + ['source_file',
+                                                                        'imported_at']
 
 
 @dataclass
@@ -541,6 +585,47 @@ def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
     return rows
 
 
+def session_row(data: dict, video_name: str, subject_id: str, now: str,
+                source_file: str) -> dict:
+    """The video's one row in ``video_sessions`` (VIDEO_SESSIONS_DDL says why).
+
+    Written for EVERY video, Easy and Flat trays included and whether or not
+    the animal reached. What is in it:
+
+      n_segments, n_reaches  how many segments the file holds and how many
+                             reaches they contain (0 is a real answer).
+      attention_score        the MEAN of the segments' attention scores over
+                             EVERY segment that has one -- reached for or not.
+                             The outcome detector scores attention per segment
+                             from the pose, not from reaches, so a tray with no
+                             reach still has it. On an Easy or Flat tray the one
+                             segment is the whole session. None only when no
+                             segment carries a score.
+      attention_segments     how many segments that mean is over.
+      session_flag*          a person's Flag Session note (session_flag_fields).
+    """
+    meta = parse_video_metadata(video_name)
+    segs = [s for s in (data.get('segments') or []) if isinstance(s, dict)]
+    n_reaches = sum(len(s.get('reaches') or []) for s in segs)
+    att = []
+    for s in segs:
+        try:
+            v = float(s.get('attention_score'))
+        except (TypeError, ValueError):
+            continue
+        if v == v:                                  # not NaN
+            att.append(v)
+    row = {'video_name': video_name, 'subject_id': subject_id,
+           'session_date': meta['session_date'] or '', 'tray_type': meta['tray_type'],
+           'run_number': meta['run_number'], 'n_segments': len(segs), 'n_reaches': n_reaches,
+           'attention_score': (sum(att) / len(att)) if att else None,
+           'attention_segments': len(att),
+           'extractor_version': data.get('extractor_version'),
+           'source_file': source_file, 'imported_at': now}
+    row.update(session_flag_fields(data.get('session_flag')))
+    return row
+
+
 def session_flag_fields(flag) -> dict:
     """The four session_flag columns from a features file's ``session_flag``.
 
@@ -611,6 +696,7 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute("ALTER TABLE reach_data ADD COLUMN %s %s" % (col, typ))
     conn.execute(VIDEO_PELLETS_DDL)
+    conn.execute(VIDEO_SESSIONS_DDL)
     # The phase re-labelling after every import selects one cohort's rows by
     # subject_id; with no index on it SQLite read the WHOLE table once per
     # touched cohort (hours over the share, 2026-10-15/16). Created here, under
@@ -629,6 +715,15 @@ def write_pellets(conn: sqlite3.Connection, video_name: str, rows: List[dict]) -
     if rows:
         conn.executemany("INSERT INTO video_pellets (%s) VALUES (%s)" % (
             ', '.join(VIDEO_PELLET_COLUMNS), ', '.join(':' + c for c in VIDEO_PELLET_COLUMNS)), rows)
+
+
+def write_session(conn: sqlite3.Connection, video_name: str, row: Optional[dict]) -> None:
+    """Replace one video's session row. Call inside the video's transaction."""
+    conn.execute("DELETE FROM video_sessions WHERE video_name = ?", (video_name,))
+    if row:
+        conn.execute("INSERT INTO video_sessions (%s) VALUES (%s)" % (
+            ', '.join(VIDEO_SESSION_COLUMNS), ', '.join(':' + c for c in VIDEO_SESSION_COLUMNS)),
+            row)
 
 
 def ensure_subject(conn: sqlite3.Connection, subject_id: str, video_name: str) -> bool:
@@ -662,28 +757,37 @@ def import_file(conn: sqlite3.Connection, path: Path, dry_run: bool = False) -> 
     data = json.loads(path.read_text(encoding="utf-8"))
     video_name, rows = flatten(path, subject_id, now, data=data)
     pellets = pellet_rows(data, video_name, subject_id, now, path.name)
+    session = session_row(data, video_name, subject_id, now, path.name)
     if dry_run:
         return subject_id, len(rows), False
     cols = ', '.join(ALL_COLUMNS)
     params = ', '.join(':' + c for c in ALL_COLUMNS)
-    with conn:  # one transaction per video: its reaches and its pellets, all or none
+    with conn:  # one transaction per video: its reaches, pellets and session, all or none
         created = ensure_subject(conn, subject_id, video_name)
         conn.execute("DELETE FROM reach_data WHERE video_name = ?", (video_name,))
         if rows:
             conn.executemany("INSERT INTO reach_data (%s) VALUES (%s)" % (cols, params), rows)
         write_pellets(conn, video_name, pellets)
+        write_session(conn, video_name, session)
     return subject_id, len(rows), created
+
+
+# How many files the backfill reads at once (it is bound by the share's latency).
+BACKFILL_READERS = 16
 
 
 def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool = False,
                            log=print) -> Dict[str, Any]:
-    """Fill video_pellets for every live features file, touching nothing else.
+    """Fill video_pellets AND video_sessions for every live features file,
+    touching nothing else.
 
-    For videos imported before the table existed: the ledger skips an unchanged
+    For videos imported before a table existed: the ledger skips an unchanged
     file, so the nightly import would never revisit them. Reads every features
     file (outside the database lock -- it is all network reads), then writes the
     pellet rows in one transaction under the lock. reach_data, subjects and the
     ledger are not touched. Safe to re-run: each video's rows are replaced.
+    The files are read by several threads at once (BACKFILL_READERS): the cost
+    is the network share's per-file latency, not the reading itself.
 
     Filed videos whose NEWER run waits in a review queue are skipped, by the
     same test the import itself applies (``videos_back_in_review``). WHY: such
@@ -700,8 +804,10 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
             if files else set())
     now = datetime.now().isoformat()
     by_video: Dict[str, List[dict]] = {}
+    sessions: Dict[str, dict] = {}
     unreadable: List[str] = []
     skipped_held: List[str] = []
+    todo = []
     for p in files:
         if p.name[:-len(FEATURES_SUFFIX)] in held:
             skipped_held.append(p.name[:-len(FEATURES_SUFFIX)])
@@ -710,13 +816,27 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         if subject_id is None:
             unreadable.append(p.name)
             continue
+        todo.append((p, subject_id))
+
+    def read_one(item):
+        p, subject_id = item
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            unreadable.append(p.name)
-            continue
+            return p, None
         video_name = data.get('video_name', p.stem.replace('_features', ''))
-        by_video[video_name] = pellet_rows(data, video_name, subject_id, now, p.name)
+        return p, (video_name, pellet_rows(data, video_name, subject_id, now, p.name),
+                   session_row(data, video_name, subject_id, now, p.name))
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(BACKFILL_READERS) as pool:
+        for p, got in pool.map(read_one, todo):
+            if got is None:
+                unreadable.append(p.name)
+                continue
+            video_name, prow, srow = got
+            by_video[video_name] = prow
+            sessions[video_name] = srow
     log("backfill: %d features files read, %d videos, %d unreadable" % (
         len(files) - len(skipped_held), len(by_video), len(unreadable)))
     if skipped_held:
@@ -727,8 +847,10 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         try:
             with conn:
                 conn.execute(VIDEO_PELLETS_DDL)
+                conn.execute(VIDEO_SESSIONS_DDL)
                 for video_name, rows in by_video.items():
                     write_pellets(conn, video_name, rows)
+                    write_session(conn, video_name, sessions[video_name])
         finally:
             conn.close()
     counts: Dict[int, int] = {}
@@ -736,8 +858,11 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         counts[len(rows)] = counts.get(len(rows), 0) + 1
     log("backfill: pellets per video -> %s" % ", ".join(
         "%d pellets: %d videos" % kv for kv in sorted(counts.items())))
+    no_reach = sum(1 for r in sessions.values() if not r['n_reaches'])
+    log("backfill: %d session rows written, %d of them trays with no reach" % (len(sessions), no_reach))
     return {"videos": len(by_video), "pellets_per_video": counts, "unreadable": unreadable,
-            "held": sorted(skipped_held)}
+            "held": sorted(skipped_held), "sessions": len(sessions),
+            "sessions_without_reaches": no_reach}
 
 
 # ---------------------------------------------------------------------------
@@ -827,9 +952,9 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     as if finished: 286 videos and 44,178 reach rows that day. Now they leave
     the database until the video is filed again.
 
-    HOW: each such video's rows in reach_data and video_pellets are first
-    copied to ``<backup_root>/<video>_reach_data.csv`` and
-    ``_video_pellets.csv``, then deleted, one transaction per video. Its ledger
+    HOW: each such video's rows in reach_data, video_pellets and
+    video_sessions are first copied to ``<backup_root>/<video>_reach_data.csv``,
+    ``_video_pellets.csv`` and ``_video_sessions.csv``, then deleted, one transaction per video. Its ledger
     entries are dropped too, so when it is filed again its file is imported
     even if nothing in it changed. Returns (videos, reach rows, messages).
 
@@ -854,6 +979,8 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
                          (name,)).fetchone()[0]
         p = conn.execute("SELECT COUNT(*) FROM video_pellets WHERE video_name = ?",
                          (name,)).fetchone()[0]
+        p += conn.execute("SELECT COUNT(*) FROM video_sessions WHERE video_name = ?",
+                          (name,)).fetchone()[0]
         # Every video in review loses its entries, rows or not: one with no
         # rows left may still have an entry (a stopped run, or an older
         # importer), and since the import loop no longer imports a filed
@@ -873,8 +1000,10 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
             with conn:
                 _copy_rows(conn, "reach_data", name, backup_root / (name + "_reach_data.csv"))
                 _copy_rows(conn, "video_pellets", name, backup_root / (name + "_video_pellets.csv"))
+                _copy_rows(conn, "video_sessions", name, backup_root / (name + "_video_sessions.csv"))
                 conn.execute("DELETE FROM reach_data WHERE video_name = ?", (name,))
                 conn.execute("DELETE FROM video_pellets WHERE video_name = ?", (name,))
+                conn.execute("DELETE FROM video_sessions WHERE video_name = ?", (name,))
         videos += 1
         withdrawn += n
         line = ("%s: %s the %s queue, so not done -- %d reach rows taken out until it "
@@ -896,7 +1025,7 @@ def rows_without_file_path() -> Path:
 
 def rows_without_a_filed_file(conn: sqlite3.Connection, listed: Iterable[str],
                               in_review: Iterable[str]) -> List[str]:
-    """Videos with rows in reach_data or video_pellets whose results file is
+    """Videos with rows in reach_data, video_pellets or video_sessions whose results file is
     neither among ``listed`` (the results files this run found) nor in a
     review queue (``in_review``), sorted.
 
@@ -925,7 +1054,7 @@ def rows_without_a_filed_file(conn: sqlite3.Connection, listed: Iterable[str],
     each, so the nightly cost does not grow with the size of reach_data."""
     listed, in_review = set(listed), set(in_review)
     known = listed | in_review
-    tables = ["reach_data", "video_pellets"]
+    tables = ["reach_data", "video_pellets", "video_sessions"]
     have = set()
     for t in list(tables):
         try:
@@ -1242,8 +1371,8 @@ def main(argv=None) -> int:
     ap.add_argument("--verbose", action="store_true",
                     help="Also list each filed video skipped because a newer run is in review")
     ap.add_argument("--pellets-only", action="store_true",
-                    help="Only (re)fill the per-pellet table (video_pellets) from every features "
-                         "file, except a filed video whose newer run waits in review; reaches, "
+                    help="Only (re)fill the per-pellet table (video_pellets) and the per-session "
+                         "table (video_sessions) from every features file, except a filed video whose newer run waits in review; reaches, "
                          "animals and the ledger are not touched")
     args = ap.parse_args(argv)
     if args.pellets_only:
