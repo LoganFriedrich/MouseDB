@@ -308,7 +308,12 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series,
     measure whether the paw touched the pellet on a reach that did not move it, so
     "missed" says only what the pellet did.
     """
-    is_causal = causal.map(lambda v: str(v).strip().lower() in ("1", "true", "t", "yes"))
+    # levels._truthy, which also reads 1.0 as true. WHY (2026-11-24): the frame
+    # carries the session-only rows of trays with no reach (odc_reaches.build_cohort);
+    # concatenating them turns causal_reach into floats, and reading only "1" made
+    # every credited reach of such a cohort "Undetermined" in every per-reach file.
+    from . import levels
+    is_causal = levels._truthy(causal)
     out = pd.Series(MISSED, index=causal.index, dtype="object")
     out = out.where(pellet_result != missing.UNDETERMINED, missing.UNDETERMINED)
     moved_here = is_causal & pellet_result.isin(MOVED)
@@ -338,8 +343,8 @@ def build(full: pd.DataFrame) -> Tuple[pd.DataFrame, List[dict]]:
     from . import levels
     data["reach_result"] = _reach_result(causal, pellet, levels.segment_keys(full))
     data["pellet_result"] = pellet
-    data["reach_decided_the_pellet"] = causal.map(
-        lambda v: "Yes" if str(v).strip().lower() in ("1", "true", "t", "yes") else "No")
+    data["reach_decided_the_pellet"] = levels._truthy(causal).map(
+        lambda v: "Yes" if v else "No")
 
     for src, name in KINEMATICS + extra + SESSION_TOTALS:
         if src in full.columns:

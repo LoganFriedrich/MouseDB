@@ -49,6 +49,13 @@ checked-in code, not what's planned.
   when and why. Nothing excludes or treats a flagged row differently (owner
   decision D5-10). The export fingerprint covers it.
 
+### Fixed
+- **A credited reach read "Undetermined" in every per-reach export of a cohort
+  with a tray at which the animal never reached** (since the session-only rows
+  of 2026-11-24). Adding those rows turned `causal_reach` into 1.0/0.0, and the
+  reach outcome read only "1" as true. `reach_summary` now reads the flag with
+  `levels._truthy` (1, 1.0, true, yes), as the rest of the exporter does.
+
 ### Changed
 
 - **Attention is a segment value; the session's attention is the mean over
