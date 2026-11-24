@@ -435,6 +435,16 @@ def _video_vectors(snapshot: Path) -> Tuple[Dict[str, Dict[int, int]], pd.DataFr
             vectors[str(v)][int(n)] = code
     videos = rd.drop_duplicates("video_name")[
         ["video_name", "subject_id", "session_date", "tray_type", "run_number"]].copy()
+    # A filed tray with no reach is a video too (it has a session row in the
+    # exports since 2026-11-24): the checks that judge a video by its animal and
+    # date -- death, the hand-score count, no sheet -- must judge it as well.
+    vs_path = snapshot / "video_sessions.parquet"
+    if vs_path.exists():
+        vs = pd.read_parquet(vs_path, columns=["video_name", "subject_id", "session_date",
+                                               "tray_type", "run_number"])
+        vs = vs[~vs["video_name"].isin(set(videos["video_name"]))]
+        if len(vs):
+            videos = pd.concat([videos, vs], ignore_index=True)
     videos["d"] = videos["session_date"].astype(str).str[:10]
     return vectors, videos
 
@@ -717,7 +727,7 @@ def archive_conflicts(pipeline_root: Optional[Path]) -> Optional[List[dict]]:
 # ----------------------------------------------------------------- applying
 
 def apply(frame: pd.DataFrame, ex: Exclusions, cohort_id: str = "",
-          missing_word: str = "NA") -> Tuple[pd.DataFrame, List[dict]]:
+          missing_word: str = "NA", session_only=()) -> Tuple[pd.DataFrame, List[dict]]:
     """Return (frame with exclusions applied, report rows).
 
     Applied to ONE cohort's analysis per-reach frame; cohort_id names it. The
@@ -727,7 +737,12 @@ def apply(frame: pd.DataFrame, ex: Exclusions, cohort_id: str = "",
     first version split the id and so judged each ASPA animal as a cohort of
     its own. The sessions file is built from these rows, so it inherits every
     exclusion without a second rule.
+
+    ``session_only`` names the videos whose one row is a session-only row (a
+    filed tray with no reach, odc_reaches.session_only_rows): left out, it is
+    reported as a session row with 0 reach rows, not as one reach row.
     """
+    session_only = {str(v) for v in (session_only or ())}
     report: List[dict] = []
     if frame.empty:
         return frame, report
@@ -768,9 +783,11 @@ def apply(frame: pd.DataFrame, ex: Exclusions, cohort_id: str = "",
 
     drop = out["video_name"].astype(str).isin(ex.drop_videos)
     for video, group in out[drop].groupby("video_name"):
-        report.append(entry(left_out="reach rows", video_name=video,
+        no_reach = str(video) in session_only
+        report.append(entry(left_out="session row (tray with no reach)" if no_reach
+                            else "reach rows", video_name=video,
                             subject_id=group["subject_id"].iloc[0],
-                            date=group["test_date"].iloc[0], rows=int(len(group)),
+                            date=group["test_date"].iloc[0], rows=0 if no_reach else int(len(group)),
                             fields="", reason=ex.drop_videos[str(video)]))
     # A copy, not a filtered view: columns are blanked and renumbered on it
     # below, and assigning into a view raised pandas' SettingWithCopyWarning

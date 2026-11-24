@@ -18,6 +18,27 @@ Not from a separate query. Anything summarised here is summarised from exactly
 the rows that file contains, so the two can never disagree about a session --
 which they would, eventually, if each went back to the database on its own.
 
+EVERY FILED TRAY HAS A ROW -- ALSO ONE WITH NO REACH (2026-11-24)
+-----------------------------------------------------------------
+Owner: "No reaches means no REACH rows. Session rows should still exist in the
+session files." A tray at which the animal never reached is a result (after an
+injury it is often THE result), so it gets its session row like any other tray:
+0 reaches, and every session-level number that does not depend on reaches
+filled exactly as for any other tray -- the hand scores, the pellets the
+pipeline cut and their outcomes (all untouched, usually: 0 percent retrieved),
+the attention score, the session flag, the day totals. The exporter gives such
+a tray one session-only row (odc_reaches.session_only_rows) that never reaches
+the per-reach file; ``session_only`` names those videos here.
+
+Which columns are filled on such a row and which would be blank: every column
+of this file is FILLED. No column here is defined only from reaches -- the
+per-reach measurements (speeds, distances, kinematics) live in the per-reach
+file only, and a tray with no reach has no rows there. The counts of reaches
+are 0, not blank: "0 pellets reached for" is the answer. As on any tray, an
+Easy or Flat tray's pellet and outcome counts are NA (trays.py says why). Each
+column's dictionary row says what it holds on a tray with no reach
+(NO_REACH_RULES).
+
 THE FORMAT IS THE REACH FILE'S
 ------------------------------
 ``NA`` for absent, lowercase names, numeric columns holding only numbers, an
@@ -86,13 +107,18 @@ def _value(group: pd.DataFrame, column: str):
 
 
 def build(reaches: pd.DataFrame,
-          reach_dictionary: List[dict] = None) -> Tuple[pd.DataFrame, List[dict]]:
+          reach_dictionary: List[dict] = None,
+          session_only=()) -> Tuple[pd.DataFrame, List[dict]]:
     """(frame, dictionary rows) from the analysis-ready per-reach frame.
 
     ``reach_dictionary`` is that file's own rows. Passed in rather than
     rebuilt, so a column carried through from the reaches is described
     identically in both files and cannot drift between them.
+
+    ``session_only`` names the videos whose one row is a session-only row: a
+    filed tray with no reach (module docstring). Their reach counts are 0.
     """
+    session_only = {str(v) for v in (session_only or ())}
     if reaches.empty or not all(k in reaches.columns for k in KEYS):
         return pd.DataFrame(), []
 
@@ -109,7 +135,8 @@ def build(reaches: pd.DataFrame,
             if column in group.columns:
                 row[column] = group[column].iloc[0]
 
-        row["reaches_in_video"] = int(len(group))
+        no_reach = str(group["video_name"].iloc[0]) in session_only
+        row["reaches_in_video"] = 0 if no_reach else int(len(group))
         # Two different numbers, both kept, each under a name that says what it
         # is. Until 2026-10-16 the second was published as "pellets_presented"
         # and used as the denominator of every percentage, so a session in which
@@ -125,6 +152,11 @@ def build(reaches: pd.DataFrame,
             row["reaches_that_decided_a_pellet"] = decided
             row["reaches_after_the_pellet_was_gone"] = int(
                 (group["pellet_state_at_this_reach"] == ar.STATE_ALREADY_GONE).sum())
+        if no_reach:
+            # A tray with no reach: nothing was reached for, nothing decided by
+            # a reach, nothing reached for after it was gone. Real zeros.
+            for column in PELLET_COUNTS:
+                row[column] = 0
         # An easy or flat tray has no pellets to count (trays.py says why): these
         # are absent, not zero -- "0 pellets reached for" would be a claim.
         if trays.outcome_free(group).iloc[0]:
@@ -171,7 +203,8 @@ _DERIVED = {
     "reaches_in_video": (
         "Reaches in this video", "integer",
         "How many reaches this session's video (one tray) contains -- the number of "
-        "rows it has in the per-reach file. Not the animal's whole testing day: for "
+        "rows it has in the per-reach file; 0 for a filed tray at which the animal "
+        "never reached, which has a row here and none there. Not the animal's whole testing day: for "
         "that, day_total_reaches. Formerly named reaches_in_session (until "
         "2026-11-17; same values), and the same count was also published as "
         "total_swipes_ai, which is retired: an earlier reach program's Total Swipes "
@@ -221,6 +254,22 @@ for _outcome, _words in _OUTCOME_WORDS.items():
             "the finding." % (_words, _who))
 
 
+# What each column holds on the row of a tray with NO reach (module docstring).
+# Every other column: NO_REACH_DEFAULT.
+NO_REACH_RULES = {
+    "reaches_in_video": "0.",
+    "pellets_reached_for": "0 on a pillar tray (NA on an easy or flat tray, as on any).",
+    "reaches_that_decided_a_pellet": "0 on a pillar tray (NA on an easy or flat tray, as on any).",
+    "reaches_after_the_pellet_was_gone": "0 on a pillar tray (NA on an easy or flat tray, as on any).",
+    "attention_ai": ("the session's attention score, which is scored from the pose and "
+                     "not from reaches: the mean over every segment of the video that has "
+                     "a score (the whole session on an easy or flat tray). On a tray with "
+                     "reaches the mean is over the segments that have reaches."),
+}
+NO_REACH_DEFAULT = ("filled exactly as on any other tray: it does not depend on "
+                    "reaches.")
+
+
 def _dictionary_rows(columns: List[str], reach_dictionary: List[dict]) -> List[dict]:
     """Reuse the reach file's entry for any column that came from it."""
     inherited = {r["VariableName"]: r for r in (reach_dictionary or [])}
@@ -238,6 +287,9 @@ def _dictionary_rows(columns: List[str], reach_dictionary: List[dict]) -> List[d
         row["VariableName"] = name
         note = ("Absent values are written as NA, so the column loads as numbers."
                 if name not in TEXT_COLUMNS else "Absent values are written as NA.")
+        if name != ar.ROW_NUMBER:
+            note += (" On the row of a tray with no reach (every filed tray has a row): "
+                     + NO_REACH_RULES.get(name, NO_REACH_DEFAULT))
         row["Comments"] = (str(row.get("Comments", "")) + " " + note).strip()
         rows.append(row)
     return rows

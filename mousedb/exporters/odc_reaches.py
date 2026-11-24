@@ -395,7 +395,8 @@ def _tray_keys(subject, day, tray_type, number) -> List[tuple]:
 
 def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
                      pellets: Optional[pd.DataFrame],
-                     video_pellets: Optional[pd.DataFrame]):
+                     video_pellets: Optional[pd.DataFrame],
+                     is_reach: Optional[pd.Series] = None):
     """(Day_Total_Reaches_AI, Day_Total_Reaches_Complete) for every reach row.
 
     WHY A DAY TOTAL. An earlier reach program reported "Total Swipes": the
@@ -414,9 +415,14 @@ def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
     total is given and the flag reads yes. Otherwise the flag reads no and the
     total is left empty -- a partial count is never reported as the day's.
     A day with no hand-score rows at all has nothing to check against and is
-    not assumed complete. An easy or flat tray has no per-pellet rows, so one
-    that is filed but has no reaches reads as not filed: that day reads no,
-    the safe direction.
+    not assumed complete.
+
+    ``is_reach`` marks the rows that ARE reaches; the others are the one
+    session-only row of a filed tray with no reach (session_only_rows). Such a
+    tray is filed -- it counts towards the day being complete, Easy and Flat
+    trays included -- and adds 0 to the total. Without that row (an older
+    snapshot with no video_sessions table) a filed easy or flat tray with no
+    reaches reads as not filed: that day reads no, the safe direction.
     """
     day = pd.Series(test_date, index=rc.index).astype(str)
     subject = rc["subject_id"].astype(str)
@@ -441,7 +447,9 @@ def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
     complete = {k: bool(trays_) and trays_ <= filed for k, trays_ in expected.items()}
     pairs = list(zip(subject, day))
     from collections import Counter
-    per_day = Counter(pairs)
+    reach_mask = (pd.Series(True, index=rc.index) if is_reach is None
+                  else pd.Series(is_reach, index=rc.index).astype(bool))
+    per_day = Counter(k for k, r in zip(pairs, reach_mask) if r)
     counts = pd.Series([per_day[k] for k in pairs], index=rc.index)
     is_complete = pd.Series([complete.get(k, False) for k in pairs], index=rc.index)
     total = counts.where(is_complete).astype("Int64")
@@ -557,14 +565,130 @@ def day_outcome_totals(rc: pd.DataFrame, test_date: pd.Series, per_video: pd.Dat
     return out
 
 
+# The attribute of build_cohort's frame naming the videos whose ONE row is a
+# session-only row (session_only_rows): a filed tray at which the animal never
+# reached. write_cohort takes those rows out of every per-reach document and
+# keeps them for the sessions document.
+SESSION_ONLY_ATTR = "session_only_videos"
+
+
+def session_only_rows(cohort_id: str, rc: pd.DataFrame,
+                      video_sessions: Optional[pd.DataFrame],
+                      video_pellets: Optional[pd.DataFrame],
+                      pellets: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """One row per filed tray of the cohort that has NO reach row: the session.
+
+    WHY (owner, 2026-11-24: "No reaches means no REACH rows. Session rows should
+    still exist in the session files."). The sessions document was built from
+    the reach rows, so a tray at which the animal never reached -- often THE
+    result after an injury -- was missing from it, and its session-level
+    measurements with it. Such a tray still has everything a session row
+    carries that does not come from reaches: the animal, the date and tray, the
+    hand scores, the pellets the pipeline cut and their outcomes (all untouched,
+    usually), the attention score, the session flag, the day it belongs to.
+
+    WHERE THEY COME FROM: the video_sessions table (one row per imported
+    results file, every tray type), and, for a pillar tray imported before that
+    table existed, its rows in video_pellets (attention then unknown).
+
+    The row carries the reach table's columns with every reach field empty, so
+    the same code computes its animal, session and day columns as for any other
+    tray. Its phase label is its cohort date's, exactly as the reach import's
+    re-labelling gives every reach row (mousedb.backfill): the label of the
+    cohort's reach rows on that date, else of the cohort's hand scores on that
+    date, else 'Unscheduled'.
+    """
+    have = set(rc["video_name"].astype(str)) if "video_name" in rc.columns else set()
+    rows: Dict[str, dict] = {}
+    flag_cols = ("session_flag", "session_flag_reason", "session_flag_by", "session_flag_at")
+    if video_sessions is not None and not video_sessions.empty:
+        vs = video_sessions[video_sessions["subject_id"].astype(str).str.startswith(cohort_id + "_")]
+        for r in vs.to_dict("records"):
+            v = str(r["video_name"])
+            if v in have:
+                continue
+            row = {"subject_id": r["subject_id"], "video_name": v,
+                   "session_date": r.get("session_date"), "tray_type": r.get("tray_type"),
+                   "run_number": r.get("run_number"), "attention_score": r.get("attention_score"),
+                   "extractor_version": r.get("extractor_version"),
+                   "source_file": r.get("source_file")}
+            row.update({c: r.get(c) for c in flag_cols})
+            rows[v] = row
+    # An older per-pellet table without the animal, date and tray columns
+    # cannot say which tray a video is, so it adds no session row.
+    vp_need = {"video_name", "subject_id", "session_date", "tray_type", "run_number"}
+    if (video_pellets is not None and not video_pellets.empty
+            and vp_need <= set(video_pellets.columns)):
+        vp = video_pellets[video_pellets["subject_id"].astype(str).str.startswith(cohort_id + "_")]
+        for v, g in vp.groupby("video_name"):
+            v = str(v)
+            if v in have or v in rows:
+                continue
+            r = g.iloc[0]
+            rows[v] = {"subject_id": r["subject_id"], "video_name": v,
+                       "session_date": r.get("session_date"), "tray_type": r.get("tray_type"),
+                       "run_number": r.get("run_number"), "attention_score": None,
+                       "source_file": r.get("source_file")}
+    if not rows:
+        return pd.DataFrame(columns=list(rc.columns))
+    out = pd.DataFrame(list(rows.values()))
+    out["session_date"] = pd.to_datetime(out["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    if "extended_features" in rc.columns:
+        out["extended_features"] = "{}"
+
+    # The phase label of each cohort date (see the docstring).
+    if "test_phase" in rc.columns or "phase_group" in rc.columns:
+        label: Dict[str, tuple] = {}
+        if pellets is not None and not pellets.empty and "test_phase" in pellets.columns:
+            pc = pellets[pellets["subject_id"].astype(str).str.startswith(cohort_id + "_")]
+            pday = pd.to_datetime(pc["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            for d, tp, pg in zip(pday, pc["test_phase"],
+                                 pc["phase_group"] if "phase_group" in pc.columns
+                                 else [None] * len(pc)):
+                if isinstance(d, str) and not _blank(tp):
+                    label.setdefault(d, (tp, pg))
+        if len(rc):
+            rday = pd.to_datetime(rc["session_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+            for d, tp, pg in zip(rday, rc.get("test_phase", pd.Series([None] * len(rc))),
+                                 rc.get("phase_group", pd.Series([None] * len(rc)))):
+                if isinstance(d, str) and not _blank(tp):
+                    label[d] = (tp, pg)
+        from ..backfill import UNSCHEDULED
+        got = [label.get(d, (UNSCHEDULED, UNSCHEDULED)) for d in out["session_date"]]
+        out["test_phase"] = [g[0] for g in got]
+        out["phase_group"] = [g[1] for g in got]
+    for c in rc.columns:
+        if c not in out.columns:
+            out[c] = None
+    # Only the reach table's own columns: a column it lacks (an older snapshot)
+    # must not appear in the per-reach documents because of these rows.
+    return out[list(rc.columns)]
+
+
 def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
                  records: pd.DataFrame, pellets: pd.DataFrame,
                  facts: Callable[[str], Dict[str, str]], lab: str = "",
-                 video_pellets: Optional[pd.DataFrame] = None):
-    """(dataframe, dictionary rows) for one cohort; an empty frame when it has no reaches."""
+                 video_pellets: Optional[pd.DataFrame] = None,
+                 video_sessions: Optional[pd.DataFrame] = None):
+    """(dataframe, dictionary rows) for one cohort; an empty frame when it has no
+    reaches and no filed tray.
+
+    With ``video_sessions`` (or ``video_pellets``) the frame also holds ONE
+    session-only row for every filed tray with no reach (session_only_rows); its
+    videos are named in ``frame.attrs[SESSION_ONLY_ATTR]``, and only the
+    sessions document keeps those rows (write_cohort)."""
     rc = reach[reach["subject_id"].astype(str).str.startswith(cohort_id + "_")].copy()
+    only = (session_only_rows(cohort_id, rc, video_sessions, video_pellets, pellets)
+            if (video_sessions is not None or video_pellets is not None) else pd.DataFrame())
+    session_only = sorted(set(only["video_name"].astype(str))) if len(only) else []
+    if session_only:
+        # Columns the session-only rows have no value in are left to the concat
+        # to fill, so they cannot decide a column's type.
+        only = only.dropna(axis=1, how="all")
+        rc = pd.concat([rc, only], ignore_index=True, sort=False)
     if rc.empty:
         return rc, []
+    is_reach = ~rc["video_name"].astype(str).isin(set(session_only))
 
     # 3. tracking-sheet columns, pivoted wide per animal, in tab order then sheet order
     sheet_cols: List[tuple] = []
@@ -641,16 +765,23 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     # 5. session totals: per video (pipeline) and per tray (hand scores), and
     # the animal's reaches over the whole testing day (day_reach_totals says why)
     video = rc["video_name"]
-    cols["Video_Reaches_AI"] = video.map(video.value_counts())
+    # A session-only row is not a reach: its tray's count is 0.
+    cols["Video_Reaches_AI"] = video.map(video[is_reach].value_counts()).fillna(0).astype("Int64")
     cols["Day_Total_Reaches_AI"], cols["Day_Total_Reaches_Complete"] = day_reach_totals(
-        rc, cols["Test_Date"], pellets, video_pellets)
-    seg = rc.groupby(["video_name", "segment_num"]).agg(o=("segment_outcome", "first"),
-                                                         att=("attention_score", "first")).reset_index()
+        rc, cols["Test_Date"], pellets, video_pellets, is_reach)
+    seg = rc[is_reach].groupby(["video_name", "segment_num"]).agg(
+        o=("segment_outcome", "first"), att=("attention_score", "first")).reset_index()
     per_video = seg.groupby("video_name").agg(
         att=("att", "mean"),
         disp=("o", lambda s: int(s.isin(DISPLACED).sum())),
         retr=("o", lambda s: int((s == "retrieved").sum())))
     cols["Attention_AI"] = video.map(per_video["att"])
+    if session_only:
+        # A tray with no reach: the session's attention as the import recorded
+        # it, the mean over every segment that has a score (import_reaches.
+        # session_row). Attention is scored from the pose, not from reaches.
+        only_att = pd.to_numeric(rc.loc[~is_reach, "attention_score"], errors="coerce")
+        cols["Attention_AI"] = cols["Attention_AI"].where(is_reach, only_att)
     # Pellet counts come from the per-pellet table when the video has rows there:
     # it holds EVERY pellet the pipeline cut the video into, so a pellet nobody
     # reached for is counted as presented, and a displaced or retrieved pellet
@@ -726,6 +857,9 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     out = pd.concat([cols[c].rename(c) for c in columns], axis=1)
     sort = [c for c in ("SubjectID", "Test_Date", "video_name", "segment_num", "reach_num") if c in out.columns]
     out = out.sort_values(sort, kind="stable")
+
+    if session_only:
+        out.attrs[SESSION_ONLY_ATTR] = session_only
 
     reach_rows = {r["VariableName"]: r for r in dd.REACH_DATA}
     rows = (dd.ODC_REACH_ANIMAL + dd.ODC_REACH_SESSION
@@ -902,6 +1036,13 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     """
     root = Path(out_dir)
     label = cohort_label(cohort_id)
+    # Session-only rows (build_cohort): one per filed tray with no reach. They
+    # belong in the sessions document only -- no reaches means no REACH rows --
+    # so every per-reach document is written from the reach rows alone.
+    session_only = set(df.attrs.get(SESSION_ONLY_ATTR) or ())
+    all_rows = df
+    if session_only:
+        df = df[~df["video_name"].astype(str).isin(session_only)]
     # Each cohort's documents live in its own folder inside its project's
     # (exporters.layout says why); out_dir is the top of the exports folder.
     out_dir = layout.cohort_dir(root, cohort_id, label)
@@ -950,6 +1091,11 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # complete record, whose columns follow each cohort's own tracking sheet. So
     # their dictionary is written once for all of them (see export), not thirteen
     # identical times under thirteen names.
+    # The per-reach analysis document is built from the REACH rows alone, exactly
+    # as before session-only rows existed: a session-only row must not change a
+    # single cell of it -- not even how a number is written (a column's numbers
+    # are formatted together, so one extra fractional value would turn every
+    # whole 4 into 4.0).
     analysis, analysis_rows = analysis_reaches.build(df)
     # Entries with an identified problem are left out of the analysis documents,
     # at the smallest scope that contains the problem (see export_exclusions). The
@@ -960,9 +1106,34 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
         analysis, exclusion_report = export_exclusions.apply(analysis, exclusions,
                                                              cohort_id=cohort_id)
         analysis = analysis_reaches.void_day_totals_after_exclusion(before, analysis)
+    # The sessions document: from the same rows PLUS the session-only rows (one
+    # per filed tray with no reach), through the same exclusion pass, so every
+    # filed tray that is not left out has its row. Its day totals are voided by
+    # the same rule; a day that lost a tray with no reach to an exclusion is voided
+    # in the reach document too (it is no longer the whole day there either).
+    session_frame = analysis
+    if session_only:
+        session_frame, _rows = analysis_reaches.build(all_rows)
+        if exclusions is not None:
+            import copy
+            # A second pass over the same rules: its notes and cohort-wide
+            # decisions stay out of the first pass's record (no duplicates).
+            ex2 = copy.copy(exclusions)
+            ex2.notes = []
+            ex2.blank_cohort_fields = dict(exclusions.blank_cohort_fields)
+            before_all = session_frame
+            session_frame, report_all = export_exclusions.apply(
+                session_frame, ex2, cohort_id=cohort_id, session_only=session_only)
+            exclusion_report += [r for r in report_all
+                                 if str(r.get("video_name")) in session_only]
+            lost = analysis_reaches.days_that_lost_a_tray(before_all, session_frame)
+            session_frame = analysis_reaches.void_day_totals_after_exclusion(
+                before_all, session_frame)
+            analysis = analysis_reaches.void_days(analysis, lost)
     # The sessions file is built from the analysis rows under their internal
     # names; both are published under the level-first names together below.
-    sessions, session_rows = analysis_sessions.build(analysis, analysis_rows)
+    kw = {"session_only": session_only} if session_only else {}
+    sessions, session_rows = analysis_sessions.build(session_frame, analysis_rows, **kw)
     (analysis, analysis_rows, sessions, session_rows,
      exclusion_report) = analysis_reaches.publish(analysis, analysis_rows, sessions,
                                                   session_rows, exclusion_report)
@@ -997,6 +1168,8 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     entry["analysis_columns"] = int(len(analysis.columns))
     entry["analysis_rows"] = int(len(analysis))          # after the exclusion pass
     entry["session_rows"] = int(len(sessions))
+    entry["session_rows_without_reaches"] = int(len(session_only & set(
+        sessions["video_name"].astype(str)))) if len(sessions) and "video_name" in sessions else 0
     entry["session_columns"] = int(len(sessions.columns)) if len(sessions) else 0
     entry["_analysis_dictionary"] = analysis_rows
     entry["_sessions_dictionary"] = session_rows
@@ -1077,7 +1250,7 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
                                   columns=[c for c in names if c != "id"])}
     for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records"),
-                      ("video_pellets", "video_pellets")):
+                      ("video_pellets", "video_pellets"), ("video_sessions", "video_sessions")):
         f = snapshot_dir / ("%s.parquet" % name)
         t[key] = pd.read_parquet(f) if f.exists() else None
     # The day's body weight rides on the reach rows from here on, so every
@@ -1340,7 +1513,8 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             else:
                 df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
                                         study_facts.facts, lab_name(),
-                                        video_pellets=t.get("video_pellets"))
+                                        video_pellets=t.get("video_pellets"),
+                                        video_sessions=t.get("video_sessions"))
                 if df.empty:
                     manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
                     built_empty.add(cid)
