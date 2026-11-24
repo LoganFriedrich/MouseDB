@@ -22,7 +22,7 @@ each with a data dictionary beside it:
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
-| `sessions_<cohort>_analysis.csv` | session = one tray (one video) of one animal, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator. **Every filed tray that is not left out has a row -- also a tray at which the animal never reached** (it has no rows in the per-reach files: no reaches means no reach rows). Such a row reads 0 reaches, 0 pellets reached for, and every other column filled exactly as on any tray: hand scores, pellets the pipeline cut and their outcomes (0 percent retrieved when all were untouched), attention (the mean over every segment of the video, since it is scored from the pose and not from reaches), session flag, day totals. No column of this file is defined only from reaches, so none is blank because a tray had no reach; each column's dictionary row says what it holds on such a row | `sessions_analysis_DATA_DICTIONARY.csv` |
+| `sessions_<cohort>_analysis.csv` | session = one tray (one video) of one animal, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator. **Every filed tray that is not left out has a row -- also a tray at which the animal never reached** (it has no rows in the per-reach files: no reaches means no reach rows). Such a row reads 0 reaches, 0 pellets reached for, and every other column filled exactly as on any tray: hand scores, pellets the pipeline cut and their outcomes (0 percent retrieved when all were untouched), attention (the mean over every segment of the video, since it is scored from the pose and not from reaches), session flag, day totals. Only the columns computed FROM reaches (latency to the first reach, gap between reaches, first-attempt success, and every per-session kinematics summary) read `NA` on such a row; each column's dictionary row says what it holds there. Since 2026-11-24 the file also carries the session measurements described under "Session measurements" below | `sessions_analysis_DATA_DICTIONARY.csv` |
 | `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot (`snapshot_generation`), row counts, any problems, notes that need no action, and whether the per-reach files were kept from an earlier run because nothing they are built from changed (`odc_reaches_skipped`) |
 | `README.txt` | -- | the same explanation as this table |
@@ -357,6 +357,47 @@ only** (owner decision, 2026-11-19): nothing in the exports leaves out, blanks
 or treats a flagged row differently; it is recorded so that flagged sessions can
 be found later. A flag added or changed on a filed video changes its features
 file, so the next nightly import and export pick it up.
+
+### Session measurements in the sessions file (added 2026-11-24)
+
+`sessions_<cohort>_analysis.csv` carries, beside the pellet counts, these
+columns. They are worked out once, in the export itself, from the same rows as
+the rest of the file; the per-reach files do not carry them. Absent values read
+`NA`, never an empty cell. Each column's dictionary row repeats its definition.
+
+| column(s) | what it is |
+|---|---|
+| `day_body_weight_g`, `day_body_weight_percent_of_free_feeding` | the animal's weight on the day (the value every reach row of that day carries; also on a tray with no reach) |
+| `day_pillar_reaches_ai` | the animal's reaches on that day over all its pillar trays (an earlier program's "Total Swipes"); `NA` on an easy or flat tray's row |
+| `session_duration_sec` | the video's length: total frames / frame rate from the results file |
+| `session_reaches_per_minute` | `session_reaches_ai` / (length / 60); 0 on a tray with no reach |
+| `session_median_latency_to_first_reach_sec` | median over the pellets that got a reach of the time from the pellet's first frame to its first reach |
+| `session_mean_inter_reach_interval_sec` | mean over every gap (end of a reach to start of the next) between consecutive reaches at the same pellet |
+| `session_percent_retrieved_of_contacted_ai` / `_hand` | success given contact: retrieved / (retrieved + displaced) x 100; `NA` when nothing was contacted |
+| `session_first_attempt_retrieved_ai`, `session_percent_first_attempt_success_ai` | pellets retrieved by the first reach made at them, as a count and as a percentage of the pellets reached for |
+| `session_median_<m>`, `session_mean_<m>`, `session_sem_<m>`, `session_n_<m>` | for EVERY per-reach kinematic measure `<m>` of the reach file (its `reach_...` measurements, without frame numbers and tracking-confidence columns): the session median, mean, standard error of the mean (sample SD / square root of n; `NA` when n < 2) and n, the reaches with a value. Every reach of the session counts, also one made after its pellet was gone; the session's total number of reaches is `session_reaches_ai` |
+| `session_displaced_in_scoring_area_ai`, `session_displaced_outside_ai` | the algorithm's displaced pellets split by where they went (they add up to `session_displaced_ai`) |
+| `session_moved_not_by_reach_ai` | pellets a person saw moved by something other than a reach (counted in `session_untouched_ai` too) |
+| `session_mean_pellet_position_idealness` | mean over the tray's pellets of how well each sat relative to the slit (0-1) |
+| `day_recording_status`, `day_recording_issue_reason` | whether a recording of one of the animal's trays that day failed (see "A recording that failed"); `NA` only when the snapshot has no record of failed recordings at all |
+
+**On a tray with no reach** the latency, the gap between reaches, both
+first-attempt columns and every kinematics column (n included) read `NA`
+(there is no reach to measure); `session_reaches_ai` reads 0 and everything
+else is filled. **On an easy or flat tray** every algorithm pellet measure
+(latency, gap, first-attempt, success given contact from the algorithm,
+displaced split, moved not by a reach, placement, day pillar reaches) reads
+`NA`, as the algorithm's pellet counts do; the hand-scored success given
+contact, length, reaches per minute, weight, recording status and the
+kinematics are filled.
+
+**Where the timing comes from.** The video's length and each pellet's latency,
+gap and placement are in the pipeline's results file. The nightly reach import
+copies them into the database (`video_sessions.total_frames`, `frame_rate`;
+`video_pellets.time_to_first_reach_sec`, `mean_inter_reach_interval_sec`,
+`pellet_position_idealness`); a database from before 2026-11-24 gains these
+columns on its next import, and `mousedb import-reaches --pellets-only` fills
+them for videos already imported. Until then those columns read `NA`.
 
 ### Swipe measures and reach counts: which column is which (changed 2026-11-17)
 
@@ -2264,7 +2305,11 @@ stay in `manual_scores.csv` and in the session files like any other.
   recording's name). The per-reach files (`ODC_reaches`, `reaches_*_analysis`,
   `sessions_*_analysis`, `reach_data.csv`) have NO rows for a failed recording,
   because no reach was ever measured in it: the session row is where the
-  reason is written. The data dictionary says the same.
+  reason is written. The data dictionary says the same. Since 2026-11-24
+  every row of `sessions_*_analysis` also carries `day_recording_status` and
+  `day_recording_issue_reason` for its animal-day, read from the same table
+  (the snapshot copies it), so a tray missing from a day can be explained
+  without opening `ODC_days`.
 
 **Acknowledging it.** Once a person has seen it, acknowledge it once with the
 same command as a missing video (see "Acknowledging: what can be, how, and how

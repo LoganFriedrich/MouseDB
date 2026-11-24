@@ -6,6 +6,25 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- **Session measurements in the sessions file** (owner-approved 2026-11-24;
+  `exporters/session_metrics.py`). `sessions_<cohort>_analysis.csv` now also
+  carries: the day's body weight (g, % of free feeding; also on a tray with no
+  reach), the day's pillar reaches, the session length, reaches per minute,
+  median latency to the first reach, mean interval between reaches, success
+  given contact (algorithm and hand), first-attempt success (count and %),
+  for EVERY per-reach kinematic measure the session median, mean, standard
+  error of the mean and n, the displaced split (stayed in the scoring area /
+  out of it), pellets moved by something other than a reach, mean pellet
+  placement, and the day's recording status and reason. One dictionary row
+  per column. Reach-derived columns are NA on a tray with no reach; the
+  algorithm's pellet measures are NA on easy and flat trays. Computed in the
+  export (`write_cohort`); the per-reach files are unchanged. The reach import
+  records the inputs it lacked (`video_sessions.total_frames`, `frame_rate`;
+  `video_pellets.time_to_first_reach_sec`, `mean_inter_reach_interval_sec`,
+  `pellet_position_idealness`; an existing database gains the columns on its
+  next import, `--pellets-only` fills them); the snapshot carries
+  `session_recording_status`; the export fingerprint covers weights and
+  recording status.
 - **Every filed tray has a session row, also one at which the animal never
   reached** (owner, 2026-11-24: "No reaches means no REACH rows. Session rows
   should still exist in the session files."). The reach import now records
