@@ -263,8 +263,8 @@ NO_REACH_RULES = {
     "reaches_after_the_pellet_was_gone": "0 on a pillar tray (NA on an easy or flat tray, as on any).",
     "attention_ai": ("the session's attention score, which is scored from the pose and "
                      "not from reaches: the mean over every segment of the video that has "
-                     "a score (the whole session on an easy or flat tray). On a tray with "
-                     "reaches the mean is over the segments that have reaches."),
+                     "a score (the whole session on an easy or flat tray), exactly as on "
+                     "a tray with reaches."),
 }
 NO_REACH_DEFAULT = ("filled exactly as on any other tray: it does not depend on "
                     "reaches.")

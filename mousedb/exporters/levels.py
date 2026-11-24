@@ -156,6 +156,8 @@ COMPLETE: Dict[str, str] = {
     "is_last_reach": "reach_is_last_in_segment",
     "flagged_for_review": "reach_flagged_for_review",
     "flag_reason": "reach_flag_reason",
+    # A segment's value, repeated on each of its reaches (not a per-reach one).
+    "attention_score": "segment_attention",
 }
 
 LEVEL_PREFIXES = ("reach_", "segment_", "session_", "day_")
@@ -234,7 +236,7 @@ ANALYSIS: Dict[str, str] = {
     "is_first_reach_at_pellet": "reach_is_first_in_segment",
     "is_last_reach_at_pellet": "reach_is_last_in_segment",
     "pellet_position_idealness": "segment_pellet_position_idealness",
-    "attention_at_this_reach": "reach_attention",
+    "attention_at_this_reach": "segment_attention",
     "day_total_reaches": "day_reaches_ai",
     "day_total_reaches_complete": "day_complete",
     "attention_ai": "session_attention_ai",
@@ -258,6 +260,8 @@ for _o, _p in (("retrieved", "retrieved"), ("displaced", "displaced"),
     ANALYSIS["percent_%s_hand_scored" % _o] = "session_percent_%s_hand" % _p
 
 RENAMED_ON = "2026-11-19"
+# A column renamed later than RENAMED_ON, with the date its new name began.
+RENAMED_LATER = {"attention_score": "2026-11-24"}
 
 
 def publish(frame: pd.DataFrame, rows: List[dict],
@@ -282,7 +286,7 @@ def publish(frame: pd.DataFrame, rows: List[dict],
             row = dict(row)
             row["VariableName"] = present[name]
             note = ("Named %s in files written before %s (same values unless this "
-                    "entry says otherwise)." % (name, RENAMED_ON))
+                    "entry says otherwise)." % (name, RENAMED_LATER.get(name, RENAMED_ON)))
             row["Comments"] = (str(row.get("Comments", "")) + " " + note).strip()
         out.append(row)
     return frame, out

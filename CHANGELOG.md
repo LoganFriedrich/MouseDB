@@ -31,6 +31,20 @@ checked-in code, not what's planned.
   decision D5-10). The export fingerprint covers it.
 
 ### Changed
+
+- **Attention is a segment value; the session's attention is the mean over
+  every segment** (owner decision 2026-11-24: a per-reach attention means
+  nothing, because a reaching animal is attending). `session_attention_ai`
+  (complete record `Attention_AI`) is now the mean of the per-segment
+  attention over EVERY segment of the tray -- a never-attended segment counts
+  0, segments with and without reaches alike -- on every tray, taken from the
+  `video_sessions` row the reach import records. Before, a tray with reaches
+  averaged only its reached segments. Only a snapshot without that table
+  falls back to the old mean. The per-reach column is renamed to say what it
+  is: `reach_attention` -> `segment_attention` in the analysis files, and
+  `attention_score` -> `segment_attention` in the complete record and
+  `reach_data.csv` (same values). Dictionary texts give the scale, percent
+  0-100.
 - **Every per-reach measurement is published as `reach_<name>`, and the
   animal-day file is `ODC_days_<cohort>.csv`** (owner's decisions,
   2026-11-19). Frames, kinematics, tracking confidence and the contact frame

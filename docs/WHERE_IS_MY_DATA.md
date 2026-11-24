@@ -300,7 +300,8 @@ day column is emptied for a day that lost a tray to a known problem.
 | analysis | `pellet_number`, `swipe_id` | `segment_number`, `reach_number` |
 | analysis | `pellet_outcome`, `pellet_state_at_this_reach` | `segment_outcome`, `reach_pellet_state` |
 | analysis | `reaches_at_this_pellet`, `is_first/last_reach_at_pellet`, `pellet_position_idealness` | `segment_reaches`, `reach_is_first/last_in_segment`, `segment_pellet_position_idealness` |
-| analysis | `attention_at_this_reach`, `attention_ai` | `reach_attention`, `session_attention_ai` |
+| analysis | `attention_at_this_reach`, `attention_ai` | `segment_attention` (named `reach_attention` 2026-11-19 to 2026-11-24), `session_attention_ai` |
+| complete record, `reach_data.csv` | `attention_score` | `segment_attention` (from 2026-11-24) |
 | analysis | `body_weight_g`, `body_weight_percent_of_free_feeding` | `day_body_weight_g`, `day_body_weight_percent_of_free_feeding` |
 | analysis | `pellets_in_video`, `video_displaced/retrieved/contacted` | `session_pellets_ai`, `session_displaced/retrieved/contacted_ai` |
 | analysis | `pellets_hand_scored`, `manual_displaced/retrieved/contacted` | `session_pellets_hand`, `session_displaced/retrieved/contacted_hand` |
@@ -312,6 +313,21 @@ day column is emptied for a day that lost a tray to a known problem.
 | shareable table | `mean_attention_score_in_session`, `reaches_in_video`, `day_total_reaches(_complete)` | `session_attention_ai`, `session_reaches_ai`, `day_reaches_ai`, `day_complete` |
 | shareable table | `pellets_in_video`, `pellets_retrieved/displaced/moved_in_session` | `session_pellets_ai`, `session_retrieved/displaced/contacted_ai` |
 | shareable table | `pellets_hand_scored`, `pellets_retrieved/displaced/moved_hand_scored` | `session_pellets_hand`, `session_retrieved/displaced/contacted_hand` |
+
+**Attention is a segment value** (owner decision 2026-11-24). The outcome
+detector scores attention once per pellet segment, from the pose: the percentage
+(0-100) of the segment's frames in which the animal was attending to the tray. A
+per-reach attention would mean nothing, because an animal that is reaching is
+attending. So the per-reach files carry it as `segment_attention`, the same value
+on every reach of a segment, and `session_attention_ai` is the mean over EVERY
+segment of the tray -- a segment the animal never attended counts 0, and segments
+with and without reaches count alike, on every tray. Until 2026-11-24 a tray with
+reaches averaged only its segments that had reaches, which scored a low-reaching
+animal on just the pellets it attended to. The session's mean is the one the reach
+import records per video (`video_sessions`); only a snapshot too old to have that
+table falls back to the mean over the reached segments. Scale: percent 0-100 (a
+dataset that gives attention as a 0-1 fraction must be multiplied by 100 to
+compare).
 
 Every renamed column's dictionary entry says what it was called before. The
 first nightly export after this change rewrites every file (a change to the

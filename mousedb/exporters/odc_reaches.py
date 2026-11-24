@@ -775,13 +775,26 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
         att=("att", "mean"),
         disp=("o", lambda s: int(s.isin(DISPLACED).sum())),
         retr=("o", lambda s: int((s == "retrieved").sum())))
-    cols["Attention_AI"] = video.map(per_video["att"])
+    # The session's attention is the mean over EVERY segment of the tray, a
+    # segment the animal never attended counting 0 -- the same on every tray,
+    # reached for or not (owner decision 2026-11-24). Attention is scored per
+    # segment from the pose, not from reaches; averaging only the segments that
+    # have a reach would score a low-reaching animal on just the pellets it
+    # attended to. The import records that mean per video (video_sessions,
+    # import_reaches.session_row). Only a video with no such row (an older
+    # snapshot) falls back to the mean over the segments its reach rows show.
+    att = video.map(per_video["att"])
     if session_only:
-        # A tray with no reach: the session's attention as the import recorded
-        # it, the mean over every segment that has a score (import_reaches.
-        # session_row). Attention is scored from the pose, not from reaches.
         only_att = pd.to_numeric(rc.loc[~is_reach, "attention_score"], errors="coerce")
-        cols["Attention_AI"] = cols["Attention_AI"].where(is_reach, only_att)
+        att = att.where(is_reach, only_att)
+    if (video_sessions is not None and not video_sessions.empty
+            and "attention_score" in video_sessions.columns):
+        scored = video_sessions.dropna(subset=["attention_score"])
+        whole = pd.Series(pd.to_numeric(scored["attention_score"], errors="coerce").values,
+                          index=scored["video_name"].astype(str))
+        whole = whole[~whole.index.duplicated(keep="last")]
+        att = video.astype(str).map(whole).combine_first(att)
+    cols["Attention_AI"] = att
     # Pellet counts come from the per-pellet table when the video has rows there:
     # it holds EVERY pellet the pipeline cut the video into, so a pellet nobody
     # reached for is counted as presented, and a displaced or retrieved pellet

@@ -218,13 +218,17 @@ _WHOLE_REACH_ROWS = {
         "which is the threshold this pipeline treats as unreliable everywhere "
         "else. A reach with several is one whose measurements are softer."),
     "attention_at_this_reach": (
-        "Attention to the tray during this reach", "number", "percent",
-        "The percentage of this reach's frames in which the animal was attending "
-        "to the tray -- its nose confidently tracked and positioned at the tray "
-        "rather than elsewhere. The file also carries attention_ai, which is the "
-        "mean of this across the session; a reach made while the animal was not "
-        "attending is a different event from one made while it was, and only "
-        "this per-reach value can tell them apart."),
+        "Attention to the tray during this reach's pellet segment", "number", "percent",
+        "The attention score of the pellet segment this reach belongs to: the "
+        "percentage of that segment's frames in which the animal was attending to "
+        "the tray -- its nose confidently tracked and positioned at the tray rather "
+        "than elsewhere. It is a SEGMENT value, the same on every reach of the "
+        "segment: an attention score per reach would mean nothing, because an "
+        "animal that is reaching is paying attention. It is scored from the pose "
+        "for every segment, reached for or not, and a segment in which the animal "
+        "never attended scores 0. session_attention_ai is the mean of it over every "
+        "segment of the session. Named reach_attention in files written between "
+        "2026-11-19 and 2026-11-24 (same values)."),
     "interaction_frame": (
         "Frame the paw met the pellet", "integer", "",
         "The video frame at which the paw was judged to have reached the pellet, "

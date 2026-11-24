@@ -218,8 +218,46 @@ def test_an_easy_tray_with_no_reach_has_its_attention_and_completes_the_day(tmp_
     assert set(sessions["day_reaches_ai"]) == {"2"}
     reaches = read("reaches_PROJA_01_analysis.csv")
     assert set(reaches["day_reaches_ai"]) == {"2"} and set(reaches["day_complete"]) == {"yes"}
-    # the reached tray keeps its own attention definition (segments with reaches)
+    # the reached tray too: the mean over every segment (video_sessions), not
+    # over its reached segments (owner decision 2026-11-24)
+    assert float(sessions.loc[REACHED, "session_attention_ai"]) == 3.0
+
+
+def test_a_tray_with_reaches_gets_the_all_segment_mean_on_every_file(tmp_path):
+    # The reached segments score 4.0; the tray's 20 segments average 3.0. Every
+    # file shows the tray's mean, never the reached-segment mean.
+    _, read = _written(tmp_path)
+    reaches = read("reaches_PROJA_01_analysis.csv")
+    assert {float(v) for v in reaches["session_attention_ai"]} == {3.0}
+    sessions = read("sessions_PROJA_01_analysis.csv").set_index("video_name")
+    assert float(sessions.loc[REACHED, "session_attention_ai"]) == 3.0
+    odc = read("ODC_reaches_PROJA_01.csv")
+    col = [c for c in odc.columns if c.lower() == "session_attention_ai"]
+    assert col and {float(v) for v in odc[col[0]]} == {3.0}
+
+
+def test_without_the_session_table_a_reached_tray_falls_back_to_its_reached_segments(tmp_path):
+    _, read = _written(tmp_path, vs=False)
+    sessions = read("sessions_PROJA_01_analysis.csv").set_index("video_name")
     assert float(sessions.loc[REACHED, "session_attention_ai"]) == 4.0
+
+
+def test_the_segment_attention_is_published_as_segment_attention(tmp_path):
+    entry, read = _written(tmp_path)
+    for name in ("reaches_PROJA_01_analysis.csv", "ODC_reaches_PROJA_01.csv"):
+        f = read(name)
+        lower = {c.lower(): c for c in f.columns}
+        assert "segment_attention" in lower, name
+        assert {float(v) for v in f[lower["segment_attention"]]} == {4.0}, name
+        assert "reach_attention" not in lower and "attention_score" not in lower, name
+    texts = {}
+    for key in ("_analysis_dictionary", "_complete_dictionary"):
+        for r in entry[key]:
+            if str(r.get("VariableName", "")).lower() == "segment_attention":
+                texts[key] = " ".join(str(v) for v in r.values())
+    assert set(texts) == {"_analysis_dictionary", "_complete_dictionary"}
+    for name, t in texts.items():
+        assert "SEGMENT value" in t, name
 
 
 def test_without_the_session_table_an_easy_tray_with_no_reach_leaves_the_day_incomplete(tmp_path):
