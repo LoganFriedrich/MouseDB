@@ -30,14 +30,25 @@ the attention score, the session flag, the day totals. The exporter gives such
 a tray one session-only row (odc_reaches.session_only_rows) that never reaches
 the per-reach file; ``session_only`` names those videos here.
 
-Which columns are filled on such a row and which would be blank: every column
-of this file is FILLED. No column here is defined only from reaches -- the
-per-reach measurements (speeds, distances, kinematics) live in the per-reach
-file only, and a tray with no reach has no rows there. The counts of reaches
-are 0, not blank: "0 pellets reached for" is the answer. As on any tray, an
-Easy or Flat tray's pellet and outcome counts are NA (trays.py says why). Each
-column's dictionary row says what it holds on a tray with no reach
-(NO_REACH_RULES).
+Which columns are filled on such a row and which are NA: every column is
+FILLED except those computed FROM reaches (session_metrics, 2026-11-24: the
+latency to the first reach, the gap between reaches, first-attempt success and
+every per-session kinematics summary), which are NA -- there is no reach to
+measure. The counts of reaches are 0, not blank: "0 pellets reached for" is
+the answer. As on any tray, an Easy or Flat tray's pellet and outcome counts
+are NA (trays.py says why). Each column's dictionary row says what it holds on
+a tray with no reach (NO_REACH_RULES, session_metrics.NO_REACH_RULES).
+
+THE SESSION MEASUREMENTS (2026-11-24, session_metrics)
+-------------------------------------------------------
+The sessions document written by the export (``metrics=True``) also carries
+the day's body weight, the day's pillar reaches, the session's length and
+timing, success given contact, first-attempt success, the median, mean,
+standard error and n of every per-reach kinematic measure, the displaced
+split, the pellets moved by something other than a reach, pellet placement and
+the day's recording status. session_metrics says what each is and why. The
+per-reach file's own call (analysis_reaches carries the session totals onto
+every reach) leaves ``metrics`` off, so none of them reach the per-reach file.
 
 THE FORMAT IS THE REACH FILE'S
 ------------------------------
@@ -69,7 +80,11 @@ PER_SESSION: List[str] = [
     "pellets_in_video", "video_displaced", "video_retrieved", "video_contacted",
     "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",
     "session_untouched_ai", "session_untouched_hand",
-] + [c.lower() for c in ar.DAY_OUTCOME_SOURCES]
+] + [c.lower() for c in ar.DAY_OUTCOME_SOURCES] + [
+    # The day's body weight (2026-11-24): the same value every reach row of the
+    # day carries, so a session-level analysis need not join the reach file for
+    # the animal's food-restriction state on the day.
+    "body_weight_g", "body_weight_percent_of_free_feeding"]
 
 # What one session is identified by. The video is the session's recording, so it
 # identifies it exactly; subject is carried too so a group is readable on its own.
@@ -108,8 +123,14 @@ def _value(group: pd.DataFrame, column: str):
 
 def build(reaches: pd.DataFrame,
           reach_dictionary: List[dict] = None,
-          session_only=()) -> Tuple[pd.DataFrame, List[dict]]:
+          session_only=(), metrics: bool = False,
+          sources: dict = None) -> Tuple[pd.DataFrame, List[dict]]:
     """(frame, dictionary rows) from the analysis-ready per-reach frame.
+
+    ``metrics`` adds the session measurements (session_metrics); ``sources`` is
+    session_metrics.prepare()'s result for the cohort (video lengths, pellet
+    timing and outcomes, recording status). Without ``sources`` the columns
+    they feed are NA; the ones computed from the reach rows are still filled.
 
     ``reach_dictionary`` is that file's own rows. Passed in rather than
     rebuilt, so a column carried through from the reaches is described
@@ -127,6 +148,12 @@ def build(reaches: pd.DataFrame,
         if column in work.columns:
             work[column] = pd.to_numeric(
                 work[column].replace(ar.MISSING, None), errors="coerce")
+
+    if metrics:
+        from . import session_metrics as sm
+        sources = sources or {}
+        day_pillar = sm.day_pillar_reach_counts(work, session_only)
+        measures = sm.kinematic_measures(work.columns)
 
     rows: List[Dict] = []
     for _keys, group in work.groupby(KEYS, dropna=False, sort=True):
@@ -177,16 +204,34 @@ def build(reaches: pd.DataFrame,
                                    ("contacted", contacted), ("missed", missed)):
                 row["percent_%s_%s" % (outcome, stream)] = _rate(count, PELLETS_PER_TRAY)
 
+        if metrics:
+            row.update(sm.for_session(group, row, no_reach,
+                                      bool(trays.outcome_free(group).iloc[0]),
+                                      sources, day_pillar))
         rows.append(row)
 
     out = pd.DataFrame(rows)
     if out.empty:
         return out, []
 
+    if metrics:
+        # The kinematics summaries are computed for all sessions at once (there
+        # are hundreds of measures) and joined by video; a tray with no reach
+        # has no reach rows, so it gets no values: NA.
+        kin = sm.kinematics(work, measures, session_only)
+        names = [sm.kinematic_column(s, pub) for _m, pub in measures for s in sm.STATS]
+        if len(kin):
+            kin = kin.reindex(out["video_name"].astype(str))
+            kin.index = out.index
+            out = pd.concat([out, kin[names]], axis=1)
+        else:
+            out = pd.concat([out, pd.DataFrame(index=out.index, columns=names)], axis=1)
+
     out.insert(0, ar.ROW_NUMBER, range(1, len(out) + 1))
 
+    text = TEXT_COLUMNS | (set(sm.TEXT) if metrics else set())
     for name in out.columns:
-        if name in TEXT_COLUMNS:
+        if name in text:
             out[name] = out[name].map(
                 lambda v: ar.MISSING if ar._blank(v) else str(v).strip())
         else:
@@ -196,7 +241,14 @@ def build(reaches: pd.DataFrame,
             # a count of 13 must not read "13" there and "13.0" here.
             out[name] = numbers.map(ar.write_number)
 
-    return out, _dictionary_rows(list(out.columns), reach_dictionary or [])
+    extra_rows, kin_columns = [], set()
+    if metrics:
+        by_name = {r.get("VariableName"): r for r in (reach_dictionary or [])}
+        kin_rows = sm.kinematic_dictionary_rows(dd._row, measures, by_name)
+        kin_columns = {r["VariableName"] for r in kin_rows}
+        extra_rows = sm.dictionary_rows(dd._row) + kin_rows
+    return out, _dictionary_rows(list(out.columns), reach_dictionary or [],
+                                 extra_rows, kin_columns, text)
 
 
 _DERIVED = {
@@ -270,13 +322,24 @@ NO_REACH_DEFAULT = ("filled exactly as on any other tray: it does not depend on 
                     "reaches.")
 
 
-def _dictionary_rows(columns: List[str], reach_dictionary: List[dict]) -> List[dict]:
-    """Reuse the reach file's entry for any column that came from it."""
+def _dictionary_rows(columns: List[str], reach_dictionary: List[dict],
+                     extra_rows: List[dict] = (), kin_columns=(),
+                     text_columns=None) -> List[dict]:
+    """Reuse the reach file's entry for any column that came from it.
+    ``extra_rows``: session_metrics' rows (their own definitions)."""
+    from . import session_metrics as sm
     inherited = {r["VariableName"]: r for r in (reach_dictionary or [])}
+    own = {r["VariableName"]: r for r in (extra_rows or ())}
+    text_columns = TEXT_COLUMNS if text_columns is None else text_columns
+    no_reach_rules = dict(NO_REACH_RULES)
+    no_reach_rules.update(sm.NO_REACH_RULES)
+    no_reach_rules.update({c: sm.NO_REACH_KINEMATICS for c in kin_columns})
 
     rows = []
     for name in columns:
-        if name in _DERIVED:
+        if name in own:
+            row = dict(own[name])
+        elif name in _DERIVED:
             title, dtype, description = _DERIVED[name]
             row = dd._row(name, title, description, "", dtype)
         elif name in inherited:
@@ -286,10 +349,10 @@ def _dictionary_rows(columns: List[str], reach_dictionary: List[dict]) -> List[d
                           "Carried from the per-reach file.")
         row["VariableName"] = name
         note = ("Absent values are written as NA, so the column loads as numbers."
-                if name not in TEXT_COLUMNS else "Absent values are written as NA.")
+                if name not in text_columns else "Absent values are written as NA.")
         if name != ar.ROW_NUMBER:
             note += (" On the row of a tray with no reach (every filed tray has a row): "
-                     + NO_REACH_RULES.get(name, NO_REACH_DEFAULT))
+                     + no_reach_rules.get(name, NO_REACH_DEFAULT))
         row["Comments"] = (str(row.get("Comments", "")) + " " + note).strip()
         rows.append(row)
     return rows

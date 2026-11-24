@@ -669,9 +669,15 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
                  records: pd.DataFrame, pellets: pd.DataFrame,
                  facts: Callable[[str], Dict[str, str]], lab: str = "",
                  video_pellets: Optional[pd.DataFrame] = None,
-                 video_sessions: Optional[pd.DataFrame] = None):
+                 video_sessions: Optional[pd.DataFrame] = None,
+                 weights: Optional[pd.DataFrame] = None):
     """(dataframe, dictionary rows) for one cohort; an empty frame when it has no
     reaches and no filed tray.
+
+    ``weights`` (session_weights): the day's body weight is put on each
+    session-only row too. The reach rows got theirs in load_snapshot; a tray
+    with no reach is not a reach row, and without this its session row read NA
+    for a weight the sheet records (2026-11-24).
 
     With ``video_sessions`` (or ``video_pellets``) the frame also holds ONE
     session-only row for every filed tray with no reach (session_only_rows); its
@@ -681,6 +687,12 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     only = (session_only_rows(cohort_id, rc, video_sessions, video_pellets, pellets)
             if (video_sessions is not None or video_pellets is not None) else pd.DataFrame())
     session_only = sorted(set(only["video_name"].astype(str))) if len(only) else []
+    if session_only and weights is not None and not weights.empty:
+        cols_before = list(only.columns)
+        only = attach_weights(only.drop(columns=["Session_Weight_g", "Session_Weight_Pct"],
+                                        errors="ignore"), weights)
+        only = only[[c for c in cols_before if c in only.columns]
+                    + [c for c in only.columns if c not in cols_before]]
     if session_only:
         # Columns the session-only rows have no value in are left to the concat
         # to fill, so they cannot decide a column's type.
@@ -1027,7 +1039,8 @@ def _merge_dictionary(order: List[str], merged: Dict[str, dict], rows: List[dict
 
 
 def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dict],
-                 exclusions=None, analysis_only: bool = False) -> dict:
+                 exclusions=None, analysis_only: bool = False,
+                 session_sources: Optional[dict] = None) -> dict:
     """Write the documents for one cohort. Their data dictionaries are NOT written
     here: every cohort's document of a kind shares one dictionary, which export()
     assembles from the rows this returns (``_complete_dictionary`` and friends).
@@ -1146,7 +1159,13 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # The sessions file is built from the analysis rows under their internal
     # names; both are published under the level-first names together below.
     kw = {"session_only": session_only} if session_only else {}
-    sessions, session_rows = analysis_sessions.build(session_frame, analysis_rows, **kw)
+    # The session measurements (session_metrics) are computed HERE, in the main
+    # export, from the same rows -- never in a file derived from this one.
+    # ``session_sources`` (session_metrics.prepare) brings what the reach rows do
+    # not carry: video length, per-pellet timing and outcomes, recording status.
+    sessions, session_rows = analysis_sessions.build(session_frame, analysis_rows,
+                                                     metrics=True,
+                                                     sources=session_sources, **kw)
     (analysis, analysis_rows, sessions, session_rows,
      exclusion_report) = analysis_reaches.publish(analysis, analysis_rows, sessions,
                                                   session_rows, exclusion_report)
@@ -1263,12 +1282,15 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
                                   columns=[c for c in names if c != "id"])}
     for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records"),
-                      ("video_pellets", "video_pellets"), ("video_sessions", "video_sessions")):
+                      ("video_pellets", "video_pellets"), ("video_sessions", "video_sessions"),
+                      ("recording_status", "session_recording_status")):
         f = snapshot_dir / ("%s.parquet" % name)
         t[key] = pd.read_parquet(f) if f.exists() else None
     # The day's body weight rides on the reach rows from here on, so every
     # document built from them carries it and none can be the one that forgot.
-    t["reach"] = attach_weights(t["reach"], session_weights(snapshot_dir))
+    # Kept too for the session-only rows (build_cohort), which are not reach rows.
+    t["weights"] = session_weights(snapshot_dir)
+    t["reach"] = attach_weights(t["reach"], t["weights"])
     return t
 
 
@@ -1527,14 +1549,20 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                 df, rows = build_cohort(cid, t["reach"], t["subjects"], t["records"], t["pellets"],
                                         study_facts.facts, lab_name(),
                                         video_pellets=t.get("video_pellets"),
-                                        video_sessions=t.get("video_sessions"))
+                                        video_sessions=t.get("video_sessions"),
+                                        weights=t.get("weights"))
                 if df.empty:
                     manifest["files"][name("ODC_reaches")] = {"rows": 0, "note": "no reaches"}
                     built_empty.add(cid)
                     continue
                 notes_before = len(exclusions.notes)
+                from . import session_metrics
+                sources = session_metrics.prepare(cid, t.get("video_sessions"),
+                                                  t.get("video_pellets"),
+                                                  t.get("recording_status"))
                 entry, label = write_cohort(write_dir, cid, df, rows, exclusions=exclusions,
-                                            analysis_only=analysis_only)
+                                            analysis_only=analysis_only,
+                                            session_sources=sources)
                 del df
                 # As it reads back from the ledger: a rebuilt cohort and a kept
                 # one then contribute exactly the same values (incremental.normalized).

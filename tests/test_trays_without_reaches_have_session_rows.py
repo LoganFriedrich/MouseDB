@@ -203,7 +203,8 @@ def test_a_pillar_tray_with_no_reach_has_every_session_number(tmp_path):
     assert "NA" not in set(s.drop(["days_post_injury", "session_flag_reason", "session_flag_by",
                                    "session_flag_at", "injury_type", "injury_level",
                                    "study_group", "strain", "survived_all_surgeries",
-                                   "excluded_in_origin_study"], errors="ignore"))
+                                   "excluded_in_origin_study"], errors="ignore")
+                      .drop(_reach_derived(s.index)))
 
 
 def test_an_easy_tray_with_no_reach_has_its_attention_and_completes_the_day(tmp_path):
@@ -321,3 +322,22 @@ def test_the_per_reach_files_are_byte_for_byte_what_they_were_without_session_ro
     assert texts[0].keys() == texts[1].keys() and len(texts[0]) == 3
     for name in texts[0]:
         assert texts[0][name] == texts[1][name], name
+
+
+def _reach_derived(columns):
+    """The session measurements computed FROM reaches (exporters.session_metrics):
+    NA on a tray with no reach by rule, and the inputs these test rows do not
+    carry (video length, recording status, weight)."""
+    from mousedb.exporters import session_metrics as sm
+    kin = [c for c in columns if c.startswith(("session_median_reach_", "session_mean_reach_",
+                                               "session_sem_reach_", "session_n_reach_"))]
+    absent_inputs = ["session_duration_sec", "session_reaches_per_minute",
+                     "day_recording_status", "day_recording_issue_reason",
+                     "day_body_weight_g", "day_body_weight_percent_of_free_feeding",
+                     "session_percent_retrieved_of_contacted_ai",
+                     "session_median_latency_to_first_reach_sec",
+                     "session_mean_inter_reach_interval_sec",
+                     "session_mean_pellet_position_idealness",
+                     "session_displaced_in_scoring_area_ai", "session_displaced_outside_ai",
+                     "session_moved_not_by_reach_ai"]
+    return [c for c in list(sm.FROM_REACHES) + kin + absent_inputs if c in columns]

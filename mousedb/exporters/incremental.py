@@ -112,7 +112,11 @@ LEDGER_FORMAT = 1
 
 # The parts of a cohort's fingerprint, in the order a reason is reported.
 PARTS = ("reaches", "animals", "hand_scores", "video_pellets", "video_sessions", "exclusions",
-         "study_facts", "running", "place", "settings")
+         "study_facts", "running", "place", "settings", "weights", "recording_status")
+# "weights" and "recording_status" (2026-11-24): the sessions file's day weight
+# (also on a tray with no reach, which no reach row carries) and its day
+# recording status come from these tables, so a change in either must rebuild
+# the cohort.
 
 
 # ----------------------------------------------------------------- hashing
@@ -246,6 +250,12 @@ def cohort_fingerprints(t: dict, cohorts: Iterable[str], exclusions, out_dir: Pa
             folder = "unknown: %s" % type(e).__name__
         parts["place"] = _h(_json([label, folder, cohort_source(cid)]))
         parts["settings"] = settings
+        for part, key in (("weights", "weights"), ("recording_status", "recording_status")):
+            tab = t.get(key)
+            if tab is not None and not tab.empty and "subject_id" in tab:
+                parts[part] = frame_hash(tab[_starts(tab["subject_id"], cid)])
+            else:
+                parts[part] = "absent" if tab is None else "empty"
         out[cid] = {"parts": parts,
                     "fingerprint": _h(_json([parts[p] for p in PARTS])),
                     "videos": {v: h.hexdigest()[:24] for v, h in videos.items()}}
