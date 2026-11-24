@@ -173,11 +173,29 @@ CREATE TABLE IF NOT EXISTS video_pellets (
     n_reaches          INTEGER,
     source_file        TEXT,
     imported_at        TEXT,
+    time_to_first_reach_sec        REAL,
+    mean_inter_reach_interval_sec  REAL,
+    pellet_position_idealness      REAL,
     PRIMARY KEY (video_name, segment_num)
 )"""
+# The pellet's timing and placement, copied from the results file's segment
+# (2026-11-24). WHY: the sessions export reports each tray's latency to the
+# first reach, the gap between reaches and how well the pellets were placed;
+# the results file has these per pellet, and until now nothing imported them,
+# so no export could report them. Added to an existing table by
+# ensure_video_tables (ALTER TABLE ... ADD COLUMN), so "never altered" above
+# now reads: altered only by adding a column, never by changing one.
+#   time_to_first_reach_sec        pellet's first frame -> start of its first reach
+#   mean_inter_reach_interval_sec  mean gap (end of a reach -> start of the next)
+#                                  over the pellet's consecutive reaches
+#   pellet_position_idealness      0-1, how well the pellet sat relative to the slit
+VIDEO_PELLET_TIMING_COLUMNS = [('time_to_first_reach_sec', 'REAL'),
+                               ('mean_inter_reach_interval_sec', 'REAL'),
+                               ('pellet_position_idealness', 'REAL')]
 VIDEO_PELLET_COLUMNS = ['video_name', 'segment_num', 'subject_id', 'session_date', 'tray_type',
                         'run_number', 'outcome', 'outcome_confidence', 'outcome_flagged',
-                        'n_reaches', 'source_file', 'imported_at']
+                        'n_reaches', 'source_file', 'imported_at'] + [
+                            c for c, _t in VIDEO_PELLET_TIMING_COLUMNS]
 
 # One row per tray session (one features file), whatever it holds -- INCLUDING
 # a session with no reach at all, which neither reach_data (one row per reach)
@@ -208,12 +226,20 @@ CREATE TABLE IF NOT EXISTS video_sessions (
     session_flag_by      TEXT,
     session_flag_at      TEXT,
     source_file          TEXT,
-    imported_at          TEXT
+    imported_at          TEXT,
+    total_frames         INTEGER,
+    frame_rate           REAL
 )"""
+# The video's length (2026-11-24): its frame count and frame rate from the
+# results file. WHY: the sessions export reports how long each tray ran and the
+# reaches per minute; nothing else in the database knows a video's length.
+# Added to an existing table by ensure_video_tables.
+VIDEO_SESSION_LENGTH_COLUMNS = [('total_frames', 'INTEGER'), ('frame_rate', 'REAL')]
 VIDEO_SESSION_COLUMNS = ['video_name', 'subject_id', 'session_date', 'tray_type', 'run_number',
                          'n_segments', 'n_reaches', 'attention_score', 'attention_segments',
                          'extractor_version'] + SESSION_FLAG_COLUMNS + ['source_file',
-                                                                        'imported_at']
+                                                                        'imported_at'] + [
+                             c for c, _t in VIDEO_SESSION_LENGTH_COLUMNS]
 
 
 @dataclass
@@ -581,8 +607,20 @@ def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
             'outcome_flagged': 1 if seg.get('outcome_flagged') else 0,
             'n_reaches': len(reaches) if isinstance(reaches, list) else seg.get('n_reaches'),
             'source_file': source_file, 'imported_at': now,
+            'time_to_first_reach_sec': _number(seg.get('time_to_first_reach_sec')),
+            'mean_inter_reach_interval_sec': _number(seg.get('mean_inter_reach_interval_sec')),
+            'pellet_position_idealness': _number(seg.get('pellet_position_idealness')),
         })
     return rows
+
+
+def _number(v) -> Optional[float]:
+    """A results-file value as a float, or None when it is absent or not a number."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f else None                    # NaN -> None
 
 
 def session_row(data: dict, video_name: str, subject_id: str, now: str,
@@ -603,6 +641,8 @@ def session_row(data: dict, video_name: str, subject_id: str, now: str,
                              segment carries a score.
       attention_segments     how many segments that mean is over.
       session_flag*          a person's Flag Session note (session_flag_fields).
+      total_frames,          the video's length as the results file gives it,
+      frame_rate             so length in seconds = total_frames / frame_rate.
     """
     meta = parse_video_metadata(video_name)
     segs = [s for s in (data.get('segments') or []) if isinstance(s, dict)]
@@ -621,7 +661,10 @@ def session_row(data: dict, video_name: str, subject_id: str, now: str,
            'attention_score': (sum(att) / len(att)) if att else None,
            'attention_segments': len(att),
            'extractor_version': data.get('extractor_version'),
-           'source_file': source_file, 'imported_at': now}
+           'source_file': source_file, 'imported_at': now,
+           'total_frames': (int(_number(data.get('total_frames')))
+                            if _number(data.get('total_frames')) is not None else None),
+           'frame_rate': _number(data.get('frame_rate'))}
     row.update(session_flag_fields(data.get('session_flag')))
     return row
 
@@ -695,8 +738,7 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     for col, typ in MIGRATION_COLUMNS:
         if col not in have:
             conn.execute("ALTER TABLE reach_data ADD COLUMN %s %s" % (col, typ))
-    conn.execute(VIDEO_PELLETS_DDL)
-    conn.execute(VIDEO_SESSIONS_DDL)
+    ensure_video_tables(conn)
     # The phase re-labelling after every import selects one cohort's rows by
     # subject_id; with no index on it SQLite read the WHOLE table once per
     # touched cohort (hours over the share, 2026-10-15/16). Created here, under
@@ -707,6 +749,22 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     # the same way: instant, and a no-op once current.
     from .migrations import bring_contact_columns_current
     bring_contact_columns_current(conn)
+
+
+def ensure_video_tables(conn: sqlite3.Connection) -> None:
+    """Create video_pellets and video_sessions, and add to an existing one any
+    column this version writes that it lacks (VIDEO_PELLET_TIMING_COLUMNS,
+    VIDEO_SESSION_LENGTH_COLUMNS). Adding a column is instant in SQLite and
+    leaves every existing row as it was (the new column NULL until the video is
+    imported again or ``import-reaches --pellets-only`` fills it)."""
+    conn.execute(VIDEO_PELLETS_DDL)
+    conn.execute(VIDEO_SESSIONS_DDL)
+    for table, extra in (("video_pellets", VIDEO_PELLET_TIMING_COLUMNS),
+                         ("video_sessions", VIDEO_SESSION_LENGTH_COLUMNS)):
+        have = {r[1] for r in conn.execute("PRAGMA table_info(%s)" % table)}
+        for col, typ in extra:
+            if col not in have:
+                conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, col, typ))
 
 
 def write_pellets(conn: sqlite3.Connection, video_name: str, rows: List[dict]) -> None:
@@ -846,8 +904,7 @@ def backfill_video_pellets(root: Optional[Path] = None, include_processing: bool
         conn = sqlite3.connect(str(require("db_path")), timeout=600)
         try:
             with conn:
-                conn.execute(VIDEO_PELLETS_DDL)
-                conn.execute(VIDEO_SESSIONS_DDL)
+                ensure_video_tables(conn)
                 for video_name, rows in by_video.items():
                     write_pellets(conn, video_name, rows)
                     write_session(conn, video_name, sessions[video_name])
