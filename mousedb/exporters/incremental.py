@@ -36,6 +36,9 @@ made of parts, each a SHA-256 of one input as the exporter sees it:
                     the tracking-sheet records table
     hand_scores     the hand pellet scores of its animals
     video_pellets   the per-pellet rows of its videos and animals
+    video_sessions  the per-session rows of its animals (a filed tray with no
+                    reach has only this row; it gets a session row in the
+                    sessions file, odc_reaches.session_only_rows)
     exclusions      what the exclusion checks leave out of or blank in its
                     videos and the cohort, its animals' proven injury dates,
                     and whether its phase labels can be checked
@@ -108,7 +111,7 @@ LEDGER_NAME = ".export_units.json"
 LEDGER_FORMAT = 1
 
 # The parts of a cohort's fingerprint, in the order a reason is reported.
-PARTS = ("reaches", "animals", "hand_scores", "video_pellets", "exclusions",
+PARTS = ("reaches", "animals", "hand_scores", "video_pellets", "video_sessions", "exclusions",
          "study_facts", "running", "place", "settings")
 
 
@@ -165,7 +168,7 @@ def cohort_fingerprints(t: dict, cohorts: Iterable[str], exclusions, out_dir: Pa
 
     reach = t["reach"]
     subjects, records = t.get("subjects"), t.get("records")
-    pellets, vp = t.get("pellets"), t.get("video_pellets")
+    pellets, vp, vs = t.get("pellets"), t.get("video_pellets"), t.get("video_sessions")
     try:
         sections = study_facts.read_all() or {}
     except Exception as e:                       # decided by the export itself
@@ -190,6 +193,18 @@ def cohort_fingerprints(t: dict, cohorts: Iterable[str], exclusions, out_dir: Pa
             videos.setdefault(v, hashlib.sha256()).update(int(rh).to_bytes(8, "little"))
         sids = set(rc["subject_id"].astype(str))
         names = set(rc["video_name"].astype(str))
+        # The cohort's filed trays with no reach (odc_reaches.session_only_rows)
+        # are videos of the cohort too: their session rows are in its files.
+        if vs is not None and not vs.empty and "subject_id" in vs:
+            vs_c = vs[_starts(vs["subject_id"], cid)]
+            parts_vs = frame_hash(vs_c)
+            sids |= set(vs_c["subject_id"].astype(str))
+            names |= set(vs_c["video_name"].astype(str))
+        else:
+            parts_vs = "absent" if vs is None else "empty"
+        if vp is not None and not vp.empty and "subject_id" in vp:
+            vp_c = vp[_starts(vp["subject_id"], cid)]
+            names |= set(vp_c["video_name"].astype(str))
         parts = {"reaches": _h(reach_types, hashes.tobytes())}
         an = []
         if subjects is not None and not subjects.empty and "subject_id" in subjects:
@@ -214,6 +229,7 @@ def cohort_fingerprints(t: dict, cohorts: Iterable[str], exclusions, out_dir: Pa
             parts["video_pellets"] = frame_hash(vp[keep])
         else:
             parts["video_pellets"] = "absent" if vp is None else "empty"
+        parts["video_sessions"] = parts_vs
         parts["exclusions"] = _h(_json(_exclusion_slice(exclusions, cid, names, sids)))
         project = study_facts.project_of(cid)
         parts["study_facts"] = _h(_json({k: sections.get(k) for k in

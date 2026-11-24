@@ -6,6 +6,23 @@ checked-in code, not what's planned.
 ## Unreleased
 
 ### Added
+- **Every filed tray has a session row, also one at which the animal never
+  reached** (owner, 2026-11-24: "No reaches means no REACH rows. Session rows
+  should still exist in the session files."). The reach import now records
+  every results file as one row of a new table, `video_sessions` (animal,
+  date, tray, segments, reaches, the session's attention score, the session
+  flag), in the same transaction as its reaches and pellets; `--pellets-only`
+  fills it for files imported before. The snapshot carries it, and the
+  exporter gives each filed tray with no reach one session-only row that only
+  `sessions_<cohort>_analysis.csv` keeps: 0 reaches, 0 pellets reached for,
+  and every other session number filled as on any tray (hand scores, pellets
+  cut and their outcomes, percentages, attention, flag, day totals). The
+  per-reach files are unchanged byte for byte. An Easy or Flat tray with no
+  reach now also counts as filed when judging whether a day is complete. The
+  exclusion checks judge such trays too (death, hand-score count, no sheet);
+  one left out is reported in `analysis_EXCLUSIONS.csv` as a session row.
+  Every sessions dictionary row says what the column holds on a tray with no
+  reach.
 - **A person's Flag Session note is carried as a marker** (`import_reaches`,
   per-reach exports). The features file's `session_flag` is imported onto every
   reach row (`session_flag`, `_reason`, `_by`, `_at`; added to an older

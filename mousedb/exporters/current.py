@@ -321,7 +321,7 @@ def _manual_scores_csv(snapshot_dir: Path, out_dir: Path, manifest: dict) -> Non
 # the exclusion checks (export_exclusions.compute). A table read by either and
 # missing here is a change a skip would hide.
 ODC_INPUT_TABLES = ("reach_data", "subjects", "pellet_scores", "animal_records",
-                    "video_pellets", "weights")
+                    "video_pellets", "video_sessions", "weights")
 
 
 def _package_root() -> Path:

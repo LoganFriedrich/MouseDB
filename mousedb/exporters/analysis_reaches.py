@@ -343,14 +343,25 @@ def void_day_totals_after_exclusion(before: pd.DataFrame, after: pd.DataFrame) -
     remain, that day reads incomplete and its total NA, exactly as for a day with
     a tray not filed.
     """
-    need = {"subject_id", "test_date", "video_name", "day_total_reaches"}
-    if after.empty or not need <= set(before.columns) or not need <= set(after.columns):
-        return after
+    return void_days(after, days_that_lost_a_tray(before, after))
+
+
+_DAY_NEED = {"subject_id", "test_date", "video_name", "day_total_reaches"}
+
+
+def days_that_lost_a_tray(before: pd.DataFrame, after: pd.DataFrame) -> set:
+    """The (subject_id, test_date) days of which the exclusion pass left out a tray."""
+    if after.empty or not _DAY_NEED <= set(before.columns) or not _DAY_NEED <= set(after.columns):
+        return set()
     key = ["subject_id", "test_date"]
     had = before.groupby(key)["video_name"].nunique()
     kept = after.groupby(key)["video_name"].nunique()
-    lost = {k for k, n in kept.items() if had.get(k, n) > n}
-    if not lost:
+    return {k for k, n in kept.items() if had.get(k, n) > n}
+
+
+def void_days(after: pd.DataFrame, lost: set) -> pd.DataFrame:
+    """Every day column NA and the day 'no' on the rows of the ``lost`` days."""
+    if not lost or after.empty or not _DAY_NEED <= set(after.columns):
         return after
     out = after.copy()
     hit = pd.Series([k in lost for k in zip(out["subject_id"], out["test_date"])],

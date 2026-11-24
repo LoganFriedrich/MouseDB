@@ -62,7 +62,7 @@ animal id (or a cohort id, or an animal and a date) and press **Run**:
 
 Every other table the database holds is listed underneath -- `reach_data`
 (every column held for each reach), `pellet_scores` (every hand score),
-`video_pellets`, `weights`, `subjects`, `cohorts`, `surgeries`,
+`video_pellets`, `video_sessions` (one row per tray session, reached at or not), `weights`, `subjects`, `cohorts`, `surgeries`,
 `animal_records` (every animal-level value from the tracking sheets, as
 written), the brain tables -- and `about_this_copy`, which says when each table
 was taken.
