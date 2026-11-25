@@ -802,7 +802,7 @@ class ReachData(Base):
     __tablename__ = 'reach_data'
     __table_args__ = (
         UniqueConstraint('video_name', 'reach_id', name='uq_reach_video'),
-        # Per-cohort and per-date queries (the phase re-labelling above all)
+        # Per-cohort and per-date queries (the phase re-labeling above all)
         # select by subject; without this they read the whole table. An
         # existing database gets it from import_reaches.ensure_columns.
         Index('ix_reach_data_subject_session', 'subject_id', 'session_date'),

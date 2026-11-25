@@ -6,7 +6,7 @@ The snapshot is a folder of parquet files, one per database table, rewritten
 by the refresh job (``exporters.refresh_snapshot``). The job used to replace
 them one at a time as it read each table. A refresh stopped part way -- a
 locked database, the scheduler's time limit, a person ending it -- left the
-first tables from tonight and the rest from an earlier night: reaches labelled
+first tables from tonight and the rest from an earlier night: reaches labeled
 by one night's phase rules joined with animals, weights and pellets from
 another. Nothing in the folder said so, and every reader (exports, the data
 browser, the Where Is My Data tab, the bench check, analysis scripts) read

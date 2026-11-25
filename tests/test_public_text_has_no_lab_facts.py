@@ -33,7 +33,7 @@ LIMITS -- what passing does NOT mean
   * Removed phrases are matched word for word. The same fact written in new
     words passes.
   * Only the one removed name is detected. There is no reliable general test
-    for people's names: a rule like "two capitalised words" flags every class,
+    for people's names: a rule like "two capitalized words" flags every class,
     product and tool name in the code. The "<Name>'s correction" rule catches
     that one sentence shape, for any name, and nothing else.
   * The path check sees drive letters only. A UNC share (``\\\\server\\share``),

@@ -5,7 +5,7 @@ READS:  every *.xlsx / *.xls in <dir> (the current working directory unless
         --dir says otherwise). You are asked, interactively, which files and
         which sheets to include. Each sheet needs the columns
         Date, Animal, Sex, Weight, Tray Type/Number and pellet columns
-        labelled 1-20.
+        labeled 1-20.
 
 WRITES: <dir>/reorganized_data_long_format.csv (overwritten if present),
         one row per pellet with Source_File / Source_Sheet columns.

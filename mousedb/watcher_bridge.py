@@ -2,7 +2,7 @@
 Read-only bridge to MouseReach watcher.db for video pipeline status rollup.
 
 This module reads the watcher's SQLite database to provide cross-database views:
-"For animal CNT_01_15, how many videos are processed vs pending vs failed?"
+"For animal PROJA_01_15, how many videos are processed vs pending vs failed?"
 
 SCOPE: the watcher database holds what THIS computer's watcher recorded; it
 is not the pipeline's state (other computers' work is not in it). Every view
@@ -458,7 +458,7 @@ def find_versions_json() -> Optional[Path]:
 
 def _animal_id_to_subject_id(animal_id: str) -> Optional[str]:
     """
-    Convert watcher's animal_id format (CNT0115) to database format (CNT_01_15).
+    Convert watcher's animal_id format (PROJA0115) to database format (PROJA_01_15).
 
     Mirrors mousereach.sync.database.parse_subject_id without importing mousereach.
     """
@@ -469,7 +469,7 @@ def _animal_id_to_subject_id(animal_id: str) -> Optional[str]:
     if re.match(r'^[A-Z]+_\d{2}_\d{2}$', animal_id):
         return animal_id
 
-    # Compact format: CNT0115 -> CNT_01_15
+    # Compact format: PROJA0115 -> PROJA_01_15
     match = re.match(r'^([A-Za-z]+)(\d{2})(\d{2})$', animal_id)
     if match:
         experiment = match.group(1).upper()

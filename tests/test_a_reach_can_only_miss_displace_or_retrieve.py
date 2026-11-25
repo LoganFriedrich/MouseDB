@@ -13,7 +13,7 @@ because it decides whether the pellet could still be scored), or takes it
 (retrieved). The only other values allowed in the column are the pipeline saying
 it has not decided yet, which is not an outcome and is never presented as one,
 and "Not applicable" on an easy or flat training tray, where pellets are not
-tracked and there is no pellet answer at all (2026-10-26).
+tracked and there is no pellet answer at all.
 """
 import pandas as pd
 

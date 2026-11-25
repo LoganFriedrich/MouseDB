@@ -250,12 +250,12 @@ class TestRefusalsAreShownNotHidden:
 
 
 class TestAPinCannotNameARefusedFile:
-    """find_cohort_sheet honours a pin only if it names one of the cohort's
+    """find_cohort_sheet honors a pin only if it names one of the cohort's
     candidates. A pin on any other name used to be stored, shown as "pinned"
     in every status listing, and then silently ignored -- the newest file was
     still the one imported. Now that some names are refused as sheets, the
     names a person might type into ``mousedb-sheets pin`` include ones that
-    can never be honoured, so the pin itself must say no."""
+    can never be honored, so the pin itself must say no."""
 
     @pytest.mark.parametrize("name", REFUSED + ["Connectome_06_Animal_Tracking.xlsx",
                                                 "Summaries.xlsx"])
@@ -306,7 +306,7 @@ def _pin_directly(key: str, name: str) -> None:
 
 
 class TestABrokenPinIsAnnounced:
-    """THE DEFECT. find_cohort_sheet honours a pin only while it names one of
+    """THE DEFECT. find_cohort_sheet honors a pin only while it names one of
     the cohort's files. When the pinned file was renamed, moved or deleted, it
     fell back to the newest file WITHOUT notice: the status went on reporting
     the old name as pinned, the Tracking Sheets tab marked the file being read

@@ -145,8 +145,8 @@ class TestThePlanIsReadOnly:
 
 
 class TestStartDate:
-    """cohorts.start_date is NOT NULL; the first real --apply crashed on it
-    (2026-08-28) because the tool never supplied one."""
+    """cohorts.start_date is NOT NULL; a --apply that supplies none
+    crashes on it, so the tool must supply one."""
 
     def _fake_db(self, monkeypatch, added):
         class FakeSession:

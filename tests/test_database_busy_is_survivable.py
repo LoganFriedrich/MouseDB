@@ -43,7 +43,7 @@ def wrapped_locked_error():
     return outer
 
 
-# --------------------------------------------------------------- recognising it
+# --------------------------------------------------------------- recognizing it
 def test_a_plain_driver_lock_error_is_recognised():
     assert dc.is_locked_error(locked_error())
 
@@ -81,7 +81,7 @@ def test_work_that_succeeds_first_time_is_not_delayed():
 
 
 def test_a_lock_that_clears_lets_the_job_finish():
-    """The case this exists for: a neighbour finishes writing and we carry on."""
+    """The case this exists for: a neighbor finishes writing and we carry on."""
     clock = FakeClock()
     attempts = []
 

@@ -55,7 +55,7 @@ def test_a_configured_machine_reports_ready(clean_env, tmp_path):
 
 
 def test_a_database_that_does_not_exist_yet_is_not_a_fault(clean_env, tmp_path):
-    """The normal state of a machine configured but not yet initialised.
+    """The normal state of a machine configured but not yet initialized.
 
     Reporting it would tell someone who has just done everything right that their
     setup is broken, which teaches them to ignore the warnings that matter.

@@ -15,7 +15,7 @@ used to:
   delete rows while one of them was writing.
 
 The deletion now lives in a Qt-free function (clear_cohort_sheet_rows) and the whole
-Replace in replace_cohort_from_sheet. These tests pin that behaviour on a scratch
+Replace in replace_cohort_from_sheet. These tests pin that behavior on a scratch
 database built with the package's own schema and Database class.
 
 Keeping only unmarked rows is safe only if every hand edit re-marks its row. The

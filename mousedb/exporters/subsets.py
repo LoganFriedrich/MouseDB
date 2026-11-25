@@ -337,7 +337,7 @@ def validate(name: str, profile: dict, rules: Optional[Dict[str, dict]] = None) 
         window = {"type": "all"}
     # A kind's old name (layout.KIND_ALIASES) is read as its current one, so a
     # definition saved before a rename keeps working: "ODC_sessions" is
-    # "ODC_days" since 2026-11-19. The stored form carries the current name.
+    # "ODC_days". The stored form carries the current name.
     kinds = [layout.KIND_ALIASES.get(str(k), str(k)) for k in (p.get("kinds") or ALL_KINDS)]
     bad = [k for k in kinds if k not in layout.KINDS]
     if bad:

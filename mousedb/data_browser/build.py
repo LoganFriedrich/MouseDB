@@ -140,7 +140,7 @@ def check_cache_location(root: Path, snapshot_dir: Path) -> None:
 # --------------------------------------------------------------------------
 #
 # While a file is open, Windows refuses to replace it -- whatever sharing the
-# reader asked for (tested 2026-11-12, delete sharing included). So the copy
+# reader asked for (delete sharing included). So the copy
 # reads each snapshot file once, for as short a time as possible (only the
 # columns it keeps, straight into memory, then closed), and does not start
 # while the snapshot job is in the middle of writing a table. The snapshot job,
@@ -159,7 +159,7 @@ def refresh_in_progress(snapshot_dir: Path) -> bool:
     mousedb.snapshot_generation). The job writes its tables in a staging
     folder first, so the long read of the database does not count: the
     snapshot itself only changes during the swap, which takes seconds. A
-    ``*.parquet.tmp`` beside the tables is still honoured, for a refresh by an
+    ``*.parquet.tmp`` beside the tables is still honored, for a refresh by an
     older version of this tool, which wrote and swapped one table at a time."""
     from .. import snapshot_generation
     if snapshot_generation.state(snapshot_dir)[0] == "swapping":

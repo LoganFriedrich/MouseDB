@@ -4,10 +4,8 @@ WHY THIS EXISTS
 ---------------
 The end of the lab's workflow is a person asking "where is my data?" and
 expecting a current CSV of everything the database holds, formatted to
-ODC-SCI, with a data dictionary beside it. Until 2026-08-28 the answer was:
-a 200 MB dump the sync overwrote, an ODC Excel export run by hand for one
-cohort in January, and no dictionary anywhere. This module writes, and the
-nightly refresh keeps current, one folder:
+ODC-SCI, with a data dictionary beside it. This module writes, and the nightly
+refresh keeps current, one folder:
 
     Databases/exports/current/
         reach_data.csv                    one row per detected reach
@@ -167,8 +165,8 @@ def _staging_dir(snapshot_dir: Path) -> Path:
     WHY: the exports folder is on a network share, and pandas writes a CSV
     onto a share a few bytes at a time -- measured at a fraction of a megabyte
     per second against tens of MB/s for copying a finished file. Writing every
-    file here first and copying it over turned a 2-3 hour nightly export into
-    minutes (2026-10-16). refresh_current() empties this folder at the start
+    file here first and copying it over turns a 2-3 hour nightly export into
+    minutes. refresh_current() empties this folder at the start
     of each run so nothing stale is ever copied across."""
     d = Path(snapshot_dir) / "_export_staging"
     d.mkdir(parents=True, exist_ok=True)
@@ -338,7 +336,7 @@ def exporter_code_hash(root: Optional[Path] = None) -> str:
     hand-bumped number this replaced. The price is one full rebuild after
     every install of new code, which the nightly run has time for.
 
-    Line endings are normalised so the same code checked out on two computers
+    Line endings are normalized so the same code checked out on two computers
     hashes the same. Read from disk at the time of the call: the Where Is My
     Data button runs the exporter as a fresh program (gui.data_status_tab) so
     the code that runs is the code on disk, never an older copy a window has
@@ -563,7 +561,7 @@ def _odc_sessions_csvs(out_dir: Path, manifest: dict, snapshot_dir: Path) -> Non
     layout.combine_all(out_dir, layout.SESSION_KINDS, {layout.project_of(c) for c in cohorts}, manifest)
     layout.archive_flat_layout(out_dir)
     layout.archive_moved_project_folders(out_dir)
-    # Files still under the kind's name before 2026-11-19 (ODC_sessions_*).
+    # Files still under the kind's older name (ODC_sessions_*).
     layout.archive_renamed_kinds(out_dir)
 
 
@@ -616,7 +614,7 @@ def hold_exports_lock(lock_wait_seconds: Optional[float] = None,
     A lock folder this login cannot write raises task_mutex.LockFolderNotWritable
     at once, waiting or not: it is not "busy", and waiting would not help."""
     from ..task_mutex import PENDING_DELETE_GRACE_SECONDS, TaskMutex
-    # Labelled at construction, so a dead holder's lock broken while waiting
+    # Labeled at construction, so a dead holder's lock broken while waiting
     # (task_mutex._record_break) is logged under this lock's name too.
     mutex = TaskMutex(EXPORTS_LOCK, base_dir=Path(lock_dir) if lock_dir else _lock_dir(),
                       label=EXPORTS_LOCK_LABEL)

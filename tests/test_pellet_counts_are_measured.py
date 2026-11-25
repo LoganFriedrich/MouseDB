@@ -1,8 +1,8 @@
 """How many pellets a tray presented is measured, and a count other than 20 is an error.
 
-WHY (2026-10-16): the exports counted pellets from reach rows, so a pellet
-nobody reached for was invisible, and a displaced or retrieved pellet whose
-reach went undetected was never counted. The per-pellet table records every
+WHY: pellets counted from reach rows would make a pellet
+nobody reached for invisible, and a displaced or retrieved pellet whose
+reach went undetected uncounted. The per-pellet table records every
 pellet the pipeline cut each video into; the hand scores record every pellet
 scored from the tray. Each should be 20, and the exports show both.
 """

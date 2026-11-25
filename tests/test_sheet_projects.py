@@ -1,9 +1,9 @@
 """Each project names its own tracking-sheet file pattern, and every lookup uses it.
 
-2026-10-29: a second project's cohort sheets sat in the sheets folder, named
-by their own pattern, and were never recognised -- so never imported, and
-their hand scores never reached the reaching pipeline -- because one
-project's sheet name was written into the code.
+A second project's cohort sheets in the sheets folder, named by their own
+pattern, must be recognized -- else they are never imported, and their hand
+scores never reach the reaching pipeline -- so no project's sheet name may be
+written into the code.
 """
 import json
 

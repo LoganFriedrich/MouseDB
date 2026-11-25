@@ -3022,7 +3022,7 @@ class BulkTrayEntryTab(QWidget):
             # Load existing data for this date
             self._load_existing_data()
         else:
-            # User cancelled - reset to "Select Date"
+            # User canceled - reset to "Select Date"
             self.date_combo.setCurrentIndex(0)
 
     def _clear_grid(self):
@@ -4617,7 +4617,7 @@ def _commit_deferred(session):
 
     WHY: the importer commits its own work when it finishes, and here that
     commit would also commit the deletion before Replace has seen whether the
-    import succeeded. A rollback the importer asks for is honoured (it means
+    import succeeded. A rollback the importer asks for is honored (it means
     its work is bad), and the whole Replace then counts as failed: the deletion
     went with it, and whatever was written after it is not the whole sheet.
     """
@@ -6799,7 +6799,7 @@ class DataEntryWindow(QMainWindow):
         # watcher's records for whoever needs them -- see docs/WATCHER_VIEWS.md.)
 
         # 8. TRACKING SHEETS - import the lab's tracking workbooks from a button
-        # (moved here from MouseReach 2026-08-28: importing sheets is this tool's job)
+        # (importing sheets is this tool's job)
         try:
             from .sheets_tab import TrackingSheetsTab
             self.sheets_tab = TrackingSheetsTab(self.db)

@@ -63,7 +63,7 @@ def test_unconfigured_machine_stops_before_scanning(tmp_path, monkeypatch, capsy
 
 
 # ------------------------------------------------ which pellets are compared
-# WHY (2026-10-22): a segment with no detected reach has no reach row, so the
+# WHY: a segment with no detected reach has no reach row, so the
 # scan never compared it -- yet "the bench says the pellet moved and the
 # pipeline found no reach" is a strong disagreement. And the current detector
 # version was a constant, which would silently match nothing once it changed.

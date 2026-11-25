@@ -1,6 +1,6 @@
 """A workbook another program has open is reported by that program's name.
 
-2026-10-29: the nightly import said only "[Errno 13] Permission denied" for a
+The nightly import must not say only "[Errno 13] Permission denied" for a
 workbook that was open in Excel on the same computer. The message must say
 what to close.
 """

@@ -28,7 +28,7 @@ from mousedb import cohort_sheets as cs
 @pytest.fixture
 def sheets(tmp_path, monkeypatch):
     """A directory of cohort sheets, configured and reachable -- with a private
-    config file. WHY: lookups honour pins, which live in the config file; left
+    config file. WHY: lookups honor pins, which live in the config file; left
     pointing at this machine's real one, a pin a person made there (say on
     cohort 05) would change which file these tests find."""
     d = tmp_path / "Animal_Cohorts"

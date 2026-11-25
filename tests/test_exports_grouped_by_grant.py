@@ -1,6 +1,6 @@
 """A grant's projects sit together in the exports.
 
-WHY (2026-10-30): one grant funds two projects (two wings of one study), each
+WHY: one grant funds two projects (two wings of one study), each
 with its own cohorts. Exported flat, the second project's folder sat beside the
 first as if unrelated. With the grant set in the lab settings the exports are
 <GRANT>/<PROJECT>/<COHORT>/; a project in no grant stays <PROJECT>/<COHORT>/;

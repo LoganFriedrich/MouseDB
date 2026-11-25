@@ -11,7 +11,7 @@ it, so a row can be read without joining anything:
             untouched), from the algorithm and from the hand scores
   day       one animal on one date, every pillar tray of it: the same totals
 
-Before 2026-11-19 the files mixed these up in three ways a reader could not see:
+Older files mixed these up in three ways a reader could not see:
 
 * The complete record's ``outcome`` held a value only on the reach credited
   with the pellet; every other reach read "Not recorded" -- an absence where
@@ -31,8 +31,7 @@ THE NAMING RULE (published names)
 A column that belongs to a level above the reach starts with that level:
 ``reach_``, ``segment_``, ``session_`` (= tray = video) or ``day_``. Every
 measurement of the reach itself (its frames, kinematics, tracking confidence,
-the earlier program's swipe_* measures) starts with ``reach_`` too (owner's
-decision, 2026-11-19: reach_swipe_length, reach_start_frame ...). A column
+the earlier program's swipe_* measures) starts with ``reach_`` too (reach_swipe_length, reach_start_frame ...). A column
 with no level word is an identity key (subject_id, video_name, test_date,
 tray_type, session_id, tray_id -- kept as they were, because the subset
 exports, the exclusion pass and readers' scripts find rows by them), an
@@ -128,7 +127,7 @@ def reach_contact(codes: pd.Series) -> pd.Series:
 
 # --- published names ----------------------------------------------------------
 # {internal name: published name}, per document. A name not listed is published
-# as it is. New columns added on 2026-11-19 are built under their published
+# as it is. Newer columns are built under their published
 # names and need no entry.
 
 # The complete record (ODC_reaches_<cohort>.csv) and the all-cohort reach_data.csv.

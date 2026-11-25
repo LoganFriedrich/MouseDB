@@ -14,8 +14,8 @@ and a combined file per kind beside the cohort folders.
 
 WHY: with every cohort's files side by side in one folder, a
 person looking for one cohort, or one project, read past a long list of names. Grouped
-by project and then cohort, the folder answers "where is CNT_05?" by its shape.
-The combined file answers the other common question -- "all of CNT at once" --
+by project and then cohort, the folder answers "where is PROJA_05?" by its shape.
+The combined file answers the other common question -- "all of PROJA at once" --
 without each person concatenating the cohort files themselves. A project the lab
 settings list under a grant (mousedb.grants) sits inside the grant's folder
 (one grant may fund several projects, and they belong together).
@@ -54,13 +54,13 @@ KINDS = {
     "reaches_summary": ("reaches_{label}_summary.csv", missing.NOT_RECORDED, False),
     "reaches_analysis": ("reaches_{label}_analysis.csv", "NA", True),
     "sessions_analysis": ("sessions_{label}_analysis.csv", "NA", True),
-    # One row per animal per DAY (all its trays). Named ODC_sessions until
-    # 2026-11-19; everywhere else in the exports a session is one tray.
+    # One row per animal per DAY (all its trays). Older files call it
+    # ODC_sessions; everywhere else in the exports a session is one tray.
     "ODC_days": ("ODC_days_{label}.csv", missing.NOT_RECORDED, False),
 }
 REACH_KINDS = ("ODC_reaches", "reaches_summary", "reaches_analysis", "sessions_analysis")
 DAY_KINDS = ("ODC_days",)
-SESSION_KINDS = DAY_KINDS   # the name this tuple had before 2026-11-19
+SESSION_KINDS = DAY_KINDS   # the tuple's older name
 
 # Kind names a saved definition may still use: {old: current}. A limited-export
 # definition saved before the rename names "ODC_sessions"; it is read as
@@ -75,7 +75,7 @@ RENAMED_FILE_PREFIXES = {"ODC_sessions_": "ODC_days_"}
 # keeps meaning exactly that; each cohort's own file keeps its own count.
 ENTRY_INDEX = "entry_index"
 
-# A per-cohort file at the top of the folder: the layout before 2026-10-29.
+# A per-cohort file at the top of the folder: the older, flat layout.
 _FLAT_COHORT_FILE = re.compile(
     r"^(ODC_reaches_[A-Z]+_\d{2}(_[A-Z])?|ODC_(sessions|days)_[A-Z]+_\d{2}(_[A-Z])?"
     r"|(reaches|sessions)_[A-Z]+_\d{2}(_[A-Z])?_(summary|analysis))\.csv$")
@@ -84,13 +84,13 @@ CHUNK_ROWS = 200_000
 
 
 def project_of(cohort_id: str) -> str:
-    """CNT_05 -> CNT; ASPA_04 -> ASPA; PROJAB_02 -> PROJAB (the letters, never a prefix
+    """PROJA_05 -> PROJA; ASPA_04 -> ASPA; PROJAB_02 -> PROJAB (the letters, never a prefix
     match: PROJAB is its own project, not a kind of PROJA)."""
     return str(cohort_id).rsplit("_", 1)[0].upper()
 
 
 def project_of_label(label: str) -> str:
-    """The project of a file-name label: CNT_05 -> CNT, ASPA_04_D -> ASPA."""
+    """The project of a file-name label: PROJA_05 -> PROJA, ASPA_04_D -> ASPA."""
     return project_of(re.sub(r"_[A-Z]$", "", str(label)))
 
 
@@ -131,13 +131,13 @@ def locate(kind: str, cohort_id: str, root: Optional[Path] = None) -> Path:
     """Where the export file of one kind for one cohort is. Raises FileNotFoundError.
 
     For anything OUTSIDE the exporter that reads the exports (an analysis script,
-    a notebook): ask here instead of writing the path out. WHY (2026-10-29): when
-    the files moved into project/cohort folders, a script that had the old path
-    written into it broke; one that asks here follows any later move unchanged.
+    a notebook): ask here instead of writing the path out. WHY: a script with
+    the path written into it breaks when the files move (e.g. into
+    project/cohort folders); one that asks here follows any move unchanged.
 
     ``kind`` is a key of KINDS. Give a cohort for its own file,
-    locate("reaches_analysis", "CNT_05"), or a project for the combined file,
-    locate("reaches_analysis", "CNT") -- every CNT cohort in one file.
+    locate("reaches_analysis", "PROJA_05"), or a project for the combined file,
+    locate("reaches_analysis", "PROJA") -- every PROJA cohort in one file.
     A cohort's folder may carry more than its id (ASPA_04 -> ASPA_04_D).
     """
     root = Path(root) if root else current_root()
@@ -366,8 +366,8 @@ def cohort_files_on_disk(root: Path, kinds: Iterable[str]) -> Dict[str, List[str
 
 
 def archive_flat_layout(root: Path) -> List[str]:
-    """Move per-cohort files left at the top of the folder by the layout before
-    2026-10-29 into the archive (never deleted), once their replacements exist in
+    """Move per-cohort files left at the top of the folder by the older flat
+    layout into the archive (never deleted), once their replacements exist in
     the cohort folders. One left behind is harmless but misleading: it looks
     current and is not rewritten."""
     from .odc_reaches import archive_old_names

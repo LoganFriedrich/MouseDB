@@ -1,6 +1,6 @@
 """Pellets presented is the tray's 20, and every percentage is out of it.
 
-WHY: until 2026-10-16 "pellets_presented" counted the pellets the animal reached
+WHY: "pellets_presented" must not count the pellets the animal reached
 for at least once, and every percentage divided by it. A session in which the
 animal ignored most pellets then showed an inflated success rate -- up to 100%
 where the truth was 5%. The count of pellets reached for is a useful number in

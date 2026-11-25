@@ -1,6 +1,6 @@
 """0_Injection_Calculations: the lab's batch-block layout, generated and read.
 
-The layout was settled 2026-08-28 (see cohort_tools.make_sheets
+The layout is fixed (see cohort_tools.make_sheets
 INJECTION_CALC_HEADERS). These tests pin it: the generator writes exactly
 that layout, and the importer reads a filled-in block back -- including the
 real-world quirks (a batch title with a trailing YYYYMMDD, template
@@ -109,7 +109,7 @@ class TestImporter:
         assert vp.preparation_notes == "that didn't qualify on performance metrics"
         assert vp.num_animals == 3
         # summed from the per-virus rows, NOT read from the Totals cell (which
-        # is a derived value and, in the real CNT_05 sheet, was stale)
+        # is a derived value and may be stale in a real sheet)
         assert vp.final_titer == pytest.approx(5e12 + 2.5e12 + 1.825e12, rel=1e-6)
         assert vp.virus_name.startswith("AAV5-CAG-GFP") and "Malat BC 7" in vp.virus_name
         assert "parts 3.0/6.0" in vp.calculation_notes
@@ -143,7 +143,7 @@ class TestImporter:
         assert imp._import_injection_batches(horizontal, 'CNT_01', FakeSession(), True) is False
 
     def test_the_block_beneath_a_legacy_template_still_wins(self):
-        # CNT_05's real sheet: an empty vertical calculator on top, the lab
+        # A real sheet: an empty vertical calculator on top, the lab
         # block further down. The block must be found regardless of position.
         rows = [["Parameter", "Value", "Units"], ["Virus Name"], [], []] + LAB_BLOCK
         imp = _importer()

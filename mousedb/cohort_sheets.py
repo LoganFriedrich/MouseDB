@@ -21,13 +21,12 @@ The location is NOT in this file, and must not be. Two reasons:
   1. It is lab-specific. Another lab running this code keeps its sheets
      somewhere else entirely, and should not have to edit source to say so.
   2. This repository is public. A synced-folder path carries a username, a
-     drive letter, and an organisation's internal folder names.
+     drive letter, and an organization's internal folder names.
 
 So the path lives in local configuration that is never committed. The FILE NAMES
 are configuration too (mousedb.sheet_projects, in the lab's settings file on the
 shared storage): each project says what its sheets are called, and this module
-asks there. Until 2026-10-29 one project's name was written into this file, so a
-second project's sheets were never recognised.
+asks there, so a second project's sheets are recognized too.
 
 Resolution order, first hit wins:
 
@@ -128,8 +127,8 @@ Usage:
     from mousedb.cohort_sheets import cohort_sheets_dir, find_cohort_sheet
 
     d = cohort_sheets_dir()                          # None if unconfigured
-    p = find_cohort_sheet("CNT_05")                  # the live sheet
-    fresh = fetch_cohort_sheet("CNT_05", work_dir)   # a working copy to read
+    p = find_cohort_sheet("PROJA_05")                  # the live sheet
+    fresh = fetch_cohort_sheet("PROJA_05", work_dir)   # a working copy to read
 """
 
 from __future__ import annotations
@@ -492,7 +491,7 @@ def pin_cohort_sheet(cohort: str, filename: Optional[str], sheets_dir=None) -> P
     ValueError and nothing is recorded. So does a correctly shaped name that
     is not in the sheets folder (a typo of a real variant, a file since
     renamed), whenever the folder can be read; the message lists the files
-    the cohort does have. WHY: find_cohort_sheet only honours a pin that names
+    the cohort does have. WHY: find_cohort_sheet only honors a pin that names
     one of the cohort's candidates, so such a pin would be broken from the
     moment it was made -- stored, then ignored, with the newest file imported.
     A name that differs from a real file only in letter case is stored as the
@@ -631,7 +630,7 @@ def broken_pins(sheets_dir=None) -> List[dict]:
     if nothing were pinned -- or None when it has no file at all); and one
     sentence for a person saying what happened and what to do.
 
-    WHY this exists: find_cohort_sheet honours a pin only while it names one
+    WHY this exists: find_cohort_sheet honors a pin only while it names one
     of the cohort's files, and when the pinned file was renamed, moved or
     deleted it fell back to the newest file WITHOUT notice -- the status went
     on saying the cohort was pinned while a file nobody had chosen was the one

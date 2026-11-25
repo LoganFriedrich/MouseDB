@@ -184,7 +184,7 @@ def cmd_cohort_sheets(args):
         # The cohort is read by the same rule as every other command that takes
         # one. WHY: this used to keep only the trailing number, so asking for
         # another project's cohort 01 (or an animal id ending in 01) showed
-        # CNT_01's sheet under the name that was asked for.
+        # a different cohort's sheet under the name that was asked for.
         from .sheet_sync import requested_cohort_id, _ascii
         cohort_id, why = requested_cohort_id(args.cohort)
         print()
@@ -1102,7 +1102,7 @@ def cmd_import_brains(args):
     # The retry wrapper handles the blockage the mutex CANNOT: a lock held by a
     # program outside this tool (see db_contention). This import normally
     # finishes in seconds, so a run that fails is almost always one that met a
-    # neighbour, and without a retry the whole interval until the next
+    # neighbor, and without a retry the whole interval until the next
     # scheduled run was lost (a whole day, for a daily job).
     from .task_mutex import hold
     from .db_contention import DatabaseBusy, retry_while_locked

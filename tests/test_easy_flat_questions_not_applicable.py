@@ -1,6 +1,6 @@
 """Easy and flat trays: every question about a pellet reads "Not applicable".
 
-WHY (2026-10-26): on those training trays the pellets are not tracked, no outcome
+WHY: on those training trays the pellets are not tracked, no outcome
 is computed, and the video is not cut into one stretch per pellet. The exports
 used to fill those rows by the general rules and so answered the pellet questions
 wrongly, four different ways: "Undetermined" (reads as a pellet waiting for a

@@ -11,7 +11,7 @@ how many reaches were aimed at it -- has no answer. The word for that is
 "Not applicable" (or an empty cell, in a file whose convention for an absent
 number is NA).
 
-Before 2026-10-26 the exports left these rows to the general rules, which gave
+The general rules would give these rows
 four different wrong answers on the same rows: "Undetermined" (reads as a pellet
 still waiting for a person to decide it), "pellet still available" (a claim about
 a pellet nobody tracked), "missed" (a claim that every reach missed), and counts

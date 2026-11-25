@@ -56,8 +56,8 @@ def test_the_pipelines_undecided_words_never_reach_a_reader(word):
 
 @pytest.mark.parametrize("word", ["abnormal_exception", "abnormal"])
 def test_a_pellet_moved_by_something_else_is_a_decided_answer(word):
-    """A person saw something other than a reach move the pellet (2026-10-26:
-    exported as Undetermined until then, which read as nobody having decided)."""
+    """A person saw something other than a reach move the pellet
+    (not exported as Undetermined, which reads as nobody having decided)."""
     out, rows = rs.build(_frame([
         {"video_name": "V", "segment_num": 1, "reach_num": n,
          "causal_reach": 0, "segment_outcome": word} for n in (1, 2)

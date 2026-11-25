@@ -1,4 +1,4 @@
-"""Quick export of unified behavioural data with surgery metadata, for a
+"""Quick export of unified behavioral data with surgery metadata, for a
 presentation or a hand-off.
 
 READS  (from <dir>/generated/, where <dir> is the current working directory

@@ -18,7 +18,7 @@ Usage:
 CLI:
     mousedb check                    # All cohorts, hide INFO
     mousedb check --verbose          # Show everything
-    mousedb check --cohort CNT_04    # Single cohort
+    mousedb check --cohort PROJA_04    # Single cohort
     mousedb check --json             # JSON output
 """
 

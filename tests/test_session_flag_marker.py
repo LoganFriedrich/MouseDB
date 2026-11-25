@@ -1,8 +1,7 @@
 """A person's Flag Session note travels into the database and the exports, as a marker.
 
 MouseReach writes a top-level ``session_flag`` into every features file: null,
-or {session_key, reason, flagged_by, flagged_at}. Owner decision D5-10
-(2026-11-19): a flag is only RECORDED, so it can be found later -- nothing
+or {session_key, reason, flagged_by, flagged_at}. A flag is only RECORDED, so it can be found later -- nothing
 leaves a flagged row out or treats it differently. So the reach import carries
 it onto every reach row, the per-reach exports show it as session_flag
 (Yes / No) with who, when and why, and the incremental export notices when it

@@ -1,9 +1,9 @@
 """A video sent back to review leaves the database until it is filed again.
 
-WHY (2026-10-26): filing means done. A filed video goes back to a review queue
+WHY: filing means done. A filed video goes back to a review queue
 only when something in it is not done after all, but its rows stayed in the
-database -- with its old answers -- and went out in every export as finished:
-286 videos and 44,178 reach rows that day. Only positive evidence takes a video
+database -- with its old answers -- and went out in every export as finished.
+Only positive evidence takes a video
 out (its results sit in a review queue and not in Analyzed, or a newer run of it
 waits there while the old one is still filed); its rows are copied
 aside first; and its ledger entry goes, so filing it again brings it back even

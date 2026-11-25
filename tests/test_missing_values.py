@@ -2,7 +2,7 @@
 
 The bug these pin was live in the first build of the two-document export: the reason
 was inferred from the fact that a column happened to be empty, so every column empty in
-a cohort was labelled 'Not measured'. A workbook that records no species therefore
+a cohort was labeled 'Not measured'. A workbook that records no species therefore
 made that export tell a reader the lab had not measured a mouse's species -- which is both
 false and, in a file meant for people outside the lab, embarrassing in a specific way.
 

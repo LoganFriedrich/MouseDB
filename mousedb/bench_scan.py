@@ -45,8 +45,8 @@ ROUTING
     configured, and still exits 0 -- an unconfigured integration is not a
     failure of the scan.
 
-WHICH PELLETS ARE COMPARED (since 2026-10-22)
-    Every bench-scored pellet of a finished video analysed by the CURRENT
+WHICH PELLETS ARE COMPARED
+    Every bench-scored pellet of a finished video analyzed by the CURRENT
     outcome detector -- the version MouseReach declares in
     <mousereach_pipeline_root>/pipeline_versions.json, read at each run (it
     was a number written into this file, which would have silently matched
@@ -142,7 +142,7 @@ JOIN_ALGO = ["subject_id", "session_date", "tray_type", "run_number", "segment_n
 def watcher_blocks_db():
     """Should database writers yield to a running MouseReach watcher?
 
-    Since 2026-08-28 the watcher writes the central database ONLY when
+    The watcher writes the central database ONLY when
     ``central_db`` is configured in ~/.mousereach/config.json (or the
     MOUSEREACH_CENTRAL_DB environment variable) -- a site that lets mousedb
     pull leaves it unset. A DLC-only or non-writing watcher must
@@ -191,7 +191,7 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
     Args:
         db_path: connectome.db (defaults to mousedb's configured database)
         segmap_path: optional pickle of {(video_name, reach_id): segment_num}, used to
-            repair rows written with segment_num = 0 before the 2026-08-20 fix.
+            repair rows written with segment_num = 0 by an older watcher.
         cache_dir: if it holds reach_data.parquet / pellet_scores.parquet, read those
             instead of the database. connectome.db is rollback-journal over SMB, so a
             live watcher blocks readers outright.

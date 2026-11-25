@@ -3280,7 +3280,7 @@ class ExcelImporter:
     def _ascii(text) -> str:
         """Plain-ASCII form of a message. Warnings are printed to Windows
         consoles, which crash on characters outside their code page, and a
-        cell's text (an unrecognised id, a weight typed with a unit) can carry
+        cell's text (an unrecognized id, a weight typed with a unit) can carry
         any character."""
         return str(text).encode('ascii', 'backslashreplace').decode('ascii')
 
@@ -3383,7 +3383,7 @@ class ExcelImporter:
         subject_id = self._normalize_subject_id(raw, cohort_id)
         # validate_subject_id as well: a bare number of three digits in an
         # animal cell (a percentage in a summary block) normalizes to an id
-        # like CNT_04_100, which no animal can have and derive_cohort_id
+        # like PROJA_04_100, which no animal can have and derive_cohort_id
         # would raise on.
         if subject_id is None or not validate_subject_id(subject_id):
             self._note_unimported(
@@ -3495,7 +3495,7 @@ class ExcelImporter:
         imported, passed on in case the cohort has to be created (see
         _ensure_cohort).
         """
-        # Second line of defence behind _resolve_subject_id (callers that build
+        # Second line of defense behind _resolve_subject_id (callers that build
         # ids themselves, such as the frozen-workbook score import, come
         # straight here): an id's own cohort part decides where the animal
         # lives, never the workbook it was typed in.

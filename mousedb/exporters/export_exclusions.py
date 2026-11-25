@@ -50,7 +50,7 @@ own animal's hand scores 20/20 and a cagemate's about 6-12/20.
                 video name invents the cohort).
 6. phase     -- a cohort whose experiment-phase labels contradict its own proven
                 injury dates (a rehabilitation label before the injury, a
-                baseline label for a cohort not yet injured). The labelling
+                baseline label for a cohort not yet injured). The labeling
                 failed for that cohort, so its phase columns are blanked.
 7. pellets   -- a tray presents 20 pellets. A video the pipeline cut into any
                 other number has the wrong pellet number on its reaches, so that
@@ -141,14 +141,14 @@ OUTCOME_TO_CODE = {"untouched": 0, "displaced_sa": 1, "displaced_outside": 1,
 MIN_COMPARABLE = 15        # pellets both records scored
 MIN_MINORITY = 4           # entries differing from the vector's most common value
 BEST_AT_LEAST = 0.95       # agreement with the matching animal
-OWN_AT_MOST = 0.75         # agreement with the animal the video is labelled as
+OWN_AT_MOST = 0.75         # agreement with the animal the video is labeled as
 RUNNER_UP_AT_MOST = 0.85   # agreement with the next-best candidate
 
 # Every column derived from the hand scores of one tray. Blanking "the hand-score
 # columns" must blank ALL of them: the session totals ride on every reach row and
 # are computed before this pass runs, so a column missing from this list would
-# keep a value this pass has judged doubtful (2026-10-16: three new hand-scored
-# percentages were about to do exactly that).
+# keep a value this pass has judged doubtful (add every new hand-scored
+# column here).
 MANUAL_FIELDS = (["pellets_hand_scored", "manual_displaced", "manual_retrieved",
                   "manual_contacted"]
                  + ["percent_%s_hand_scored" % o
@@ -436,7 +436,7 @@ def _video_vectors(snapshot: Path) -> Tuple[Dict[str, Dict[int, int]], pd.DataFr
     videos = rd.drop_duplicates("video_name")[
         ["video_name", "subject_id", "session_date", "tray_type", "run_number"]].copy()
     # A filed tray with no reach is a video too (it has a session row in the
-    # exports since 2026-11-24): the checks that judge a video by its animal and
+    # exports): the checks that judge a video by its animal and
     # date -- death, the hand-score count, no sheet -- must judge it as well.
     vs_path = snapshot / "video_sessions.parquet"
     if vs_path.exists():

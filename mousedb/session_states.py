@@ -38,7 +38,7 @@ this order:
                     (<pipeline>/attention/*.json, read only).
   filed             finished and in the final output folder (Analyzed).
   in_processing     on the server and moving: waiting to be cut, being
-                    posed, in the analysis steps, or analysed and waiting
+                    posed, in the analysis steps, or analyzed and waiting
                     for the sheet's next import to be compared with its
                     hand scores (that hold releases itself).
   not_on_server     scored in the sheet, but no video of it is anywhere in

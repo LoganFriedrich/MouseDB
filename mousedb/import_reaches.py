@@ -7,12 +7,11 @@ MouseReach produces complete, usable output on its own: one
 the outcome it was joined to, and the segment context), filed under its
 Analyzed tree. Putting those rows into a central database is an INTEGRATION
 -- this tool's job, and this tool's schema (``reach_data`` in
-``mousedb.schema``). Until 2026-08-28 the pipeline PUSHED rows into the
-database from inside the watcher, which tied MouseReach to a database it did
-not own and could not run without. Now mousedb pulls: it scans the configured
+``mousedb.schema``). The pipeline does not push rows into the database from
+inside the watcher (that would tie MouseReach to a database it does not own).
+Instead mousedb pulls: it scans the configured
 MouseReach pipeline folder, imports what is new or changed, and keeps its own
-ledger. The flattening (one row per reach) is the same as the old pusher's, so
-existing rows and existing analyses are unaffected.
+ledger. The flattening is one row per reach.
 
 WHAT IT DOES
   1. Refuses to write while a MouseReach watcher is running on this machine
@@ -36,7 +35,7 @@ WHAT IT DOES
      as empty it meant "import every file again", silently (``load_ledger``).
   4. Leaves out every filed video whose NEWER run waits in a review queue
      (the test of step 6): not imported, not entered in the ledger, its
-     cohort not re-labelled. Importing it would only have its rows taken out
+     cohort not re-labeled. Importing it would only have its rows taken out
      again by step 6, every night. ``--verbose`` lists them.
   5. For each file: the animal is CREATED from the video name if the tracking
      sheet has not named it yet (machine data never waits on hand data; the
@@ -132,7 +131,7 @@ PROVENANCE_COLUMNS = ['processed_by', 'mousereach_version', 'dlc_scorer', 'segme
                       'reach_detector_version', 'outcome_detector_version']
 # A person's Flag Session note on the video (MouseReach's top-level
 # session_flag: null, or {session_key, reason, flagged_by, flagged_at}). A
-# MARKER ONLY (owner decision D5-10, 2026-11-19): recorded so it can be found
+# MARKER ONLY: recorded so it can be found
 # later, on every reach row of the session; nothing excludes or treats a
 # flagged row differently. session_flag is 1 when flagged, NULL otherwise.
 SESSION_FLAG_COLUMNS = ['session_flag', 'session_flag_reason', 'session_flag_by',
@@ -179,10 +178,9 @@ CREATE TABLE IF NOT EXISTS video_pellets (
     PRIMARY KEY (video_name, segment_num)
 )"""
 # The pellet's timing and placement, copied from the results file's segment
-# (2026-11-24). WHY: the sessions export reports each tray's latency to the
+# WHY: the sessions export reports each tray's latency to the
 # first reach, the gap between reaches and how well the pellets were placed;
-# the results file has these per pellet, and until now nothing imported them,
-# so no export could report them. Added to an existing table by
+# the results file has these per pellet, so they are imported here. Added to an existing table by
 # ensure_video_tables (ALTER TABLE ... ADD COLUMN), so "never altered" above
 # now reads: altered only by adding a column, never by changing one.
 #   time_to_first_reach_sec        pellet's first frame -> start of its first reach
@@ -201,13 +199,12 @@ VIDEO_PELLET_COLUMNS = ['video_name', 'segment_num', 'subject_id', 'session_date
 # a session with no reach at all, which neither reach_data (one row per reach)
 # nor, on an Easy or Flat tray, video_pellets (pillar trays only) can hold.
 #
-# WHY THIS TABLE EXISTS (2026-11-24, owner: "No reaches means no REACH rows.
-# Session rows should still exist in the session files."): the sessions export
-# was built from reach rows only, so every filed tray at which the animal never
-# reached vanished from it -- a post-injury animal that no longer reaches was
-# simply missing, instead of showing 0 reaches. The session's own measurements
-# that do not depend on reaches (its attention score, its session flag) were
-# lost with it. This table is where the session itself is recorded.
+# WHY THIS TABLE EXISTS: no reaches means no REACH rows, but session rows
+# still exist in the session files. A sessions export built from reach rows
+# only would lose every filed tray at which the animal never reached -- a
+# post-injury animal that no longer reaches would be simply missing, instead of
+# showing 0 reaches. The session's own measurements that do not depend on
+# reaches (its attention score, its session flag) would be lost with it. This table is where the session itself is recorded.
 # Created on first use; replaced per video together with the video's other rows.
 VIDEO_SESSIONS_DDL = """
 CREATE TABLE IF NOT EXISTS video_sessions (
@@ -230,7 +227,7 @@ CREATE TABLE IF NOT EXISTS video_sessions (
     total_frames         INTEGER,
     frame_rate           REAL
 )"""
-# The video's length (2026-11-24): its frame count and frame rate from the
+# The video's length: its frame count and frame rate from the
 # results file. WHY: the sessions export reports how long each tray ran and the
 # reaches per minute; nothing else in the database knows a video's length.
 # Added to an existing table by ensure_video_tables.
@@ -272,7 +269,7 @@ _ANIMAL_TOKEN = re.compile(r"^([A-Za-z]+)(\d{2})(\d{2})$")
 
 
 def parse_subject_id(video_name: str) -> Optional[str]:
-    """``20250624_CNT0115_P2`` -> ``CNT_01_15``; ``20220811_ASPA1011_P3`` -> ``ASPA_10_11``.
+    """``20250624_PROJA0115_P2`` -> ``PROJA_01_15``; ``20220811_ASPA1011_P3`` -> ``ASPA_10_11``.
     The animal token is ``{project letters}{cohort 2d}{subject 2d}``; every
     project is handled the same way (hardcoding one prefix once silently
     dropped a whole project's results)."""
@@ -440,11 +437,11 @@ def load_pending_entries(consequence: str = BEFORE_IMPORTING) -> Dict[str, int]:
     THE FILE'S FORMAT: a JSON object {cohort: count}. The count goes up by one
     every time a save QUEUES the cohort (``queue_pending_phases``: its phase
     refresh failed). WHY: the reach import re-labels a cohort and then takes
-    it off the list. A cohort queued again WHILE it was being re-labelled may
-    have been re-labelled from dates read before that save, and taking it off
+    it off the list. A cohort queued again WHILE it was being re-labeled may
+    have been re-labeled from dates read before that save, and taking it off
     then lost it, with stale labels and nothing reporting it. The count tells
     the two apart: the import takes a cohort off only if its count is still
-    the one it read before it began re-labelling it (see ``run``). Older
+    the one it read before it began re-labeling it (see ``run``). Older
     versions wrote a plain JSON list of cohort names; that is still read, as
     count 0 for each. (An older version reading the new file takes its keys,
     which are the cohort names, so it keeps working too.)"""
@@ -493,7 +490,7 @@ def update_pending_phases(change: Callable[[set], set],
     new list.
 
     WHY: two programs write this list. The reach import adds the cohorts it
-    imported into and takes off those it re-labelled; a save in the MouseDB
+    imported into and takes off those it re-labeled; a save in the MouseDB
     window whose own phase refresh failed adds that cohort
     (``Database._queue_for_reach_import``). The commonest reason that refresh
     fails is a database busy with the running reach import -- so the two write
@@ -505,7 +502,7 @@ def update_pending_phases(change: Callable[[set], set],
     HOW: the read-change-write runs under its own lock (a ``TaskMutex`` named
     ``reach-phases-list`` in the same folder, so the import's hold of the
     database lock never blocks it, and a writer that crashed while holding it
-    is recognised and its lock broken, as for the database lock). A writer
+    is recognized and its lock broken, as for the database lock). A writer
     that cannot get the lock within ``PENDING_PHASES_LOCK_WAIT_SECONDS``
     raises ``LockWaitTimeout``, having changed nothing.
 
@@ -523,7 +520,7 @@ def queue_pending_phases(cohorts: Iterable[str],
     one's queue count by one (one locked read-and-write); the new list.
 
     WHY the count goes up even for a cohort already on the list: the running
-    reach import may be re-labelling that very cohort from dates it read
+    reach import may be re-labeling that very cohort from dates it read
     before the save that queued it. The import takes a cohort off the list
     only when its count is still the one it read before it began, so this
     cohort stays on for the next run instead of being lost with stale labels."""
@@ -739,7 +736,7 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute("ALTER TABLE reach_data ADD COLUMN %s %s" % (col, typ))
     ensure_video_tables(conn)
-    # The phase re-labelling after every import selects one cohort's rows by
+    # The phase re-labeling after every import selects one cohort's rows by
     # subject_id; with no index on it SQLite read the WHOLE table once per
     # touched cohort (hours over a network share). Created here, under
     # the database lock this import already holds, so an existing database gets
@@ -1179,7 +1176,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     # after the loop takes such a video's rows out (it is not done while the
     # new run waits for a person). Importing the old filed file first meant
     # that every night the same videos were imported, withdrawn again, and
-    # their cohorts re-labelled for nothing. Skipped here, they add no rows
+    # their cohorts re-labeled for nothing. Skipped here, they add no rows
     # and touch no cohort; with no ledger entry, the new run is imported as
     # usual once it is filed. Rows such a video already has are still taken
     # out by the withdrawal step. The same test as that step
@@ -1242,9 +1239,9 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         if verbose:
             for name in sorted(held_names):
                 log("  [held] %s" % name)
-    # Cohorts an earlier run imported into but stopped before re-labelling
+    # Cohorts an earlier run imported into but stopped before re-labeling
     # (see PENDING_PHASES_NAME). Their videos are in the ledger, so this run
-    # would not touch them again; they are re-labelled at the end regardless.
+    # would not touch them again; they are re-labeled at the end regardless.
     pending = load_pending_phases() if not dry_run else set()
     if pending:
         log("import-reaches: %d cohort(s) still to re-label from an earlier run that stopped: %s"
@@ -1253,7 +1250,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     def checkpoint() -> None:
         # Pending cohorts FIRST, then the ledger: a video must never be marked
         # done in the ledger while nothing records that its cohort still needs
-        # re-labelling. Each video's ledger entry is set only after its
+        # re-labeling. Each video's ledger entry is set only after its
         # transaction committed (below), so the ledger never runs ahead of the
         # database; a kill loses at most the entries since the last save, and
         # those videos are simply imported again by the restart.
@@ -1360,20 +1357,20 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         if not dry_run:
             checkpoint()  # also persists refreshed stamps for unchanged files
             # Re-read: a cohort queued by another program during this run
-            # (see checkpoint) is re-labelled now rather than a night later.
+            # (see checkpoint) is re-labeled now rather than a night later.
             relabel = load_pending_phases(PART_WAY) | pending | res.cohorts_touched
             left = set(relabel)
             if relabel:
                 try:
                     from .backfill import backfill_phases
                     from .prefetch import warmed
-                    # Re-labelling reads the whole reach table once per cohort.
+                    # Re-labeling reads the whole reach table once per cohort.
                     # Read the file sequentially first and hold it open for all
                     # the cohorts, so those scans run from memory: hours cold
                     # against seconds warm on a network share.
                     with warmed(db, log=log):
                         for cohort in sorted(relabel):
-                            # The cohort's queue count BEFORE re-labelling it.
+                            # The cohort's queue count BEFORE re-labeling it.
                             # If a save queues it again before the re-label is
                             # done, that save may have landed after the
                             # re-label read the cohort's dates (they are read
@@ -1386,10 +1383,10 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                             left.discard(cohort)
 
                             # Re-read and change, as in checkpoint(): the
-                            # cohort just re-labelled leaves the list unless it
+                            # cohort just re-labeled leaves the list unless it
                             # was queued again meanwhile -- a run killed after
                             # this point need not re-label it again. Every
-                            # cohort not yet re-labelled stays; a cohort done
+                            # cohort not yet re-labeled stays; a cohort done
                             # earlier in this loop and queued again since
                             # stays too.
                             def done(entries, c=cohort, seen=seen):

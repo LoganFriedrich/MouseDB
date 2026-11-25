@@ -7,7 +7,7 @@ When the database lives on a network share and the file is not in the
 operating system's cache, that is slow in a way nothing else in the job is:
 measured on a network share, well under 1 MB/s cold against tens of MB/s once
 the file had been read once. A full scan of a multi-gigabyte table -- what the
-snapshot refresh does for every table, and what re-labelling test phases does
+snapshot refresh does for every table, and what re-labeling test phases does
 for every cohort -- takes hours cold and minutes warm.
 
 A plain sequential read in large chunks fills that cache at the share's real

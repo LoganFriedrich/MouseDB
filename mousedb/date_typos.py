@@ -1,4 +1,4 @@
-"""Recognise a year typed wrong in a column of session dates.
+"""Recognize a year typed wrong in a column of session dates.
 
 WHY
 ---
@@ -7,7 +7,7 @@ A tracking sheet is typed by hand, and a session typed as last year (a
 rest of its cohort. That one wrong digit does more than strand the
 session: phases are derived from the gaps between a cohort's sessions
 (mousedb.phases), so a session a year early reads as a long break after
-it and every real session after that break is labelled as if it came
+it and every real session after that break is labeled as if it came
 after an injury. The scores also no longer meet the videos of that day,
 so the hand-score check cannot find them.
 
@@ -37,7 +37,7 @@ recording never happens then), sitting between rows that all carry one
 and the same weekday date, is read as that weekday -- provided none of its
 animal/tray pairs is already on that day. A weekday date out of place (a
 make-up session typed among the regular rows) is never touched, and neither
-is a whole block on a weekend: with no neighbours to read it from, the day
+is a whole block on a weekend: with no neighbors to read it from, the day
 cannot be lined up.
 """
 from __future__ import annotations

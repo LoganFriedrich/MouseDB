@@ -87,8 +87,8 @@ IDENTITY: List[Tuple[str, str]] = [
 ]
 
 # A person's Flag Session note (Yes / No, and who, when and why), repeated on
-# every row of the session. A MARKER ONLY (owner decision D5-10, 2026-11-19):
-# the exclusion pass and everything else here ignore it.
+# every row of the session. A MARKER ONLY: it records the person's flag so it
+# can be found later; the exclusion pass and everything else here ignore it.
 SESSION_FLAG: List[Tuple[str, str]] = [
     ("session_flag", "session_flag"),
     ("session_flag_reason", "session_flag_reason"),
@@ -102,9 +102,8 @@ SESSION_FLAG: List[Tuple[str, str]] = [
 #
 # The per-video reach count is not taken from here: the sessions exporter counts
 # it from these very rows as reaches_in_video and it is carried back onto every
-# row (_carry_session_totals). It was also published as total_swipes_ai until
-# 2026-11-17 -- the same number twice, one of them under an earlier program's
-# per-DAY name. The per-day count is day_total_reaches.
+# row (_carry_session_totals). An older file also carries it as total_swipes_ai
+# (an earlier program's per-DAY name). The per-day count is day_total_reaches.
 # The day's pellet totals (odc_reaches.day_outcome_totals), from both streams.
 DAY_OUTCOME_SOURCES = ('Day_Pellets_AI', 'Day_Retrieved_AI', 'Day_Displaced_AI', 'Day_Contacted_AI', 'Day_Untouched_AI', 'Day_Pellets_Hand', 'Day_Retrieved_Hand', 'Day_Displaced_Hand', 'Day_Contacted_Hand', 'Day_Untouched_Hand')
 SESSION_TOTALS: List[Tuple[str, str]] = [
@@ -128,7 +127,7 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
 # Measurements computed once per reach rather than once per landmark: the paw's
 # rotation about the reach axis (its angle in the camera plane, from the left
 # edge of the hand to the right edge, which is the pronation measure), how far
-# that angle travelled over the reach, the head's angle and width, the nose's
+# that angle traveled over the reach, the head's angle and width, the nose's
 # distance from the slit, the straightness and smoothness of the path, and the
 # speed at apex in real time units rather than per frame.
 #
@@ -256,7 +255,7 @@ REACH_CONTEXT: List[Tuple[str, str]] = [
 # names here take those values, so an analysis written against the earlier
 # program's files is continued with the same quantities in the same units.
 #
-# Until 2026-11-17 these names held the pipeline's OWN measures instead
+# Older files held the pipeline's OWN measures under these names instead
 # (extension past the nose in mm, lateral deviation, swept area, peak speed per
 # frame, anchored path length, reach duration): different quantities, in
 # different units, under a name that said otherwise. Those now keep the
@@ -278,7 +277,7 @@ NAMED_KINEMATICS: List[Tuple[str, str]] = [
     ("ext_legacy_swipe_path_over_frames_px_per_frame", "path_over_frames"),
 ]
 
-# What the swipe_* names held until 2026-11-17, and what those columns are
+# What the swipe_* names held in older files, and what those columns are
 # called now: {name now: name it was published under}. Kept so a reader holding
 # an older file can line the two up; each side's dictionary entry says so.
 FORMERLY_NAMED = {
@@ -833,9 +832,9 @@ def _unit_partner(name: str, columns) -> str:
 
     Three reasons a name differs, and a reader needs all of them: the earlier
     program's measures carried under that program's names (swipe_length and the
-    rest), the pipeline's own measures that were published under those names
-    until 2026-11-17, and the word changed because the extractor's was
-    misleading (visibility -> confidence).
+    rest), the pipeline's own measures that older files published under those
+    names, and the word changed because the extractor's was misleading
+    (visibility -> confidence).
     """
     present = set(columns)
     for ours, theirs in RENAMED_WORDS.items():

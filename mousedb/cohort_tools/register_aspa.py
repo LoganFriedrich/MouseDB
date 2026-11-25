@@ -3,10 +3,10 @@
 
 WHY
 ---
-ASPA is a project in exactly the way CNT is, and its videos run through the same
+ASPA is a project in exactly the way PROJA is, and its videos run through the same
 pipeline. But no ASPA cohort or subject exists in the database, so
 `sync_file_to_database` skips every ASPA video -- it will not write reach data for
-an animal it has never heard of. Analysed ASPA sessions have nowhere to
+an animal it has never heard of. Analyzed ASPA sessions have nowhere to
 land.
 
 This registers the project, the cohorts, and the animals, so that data can flow.

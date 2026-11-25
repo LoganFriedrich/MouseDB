@@ -5,7 +5,7 @@ WHY THIS EXISTS
 Collaborators receive reaching data as ONE flat table per cohort: every row is a
 reach, and every row also carries that animal's details (strain, sex, surgery
 parameters, drugs, injury level ...) and that session's details (date, tray,
-phase), so the file can be filtered and modelled without joins. Building it by
+phase), so the file can be filtered and modeled without joins. Building it by
 hand once took weeks and left the animal columns empty. This writes it from what
 mousedb already holds, for every cohort, beside a data dictionary that describes
 every column (an ODC-SCI upload fails without one).
@@ -52,7 +52,7 @@ TOTAL_COLUMNS = [r["VariableName"] for r in dd.ODC_REACH_TOTALS]
 DISPLACED = ("displaced_sa", "displaced_outside")
 
 # Columns whose empty cells mean the question cannot apply to that row, not that
-# anybody failed to answer it. Kept as a named list because each one is a judgement
+# anybody failed to answer it. Kept as a named list because each one is a judgment
 # about the experiment, not about the data:
 #   Days_Post_Injury    the session happened before the injury -- there is no day count
 #   Exclusion_reason    the animal was not excluded, so there is no reason to give
@@ -61,7 +61,7 @@ NOT_APPLICABLE_WHEN_EMPTY = {
     "Days_Post_Injury": missing.NOT_APPLICABLE,
     "Exclusion_reason": missing.NOT_APPLICABLE,
     "interaction_frame": missing.NOT_APPLICABLE,
-    # Not 'not applicable' but a judgement of the same kind, kept with them: the
+    # Not 'not applicable' but a judgment of the same kind, kept with them: the
     # day's total is empty only when a tray of that day is not filed (or the day
     # has no hand-score record to check against), so the count cannot be
     # committed to yet -- see day_reach_totals.
@@ -91,7 +91,7 @@ NOT_APPLICABLE_WHEN_EMPTY = {
 # or flat tray none of them has an answer (trays.py says why), so there they read
 # 'Not applicable' -- whatever the column's general word for an empty cell, and
 # whatever the database put there (causal_reach is 0 on those rows, a claim about
-# a pellet nobody tracked; the contact groups said 'missed' before 2026-10-26).
+# a pellet nobody tracked, so the contact groups must not say 'missed').
 EASY_FLAT_NOT_APPLICABLE = trays.ALGO_PELLET_COLUMNS + (
     "Video_Pellets", "Video_Displaced", "Video_Retrieved", "Video_Contacted",
     "Session_Untouched_AI",
@@ -157,10 +157,10 @@ def _date(v) -> Optional[date]:
 # used to decide whether to stay SILENT about an animal's fate. It never asserts
 # a death on its own.
 #
-# WHY the declaration has to win: a cohort can finish its behaviour and still be
+# WHY the declaration has to win: a cohort can finish its behavior and still be
 # weeks away from its endpoint, and it can finish long ago while its last videos
 # are still arriving. Recency cannot see either. A cohort's last session can be
-# days old while its owner knows the cohort is finished -- so a tool deciding
+# days old while the cohort is in fact finished -- so a tool deciding
 # from dates alone would call it live.
 #
 # WHY A MONTH: where sessions run on a near-daily cadence, even a fortnight of
@@ -182,8 +182,8 @@ def _declared_study_status(cohort_id: str) -> str:
 
     Read from the raw sections rather than through facts(), on purpose: facts()
     resolves by PROJECT, because a strain or a supplier is a property of a whole
-    project. Whether a study has finished is a property of ONE COHORT -- CNT_06
-    can be running while CNT_05 is done -- so it is looked up by the cohort's own
+    project. Whether a study has finished is a property of ONE COHORT -- PROJA_06
+    can be running while PROJA_05 is done -- so it is looked up by the cohort's own
     name and deliberately does not inherit from the project.
     """
     from .. import study_facts as _sf
@@ -287,7 +287,7 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     # It was also wrong in a way that costs data. An animal that died during its
     # injury surgery still has every pre-surgery reach it ever made -- 6,124 of
     # them in one cohort alone -- and those are ordinary baseline measurements.
-    # Labelling them "Total exclusion" invites a reader to drop them.
+    # Labeling them "Total exclusion" invites a reader to drop them.
     #
     # So the survival fact is carried plainly and the exclusion column is left to
     # whatever the sheet itself records, which at present is nothing.
@@ -386,7 +386,7 @@ DAY_INCOMPLETE = "no"
 
 
 def _tray_keys(subject, day, tray_type, number) -> List[tuple]:
-    """(subject, YYYY-MM-DD, tray letter, tray number) per row, normalised so the
+    """(subject, YYYY-MM-DD, tray letter, tray number) per row, normalized so the
     reach table's run_number and the hand scores' tray_number compare equal."""
     numbers = pd.to_numeric(pd.Series(list(number)), errors="coerce")
     return [(str(s), str(d), str(t).strip().upper(), None if pd.isna(n) else int(n))
@@ -401,8 +401,8 @@ def day_reach_totals(rc: pd.DataFrame, test_date: pd.Series,
 
     WHY A DAY TOTAL. An earlier reach program reported "Total Swipes": the
     reaches one animal made in one testing session -- one date, every tray of
-    it. This export's per-video count (Video_Reaches_AI, which was published as
-    Total_Swipes_AI until 2026-11-17) counts one tray only, so it is not that
+    it. This export's per-video count (Video_Reaches_AI, which older files call
+    Total_Swipes_AI) counts one tray only, so it is not that
     number. This is: the reach rows of the animal on that date, all trays.
 
     WHY IT CAN BE EMPTY. Only filed videos have reach rows, so a day with a tray
@@ -578,11 +578,10 @@ def session_only_rows(cohort_id: str, rc: pd.DataFrame,
                       pellets: Optional[pd.DataFrame]) -> pd.DataFrame:
     """One row per filed tray of the cohort that has NO reach row: the session.
 
-    WHY (owner, 2026-11-24: "No reaches means no REACH rows. Session rows should
-    still exist in the session files."). The sessions document was built from
-    the reach rows, so a tray at which the animal never reached -- often THE
-    result after an injury -- was missing from it, and its session-level
-    measurements with it. Such a tray still has everything a session row
+    WHY: no reaches means no REACH rows, but session rows still exist in the
+    session files. Built from the reach rows alone, the sessions document would
+    miss a tray at which the animal never reached -- often THE result after an
+    injury -- and its session-level measurements with it. Such a tray still has everything a session row
     carries that does not come from reaches: the animal, the date and tray, the
     hand scores, the pellets the pipeline cut and their outcomes (all untouched,
     usually), the attention score, the session flag, the day it belongs to.
@@ -594,7 +593,7 @@ def session_only_rows(cohort_id: str, rc: pd.DataFrame,
     The row carries the reach table's columns with every reach field empty, so
     the same code computes its animal, session and day columns as for any other
     tray. Its phase label is its cohort date's, exactly as the reach import's
-    re-labelling gives every reach row (mousedb.backfill): the label of the
+    re-labeling gives every reach row (mousedb.backfill): the label of the
     cohort's reach rows on that date, else of the cohort's hand scores on that
     date, else 'Unscheduled'.
     """
@@ -677,7 +676,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
     ``weights`` (session_weights): the day's body weight is put on each
     session-only row too. The reach rows got theirs in load_snapshot; a tray
     with no reach is not a reach row, and without this its session row read NA
-    for a weight the sheet records (2026-11-24).
+    for a weight the sheet records.
 
     With ``video_sessions`` (or ``video_pellets``) the frame also holds ONE
     session-only row for every filed tray with no reach (session_only_rows); its
@@ -770,7 +769,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
             cols["contact_group"] = levels.reach_contact(codes)
 
     # A person's Flag Session note, as Yes/No on every reach of the session.
-    # A marker only (owner decision D5-10): nothing reads it to leave anything out.
+    # A marker only: nothing reads it to leave anything out.
     if "session_flag" in cols:
         cols["session_flag"] = session_flag_word(rc["session_flag"])
 
@@ -789,7 +788,7 @@ def build_cohort(cohort_id: str, reach: pd.DataFrame, subjects: pd.DataFrame,
         retr=("o", lambda s: int((s == "retrieved").sum())))
     # The session's attention is the mean over EVERY segment of the tray, a
     # segment the animal never attended counting 0 -- the same on every tray,
-    # reached for or not (owner decision 2026-11-24). Attention is scored per
+    # reached for or not. Attention is scored per
     # segment from the pose, not from reaches; averaging only the segments that
     # have a reach would score a low-reaching animal on just the pellets it
     # attended to. The import records that mean per video (video_sessions,
@@ -942,7 +941,7 @@ def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[s
         else:
             dest = out_dir / "_superseded"
         dest = dest / ("%s_%s" % (datetime.now().strftime("%Y-%m-%d_%H%M%S"), label))
-        # A name may be a path inside the folder (CNT/CNT_05/x.csv): kept as such.
+        # A name may be a path inside the folder (PROJA/PROJA_05/x.csv): kept as such.
         (dest / name).parent.mkdir(parents=True, exist_ok=True)
         f.replace(dest / name)
         moved.append(str(dest / name))
@@ -999,7 +998,7 @@ SHARED_DICTIONARIES = {
     "complete": "ODC_reaches_DATA_DICTIONARY.csv",
     "summary": "reaches_summary_DATA_DICTIONARY.csv",
 }
-# The per-cohort names those replaced (2026-10-16); archived when found.
+# The older per-cohort names those replaced; archived when found.
 _PER_COHORT_DICTIONARY = re.compile(
     r"^(ODC_reaches_.+|reaches_.+_summary)_DATA_DICTIONARY\.csv$")
 
@@ -1080,7 +1079,7 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
     # 'Not recorded', and a question that cannot apply to the row is 'Not applicable'.
     # Inferring the word from emptiness got this wrong in exactly the way that matters:
     # the frozen ASPA workbooks record no species, so SpeciesTyp is empty in those
-    # cohorts, and an emptiness rule labelled a mouse's species 'Not measured'.
+    # cohorts, and an emptiness rule labeled a mouse's species 'Not measured'.
     never = dd.never_computed_names() | NOT_MEASURED_BY_CURRENT_DETECTOR
     reasons = {c: missing.NOT_MEASURED for c in never if c in df.columns}
     for column, reason in NOT_APPLICABLE_WHEN_EMPTY.items():
@@ -1220,10 +1219,9 @@ def write_cohort(out_dir: Path, cohort_id: str, df: pd.DataFrame, rows: List[dic
 def session_weights(snapshot_dir) -> "pd.DataFrame":
     """The hand-recorded body weight for each animal on each day, or empty.
 
-    Absent on an older snapshot, which is not an error: the table was added to
-    the snapshot on 2026-10-14 and a snapshot taken before that simply has no
-    weights. The columns are then missing from the export rather than wrong,
-    which is the behaviour every other optional table already has.
+    Absent on an older snapshot, which is not an error: a snapshot taken before
+    the table was added simply has no weights. The columns are then missing from the export rather than wrong,
+    which is the behavior every other optional table already has.
     """
     path = Path(snapshot_dir) / "weights.parquet"
     if not path.exists():
@@ -1239,7 +1237,7 @@ def session_weights(snapshot_dir) -> "pd.DataFrame":
     # it: cohorts whose weights came from the transposed weight grid and the tray
     # tab hold a fraction (0.87), while cohorts imported through the vertical
     # weight tab hold the sheet's own percentage (87). Multiplying everything by
-    # 100 -- what this did until 2026-10-15 -- turned one cohort's 90% into 9,000%.
+    # 100 would turn one cohort's 90% into 9,000%.
     #
     # The value itself says which it is, and unambiguously: no animal is kept at
     # 2% of its free-feeding weight, and none weighs 200% of it. So anything at or
@@ -1510,7 +1508,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     # The exclusion checks run once, against the whole snapshot, before any cohort
     # is written. If they cannot run, the analysis files are NOT written: shipping
     # them unfiltered would put entries already known to be wrong in front of the
-    # people analysing them, which is the one outcome the checks exist to prevent.
+    # people analyzing them, which is the one outcome the checks exist to prevent.
     try:
         from ..config import get as _cfg, mousereach_pipeline_root
         exclusions = export_exclusions.compute(
@@ -1539,7 +1537,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         try:
             label = cohort_label(cid)
             # The name of each document in the manifest is its path inside the
-            # exports folder (CNT/CNT_05/ODC_reaches_CNT_05.csv).
+            # exports folder (PROJA/PROJA_05/ODC_reaches_PROJA_05.csv).
             name = lambda kind: layout.key(final_dir, layout.cohort_file(final_dir, kind, cid, label))
             kept = inc.kept(cid)
             if kept is not None:
@@ -1582,7 +1580,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
             # Each document under its own name. The counts above describe them
             # too, but a reader of the manifest (and the Where Is My Data tab)
             # looks for a file by its name, and a report that is not listed by
-            # name is a report nobody knows is there (2026-10-16).
+            # name is a report nobody knows is there.
             if not analysis_only:
                 manifest["files"][name("reaches_summary")] = {
                     "rows": entry["rows"], "columns": entry["summary_columns"],
@@ -1789,8 +1787,8 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
 
     # Each project's combined files, put together from the cohort files now on
     # disk -- so a one-cohort export still yields a combined file holding every
-    # cohort (see exporters.layout). Then the per-cohort files the layout before
-    # 2026-10-29 left at the top of the folder are archived.
+    # cohort (see exporters.layout). Then the per-cohort files the older flat
+    # layout left at the top of the folder are archived.
     #
     # Incremental: a project none of whose cohorts was rebuilt, archived or
     # failed keeps its combined files as they are (their manifest entries come
@@ -1812,7 +1810,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         if regrouped:
             manifest["archived_regrouped_project_folders"] = len(regrouped)
 
-    # Per-cohort dictionaries from before 2026-10-16 are superseded by the shared
+    # Older per-cohort dictionaries are superseded by the shared
     # ones: moved out of the folder (archived, never deleted) once the shared
     # dictionary that replaces them is in place.
     if not analysis_only and all((final_dir / n).exists() for n in SHARED_DICTIONARIES.values()):

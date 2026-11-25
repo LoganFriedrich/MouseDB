@@ -120,8 +120,8 @@ def importer(monkeypatch):
 
 @pytest.fixture
 def no_database(monkeypatch):
-    """`mousedb import` initialises the database first and runs a completeness
-    report after. Neither may touch a real database here: initialising is a
+    """`mousedb import` initializes the database first and runs a completeness
+    report after. Neither may touch a real database here: initializing is a
     no-op and opening one fails (the report says it could not run)."""
     import mousedb.database as dbmod
 
@@ -498,7 +498,7 @@ class TestNothingImportedIsAFailure:
 
 @pytest.fixture
 def database_opened(monkeypatch):
-    """Like no_database, but records every attempt to initialise the database,
+    """Like no_database, but records every attempt to initialize the database,
     so a test can prove a refused import never got that far."""
     import mousedb.database as dbmod
     calls = []

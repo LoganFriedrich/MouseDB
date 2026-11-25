@@ -53,7 +53,7 @@ MISSED = "Missed"
 # A person reviewing the video saw something other than a reach move the pellet
 # (the review tool's "abnormal", or an ignore window with no reach credited:
 # "abnormal_exception"). That is a decided answer about the pellet, not a gap,
-# and until 2026-10-26 it was exported as Undetermined, which read as "nobody
+# so it must not be exported as Undetermined, which reads as "nobody
 # decided". No reach did it, so every reach at that pellet reads Missed.
 NOT_BY_A_REACH = "Moved by something other than a reach"
 
@@ -139,7 +139,7 @@ SESSION: List[Tuple[str, str]] = [
     # scored ones without being able to tell.
     ("tray_type", "tray_type"),
     ("Attention_AI", "mean_attention_score_in_session"),
-    # A person's Flag Session note: a marker only (owner decision D5-10).
+    # A person's Flag Session note: a marker only.
     ("session_flag", "session_flag"),
     ("session_flag_reason", "session_flag_reason"),
     ("session_flag_by", "session_flag_by"),
@@ -205,8 +205,8 @@ def extra_kinematics(columns: Iterable[str]) -> List[Tuple[str, str]]:
 
 
 SESSION_TOTALS: List[Tuple[str, str]] = [
-    # The per-video count was named reaches_in_session until 2026-11-17; a
-    # session here is one tray's video, which the name did not say.
+    # The per-video count is named for the video, not the session (older files
+    # call it reaches_in_session): a session here is one tray's video.
     ("Video_Reaches_AI", "reaches_in_video"),
     ("Day_Total_Reaches_AI", "day_total_reaches"),
     ("Day_Total_Reaches_Complete", "day_total_reaches_complete"),
@@ -225,7 +225,7 @@ SESSION_TOTALS: List[Tuple[str, str]] = [
     "Day_Untouched_AI", "Day_Pellets_Hand", "Day_Retrieved_Hand", "Day_Displaced_Hand",
     "Day_Contacted_Hand", "Day_Untouched_Hand")]
 
-# Which word fills an empty cell, per column of THIS document. Each is a judgement
+# Which word fills an empty cell, per column of THIS document. Each is a judgment
 # about WHY the cell is empty, taken from the measurement's own definition in the data
 # dictionary -- never inferred from the fact that it happens to be empty.
 REASONS: Dict[str, str] = {
@@ -300,7 +300,7 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series,
 
     ``segments``: one key per pellet (levels.segment_keys). Without it the
     credited-reach check cannot be made and a moved pellet's uncredited reaches
-    read Missed, as before 2026-11-19.
+    read Missed.
 
     MISSED IS AN ANSWER, NOT AN ABSENCE. The animal reached and the pellet stayed
     where it was, either because a different reach is the one that moved it or
@@ -308,7 +308,7 @@ def _reach_result(causal: pd.Series, pellet_result: pd.Series,
     measure whether the paw touched the pellet on a reach that did not move it, so
     "missed" says only what the pellet did.
     """
-    # levels._truthy, which also reads 1.0 as true. WHY (2026-11-24): the frame
+    # levels._truthy, which also reads 1.0 as true. WHY: the frame
     # carries the session-only rows of trays with no reach (odc_reaches.build_cohort);
     # concatenating them turns causal_reach into floats, and reading only "1" made
     # every credited reach of such a cohort "Undetermined" in every per-reach file.

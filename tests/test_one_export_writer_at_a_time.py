@@ -140,7 +140,7 @@ def test_the_command_line_says_when_its_wait_ran_out(tmp_path, capsys, monkeypat
     try:
         try:
             code = current.main(["--snapshot-dir", str(snap), "--out-dir", str(tmp_path / "c")])
-        except Exception as e:                  # noqa: BLE001 -- the old behaviour
+        except Exception as e:                  # noqa: BLE001 -- the old behavior
             pytest.fail("the command ended in a traceback: %r" % e)
     finally:
         holder.release()
@@ -162,7 +162,7 @@ def test_the_per_reach_command_says_when_its_wait_ran_out(tmp_path, capsys, monk
     try:
         try:
             code = odc_reaches.main(["--snapshot-dir", str(snap)])
-        except Exception as e:                  # noqa: BLE001 -- the old behaviour
+        except Exception as e:                  # noqa: BLE001 -- the old behavior
             pytest.fail("the command ended in a traceback: %r" % e)
     finally:
         holder.release()

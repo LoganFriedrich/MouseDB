@@ -24,7 +24,7 @@ observed:
    day away, a daily job could be down for days.
 2. Nobody knew. A stack trace in a log file that nobody opens is not a report.
 3. The trace said "OperationalError: database is locked", which reads like a
-   defect in this tool. It is not; it is a neighbour holding a lock.
+   defect in this tool. It is not; it is a neighbor holding a lock.
 
 So: wait and try again a few times across a bounded window, and if the lock is
 still there at the end, say so in one sentence a person can act on, and leave
@@ -48,7 +48,7 @@ T = TypeVar("T")
 
 # How long to keep trying, and how long to pause between tries. The defaults
 # suit a job that runs nightly with hours of clear air after it. A job with a
-# neighbour an hour later should pass a smaller window.
+# neighbor an hour later should pass a smaller window.
 DEFAULT_WINDOW_MINUTES = 45
 DEFAULT_GAP_MINUTES = 7
 
@@ -136,7 +136,7 @@ def retry_while_locked(
         announce: where to put progress for a person -- usually print. Each
             wait is announced, because a silent job that takes 45 minutes looks
             exactly like a hung one, and someone will kill it.
-        sleep, clock: injected so the behaviour can be tested without waiting.
+        sleep, clock: injected so the behavior can be tested without waiting.
         from_first_lock: start the window at the first "database is locked",
             not at the first attempt. For a job whose ``work`` may first wait
             a long time for this tool's own cross-task lock (the snapshot

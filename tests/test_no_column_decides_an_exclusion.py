@@ -2,15 +2,15 @@
 
 WHY THIS TEST EXISTS
 --------------------
-Until 2026-10-14 this export wrote "Total exclusion" into
-Exclusion_in_origin_study for any animal whose tracking sheet recorded a surgery
+The export must never write "Total exclusion" into
+Exclusion_in_origin_study for an animal whose tracking sheet recorded a surgery
 it did not survive. That is a verdict, and it is not the exporter's to reach --
 an animal that died during its injury surgery still made every reach it made
-before that day, and in one cohort alone that was 6,124 ordinary baseline
-measurements sitting under a label that invites a reader to drop them. The
+before that day, and those ordinary baseline measurements would sit under a
+label that invites a reader to drop them. The
 project's whole approach depends on those rows staying usable.
 
-The verdict was removed and the underlying fact carried plainly instead
+The verdict is left out and the underlying fact carried plainly instead
 (Survived_All_Surgeries, Yes or No). Two things have to stay true afterwards, and
 both have been wrong at some point:
 

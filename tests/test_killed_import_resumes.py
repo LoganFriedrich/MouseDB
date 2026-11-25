@@ -73,7 +73,7 @@ def test_killed_mid_loop_restart_imports_only_the_rest(tmp_path, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         ir.run(log=lambda *_: None)
 
-    # The two committed videos are in the ledger; the cohort waits to be re-labelled.
+    # The two committed videos are in the ledger; the cohort waits to be re-labeled.
     assert sorted(k.rsplit("/", 1)[-1] for k in _ledger(tmp_path)) == sorted(done)
     assert _pending(tmp_path) == ["PROJA_01"]
 

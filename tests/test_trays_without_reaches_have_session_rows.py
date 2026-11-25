@@ -1,7 +1,7 @@
 """Every filed tray has a session row -- also a tray at which the animal never reached.
 
-Owner, 2026-11-24: "No reaches means no REACH rows. Session rows should still
-exist in the session files." The sessions document was built from reach rows
+No reaches means no REACH rows, but session rows still exist in the session
+files. The sessions document was built from reach rows
 only, so a tray with no reach (often THE result after an injury) vanished from
 it, with its attention score and its pellet outcomes. Now the import records
 every results file as one row of video_sessions, and the exporter gives each
@@ -220,7 +220,7 @@ def test_an_easy_tray_with_no_reach_has_its_attention_and_completes_the_day(tmp_
     reaches = read("reaches_PROJA_01_analysis.csv")
     assert set(reaches["day_reaches_ai"]) == {"2"} and set(reaches["day_complete"]) == {"yes"}
     # the reached tray too: the mean over every segment (video_sessions), not
-    # over its reached segments (owner decision 2026-11-24)
+    # over its reached segments
     assert float(sessions.loc[REACHED, "session_attention_ai"]) == 3.0
 
 

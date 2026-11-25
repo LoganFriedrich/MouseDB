@@ -40,7 +40,7 @@ A refusal raises NewSheetRefused, worded for a person; on the command line it
 is printed as "REFUSED: ..." on stderr and the command exits with REFUSED_EXIT.
 Nothing is written when that happens.
 
-Mode 2 (Fix Existing): standardises an existing file. The fixed copy keeps the
+Mode 2 (Fix Existing): standardizes an existing file. The fixed copy keeps the
 input's name and goes to --output-dir (default: a "generated" folder under the
 current directory) -- and, like --new, is never written over an existing file,
 so it can never replace the input itself:
@@ -484,7 +484,7 @@ def scan_cohort_files_for_planning(script_dir, exclude_file=None):
     Scan directory for existing cohort files and extract their start dates
     
     Returns:
-        List of dicts with cohort info: [{'name': 'CNT_01', 'start_date': datetime, 'file': path}, ...]
+        List of dicts with cohort info: [{'name': 'PROJA_01', 'start_date': datetime, 'file': path}, ...]
     """
     cohorts = []
     
@@ -518,7 +518,7 @@ def scan_cohort_files_for_planning(script_dir, exclude_file=None):
                 if first_id and '_' in str(first_id):
                     parts = str(first_id).split('_')
                     if len(parts) >= 2:
-                        cohort_name = f"{parts[0]}_{parts[1]}"  # e.g., "CNT_01"
+                        cohort_name = f"{parts[0]}_{parts[1]}"  # e.g., "PROJA_01"
             
             wb.close()
             
@@ -2282,7 +2282,7 @@ def parse_cohort_name(text) -> CohortName:
     raises NewSheetRefused saying what form is expected.
 
     WHY strict: the name becomes the file name written into the sheets folder.
-    The old reading kept whatever followed the last underscore, so "CNTS_01",
+    The old reading kept whatever followed the last underscore, so "PROJAB_01",
     "CNT_05_01" or any typo ending "_01" wrote Connectome_01_Animal_Tracking.xlsx
     -- cohort 01's existing sheet. A bare number ("07") is refused too: it names
     no project, and the project decides the file name. Surrounding spaces and
@@ -3281,7 +3281,7 @@ def infer_cohort_info(wb, report):
     Try to infer cohort information from existing data
     
     Returns dict with:
-        - cohort_name: e.g., "CNT_01"
+        - cohort_name: e.g., "PROJA_01"
         - subject_ids: list of subject IDs
         - start_date: experiment start date
         - num_mice: number of mice
@@ -3321,7 +3321,7 @@ def infer_cohort_info(wb, report):
                         # Infer cohort name from first ID
                         first_id = info['subject_ids'][0]
                         if "_" in first_id:
-                            # e.g., "CNT_01_05" -> "CNT_01"
+                            # e.g., "PROJA_01_05" -> "PROJA_01"
                             parts = first_id.rsplit("_", 1)
                             info['cohort_name'] = parts[0]
                             report.add_info(f"Inferred cohort name: {info['cohort_name']}")

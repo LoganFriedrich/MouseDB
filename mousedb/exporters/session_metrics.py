@@ -102,7 +102,7 @@ def kinematic_measures(columns) -> List[Tuple[str, str]]:
 
     THE RULE: every per-reach measurement the reach file publishes as reach_<name>
     (analysis_reaches.measurement_columns -- listed the other way round, so a
-    measure the extractor adds later is summarised here without anyone adding
+    measure the extractor adds later is summarized here without anyone adding
     it) that is a number describing the movement, which leaves out:
       * text columns (how an anchor was placed, which paw point led),
       * frame numbers (a name ending in _frame: WHERE in the video the reach
@@ -464,7 +464,7 @@ def kinematic_dictionary_rows(row, measures: List[Tuple[str, str]],
                               reach_rows: Dict[str, dict]) -> List[dict]:
     """Four rows per measure. ``reach_rows`` = the reach file's dictionary rows by
     INTERNAL name: each summary column names, and takes its unit from, the
-    per-reach column it summarises."""
+    per-reach column it summarizes."""
     which = (" Over every reach of this session that has a value for the measure (the "
              "matching session_n_ column says how many): reaches made after the pellet "
              "was already gone are included (session_reaches_after_the_pellet_was_gone "

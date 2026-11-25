@@ -1346,7 +1346,7 @@ class TestImportBrains:
     def test_a_real_import_waits_for_the_database_task_mutex(self, monkeypatch, tmp_path):
         """WHY: import-brains commits to connectome.db but did not take the
         mutex the reach import and snapshot share; three hourly runs in a row
-        failed "database is locked" (2026-09-15). A dry run touches nothing and
+        failed "database is locked". A dry run touches nothing and
         must not wait."""
         import contextlib
         from mousedb import cli, task_mutex

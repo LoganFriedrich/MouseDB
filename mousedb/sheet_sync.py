@@ -3,10 +3,10 @@
 WHY THIS EXISTS
 ---------------
 Tracking spreadsheets are filled in "eventually" and the database is
-only as current as the last import. Until 2026-08-28 nothing recorded when a
-sheet was last imported, nothing compared that to when the sheet was last
-edited, and an import that failed rolled back in silence (one cohort's, on
-every scheduled run). This module is the one place that knows,
+only as current as the last import. Without a record of when a
+sheet was last imported, a comparison with when the sheet was last
+edited, and a report of imports that failed, a failed import would roll back in
+silence. This module is the one place that knows,
 per cohort:
 
   * which file IS the sheet (all candidates listed; a person can pin one),
@@ -982,7 +982,7 @@ def snapshot_folder_of(path) -> Optional[str]:
 
     WHY absolute: a path is judged by the folder names in it, and a bare file
     name typed while standing inside an archive folder carries none, so it
-    used to pass. WHY normalised (os.path.abspath, which folds '..'): a path
+    used to pass. WHY normalized (os.path.abspath, which folds '..'): a path
     that climbs OUT of such a folder ('archive/../live') is not inside it.
     Symlinks and mapped drives are left as typed, so the names judged are the
     ones the person sees."""
@@ -1467,8 +1467,8 @@ def _pin_command(cohort: str, filename: Optional[str]) -> int:
     name not in the folder), and that used to reach the person as a Python
     traceback. Which files may be pinned is decided there, once; this only
     reports it. The cohort is read by requested_cohort_id first, because the
-    guard keeps only a request's trailing number: 'pin CNTS_01 ...' would
-    otherwise pin CNT_01's sheet."""
+    guard keeps only a request's trailing number: 'pin PROJAB_01 ...' would
+    otherwise pin PROJA_01's sheet."""
     cohort_id, why = requested_cohort_id(cohort)
     try:
         if why:

@@ -8,11 +8,11 @@ measurements, figures, the log of registrations) in ITS OWN pipeline folder,
 registry is complete on its own: ``exports/<analysis>/registry.json`` records,
 per sample, the method and parameters, the method hash, the source files, the
 output files and whether the entry is still current. Putting those outputs
-next to the behavioural exports, so a person finds every result in ONE place,
-is an INTEGRATION -- this tool's job. Until 2026-08-28 MouseBrain wrote its
-outputs straight into this tool's folder, which tied it to a folder it did not
-own and could not run without. Now mousedb pulls: it mirrors the registry
-tree, keeps its own ledger, and summarises the provenance in one manifest.
+next to the behavioral exports, so a person finds every result in ONE place,
+is an INTEGRATION -- this tool's job. MouseBrain does not write into this
+tool's folder (that would tie it to a folder it does not own). Instead mousedb
+pulls: it mirrors the registry
+tree, keeps its own ledger, and summarizes the provenance in one manifest.
 
 WHAT IT DOES
   1. Finds every ``exports/<analysis>/registry.json`` under the registry root

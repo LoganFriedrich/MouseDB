@@ -3,7 +3,7 @@
 WHY THESE TESTS EXIST
 ---------------------
 The database holds reaches filed under the wrong animal, dated after the
-animal's death, and labelled with experiment phases that contradict the
+animal's death, and labeled with experiment phases that contradict the
 cohort's own injury dates. The measurements are sound; their labels are not.
 The importer cannot yet correct them, so the analysis exports leave them out,
 at the smallest scope that contains the problem, until the source is fixed --
@@ -405,7 +405,7 @@ def test_thresholds_are_what_the_documentation_says():
 
 def test_dropping_then_blanking_raises_no_pandas_copy_warning():
     """Every nightly export log carried SettingWithCopyWarning: rows were
-    dropped into a filtered view and columns then assigned on it (2026-10-22)."""
+    dropped into a filtered view and columns then assigned on it."""
     import warnings
     from pandas.errors import SettingWithCopyWarning
     # surgery_checkable sends apply() through the phase check, which keeps a
@@ -441,7 +441,7 @@ def _one_video(tmp_path):
 def _refuses(snap, names, **inputs):
     """compute() must REFUSE, naming the input -- not run the checks without it.
 
-    Written as an assertion on what compute() does, so the old behaviour (the
+    Written as an assertion on what compute() does, so the old behavior (the
     check skipped and compute() returning as if all were well) fails here
     with the notes it returned, not with a missing name."""
     try:

@@ -1,6 +1,6 @@
 """The reach import records each video's length and each pellet's timing and placement.
 
-WHY (2026-11-24): the sessions export reports how long each tray ran, the
+WHY: the sessions export reports how long each tray ran, the
 reaches per minute, the latency to the first reach, the gap between reaches and
 how well the pellets were placed. The results file has all of these; nothing
 imported them, so no export could report them. They are now copied into

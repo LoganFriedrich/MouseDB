@@ -90,7 +90,7 @@ def test_a_surgical_death_is_still_reported_in_a_running_cohort():
 def test_a_declaration_beats_recency_in_both_directions(monkeypatch):
     """The lab knows; the dates only guess.
 
-    A cohort can finish its behaviour weeks before its endpoint, and can finish
+    A cohort can finish its behavior weeks before its endpoint, and can finish
     long ago while its last videos are still arriving. Recency sees neither.
     """
     import pandas as pd
@@ -125,7 +125,7 @@ def test_knowing_nothing_falls_back_to_saying_nothing(monkeypatch):
 
 
 def test_study_status_is_read_per_cohort_and_not_inherited_from_the_project():
-    """CNT_06 can be running while CNT_05 is finished.
+    """One cohort can be running while another is finished.
 
     facts() resolves by project, because a strain or supplier belongs to a whole
     project. Whether a study has finished belongs to one cohort.

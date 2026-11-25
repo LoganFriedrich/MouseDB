@@ -16,7 +16,7 @@ WHAT IS WRITTEN (in <mousedb_root>/exports/hand_scores/)
 hand_pellet_scores.csv   one row per hand-scored pellet:
     video_key      the session as the pipeline names its video:
                    <YYYYMMDD>_<animal>_<tray type><tray number>, the animal
-                   written without underscores (CNT_02_07 -> CNT0207)
+                   written without underscores (PROJA_02_07 -> PROJA0207)
     pellet         pellet number, 1-20
     score          0 = not touched, 1 = displaced, 2 = retrieved (eaten)
     subject_id, cohort_id, project, session_date, tray
@@ -114,7 +114,7 @@ def out_dir() -> Path:
 
 
 def video_key(subject_id: str, session_date, tray_type: str, tray_number) -> str:
-    """'CNT_02_07', 2025-07-09, 'P', 1 -> '20250709_CNT0207_P1'."""
+    """'PROJA_02_07', 2025-07-09, 'P', 1 -> '20250709_PROJA0207_P1'."""
     day = str(session_date)[:10].replace("-", "")
     return "%s_%s_%s%d" % (day, subject_id.replace("_", ""), tray_type, int(tray_number))
 

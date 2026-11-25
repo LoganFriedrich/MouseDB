@@ -121,7 +121,7 @@ def test_two_waiters_judging_the_same_dead_lock_leave_one_holder(tmp_path):
     seen_by_b = b._read()
     assert b._classify(seen_by_b)[0] == "dead"
     assert a.try_acquire()                      # A breaks and takes
-    assert not b._break(seen_by_b, "dead")      # B acts on its stale judgement
+    assert not b._break(seen_by_b, "dead")      # B acts on its stale judgment
     assert a.path.read_text() == a._identity    # A's lock untouched
     assert not b.try_acquire()                  # and B sees a live holder
     a.release()

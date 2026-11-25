@@ -1,7 +1,7 @@
 """The census-database join: promotion, the invariant, and honest refusals.
 
-Identifiers are synthetic (project ABC). The behaviours under test were each
-measured to fail silently before being guarded; assert behaviour, never a
+Identifiers are synthetic (project ABC). The behaviors under test were each
+measured to fail silently before being guarded; assert behavior, never a
 corpus count.
 """
 import pytest

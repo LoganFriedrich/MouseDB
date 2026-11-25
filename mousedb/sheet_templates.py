@@ -26,7 +26,7 @@ measured, keeping the format:
 
 It clears every other typed value in an animal's row (scores, weights, sex,
 notes ...), and EVERY date anywhere: a date is never a constant. A value that
-is the same for every animal of a one-row-per-animal tab (an anaesthetic, a
+is the same for every animal of a one-row-per-animal tab (an anesthetic, a
 target level) is cleared too, unless listed in ``keep`` -- it may equally be
 "the same for everyone so far" (a survival column before anyone died); the
 report lists each such column so a person can decide. A sheet named
@@ -421,7 +421,7 @@ def _clear_batch_blocks(ws) -> int:
 
 
 def _drop_stray_colour_rules(ws, ts: List[Table], rep: Report) -> None:
-    """Colour rules a person put on particular cells of a worked-in sheet --
+    """Color rules a person put on particular cells of a worked-in sheet --
     outside every table, or on the cells beside one -- describe that cohort's
     data, not the format, so a template drops them (reported)."""
     from openpyxl.formatting.formatting import ConditionalFormattingList
@@ -630,7 +630,7 @@ def _copy_style(src, dst) -> None:
 
 
 def _remap_conditional_formats(ws, tab: str, lay: "_Layout", problems: List[str]) -> None:
-    """Colour rules follow the rows they colour. A rule over one block of
+    """Color rules follow the rows they colour. A rule over one block of
     animal rows (a summary block) is re-pointed like a range in a formula;
     whole-column rules stay as written."""
     from openpyxl.formatting.formatting import ConditionalFormattingList
