@@ -47,8 +47,8 @@ def bring_contact_columns_current(conn: sqlite3.Connection) -> List[str]:
     A column whose table already carries the current expression is left alone,
     so this is safe to run on every import. A VIRTUAL generated column stores
     nothing, so SQLite drops and re-adds it by rewriting the schema alone --
-    instant even on the 5 GB reach table (timed 2026-10-26: 0.01 s each on a
-    559 MB table of a million rows). Each column's swap is all-or-nothing; a
+    instant even on a multi-gigabyte reach table (hundredths of a second each
+    on a table of a million rows). Each column's swap is all-or-nothing; a
     table that cannot take the new definition raises. Hold the cross-task lock
     (task_mutex) while calling it, like any other write."""
     changed: List[str] = []

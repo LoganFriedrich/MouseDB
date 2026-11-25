@@ -308,8 +308,8 @@ def build(snapshot_dir=None, root: Optional[Path] = None,
             df = _read_table(path, name)
             if name in ADDED_COHORT and "cohort_id" not in df.columns and "subject_id" in df:
                 # Stored, not computed in a view: the browser's cohort filter and
-                # facet on 800,000 reaches then use an index (about a second
-                # faster per click). Same rule as views._COHORT_FROM_ID.
+                # facet on a large reach table then use an index (faster
+                # per click). Same rule as views._COHORT_FROM_ID.
                 df.insert(1, "cohort_id", df["subject_id"].astype("string").str[:-3])
             df.to_sql(name, con, index=False, chunksize=20000)
             written = datetime.fromtimestamp(path.stat().st_mtime)

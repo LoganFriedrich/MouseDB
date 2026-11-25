@@ -1,11 +1,10 @@
 """Phase backfill: the end state is unchanged, but only rows that differ are written.
 
-WHY: the database lives on a network share that takes writes at a fraction of
-a megabyte per second. Rewriting every reach of a cohort to the label it
-already has cost hours every night (2026-10-15: one reprocessed video of the
-largest cohort -> the whole cohort rewritten -> the reach import ran past its
-limit and held the database through the brain import and the export refresh).
-A night on which nothing changed must write nothing.
+WHY: the database may live on a network share that takes writes slowly.
+Rewriting every reach of a cohort to the label it already has costs hours
+(one reprocessed video of a large cohort -> the whole cohort rewritten -> the
+reach import runs past its limit and holds the database through the jobs after
+it). A run on which nothing changed must write nothing.
 """
 from datetime import date
 

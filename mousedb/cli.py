@@ -1093,8 +1093,8 @@ def cmd_import_brains(args):
         return _import_brains_body(args, summary_dir)
     # Under the cross-task mutex. WHY: this import commits to connectome.db like
     # the reach import and the snapshot's long reads, but did not take the mutex
-    # they share -- on 2026-09-15 three scheduled runs in a row failed "database
-    # is locked" while another task held the database. Waiting its turn costs
+    # they share -- so scheduled runs failed "database is locked" while
+    # another task held the database. Waiting its turn costs
     # seconds; failing costs everything until the next scheduled run. The
     # body returns 1 on failure, and the with-block releases the lock on any
     # exit from it, normal or not.

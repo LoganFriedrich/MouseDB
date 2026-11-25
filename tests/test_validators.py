@@ -113,7 +113,7 @@ class TestValidateProjectCode:
 
 class TestCompactIdToSubjectId:
     """Compact-format conversion (CNT0115 <-> CNT_01_15) is what the legacy
-    Excel sheets and the lab's video filenames use; making sure both styles
+    Excel sheets and the pipeline's video filenames use; making sure both styles
     round-trip is what keeps the import path forgiving."""
 
     def test_compact_form_converts_correctly(self):

@@ -29,16 +29,16 @@ Some workbooks do not type their dates: each row's date cell is a formula
 such as ``=A419+1``, "the date a fixed number of rows up, plus one". That
 holds only while every day's block has the same number of rows. Cut a row
 (an animal leaves the cohort) or leave one blank, and the formulas below it
-count from the wrong row: CNT_04's rows for animals 02-04, tray 1, sit in the
-2025-10-28 block but compute to 2025-10-25, a Saturday. Their scores were
-filed under a day nothing was recorded, and the videos of the 28th found no
-hand scores. The rule: a run of rows dated on a WEEKEND (recording never
-happens then -- Logan, 2026-10-22), sitting between rows that all carry one
+count from the wrong row: rows for animals 02-04, tray 1, can sit in a
+Tuesday's block but compute to the Saturday before. Their scores are then
+filed under a day nothing was recorded, and that Tuesday's videos find no
+hand scores. The rule: a run of rows dated on a WEEKEND (this rule assumes
+recording never happens then), sitting between rows that all carry one
 and the same weekday date, is read as that weekday -- provided none of its
 animal/tray pairs is already on that day. A weekday date out of place (a
 make-up session typed among the regular rows) is never touched, and neither
 is a whole block on a weekend: with no neighbours to read it from, the day
-cannot be lined up (Logan: "if you can't line up one day who cares").
+cannot be lined up.
 """
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
 
 WHY (2026-10-22): the phase re-labelling after every reach import selects one
 cohort's rows by subject_id. With no index SQLite read the whole table once per
-touched cohort -- hours over the share (2026-10-15/16). A new database gets the
+touched cohort -- hours over a network share. A new database gets the
 index from schema.py; an existing one from import_reaches.ensure_columns.
 """
 import sqlite3

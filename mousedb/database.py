@@ -1,5 +1,5 @@
 """
-Database connection and session management for Connectome Data Entry.
+Database connection and session management for mousedb.
 """
 
 import os
@@ -58,12 +58,12 @@ class Database:
 
         # Create engine and session factory.
         #
-        # Busy timeout: the database lives on a network share in rollback-journal
-        # mode, where the hourly snapshot's reads take minutes and a bulk
-        # phase re-derivation commits for minutes. SQLite's default wait is 5 s,
-        # so any overlap made one job fail with "database is locked" -- the
-        # snapshot went stale and phase assignment silently skipped
-        # (2026-09-01). Batch jobs now wait long enough to serialize; the GUI
+        # Busy timeout: the database may live on a network share in
+        # rollback-journal mode, where the snapshot's reads take minutes and a
+        # bulk phase re-derivation commits for minutes. SQLite's default wait is
+        # 5 s, so any overlap made one job fail with "database is locked" -- the
+        # snapshot went stale and phase assignment silently skipped. Batch jobs
+        # now wait long enough to serialize; the GUI
         # sets MOUSEDB_DB_TIMEOUT low so a window never freezes for minutes.
         import os
         timeout = int(os.environ.get("MOUSEDB_DB_TIMEOUT", "600"))

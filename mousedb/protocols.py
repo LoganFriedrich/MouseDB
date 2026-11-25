@@ -1,5 +1,5 @@
 """
-Protocol Management Module for Connectome Data Entry.
+Protocol Management Module for mousedb.
 
 This module provides functions for creating, managing, and using behavioral
 testing protocols. Protocols define the sequence of phases (training, testing,
@@ -115,7 +115,7 @@ def create_protocol(
 
     Args:
         session: Database session
-        name: Protocol name (e.g., "Connectome Standard Protocol")
+        name: Protocol name (e.g., "Standard Reaching Protocol")
         phases: List of phase dictionaries with keys:
             - phase_name: str (required)
             - duration_days: int (required)

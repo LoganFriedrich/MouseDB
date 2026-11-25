@@ -30,8 +30,8 @@ WHY THIS WAY
 ------------
 * ``pythonw`` (no console window) of the environment mousedb is installed in,
   ``-m <module>``: never a ``Scripts\\*.exe`` shim, because a shim held open by
-  a running window blocks ``pip install`` of the package (a reviewer's open
-  window once stopped a deploy). Nothing is copied, so a shortcut keeps working
+  a running window blocks ``pip install`` of the package (an open window
+  would stop a deploy). Nothing is copied, so a shortcut keeps working
   after the code is updated.
 * The icons are Windows' own (imageres.dll), present on every Windows computer,
   so the tool ships no image files.

@@ -152,9 +152,9 @@ MIGRATION_COLUMNS = [(c, 'TEXT') for c in PROVENANCE_COLUMNS + ['outcome_source'
 # pellets nobody reached for, which reach_data cannot hold (it has one row per
 # reach, so a pellet with no reach leaves no trace there).
 #
-# WHY THIS TABLE EXISTS (2026-10-16): the exports counted "pellets presented"
+# WHY THIS TABLE EXISTS: the exports counted "pellets presented"
 # and the per-video outcome totals from reach rows, so an ignored pellet was
-# invisible: the count came out below 20 in over half the sessions, and a
+# invisible: the count came out below 20 in many sessions, and a
 # displaced or retrieved pellet whose reach went undetected was never counted.
 # A tray holds 20 pellets; how many the pipeline actually found in the video is
 # a measurement, and a number other than 20 is an error worth seeing. This
@@ -311,11 +311,11 @@ def _moved_entries(ledger: dict, root: Path, files: List[Path]) -> Dict[str, str
     """{new key: old key} for results files that MOVED since the last import.
 
     The ledger is keyed by each file's path under the pipeline folder. When the
-    finished-work folders are reorganised (2026-10-30: project folders grouped
+    finished-work folders are reorganised (e.g. project folders grouped
     under their grant), every file gets a new path, and without this each one
     would be hashed and imported again -- every reach of every moved cohort
-    rewritten over the share, the multi-hour import that held the database
-    lock on 2026-10-11. A file counts as moved when its new path is not in the
+    rewritten over the share, a multi-hour import that holds the database
+    lock. A file counts as moved when its new path is not in the
     ledger, exactly one ledger entry has the same file name, and that entry's
     old path no longer exists. Its content is still checked as for any file:
     the moved entry carries its stamp and hash, so an unchanged file is skipped
@@ -585,7 +585,7 @@ def pellet_rows(data: dict, video_name: str, subject_id: str, now: str,
                 source_file: str) -> List[dict]:
     """One row per pellet (segment) of the video, whether or not it was reached for.
 
-    None for an Easy or Flat tray video. WHY (lab decision, 2026-10-23): on
+    None for an Easy or Flat tray video. WHY: on
     those trays pellets are presented but not tracked -- the video is one
     whole-session span, not cut per pellet, and no outcome is computed -- so a
     pellet row would claim "1 pellet presented, 0 retrieved" for a session
@@ -741,7 +741,7 @@ def ensure_columns(conn: sqlite3.Connection) -> None:
     ensure_video_tables(conn)
     # The phase re-labelling after every import selects one cohort's rows by
     # subject_id; with no index on it SQLite read the WHOLE table once per
-    # touched cohort (hours over the share, 2026-10-15/16). Created here, under
+    # touched cohort (hours over a network share). Created here, under
     # the database lock this import already holds, so an existing database gets
     # it on the next nightly run; a new database gets it from schema.py.
     conn.execute(REACH_SUBJECT_INDEX_DDL)
@@ -938,14 +938,13 @@ def videos_back_in_review(root: Path, filed: Dict[str, Path]) -> Dict[str, Path]
     A newer run in review: the pipeline re-runs a filed video without touching
     the filed copy (it is kept until the new run is filed, then archived), so a
     video can sit in both places. While the newer run waits for a person the
-    video is not done -- on 2026-10-26 the old filed copies of all 23 such
-    videos had pellets nobody decided or cuts a reviewer had since sent to deep
-    review -- so it leaves the database like any other video sent back. A copy
+    video is not done -- the old filed copy can have pellets nobody decided or
+    cuts a reviewer has since sent to deep review -- so it leaves the database like any other video sent back. A copy
     in a queue that is OLDER than the filed one is a leftover and changes
     nothing. Which run is newer comes from each run's own record, the
     processing manifest's created_at (``_run_time``), not from file times: a
-    later backfill rewrote filed results files and made a March run look newer
-    than an August one.
+    later backfill can rewrite filed results files and make an older run look
+    newer than a later one.
 
     Only positive evidence counts. A video merely missing from Analyzed -- on
     its way back after review, being renamed, or a listing that failed -- is
@@ -1004,9 +1003,9 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     WHY: filing means done. The database holds a video's reaches because the
     video was filed, and it is sent back to a review queue only when something
     in it is not done after all (a pellet nobody answered, a disagreement with
-    the hand scores, an "are you sure?"). Until 2026-10-26 its rows stayed --
+    the hand scores, an "are you sure?"). Before this change its rows stayed --
     with the answers it had before it went back -- and went out in every export
-    as if finished: 286 videos and 44,178 reach rows that day. Now they leave
+    as if finished. Now they leave
     the database until the video is filed again.
 
     HOW: each such video's rows in reach_data, video_pellets and
@@ -1198,9 +1197,9 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
         # A file can be gone between the listing and this read: the watcher
         # refiles a video by replacing its results, and a re-run moves a bundle
         # into a queue. Skipped here like the vanished-file case further down,
-        # and found again next run. WHY (2026-11-03): the 2026-11-02 21:00 run
-        # stopped on one such file and imported nothing, while a version bump
-        # was rewriting thousands of results files a day.
+        # and found again next run. WHY: a run that stopped on one such file
+        # imported nothing, and while a version bump is rewriting results
+        # files that happens on every run.
         try:
             st = p.stat()
             stamp = "%d:%d" % (st.st_size, int(st.st_mtime))
@@ -1271,7 +1270,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
     last_save = time.monotonic()
     # The db phase runs under the cross-task mutex (see task_mutex.py): this
     # import overlapping the snapshot's long reads put the db in PENDING
-    # starvation for 22 minutes on 2026-09-02 -- neither task was slow at the
+    # starvation for many minutes -- neither task was slow at the
     # db, the OVERLAP was the outage. Enumeration above stays outside the
     # lock (it is pure filesystem and can take many minutes over the share).
     from .task_mutex import hold
@@ -1308,7 +1307,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # the disagreement router (or review-return) moved its bundle
                     # into a queue mid-run. That is normal traffic, not an import
                     # failure -- the file will be found again wherever it lands.
-                    # (First seen 2026-09-01 13:20; it failed the whole run.)
+                    # (Before this was handled, it failed the whole run.)
                     res.skipped += 1
                     res.messages.append("%s: vanished mid-run (moved to a review queue?) -- skipped" % p.name)
                     log("  [skip] %s vanished mid-run (moved to a review queue?)" % p.name)
@@ -1370,8 +1369,8 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     from .prefetch import warmed
                     # Re-labelling reads the whole reach table once per cohort.
                     # Read the file sequentially first and hold it open for all
-                    # the cohorts, so those scans run from memory: 3 hours cold
-                    # against seconds warm on a network share (2026-10-16).
+                    # the cohorts, so those scans run from memory: hours cold
+                    # against seconds warm on a network share.
                     with warmed(db, log=log):
                         for cohort in sorted(relabel):
                             # The cohort's queue count BEFORE re-labelling it.
@@ -1407,7 +1406,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # Rows landed without test_phase/phase_group. That is a
                     # failed import for anyone reading the data, so the job must
                     # exit nonzero -- it was exit 0, and the scheduler showed
-                    # green through nine straight hourly failures (2026-09-01).
+                    # green through repeated failures.
                     res.errors += 1
     log("import-reaches: %d videos imported (%d reaches), %d subjects created, %d taken out "
         "(back in review: %d reaches), %d errors%s" % (

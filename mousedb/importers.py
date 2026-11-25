@@ -394,12 +394,12 @@ class ExcelImporter:
         """Detect cohort start date (Day 0 = the earliest food-dep weigh-in).
 
         Day 0 is the first weigh-in, wherever it was recorded. In the current
-        (CNT_05) format that's the earliest date in 3d_Weights; in older cohorts the
+        format that's the earliest date in 3d_Weights; in older workbooks the
         first weigh-in lived in the ramp sheet (3a_Manual_Ramp). So we take the
         EARLIEST date found across both sheets, which covers both layouts. Only if
         neither exists do we fall back to 3b_Manual_Tray (training ~day 4, minus 4).
         The legacy 1_Weight sheet is not consulted, and 3b_Manual_Tray is never used
-        for the primary anchor because it can carry stale/earlier date blocks (CNT_05).
+        for the primary anchor because it can carry stale/earlier date blocks.
         """
         from datetime import timedelta
 
@@ -673,8 +673,8 @@ class ExcelImporter:
 
         Handles three formats:
         A) Vertical/long: columns = Date, Day, Animal, Weight_g, ...
-        B) Transposed matrix (dates Row 0, phases Row 1): CNT_02/03/04 style
-        C) Transposed matrix (phases Row 0, dates Row 1): CNT_01 style
+        B) Transposed matrix (dates Row 0, phases Row 1): an older layout
+        C) Transposed matrix (phases Row 0, dates Row 1): the oldest layout
         """
         try:
             df = pd.read_excel(xl, sheet_name=sheet, header=None)
@@ -887,7 +887,7 @@ class ExcelImporter:
     def _import_weights_vertical(self, df: pd.DataFrame, cohort_id: str,
                                   session, dry_run: bool, sheet: str = '3d_Weights'):
         """
-        Import weights from vertical/long format (CNT_05 style).
+        Import weights from vertical/long format (current style).
 
         Columns: Date, Day, Animal, Weight_g, Weight_Pct_Baseline, Notes
         """
@@ -964,7 +964,7 @@ class ExcelImporter:
         Import 3a_Manual_Ramp sheet (food deprivation phase).
 
         Columns (old): Mouse ID, Date, Weight, % body weight, Tray Start (g), Tray End (g), Dif
-        Columns (new/CNT_05): Animal, Date, Day, Weight, Food_Start_(g), Food_End_(g), Food_Eaten_(g)
+        Columns (new): Animal, Date, Day, Weight, Food_Start_(g), Food_End_(g), Food_Eaten_(g)
         """
         try:
             df = pd.read_excel(xl, sheet_name='3a_Manual_Ramp')
@@ -977,7 +977,7 @@ class ExcelImporter:
         # Number ramp days anchored to Day 0 = the cohort start date (the earliest
         # weigh-in, detected across the weights + ramp sheets). If a ramp date equals
         # the start, it IS Day 0 -- older cohorts logged the pre-food-dep weigh-in in
-        # this sheet. In the CNT_05 format Day 0 lives in 3d_Weights, so the earliest
+        # this sheet. In the current format Day 0 lives in 3d_Weights, so the earliest
         # ramp date becomes Day 1. Reads real dates; no calendar-gap arithmetic.
         cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
         start = cohort.start_date if cohort else None
@@ -2313,7 +2313,7 @@ class ExcelImporter:
         # test_phase is NOT NULL in the live database (older DDL than the ORM,
         # which allows NULL) -- the previous insert-NULL-then-update design
         # violated it and rolled back every import of a new cohort, silently,
-        # for the hourly sheet import too. The date set is this sheet's dates
+        # for the scheduled sheet import too. The date set is this sheet's dates
         # plus whatever the db already holds for the cohort, so the gap
         # structure is computed over the same union _assign_pellet_phases uses.
         pairs = {(d, t) for _, d, t, _, _ in rows}
@@ -2539,7 +2539,7 @@ class ExcelImporter:
             self.warnings.append("0_Injection_Calculations: sheet is empty or too small")
             return
 
-        # The lab's required layout (batch blocks -- see
+        # The current layout (batch blocks -- see
         # cohort_tools.make_sheets.INJECTION_CALC_HEADERS) is tried first and
         # wins if present anywhere on the sheet. The two legacy layouts are
         # kept only for cohorts written before it was settled.
@@ -2552,7 +2552,7 @@ class ExcelImporter:
             # Legacy vertical Parameter/Value/Units calculator
             self._import_injection_vertical(df, cohort_id, session, dry_run)
         else:
-            # Legacy single-row horizontal format (CNT_01 style)
+            # Legacy single-row horizontal format
             self._import_injection_horizontal(df, cohort_id, session, dry_run)
 
     def _carried_over_batch(self, cohort_id: str, prep_date, virus_name: str,
@@ -2674,8 +2674,8 @@ class ExcelImporter:
             carried = self._carried_over_batch(
                 cohort_id, prep_date, virus_name, session)
             if carried:
-                # WHY (2026-10-30): a new workbook starts as a copy of an earlier
-                # cohort's, and CNT_05's batch reached CNT_06 and CNT_07 that way
+                # WHY: a new workbook starts as a copy of an earlier cohort's,
+                # and an earlier cohort's batch can reach later cohorts that way
                 # -- recorded as those cohorts' prep. A row this importer wrote
                 # from such a block is taken back, so a sheet that was copied
                 # corrects itself; a row a person entered is never touched.
@@ -2720,7 +2720,7 @@ class ExcelImporter:
         return True
 
     def _import_injection_horizontal(self, df, cohort_id: str, session, dry_run: bool):
-        """Import horizontal injection calculations (CNT_01 format)."""
+        """Import horizontal injection calculations (legacy horizontal format)."""
         if df.shape[0] < 2:
             return
 
@@ -2766,7 +2766,7 @@ class ExcelImporter:
             self.imported_counts['virus_preps'] += 1
 
     def _import_injection_vertical(self, df, cohort_id: str, session, dry_run: bool):
-        """Import vertical injection calculations (CNT_05 format)."""
+        """Import vertical injection calculations (legacy vertical format)."""
         # Build parameter -> value dict from rows 1+
         params = {}
         for row_idx in range(1, len(df)):
@@ -2846,7 +2846,7 @@ class ExcelImporter:
                         session, dry_run: bool):
         """Import 6_Ladder results -> LadderEntry, for animals already known.
 
-        The lab abandoned the ladder test, and the tab is routinely half
+        A ladder test dropped from a protocol leaves the tab routinely half
         filled: an animal, a date and a test type with the step counts blank.
         That is a test that was scheduled, not a result. So:
           * a row is data only if a step count is filled (a number above 0: a
@@ -2996,7 +2996,7 @@ class ExcelImporter:
 
         planning_data = {}
         if is_structured:
-            # CNT_05 structured format
+            # Structured format
             phases = []
             for row_idx in range(1, len(df)):
                 row = df.iloc[row_idx]
@@ -3824,7 +3824,7 @@ class BrainGlobeImporter:
     - Brain sample metadata from folder structure
 
     Brain naming convention: {BRAIN#}_{PROJECT}_{COHORT}_{SUBJECT}_{MAG}x_z{ZSTEP}
-    Example: 349_CNT_01_02_1p625x_z4
+    Example: 001_CNT_01_01_1p625x_z4
     """
 
     # Brain name regex pattern
@@ -3913,7 +3913,7 @@ class BrainGlobeImporter:
         Parse brain ID into components.
 
         Args:
-            brain_id: e.g., "349_CNT_01_02_1p625x_z4"
+            brain_id: e.g., "001_CNT_01_01_1p625x_z4"
 
         Returns:
             Dict with brain_number, project, cohort, subject, magnification, z_step
@@ -3987,7 +3987,7 @@ class BrainGlobeImporter:
         # skipped and reported ONCE, by name. WHY: the tracker records every
         # calibration run, including runs on training cubes and test data; one
         # warning per such row, every night, buried any real problem in the
-        # task log ("... and 13 more warnings", 2026-10).
+        # task log ("... and N more warnings").
         not_brains: dict = {}
         with self._import_session(dry_run) as session:
             for _, row in df.iterrows():
@@ -3996,7 +3996,7 @@ class BrainGlobeImporter:
                     continue
                 brain_id = str(brain_id).strip()
 
-                # Handle composite names like "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
+                # Handle composite names like "001_CNT_01_01/001_CNT_01_01_1p625x_z4"
                 # Try parts separated by / to find the parseable brain ID
                 brain_info = self.parse_brain_name(brain_id)
                 if not brain_info and '/' in brain_id:
@@ -5124,7 +5124,7 @@ class BrainGlobeImporter:
         - 3_Registered_Atlas/ - Registration info
 
         Args:
-            brain_folder: Path to brain folder (e.g., 1_Brains/349_CNT_01_02/349_CNT_01_02_1p625x_z4/)
+            brain_folder: Path to brain folder (e.g., 1_Brains/001_CNT_01_01/001_CNT_01_01_1p625x_z4/)
             dry_run: If True, validate only
 
         Returns:
@@ -5239,7 +5239,7 @@ class BrainGlobeImporter:
                 return part
 
         # Try to find brain ID pattern within the filename stem
-        # Handles filenames like "349_CNT_01_02_349_CNT_01_02_1p625x_z4_counts.csv"
+        # Handles filenames like "001_CNT_01_01_001_CNT_01_01_1p625x_z4_counts.csv"
         stem = path.stem
         match = self._BRAIN_NAME_SEARCH.search(stem)
         if match:
@@ -5412,8 +5412,8 @@ def sync_brain_to_db(brain_name: str,
     Never raises -- catches all exceptions and prints warnings.
 
     Args:
-        brain_name: Brain name from pipeline, e.g. "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
-                    or just "349_CNT_01_02_1p625x_z4"
+        brain_name: Brain name from pipeline, e.g. "001_CNT_01_01/001_CNT_01_01_1p625x_z4"
+                    or just "001_CNT_01_01_1p625x_z4"
         per_brain_csv: Path to the per-brain long-format CSV (string or Path)
         region_counts_dict: Optional pre-parsed {acronym: count}
         hemisphere_counts: Optional {acronym: {'left': N, 'right': N}}
@@ -5425,7 +5425,7 @@ def sync_brain_to_db(brain_name: str,
         from .database import get_db
         from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
 
-        # Extract brain_id from brain_name (handle "349_CNT_01_02/349_CNT_01_02_1p625x_z4")
+        # Extract brain_id from brain_name (handle "001_CNT_01_01/001_CNT_01_01_1p625x_z4")
         brain_id = brain_name
         if '/' in brain_name:
             # Try the part after / first (full brain id with mag and z)
@@ -5549,7 +5549,7 @@ def sync_calibration_to_db(brain_name: str, exp_id: str, params_dict: Dict):
     Never raises -- catches all exceptions.
 
     Args:
-        brain_name: Full brain ID, e.g. "349_CNT_01_02_1p625x_z4"
+        brain_name: Full brain ID, e.g. "001_CNT_01_01_1p625x_z4"
         exp_id: Experiment/run ID from tracker
         params_dict: Dict with keys like ball_xy, ball_z, threshold,
                      cells_detected, status, etc.

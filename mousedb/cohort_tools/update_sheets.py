@@ -18,7 +18,7 @@ THIS SCRIPT DOES:
 - Update 7_Stats
 
 Usage:
-    python 1_Update.py Connectome_1_Animal_Tracking.xlsx
+    python 1_Update.py ProjectA_01_Animal_Tracking.xlsx
     python 1_Update.py --all  # Process all cohort files in directory
 """
 

@@ -5,14 +5,14 @@ WHY THIS EXISTS
 SQLite reads a table page by page, 4 KB per request, each one a round trip.
 When the database lives on a network share and the file is not in the
 operating system's cache, that is slow in a way nothing else in the job is:
-measured on the lab's share, 0.4 MB/s cold against 14-18 MB/s once the file
-had been read once. A full scan of a 5 GB table -- what the snapshot refresh
-does for every table, and what re-labelling test phases does for every
-cohort -- is three hours cold and six minutes warm.
+measured on a network share, well under 1 MB/s cold against tens of MB/s once
+the file had been read once. A full scan of a multi-gigabyte table -- what the
+snapshot refresh does for every table, and what re-labelling test phases does
+for every cohort -- takes hours cold and minutes warm.
 
 A plain sequential read in large chunks fills that cache at the share's real
 speed (tens of MB/s), so the scan that follows runs from memory. Two details
-make it work, both learned the hard way on 2026-10-16:
+make it work, both learned the hard way:
 
 * The cache is dropped when the LAST handle on the file closes (the network
   redirector purges on final close). Warming the file in one process and

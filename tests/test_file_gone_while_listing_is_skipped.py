@@ -1,10 +1,9 @@
 """A results file that disappears between the listing and its first read is
 skipped, and the rest of the run still imports.
 
-WHY (2026-11-03): the watcher refiles a video by replacing its results file.
-On 2026-11-02 21:00 one file went missing in that window and the whole import
-stopped with nothing imported, while a version bump was rewriting thousands of
-results files a day.
+WHY: the watcher refiles a video by replacing its results file. A file that
+went missing in that window stopped the whole import with nothing imported,
+and while a version bump is rewriting results files that happens often.
 """
 from mousedb import import_reaches as ir
 

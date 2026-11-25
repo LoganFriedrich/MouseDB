@@ -23,8 +23,8 @@ replaces the brittle TIMELINE-day-offset matching in
 :func:`mousedb.schema.Cohort.get_phase_for_date`, which broke when actual test
 dates didn't match the protocol's nominal day numbers.
 
-Vocabulary follows the lab's Excel summary sheets (`archived_summaries.phase`)
-with spaces replaced by underscores. The `phase_group` column carries the
+Vocabulary follows the phase names of the tracking workbooks' summary sheets
+(`archived_summaries.phase`) with spaces replaced by underscores. The `phase_group` column carries the
 stats-framework bucket (Baseline / Post_Injury_1 / Post_Injury_2-4 /
 Post_Rehab_Test / etc.) so downstream analysis can `GROUP BY phase_group`
 without recomputing buckets.

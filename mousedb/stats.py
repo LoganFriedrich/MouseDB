@@ -1,5 +1,5 @@
 """
-Summary statistics calculations for Connectome Data Entry.
+Summary statistics calculations for mousedb.
 
 Calculates the same stats as the legacy Excel tracking sheets:
 - Per-tray counts and percentages

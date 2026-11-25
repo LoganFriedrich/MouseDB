@@ -84,8 +84,8 @@ exports/current/
   it in R or Python, not Excel. The per-cohort files are what
   Excel can manage.
 - **In a script or notebook, never write a file's path out -- ask mousedb for it.**
-  A path written into a script breaks the next time the folder is rearranged
-  (one did on 2026-10-29). In the MouseDB environment:
+  A path written into a script breaks the next time the folder is rearranged.
+  In the MouseDB environment:
 
   ```python
   from mousedb.exporters.layout import locate
@@ -1144,8 +1144,8 @@ Buttons: **Refresh** re-reads everything. **Open exports folder** opens the
 folder above in Explorer. **Refresh exports now** rewrites `reach_data.csv`,
 `manual_scores.csv`, every cohort's four reach and session-analysis files and
 each project's combined files of those kinds, immediately from the latest
-snapshot. It takes as long as the scheduled run's reach part: hours for the
-whole lab. The per-cohort ODC session files, and their combined file, refresh
+snapshot. It takes as long as the scheduled run's reach part: hours for a
+large database. The per-cohort ODC session files, and their combined file, refresh
 only on the scheduled run, which is the only time the database may be read
 safely. **Make a limited export...** opens the window described in
 "Limited exports: just part of the data" above; the tab re-reads itself when

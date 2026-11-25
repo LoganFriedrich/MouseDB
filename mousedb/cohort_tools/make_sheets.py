@@ -237,7 +237,7 @@ def create_0a_metadata(subject_ids):
     return df
 
 
-# The lab's required 0_Injection_Calculations layout (settled 2026-08-28):
+# The 0_Injection_Calculations layout this builder writes:
 # one BATCH block per virus mix. A batch is a titled table --
 #
 #   Batch <label> - YYYYMMDD
@@ -247,10 +247,10 @@ def create_0a_metadata(subject_ids):
 #   <one row per virus in the mix>
 #   Totals | | | sum(parts) | sum(final) | sum(disambiguated) |
 #
-# Concentrations use the lab's shorthand ("10" means 1x10^12), and the
+# Concentrations use a shorthand ("10" means 1x10^12), and the
 # [Disambiguated] column converts back: final x 1e11. Final concentration
 # = starting x parts / total parts. Earlier generators wrote a single-row
-# 13-column table (CNT_01 style) and a vertical Parameter/Value/Units
+# 13-column table (older cohorts' style) and a vertical Parameter/Value/Units
 # calculator (never mousedb's own) -- both retired; the importer still reads
 # them for legacy cohorts.
 INJECTION_CALC_HEADERS = [
@@ -269,7 +269,7 @@ DEFAULT_SOLUTION_PARTS_TOTAL = 6
 
 def create_0_injection_calculations(num_batches=1, viruses_per_batch=3):
     """Describe the 0_Injection_Calculations sheet: ``num_batches`` empty
-    batch blocks of ``viruses_per_batch`` virus rows each, in the lab's
+    batch blocks of ``viruses_per_batch`` virus rows each, in the
     required layout (see INJECTION_CALC_HEADERS above)."""
     return {
         '_is_injection_calc': True,
@@ -1229,7 +1229,7 @@ def write_3d_weights_flip(ws, df, start_date, subject_ids):
 def create_3d_weights(start_date, subject_ids):
     """
     Create 3d_Weights sheet in flip chart format (animals as rows, dates as columns)
-    Matches the existing 3e_Weights structure from Connectome_1
+    Matches the 3e_Weights structure of earlier cohort workbooks
     
     Format:
     Row 0: Phase names (Flat, Pillar, etc.)
@@ -4468,8 +4468,8 @@ def main(argv=None):
             # A new sheet is made from the project's TEMPLATE
             # (mousedb.sheet_templates), the same as the Tracking Sheets tab's
             # button and 'mousedb new-sheet'. WHY not the layout built into this
-            # file any more: it matched none of the workbooks the lab works in
-            # (2026-10-30), and a second project had no layout at all. A
+            # file any more: it matched none of the workbooks in actual use,
+            # and a second project had no layout at all. A
             # refusal is one plain "REFUSED:" line and REFUSED_EXIT, never a
             # traceback, and nothing is written.
             from .. import sheet_templates

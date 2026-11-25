@@ -7,8 +7,8 @@ computer -- can hold a write lock, and while it does everyone else is refused.
 
 Before this, a job that met one locked moment died with a stack trace and did
 not run again until its next scheduled time. For a daily job that is a lost
-day, and three were lost in a row without anybody noticing, because a stack
-trace in an unread log is not a report.
+day, and several can be lost in a row without anybody noticing, because a
+stack trace in an unread log is not a report.
 """
 import sqlite3
 

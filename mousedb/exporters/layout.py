@@ -12,13 +12,13 @@ and a combined file per kind beside the cohort folders.
                 reaches_<COHORT>_analysis.csv, sessions_<COHORT>_analysis.csv,
                 ODC_days_<COHORT>.csv
 
-WHY (Logan, 2026-10-29): with every cohort's files side by side in one folder, a
-person looking for one cohort, or one project, read past a hundred names. Grouped
+WHY: with every cohort's files side by side in one folder, a
+person looking for one cohort, or one project, read past a long list of names. Grouped
 by project and then cohort, the folder answers "where is CNT_05?" by its shape.
 The combined file answers the other common question -- "all of CNT at once" --
 without each person concatenating the cohort files themselves. A project the lab
 settings list under a grant (mousedb.grants) sits inside the grant's folder
-(Logan, 2026-10-30: one grant funds two projects, and they belong together).
+(one grant may fund several projects, and they belong together).
 
 The cohort label stays in every file name although the folder already says it:
 a file copied out of its folder must still say which cohort it is.
@@ -102,7 +102,7 @@ def file_name(kind: str, label: str) -> str:
 def project_dir(root: Path, project: str) -> Path:
     """A project's folder: <root>/<GRANT>/<PROJECT> when the lab settings list the
     project under a grant (mousedb.grants), else <root>/<PROJECT>. WHY: one grant
-    may fund several projects, and its projects belong together (2026-10-30)."""
+    may fund several projects, and its projects belong together."""
     from ..grants import grant_of
     grant = grant_of(project)
     return Path(root) / grant / project if grant else Path(root) / project

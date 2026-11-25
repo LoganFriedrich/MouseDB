@@ -4,7 +4,7 @@
 per-cohort Excel / ODC / parquet exports. That module used to sit BESIDE this
 package under the same name, so ``from mousedb.exporters import
 export_odc_format`` resolved to this package and failed -- ``mousedb export``
-had been broken by the clash (found 2026-08-28). The names are re-exported
+had been broken by the clash. The names are re-exported
 here so callers keep working.
 """
 from .cohort_reports import (  # noqa: F401

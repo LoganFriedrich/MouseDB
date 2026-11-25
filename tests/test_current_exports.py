@@ -67,7 +67,7 @@ def test_refresh_from_snapshot_alone_is_complete(tmp_path, monkeypatch):
     assert m["files"]["reach_data.csv"]["undocumented_columns"] == []
     assert m["files"]["manual_scores.csv"]["undocumented_columns"] == []
     assert m["complete"] is True
-    # the JSON blob is NOT in the CSV (it made the real file 3 GB); it lives
+    # the JSON blob is NOT in the CSV (it made the real file too large to open); it lives
     # in a parquet sidecar keyed by the identity columns
     header = (out / "reach_data.csv").read_text().splitlines()[0].split(",")
     assert "extended_features" not in header and header[0] == "subject_id"

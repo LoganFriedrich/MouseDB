@@ -2,7 +2,7 @@
 
 WHY: a lab's projects are grouped by grant -- one grant can fund two projects
 (two wings of one study), each with its own cohorts. Shown flat, the second
-project sat beside the grant's first as if unrelated (2026-10-30). The
+project sits beside the grant's first as if unrelated. The
 exports put each project's folder inside its grant's folder:
 ``exports/current/<GRANT>/<PROJECT>/<COHORT>/``; a project in no grant keeps
 ``exports/current/<PROJECT>/<COHORT>/``.

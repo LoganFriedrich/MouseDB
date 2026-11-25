@@ -1,6 +1,6 @@
 """Easy and Flat sessions: reaches and attention import; pellet counts stay blank.
 
-WHY (lab decision, 2026-10-23): on Easy and Flat trays pellets are presented
+WHY: on Easy and Flat trays pellets are presented
 but not tracked -- the pipeline does not cut the video per pellet and computes
 no outcome -- while the session's reaches and attention are wanted. A pellet
 row would claim "1 pellet presented, 0 retrieved" for a session whose pellets

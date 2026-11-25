@@ -7,8 +7,8 @@ comparing. An "area" could be a convex hull, a bounding box or a polygon through
 the tracked points, and the three are not the same number.
 
 These descriptions used to be generated from the column NAME, which gives the
-reader back the words they just read. The owner's objection, 2026-10-13: "if
-something is a calculated value, it must say how calculated in the description."
+reader back the words they just read. The rule: if something is a calculated
+value, its description must say how it was calculated.
 
 They are composed from a landmark, a measure and a variant so that one accurate
 sentence per measure covers every column using it -- less text, and fewer chances

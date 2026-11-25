@@ -13,8 +13,8 @@ One process per person, with a small window that says what is happening:
   launcher) and keep a file open; a thread cannot outlive its process.
 * Started with ``pythonw -m mousedb.data_browser`` (the button and the desktop
   shortcut both do this), never through a ``Scripts\\*.exe`` shim: a shim held
-  open by a running program blocks ``pip install`` of the package, which is
-  how a reviewer's open window once stopped a deploy.
+  open by a running program blocks ``pip install`` of the package, so an
+  open window would stop a deploy.
 
 ON THIS COMPUTER ONLY. The server listens on 127.0.0.1, which no other
 computer can reach. Other people logged in to the SAME computer could reach

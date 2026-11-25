@@ -1,5 +1,5 @@
 """
-SQLAlchemy schema models with validation for Connectome Data Entry.
+SQLAlchemy schema models with validation for mousedb.
 
 All validation happens at both the Python level (via validators) and
 the database level (via CHECK constraints) for bulletproof data integrity.
@@ -17,11 +17,10 @@ from sqlalchemy.engine import Engine
 
 # --- the three contact columns, defined ONCE (migrations.py brings an existing
 # database to these same strings) ------------------------------------------
-# Logan, 2026-10-26: "the algo shouldn't be analyzing pellet outcomes on easy and
-# flat trays ... The result there should be 'not applicable' for the algo
-# pellet/reach outcome for flat and easy trays and should be whatever the manual
-# says for the manual pellet outcome." And a PELLET nobody touched is
-# "untouched" -- "missed" is a word for a reach. Until that day the two
+# The algorithm does not analyze pellet outcomes on easy and flat trays: there
+# the algorithm's pellet/reach outcome is 'not applicable', and the manual
+# pellet outcome is whatever the hand score says. And a PELLET nobody touched is
+# "untouched" -- "missed" is a word for a reach. Before this change the two
 # algorithm columns said 'missed' on every easy/flat reach (nothing was
 # measured there) and on every pellet the algorithm had not decided, and the
 # pellet columns used 'missed' for an untouched pellet.
@@ -188,7 +187,7 @@ class Protocol(Base):
     __tablename__ = 'protocols'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), nullable=False)  # e.g., "Connectome Standard Protocol"
+    name = Column(String(100), nullable=False)  # e.g., "Standard Reaching Protocol"
     version = Column(Integer, default=1)
     description = Column(Text)
 
@@ -317,7 +316,7 @@ class SubjectStaggerGroup(Base):
 # =============================================================================
 
 class Project(Base):
-    """Research project (e.g., CNT = Connectome, ENCR = Enhancer)."""
+    """Research project, identified by a short uppercase code (e.g., CNT)."""
     __tablename__ = 'projects'
 
     project_code = Column(String(10), primary_key=True)
@@ -925,7 +924,7 @@ class BrainSample(Base):
     Brain sample linking a subject to their tissue imaging data.
 
     Brain naming convention: {BRAIN#}_{PROJECT}_{COHORT}_{SUBJECT}_{MAG}x_z{ZSTEP}
-    Example: 349_CNT_01_02_1p625x_z4
+    Example: 001_CNT_01_01_1p625x_z4
     """
     __tablename__ = 'brain_samples'
     __table_args__ = (
@@ -934,8 +933,8 @@ class BrainSample(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject_id = Column(String(20), ForeignKey('subjects.subject_id'), nullable=False)
-    brain_id = Column(String(50), nullable=False)  # e.g., "349_CNT_01_02_1p625x_z4"
-    brain_number = Column(Integer)  # Sequential brain number (349)
+    brain_id = Column(String(50), nullable=False)  # e.g., "001_CNT_01_01_1p625x_z4"
+    brain_number = Column(Integer)  # Sequential brain number (1)
 
     # Imaging parameters
     magnification = Column(Float)  # e.g., 1.625

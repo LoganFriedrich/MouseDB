@@ -18,11 +18,11 @@ bound only has to be wide enough to leave the biology alone.
 
 The biology is wider than it looks. The percentage is relative to the
 free-feeding weight measured when restriction began, and young mice keep
-growing -- in cohort 03, animals climb smoothly to 115-129% over the ten weeks
-after injury, many of them together, in step with their grams. That is growth,
+growing -- animals can climb smoothly well past 115% over the weeks after
+injury, many of them together, in step with their grams. That is growth,
 not error, and a test that called it an error was asserting something about
-mice that nobody had checked (2026-10-15: the first version used 125% and
-failed on exactly this).
+mice that nobody had checked (the first version used 125% and failed on
+exactly this).
 """
 import pandas as pd
 import pytest
