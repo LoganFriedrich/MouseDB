@@ -27,7 +27,7 @@ Thumbs.db
 *.xlsx
 *.xls
 
-# Claude
+# Local assistant state
 .claude/
 mousedb/utils/IDK.py
 
@@ -51,11 +51,9 @@ mousedb/historical_kinematic_analysis/
 # Agent/personal notes -- never published.
 .notes/
 
-# Accessory/analysis leftovers that must never reach this public repo.
-# endpoint_ck_analysis was removed from the tool repo as an accessory, but a
-# local copy of it can hold a copy of the database and cached parquet of
-# animal data. Untracked and unignored, a single `git add -A` would publish
-# it. Ignore the whole tree.
+# Database files and the removed endpoint_ck_analysis tree: a local copy can
+# hold a database and cached parquet of animal data, and a single `git add -A`
+# would publish it.
 mousedb/endpoint_ck_analysis/
 endpoint_ck_analysis/
 *.db

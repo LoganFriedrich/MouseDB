@@ -22,7 +22,7 @@ each with a data dictionary beside it:
 | `ODC_reaches_<cohort>.csv` | reach -- **the complete record**: every measurement held for that reach, that animal's details (strain, sex, every surgery column of the tracking sheet), that session's details, the tray totals, AND how the result was produced (tool versions, which machine, who reviewed it) | `ODC_reaches_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_summary.csv` | reach -- **the shareable table**: the same reaches and every measurement of them, with the process columns removed and everything named in plain words | `reaches_summary_DATA_DICTIONARY.csv` |
 | `reaches_<cohort>_analysis.csv` | reach -- **the analysis table**: the same reaches in the shape a statistics package wants (numbers in numeric columns, `NA` for absent, the session's totals on every row). An entry with an identified problem is left out of it until its source is fixed | `reaches_analysis_DATA_DICTIONARY.csv` |
-| `sessions_<cohort>_analysis.csv` | session = one tray (one video) of one animal, totalled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator. **Every filed tray that is not left out has a row -- also a tray at which the animal never reached** (it has no rows in the per-reach files: no reaches means no reach rows). Such a row reads 0 reaches, 0 pellets reached for, and every other column filled exactly as on any tray: hand scores, pellets the pipeline cut and their outcomes (0 percent retrieved when all were untouched), attention (the mean over every segment of the video, since it is scored from the pose and not from reaches), session flag, day totals. Only the columns computed FROM reaches (latency to the first reach, gap between reaches, first-attempt success, and every per-session kinematics summary) read `NA` on such a row; each column's dictionary row says what it holds there. Since 2026-11-24 the file also carries the session measurements described under "Session measurements" below | `sessions_analysis_DATA_DICTIONARY.csv` |
+| `sessions_<cohort>_analysis.csv` | session = one tray (one video) of one animal, totaled from the analysis table. Every percentage (retrieved, displaced, contacted, missed; algorithm and hand scored) is out of `pellets_presented`, the tray's 20. Two columns MEASURE it: `pellets_in_video` (how many pellets the pipeline found in the video) and `pellets_hand_scored` (how many pellets of that tray have a hand score); both should be 20, and a session where either is not is treated as an error (see below). `pellets_reached_for` counts the pellets the animal reached for at least once and is never a denominator. **Every filed tray that is not left out has a row -- also a tray at which the animal never reached** (it has no rows in the per-reach files: no reaches means no reach rows). Such a row reads 0 reaches, 0 pellets reached for, and every other column filled exactly as on any tray: hand scores, pellets the pipeline cut and their outcomes (0 percent retrieved when all were untouched), attention (the mean over every segment of the video, since it is scored from the pose and not from reaches), session flag, day totals. Only the columns computed FROM reaches (latency to the first reach, gap between reaches, first-attempt success, and every per-session kinematics summary) read `NA` on such a row; each column's dictionary row says what it holds there. Since 2026-11-24 the file also carries the session measurements described under "Session measurements" below | `sessions_analysis_DATA_DICTIONARY.csv` |
 | `analysis_EXCLUSIONS.csv` | entry left out of the analysis tables, and why | -- |
 | `MANIFEST.json` | -- | when the files were written, from which snapshot (`snapshot_generation`), row counts, any problems, notes that need no action, and whether the per-reach files were kept from an earlier run because nothing they are built from changed (`odc_reaches_skipped`) |
 | `README.txt` | -- | the same explanation as this table |
@@ -89,16 +89,14 @@ exports/current/
 
   ```python
   from mousedb.exporters.layout import locate
-  path = locate("reaches_analysis", "CNT_05")   # one cohort's file
-  path = locate("reaches_analysis", "CNT")      # the whole project, combined
+  path = locate("reaches_analysis", "PROJA_05")   # one cohort's file
+  path = locate("reaches_analysis", "PROJA")      # the whole project, combined
   ```
 
   The kinds are `ODC_reaches`, `reaches_summary`, `reaches_analysis`,
   `sessions_analysis` and `ODC_days`. If the file has not been written yet,
   it stops with a message saying which file and where it looked.
-- Until 2026-10-29 every cohort's file sat at the top of the folder. Those are
-  moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first
-  time the new layout is written.
+- A file of an older layout that sits at the top of the folder is moved to `<mousedb_root>/_archived/exports_current/` (never deleted) the first time the current layout is written.
 - **A cohort that no longer has any reaches loses its reach files.** If every
   reach of a cohort leaves the database -- a cohort invented by a typo in a
   video name and since renamed, or videos withdrawn back into review -- its
@@ -202,13 +200,12 @@ The HAND scores are different: they are kept exactly as scored on every tray.
 a reach retrieved it, displaced it, or missed it. So the database's per-pellet
 contact columns (`segment_contact_group`, and `contact_group` in the hand scores)
 say `untouched` for a pellet nothing moved, and only the per-reach
-`contact_group` says `missed` (since 2026-10-26; before that the pellet columns
-said `missed` too).
+`contact_group` says `missed`.
 
 `reach_result` never says where the verdict came from. A verdict is a verdict;
 whether a human or an algorithm produced it is in the complete record.
 
-### Four levels on every reach row, and what each column is called (changed 2026-11-19)
+### Four levels on every reach row, and what each column is called
 
 Every row of a per-reach file (`reach_data.csv`, `ODC_reaches_<cohort>.csv`,
 `reaches_<cohort>_summary.csv`, `reaches_<cohort>_analysis.csv`, and the same
@@ -230,21 +227,18 @@ identity column (`subject_id`, `video_name`, `test_date`, `tray_type`,
 `session_id`, `tray_id`: kept as they were, because limited exports, the
 exclusion list and your own scripts find rows by them), an animal column, or a
 provenance column of the complete record (tool versions, source file). **Every
-measurement of the reach itself starts with `reach_` too** (since the second
-change of 2026-11-19): its frames (`reach_start_frame`, `reach_end_frame`,
+measurement of the reach itself starts with `reach_` too**: its frames (`reach_start_frame`, `reach_end_frame`,
 `reach_apex_frame`), every kinematic measure (`reach_swipe_length`,
 `reach_speed_at_apex_mm_per_sec`, `reach_righthand_peak_speed_mm_per_frame`
 ...; in the complete record the extended block keeps its `ext_` after it:
-`reach_ext_...`), tracking confidence and the contact frame. Each dictionary
-entry names the column's old name. The ODC-SCI animal fields (`SubjectID`, `SpeciesTyp`, `AgeVal`,
+`reach_ext_...`), tracking confidence and the contact frame. Each dictionary entry names the column's old name. The ODC-SCI animal fields (`SubjectID`, `SpeciesTyp`, `AgeVal`,
 `BodyWgtMeasrVal`, `SexTyp`, `InjGroupAssignTyp`) keep ODC's exact spelling,
 which ODC requires. `_ai` = counted by the pipeline from the video, `_hand` =
 counted from the hand scores in the tracking sheet.
 
 The one file whose row is a whole day is `ODC_days_<cohort>.csv` (one
-animal, one date, Tray1..Tray4 across the row, `Daily_*` totals). It was named
-`ODC_sessions_<cohort>.csv` until 2026-11-19; the first export after the change
-writes the new name and moves every file still under the old name (cohort
+animal, one date, Tray1..Tray4 across the row, `Daily_*` totals). Older exports named it
+`ODC_sessions_<cohort>.csv`; the first export that writes the new name moves every file still under the old name (cohort
 files, combined files, the dictionary) into the archive. **A saved limited
 export that lists the kind `ODC_sessions` keeps working unchanged**: the old
 kind name is read as `ODC_days` (an alias, `layout.KIND_ALIASES`), so nobody
@@ -265,15 +259,9 @@ previous slice (with `ODC_sessions_<name>.csv`) goes to the archive as usual.
   recorded; calling them all `Missed` would be false). These pellets are a
   defect to fix in the reaching pipeline, by a person naming the reach.
 
-Until 2026-11-19 the complete record and `reach_data.csv` left this empty
-(`Not recorded`) on every reach except the credited one, and the other files said
-`Missed` even when no reach was credited.
-
-`reach_contact_group` (was `contact_group`) is now worked out from the reach
+`reach_contact_group` (was `contact_group`) is worked out from the reach
 outcome, so the two can never disagree: `contacted` when this reach retrieved or
-displaced the pellet, `missed` when it did not. Until 2026-11-19 it meant "a
-contact frame was recorded", so a credited reach a person picked (no contact
-frame is recorded for those) read `missed` beside a pellet it retrieved.
+displaced the pellet, `missed` when it did not. It does not mean "a contact frame was recorded": a credited reach a person picked has no contact frame, yet it reads `contacted` beside the pellet it retrieved.
 
 **New totals.** Untouched pellets per tray (`session_untouched_ai`,
 `session_untouched_hand`) and the day's pellets, retrieved, displaced, contacted
@@ -300,8 +288,8 @@ day column is emptied for a day that lost a tray to a known problem.
 | analysis | `pellet_number`, `swipe_id` | `segment_number`, `reach_number` |
 | analysis | `pellet_outcome`, `pellet_state_at_this_reach` | `segment_outcome`, `reach_pellet_state` |
 | analysis | `reaches_at_this_pellet`, `is_first/last_reach_at_pellet`, `pellet_position_idealness` | `segment_reaches`, `reach_is_first/last_in_segment`, `segment_pellet_position_idealness` |
-| analysis | `attention_at_this_reach`, `attention_ai` | `segment_attention` (named `reach_attention` 2026-11-19 to 2026-11-24), `session_attention_ai` |
-| complete record, `reach_data.csv` | `attention_score` | `segment_attention` (from 2026-11-24) |
+| analysis | `attention_at_this_reach`, `attention_ai` | `segment_attention`, `session_attention_ai` |
+| complete record, `reach_data.csv` | `attention_score` | `segment_attention` |
 | analysis | `body_weight_g`, `body_weight_percent_of_free_feeding` | `day_body_weight_g`, `day_body_weight_percent_of_free_feeding` |
 | analysis | `pellets_in_video`, `video_displaced/retrieved/contacted` | `session_pellets_ai`, `session_displaced/retrieved/contacted_ai` |
 | analysis | `pellets_hand_scored`, `manual_displaced/retrieved/contacted` | `session_pellets_hand`, `session_displaced/retrieved/contacted_hand` |
@@ -314,16 +302,14 @@ day column is emptied for a day that lost a tray to a known problem.
 | shareable table | `pellets_in_video`, `pellets_retrieved/displaced/moved_in_session` | `session_pellets_ai`, `session_retrieved/displaced/contacted_ai` |
 | shareable table | `pellets_hand_scored`, `pellets_retrieved/displaced/moved_hand_scored` | `session_pellets_hand`, `session_retrieved/displaced/contacted_hand` |
 
-**Attention is a segment value** (owner decision 2026-11-24). The outcome
+**Attention is a segment value.** The outcome
 detector scores attention once per pellet segment, from the pose: the percentage
 (0-100) of the segment's frames in which the animal was attending to the tray. A
 per-reach attention would mean nothing, because an animal that is reaching is
 attending. So the per-reach files carry it as `segment_attention`, the same value
 on every reach of a segment, and `session_attention_ai` is the mean over EVERY
 segment of the tray -- a segment the animal never attended counts 0, and segments
-with and without reaches count alike, on every tray. Until 2026-11-24 a tray with
-reaches averaged only its segments that had reaches, which scored a low-reaching
-animal on just the pellets it attended to. The session's mean is the one the reach
+with and without reaches count alike, on every tray. Averaging only the segments that had reaches would score a low-reaching animal on just the pellets it attended to. The session's mean is the one the reach
 import records per video (`video_sessions`); only a snapshot too old to have that
 table falls back to the mean over the reached segments. Scale: percent 0-100 (a
 dataset that gives attention as a 0-1 fraction must be multiplied by 100 to
@@ -335,7 +321,7 @@ exporter's code always does), so all files carry the new names from that night.
 The names in the sections below that predate this change are the old ones; this
 table converts them.
 
-### A session a person flagged (added 2026-11-19)
+### A session a person flagged
 
 In the reaching pipeline's review tools a person can use **Flag Session** on a
 video and write why. The note is saved in the video's features file
@@ -353,12 +339,12 @@ every per-reach file and the sessions analysis file carry it:
 
 Where the session is not flagged the three note columns read `Not applicable`
 (`NA` in the analysis files; empty in `reach_data.csv`). **A flag is a marker
-only** (owner decision, 2026-11-19): nothing in the exports leaves out, blanks
+only**: nothing in the exports leaves out, blanks
 or treats a flagged row differently; it is recorded so that flagged sessions can
 be found later. A flag added or changed on a filed video changes its features
 file, so the next nightly import and export pick it up.
 
-### Session measurements in the sessions file (added 2026-11-24)
+### Session measurements in the sessions file
 
 `sessions_<cohort>_analysis.csv` carries, beside the pellet counts, these
 columns. They are worked out once, in the export itself, from the same rows as
@@ -395,11 +381,10 @@ kinematics are filled.
 gap and placement are in the pipeline's results file. The nightly reach import
 copies them into the database (`video_sessions.total_frames`, `frame_rate`;
 `video_pellets.time_to_first_reach_sec`, `mean_inter_reach_interval_sec`,
-`pellet_position_idealness`); a database from before 2026-11-24 gains these
-columns on its next import, and `mousedb import-reaches --pellets-only` fills
+`pellet_position_idealness`); an older database gains these columns on its next import, and `mousedb import-reaches --pellets-only` fills
 them for videos already imported. Until then those columns read `NA`.
 
-### Swipe measures and reach counts: which column is which (changed 2026-11-17)
+### Swipe measures and reach counts: which column is which
 
 An earlier reach program reported its own per-swipe measures (swipe length,
 breadth, area, speed, path length, duration in frames, path over frames).
@@ -411,12 +396,9 @@ program's own unit, **not** millimetres. Each has a full definition in the
 dictionaries.
 
 **What changed in the analysis table (`reaches_<cohort>_analysis.csv`).** The
-columns named after the earlier program now hold the earlier program's measure.
-Until 2026-11-17 they held the pipeline's own measures, which are different
-numbers in different units. If you have an older file, use this table to line
-the two up:
+columns named after the earlier program hold the earlier program's measure. An older file may instead hold the pipeline's own measures there, which are different numbers in different units. If you have an older file, use this table to line the two up:
 
-| name in the analysis table | holds now | held until 2026-11-17, now found under |
+| name in the analysis table | holds | an older file held this, now found under |
 |---|---|---|
 | `swipe_length` | `legacy_swipe_length_px` (pixels) | `righthand_extension_past_nose_mm` |
 | `swipe_breadth` | `legacy_swipe_breadth_px` (pixels) | `righthand_lateral_deviation_mm` |
@@ -436,13 +418,13 @@ measured again with extractor 2.6.0 and imported.
 
 **Reach counts.** "Session" in these files means one tray's video. The earlier
 program's Total Swipes counted the reaches of one animal over a whole testing
-day, every tray. So there are now two counts, each named for what it counts:
+day, every tray. So there are two counts, each named for what it counts:
 
 | complete record | analysis and shareable tables | what it counts |
 |---|---|---|
-| `Video_Reaches_AI` (was `Total_Swipes_AI`) | `reaches_in_video` (was `reaches_in_session`; the duplicate `total_swipes_ai` is retired) | reaches in this video: one tray |
-| `Day_Total_Reaches_AI` (new) | `day_total_reaches` | reaches by this animal on this date, every tray of the day: the earlier program's Total Swipes |
-| `Day_Total_Reaches_Complete` (new) | `day_total_reaches_complete` | `yes` or `no`: is the day's total complete |
+| `Session_Reaches_AI` (older exports: `Video_Reaches_AI`, `Total_Swipes_AI`) | `session_reaches_ai` (older exports: `reaches_in_video`, `reaches_in_session`) | reaches in this video: one tray |
+| `Day_Reaches_AI` | `day_reaches_ai` | reaches by this animal on this date, every tray of the day: the earlier program's Total Swipes |
+| `Day_Complete` | `day_complete` | `yes` or `no`: is the day's total complete |
 
 **A day's total is given only when the day is complete.** Only filed videos
 have reach rows, so a day with a tray still in review would otherwise give a
@@ -469,7 +451,7 @@ treating them alike would throw away what you actually know:
 | `Not applicable` | the question cannot apply to this row -- days-post-injury for a session that happened before the injury; every pellet column on an easy or flat training tray |
 | `Not measured` | no code computes this value (the column exists so the column set stays stable) |
 | `Not recorded` | a source should carry it and does not -- nobody wrote it in the sheet |
-| `Undetermined` | in `reach_result` / `pellet_result`: a pellet that reached the files without anyone deciding it. That should not happen -- a pellet nobody decided keeps its video in review -- and until 2026-10-26 it did, because the review window let a reviewer move on without picking an outcome and counted that as an answer. Those videos are sent back to review, and leave the exports until they are answered (see "Only filed videos are in the database" below) |
+| `Undetermined` | in `reach_result` / `pellet_result`: a pellet that reached the files without anyone deciding it. That should not happen -- a pellet nobody decided keeps its video in review. If one is found anyway (a reviewer moved on without picking an outcome), the video is sent back to review and leaves the exports until they are answered (see "Only filed videos are in the database" below) |
 
 If a column you expected is full of `Not recorded`, that is a gap in the
 records, not a bug: something has to be entered in the tracking sheet, or
@@ -549,18 +531,15 @@ and a copy of the file as it was is kept beside it as
 the message in a text editor (Notepad is fine), correct it so it reads as
 JSON (`{"<PROJECT>": {"<column>": "<value>"}, ...}`), save, and run
 `mousedb study-facts --show`: when it lists your facts again, everything
-works again; the next export rewrites the files. In earlier versions a damaged file
-read as empty: every export wrote these columns blank without saying why,
-and the next Set wrote back a file holding only that one value -- every
-other project's facts and exceptions were lost. Saves are also made whole
-now: the new file is written beside the old one and swapped in, so a save
+works again; the next export rewrites the files. A damaged file is never read as empty (that would make every export write these columns blank without saying why, and the next Set write back a file holding only that one value -- every
+other project's facts and exceptions would be lost). Saves are made whole: the new file is written beside the old one and swapped in, so a save
 cut off part-way leaves the previous file as it was.
 
 **ASPA file names.** A frozen ASPA cohort's files are named `..._ASPA_NN_X`,
 e.g. `ODC_reaches_ASPA_04_D.csv`: `X` is the cohort letter the lab knows it by
 (its workbook and folder), `NN` is the same cohort as the pipeline encodes it
 (the letter's position in the alphabet). `MANIFEST.json` names the workbook
-each one came from. Files written before this naming are moved (not deleted)
+each one came from. Files under an older naming are moved (not deleted)
 to `<mousedb_root>/_archived/exports_current/`.
 
 An ODC-SCI submission is a dataset file **plus** its data dictionary; both
@@ -576,7 +555,7 @@ from. If the snapshot was left half-replaced (a refresh stopped in the middle
 of the swap), the exports are not rewritten at all -- the files stay those of
 the last good night -- and the job says so.
 
-**Each night only the cohorts that changed are rewritten (since 2026-11-18).**
+**Each night only the cohorts that changed are rewritten.**
 The big per-reach files -- each cohort's complete record, summary, analysis
 and sessions files, and each project's combined `*_all_cohorts*` files -- are
 not rebuilt from nothing every night. What happens, in plain words:
@@ -1016,9 +995,7 @@ is recorded. So the sheet is the one complete list of what was really
 recorded. The pipeline only knows the videos someone sent to it. If a
 recording is never copied off the recording PC, the pipeline has never heard
 of it, and a progress figure counted from the pipeline would say "100% done"
-while that recording sits forgotten. That happened: one cohort's
-recordings stayed on a recording PC for over a year, and
-every progress figure looked fine. Counted against the sheets, those sessions
+while that recording sits forgotten. Counted against the sheets, those sessions
 show up in red as **not on the server yet**.
 
 ### The five states
@@ -1303,7 +1280,7 @@ what it would do.
 
 **Moving folders does not re-import anything.** The import remembers each
 file it has imported by its place in the pipeline folder. When the finished
-folders are reorganised (for example each project's folder put inside its
+folders are reorganized (for example each project's folder put inside its
 grant's folder), a file found in a new place with the same name, size and
 time as a remembered file whose old place is now empty is recognised as the
 same file: it is not imported again, and the import's first line says how
@@ -1346,8 +1323,7 @@ import. Three rules keep a stopped run from leaving anything wrong behind:
   cohort stays on the list and the next run re-labels it again. (The file
   records, beside each cohort, how many times a save has put it there; the
   import takes a cohort off only when that number has not changed since it
-  began re-labelling it. A list written by an older version -- a plain list
-  of names -- is read as before.) Each change to the list takes
+  began re-labelling it. An older plain list of names is read as before.) Each change to the list takes
   a short lock first (the file `.reach-phases-list.task.lock` in the same
   `logs` folder, there only for the second or so the change takes), so a save
   in the window and the running import can never overwrite each other's
@@ -1466,8 +1442,7 @@ exactly:
 - `mousedb import-reaches --pellets-only` (which refills only the per-pellet
   table) applies the same test: it does not write the pellets of a filed
   video whose newer run waits in review, and its output says how many it
-  skipped (`N filed videos skipped: a newer run is in review`). Before this it
-  wrote them, putting the pellet answers under review back into the exports
+  skipped (`N filed videos skipped: a newer run is in review`). Writing them would put the pellet answers under review back into the exports
   until the next import took them out again.
 
 **Reaches whose results file has gone are reported, never removed.** A video
@@ -2178,9 +2153,7 @@ silences new ones.
 count per cohort and every missing recording, and changes nothing;
 `--write` also rewrites the CSV; `--cohort <id>` limits it to one cohort;
 `--grace-days <n>` overrides the setting for that run.
-`mousedb missing-videos --help` lists every option. (An earlier version
-refused every option after `missing-videos` and
-`sheet-progress` with "unrecognized arguments"; if you meet that message, the
+`mousedb missing-videos --help` lists every option. (If you meet an "unrecognized arguments" message, the
 same command works as `python -m mousedb.missing_videos <options>` or
 `python -m mousedb.session_states <options>` in the MouseDB environment.)
 
@@ -2271,8 +2244,7 @@ of a second, or the file is empty or cannot be opened. The reaching pipeline
 checks every multi-animal recording before cutting it, and a recording that
 fails the check is a **recording issue**: it is set aside (in the pipeline's
 `Processing\Review\_Problematic` folder, with a reason file), never cut and
-never reviewed. (The pipeline side is explained in MouseReach's
-`docs/RECORDING_ISSUES.md`, including how to set one aside by hand.)
+never reviewed. (The pipeline side, including how to set one aside by hand, is explained in the MouseReach guide on recording issues.)
 
 **What it means for your data.** The sessions on that recording (each animal,
 that day, that tray) will never have reaches or kinematics. Their hand pellet
@@ -2305,8 +2277,7 @@ stay in `manual_scores.csv` and in the session files like any other.
   recording's name). The per-reach files (`ODC_reaches`, `reaches_*_analysis`,
   `sessions_*_analysis`, `reach_data.csv`) have NO rows for a failed recording,
   because no reach was ever measured in it: the session row is where the
-  reason is written. The data dictionary says the same. Since 2026-11-24
-  every row of `sessions_*_analysis` also carries `day_recording_status` and
+  reason is written. The data dictionary says the same. Every row of `sessions_*_analysis` also carries `day_recording_status` and
   `day_recording_issue_reason` for its animal-day, read from the same table
   (the snapshot copies it), so a tray missing from a day can be explained
   without opening `ODC_days`.
@@ -2499,14 +2470,13 @@ untouched".
 
 What it compares:
 
-- Only finished videos, and only those analysed by the outcome detector
+- Only finished videos, and only those analyzed by the outcome detector
   MouseReach currently declares (read from MouseReach's
   `pipeline_versions.json` each night). A video waiting to be re-run is left
   until it has been, so nobody is asked to judge output that is about to change.
 - Every pellet with a hand score -- including pellets where the pipeline found
-  no reach at all (since 2026-10-22). "The sheet says the pellet moved, and the
-  pipeline saw no reach" is one of the most useful things to show a person;
-  before that date those pellets were never compared.
+  no reach at all. "The sheet says the pellet moved, and the
+  pipeline saw no reach" is one of the most useful things to show a person.
 - Never a pellet a person has already answered. The scan skips pellets the
   database records as decided by a person; on a `--route` run by hand,
   MouseReach's route command also checks the review itself before marking

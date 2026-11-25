@@ -11,9 +11,7 @@ authors = [
     {name = "Logan Friedrich"}
 ]
 license = {text = "MIT"}
-# Bumped from 3.9 to 3.10: 3.9 went EOL October 2025 and the
-# endpoint_ck_analysis sibling subpackage already requires 3.10. Keeping the
-# two pyproject files in sync prevents env mismatches.
+# Python 3.9 reached end of life in October 2025.
 requires-python = ">=3.10"
 dependencies = [
     "sqlalchemy>=2.0",

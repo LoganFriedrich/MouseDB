@@ -279,16 +279,16 @@ archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 |---------|-------------|
 | `mousedb status` | Show database stats |
 | `mousedb init` | Initialize/create database |
-| `mousedb new-cohort CNT_06 --start-date 2025-02-01 --mice 16` | Create new cohort |
+| `mousedb new-cohort PROJA_06 --start-date 2025-02-01 --mice 16` | Create new cohort |
 | `mousedb import --all` | Import each cohort's tracking sheet from the configured sheets folder: ONE file per cohort (the pinned one, else the newest), the same import as the Tracking Sheets tab. Each cohort's outcome goes into `logs/sheet_imports.jsonl`; exit code 1 if any cohort failed. See [`docs/TRACKING_SHEETS.md`](docs/TRACKING_SHEETS.md) |
 | `mousedb import --file path/to/file.xlsx` | Import one cohort's workbook, the same way (when the import saves, it also replaces that cohort's copy of the animal details; a failed import leaves them as they were). Refused, with what to run instead, if it sits in an archive/snapshot folder or is not named as a sheet (a copy, an Excel lock file, a tool's export) |
 | `mousedb import --all --dry-run` | Read every sheet and report what would be imported, without importing |
 | `mousedb-sheets status` | Per cohort: which file is its sheet, when it was edited, when it was imported, whether that worked |
 | `mousedb new-sheet PROJA_07 --animals 01-16` | Create a NEW cohort's empty tracking workbook in the sheets folder, made from the project's template (the Tracking Sheets tab's "New cohort sheet..." button; `mousedb-make-sheets --new --cohort PROJA_07 --animals 01-16 --output-dir <folder>` does the same). It never writes over a file: unless the name is exactly `PROJECT_NN`, the project has a template, and that cohort has no workbook in the folder yet, it prints `REFUSED: <reason>`, writes nothing and exits with code 3. See [`docs/TRACKING_SHEETS.md`](docs/TRACKING_SHEETS.md), "Starting a new cohort" |
 | `mousedb sheet-template make PROJA "<cohort workbook>" --cohort PROJA_05` | Make (or remake) a project's template -- what its new cohort sheets look like -- from one of its cohort workbooks (only read). Writes the template and a report into `<mousedb_root>/config/sheet_templates/` and records it in the lab settings; an older template is kept, renamed. See "Making or changing a project's template" in docs/TRACKING_SHEETS.md |
-| `mousedb export --cohort CNT_05` | Export to legacy Excel format |
-| `mousedb export --cohort CNT_05 --odc` | Export ODC format (calculated stats) |
-| `mousedb export --cohort CNT_05 --all-formats` | Export all formats |
+| `mousedb export --cohort PROJA_05` | Export to legacy Excel format |
+| `mousedb export --cohort PROJA_05 --odc` | Export ODC format (calculated stats) |
+| `mousedb export --cohort PROJA_05 --all-formats` | Export all formats |
 | `mousedb export ... --output <path>` | Write the export to `<path>`. Refused before the database is opened (`REFUSED` / `Why` / `Instead`, exit code 1) when `<path>` is inside the tracking-sheets folder or the ASPA folder, or is named like a cohort's tracking sheet: the export would empty the workbook that is there |
 | `mousedb export --unified` | Export unified reaches parquet |
 | (where the files go) | Without `--output`, into `<mousedb_root>/exports/`: `<cohort>_tracking.xlsx` (the plain export), `<cohort>_ODC.xlsx` (`--odc`), `unified_reaches.parquet` (`--unified`). `--all-formats` writes the first two (not the parquet); with `--output` it is the folder they go into |
@@ -311,7 +311,7 @@ archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 
 ## Export Formats
 
-### Legacy Excel (`--cohort CNT_05`)
+### Legacy Excel (`--cohort PROJA_05`)
 Matches the old tracking sheet structure:
 - `0a_Metadata` - Subject info
 - `1_Weight` - Daily weights
@@ -341,7 +341,7 @@ All subjects with session summaries for analysis:
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
 | `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete), and `reach_rows_without_file.json` (videos with reaches in the database whose results file is gone from the pipeline -- reported, never removed; shown on the Where Is My Data tab), and `brain_counts_without_file.json` (brains with final counts in the database whose counts file is not in MouseBrain's summary folder -- reported, never removed; shown on the Where Is My Data tab; an unreadable one only shows as a problem there). If `reach_imports.json` or `reach_imports_phases_pending.json` exists but cannot be read, the reach import stops with a `[FAIL]` line saying what to do (docs/WHERE_IS_MY_DATA.md, "An unreadable ledger stops the import"); an unreadable `reach_rows_without_file.json` never stops it -- it only shows as a problem on the Where Is My Data tab. Likewise, if `analysis_imports.json` exists but cannot be read, `mousedb import-analyses` stops with a `[FAIL]` line and copies or archives nothing (docs/WHERE_IS_MY_DATA.md, "The mirror's ledger") |
 | `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
-| `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarised in `exports/ANALYSES_MANIFEST.json` |
+| `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarized in `exports/ANALYSES_MANIFEST.json` |
 | `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |
 
 ## Validation Rules
@@ -671,10 +671,7 @@ Two separate mechanisms deal with that, and it is worth knowing which is which:
   window (`--retry-minutes`, default 25) + the refresh that succeeds + the
   wait for another refresh of the current exports (15 minutes, fixed) + the
   exports and the census. If that does not fit, lower `--lock-wait-minutes` or
-  raise the limit. (The default lock wait was 180 minutes before the
-  current-exports lock existed; the 15-minute exports wait was taken out of
-  it, so the worst case is the same as before. If you set
-  `--lock-wait-minutes` yourself, leave room for those 15 minutes.) While the refresh pauses between retries it keeps the lock,
+  raise the limit. (The default lock wait leaves room for those 15 minutes; if you set `--lock-wait-minutes` yourself, leave room for them too.) While the refresh pauses between retries it keeps the lock,
   so another mousedb job waiting behind it may give up after 30 minutes with
   no sign of progress ("may be hung"); that only happens while another program
   keeps the database locked, which would refuse that job's own work anyway.
@@ -736,10 +733,7 @@ disk", where every unfinished video sits) come from a census of the MouseReach
 pipeline folders, cached in `logs/pipeline_census.json` under `mousedb_root`.
 After writing the exports, `refresh_snapshot` retakes it
 (`pipeline_census.refresh`, through the configured `mousereach_env`): a
-read-only folder scan of 5-25 minutes, holding no database lock. **Why:** it
-used to be retaken only by the tab's "Refresh pipeline view" button, and a
-census weeks old was shown as the current counts with nothing but a timestamp
-to say so. The tab and `mousedb-data-status` now print the census's age and
+read-only folder scan of 5-25 minutes, holding no database lock. **Why:** a census retaken only by hand could be weeks old yet be shown as the current counts. The tab and `mousedb-data-status` print the census's age and
 flag it once it is older than `data_status.STALE_CENSUS_HOURS` (36). If the
 census cannot be taken, the job prints `[FAIL] pipeline census not retaken` and
 does not change the job's exit code for that alone -- the snapshot and the
@@ -777,14 +771,13 @@ that are easy to be caught by:
   every `.py` file of the installed mousedb package (`exporter_code_hash`), so
   ANY change to the code rebuilds the files on the next run -- expect the first
   nightly run after each install of new code to rewrite every per-reach file
-  (hours, within the job's limit). Nothing is bumped by hand any more; it used
-  to be a number, and a change made without bumping it was silently skipped.
+  (hours, within the job's limit). Nothing is bumped by hand.
   The "Refresh exports now" button runs the exporter as a fresh program
   (`python -m mousedb.exporters.current --no-wait`), so a window left open
   since before an install still exports with the installed code. A new input
   the exporter starts reading must be added to the signature in the same change.
 - **When the signature HAS changed, only the cohorts that changed are rewritten**
-  (`exporters/incremental.py`, since 2026-11-18). Each cohort's files are kept
+  (`exporters/incremental.py`). Each cohort's files are kept
   when its fingerprint -- its reach rows, its animals' subject and sheet-record
   rows, its hand scores, its per-pellet rows (weights ride on the reach rows),
   what the exclusion checks say about its videos and the cohort, the
@@ -820,9 +813,7 @@ that are easy to be caught by:
 - **A failed or incomplete export fails the job.** If rewriting
   `exports/current/` raises, or any part of it failed (a cohort's file, a
   combined file, the exclusion checks), or `MANIFEST.json` comes out with
-  `"complete": false`, the job prints `[FAIL]` and exits 1. Until this was
-  changed it printed `[warn]` and exited 0, so the task looked healthy while
-  people kept reading old files.
+  `"complete": false`, the job prints `[FAIL]` and exits 1. This is on purpose: a job that only warned would look healthy while people kept reading old files.
 
 ### The snapshot is replaced in one piece
 
@@ -833,10 +824,8 @@ on the same disk: seconds) and write `<snapshot_dir>/SNAPSHOT_GENERATION.json`:
 the generation id, `"state": "complete"`, and for each table its rows, size,
 time and SHA-256. During the swap the stamp says `"swapping"`.
 
-**Why:** the refresh used to replace the tables one at a time as it read them,
-so a run stopped part way (a locked database, the time limit, a person) left
-some tables from tonight and the rest from an earlier night, and every reader
-joined them as one snapshot.
+**Why:** replacing the tables one at a time as they are read would mean that a run stopped part way (a locked database, the time limit, a person) left
+some tables from tonight and the rest from an earlier night, and every reader would join them as one snapshot.
 
 What readers do (`mousedb/snapshot_generation.py`): the exports, the data
 browser, the Where Is My Data tab, the bench check and the example export check

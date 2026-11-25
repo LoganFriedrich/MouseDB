@@ -1,7 +1,7 @@
 # mousedb
 
 Database and data management tools for mouse experiments. SQLAlchemy ORM
-on top of `connectome.db` (the lab's single source of truth), Excel/Parquet
+on top of `connectome.db` (the single source of truth for a lab's data), Excel/Parquet
 import + export, a PyQt5 GUI for data entry, a FastAPI web dashboard and a
 read-only data browser.
 
@@ -33,7 +33,7 @@ pytest
 The suite covers:
 
 - `tests/test_phases.py` — phase-assignment regression tests against the
-  empirically-correct CNT_01 / CNT_04 fixtures.
+  hand-checked example cohorts.
 - `tests/test_region_priors.py` — predicted-importance ordering invariants.
 - `tests/test_validators.py` — ID-format and data-validator coverage; this
   is the front line for every import path.
@@ -51,7 +51,6 @@ stray `pytest-cache-files-*/` directories.
 mousedb/
 ├── README.md            # this file
 ├── INSTALL.md           # install + GUI usage walkthrough
-├── CHANGELOG.md         # high-level change history
 ├── docs/                # operator guides (Where is my data?, Tracking Sheets)
 ├── environment.yml      # conda env spec
 ├── pyproject.toml       # pip / pytest / ruff / coverage config
@@ -82,7 +81,7 @@ GUI bugs, a screenshot helps a lot.
 
 - [Where is my data?](docs/WHERE_IS_MY_DATA.md) -- the current exports folder (CSV + data dictionaries, ODC-SCI shape), the per-cohort status tab, and how reach data gets into the database (`mousedb import-reaches`).
 - [Browse the data](docs/DATA_BROWSER.md) -- look at every table the database holds in your web browser: read-only, point and click, sort, filter, save as CSV, a description for every column. The "Browse the data" button on the Where Is My Data tab, or a desktop shortcut.
-- [The watcher views](docs/WATCHER_VIEWS.md) -- `mousedb video-status` / `archive-status` and the web dashboard: what they count, which file they read, and why they show one computer's watcher records only (the whole pipeline is on the Where Is My Data tab; the window has no Video Pipeline or Archive Status tab any more).
+- [The watcher views](docs/WATCHER_VIEWS.md) -- `mousedb video-status` / `archive-status` and the web dashboard: what they count, which file they read, and why they show one computer's watcher records only (the whole pipeline is shown on the Where Is My Data tab).
 - [The Protocol Manager](docs/PROTOCOL_MANAGER.md) -- making testing-schedule protocols, and what Save does when you change an existing one (phase changes become a new protocol; the original is never rewritten).
 - [Tracking Sheets](docs/TRACKING_SHEETS.md) -- importing the lab's tracking workbooks from a button, choosing between duplicate files, creating a new cohort sheet.
 - Tissue analyses -- MouseBrain's analysis outputs (measurements, figures, `registry.json` provenance) are mirrored into `<mousedb_root>/exports/<analysis>` and `figures/<analysis>` by `mousedb import-analyses` (daily where scheduled); `exports/ANALYSES_MANIFEST.json` and the Where Is My Data tab show one line per analysis. See "How tissue analysis outputs get here" in [Where is my data?](docs/WHERE_IS_MY_DATA.md).
