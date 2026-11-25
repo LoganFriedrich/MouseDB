@@ -5,9 +5,9 @@ WHY THIS MODULE EXISTS
 An ODC-SCI record carries facts that are the same for every animal in a study:
 the species and strain, where the animals came from, who led the study, which
 injury device was used. They are properties of ONE lab's study, not of the tool.
-Until 2026-09-15 they were typed straight into the sheet generators and the ODC
-row builders -- including a person's name -- in this public repository, and the
-typed-in strain was also wrong for any study that used a different line.
+Typed into the sheet generators and the ODC row builders, they would put a
+person's name in this public repository, and a typed-in strain would be wrong
+for any study that used a different line.
 
 So they are configuration, like the lab name: kept in a file on the machine,
 never in source, and there is NO built-in default. A fact nobody has set is
@@ -39,7 +39,7 @@ A damaged file is refused, never read as empty
 ----------------------------------------------
 A file that exists but is not valid JSON (a half-written save, a hand edit with
 a stray comma) raises StudyFactsFileDamaged from every reader and every writer,
-naming the file. WHY: it used to read as "nothing set", so every export quietly
+naming the file. WHY: it would otherwise read as "nothing set", so every export quietly
 wrote its study-fact columns blank as if nobody had ever set them, and the next
 Set (tab or command) wrote back a file holding only that one fact -- every other
 project's facts and exception rules gone. Writes go through

@@ -1,7 +1,7 @@
 """mousedb-quick-export and mousedb-reorganize answer --help and fail
 clearly.
 
-WHY: both used to ignore --help and start working (reading files, prompting
+WHY: both would otherwise ignore --help and start working (reading files, prompting
 interactively), and quick-export met a missing generated/ folder with a
 pandas traceback that said nothing about what the command expects or where
 it looked.

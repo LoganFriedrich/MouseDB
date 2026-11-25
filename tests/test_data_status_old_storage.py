@@ -1,6 +1,6 @@
 """Where Is My Data says what still exists only on an old storage root.
 
-WHY (2026-10-22): MouseReach's legacy inventory found recordings that exist only
+WHY: MouseReach's legacy inventory found recordings that exist only
 on a retired storage root, where no watcher looks; the root cannot be retired
 while any are there, and nothing a person reads said so. The status reads the
 inventory's summary files and shows one line per root. Synthetic paths only.

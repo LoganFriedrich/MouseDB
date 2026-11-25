@@ -2,7 +2,7 @@
 has changed -- and a skip can actually happen.
 
 WHY: the per-reach ODC and analysis files are large, so a refresh whose
-inputs are unchanged keeps them. The signature that decides this used to
+inputs are unchanged keeps them. The signature that decides this would otherwise
 cover four snapshot tables by size and row count, plus a few settings. The
 export also reads the per-pellet table, the weights, the pipeline's collage
 names, the name-audit record and the sheets folder: a change to any of those

@@ -2,11 +2,11 @@
 
 WHY THIS EXISTS
 ---------------
-The lab fills the tracking spreadsheets "eventually" and the database is
-only as current as the last import. Until 2026-08-28 nothing recorded when a
-sheet was last imported, nothing compared that to when the sheet was last
-edited, and an import that failed rolled back in silence (one cohort's, on
-every scheduled run, for weeks). This module is the one place that knows,
+Tracking spreadsheets are filled in "eventually" and the database is
+only as current as the last import. Without a record of when a
+sheet was last imported, a comparison with when the sheet was last
+edited, and a report of imports that failed, a failed import would roll back in
+silence. This module is the one place that knows,
 per cohort:
 
   * which file IS the sheet (all candidates listed; a person can pin one),
@@ -16,10 +16,10 @@ per cohort:
 
 Every import goes through ``import_cohorts`` (or, for one named workbook,
 ``import_sheet_file``) and is appended to the ledger
-(``Databases/logs/sheet_imports.jsonl``) -- success or failure, with the
-error text and the warnings -- so the GUI and the hourly job read the same
+(``<mousedb_root>/logs/sheet_imports.jsonl``) -- success or failure, with the
+error text and the warnings -- so the GUI and the scheduled job read the same
 history. These routes land here: this module's own command, the Tracking
-Sheets tab, the hourly snapshot refresh, ``mousedb import --all`` /
+Sheets tab, the scheduled snapshot refresh, ``mousedb import --all`` /
 ``--file`` and the "Update the database" button. Until 2026-10 the last
 three went straight to the importer, so their errors and warnings were
 thrown away, nothing was recorded, they did not wait for the cross-task
@@ -126,7 +126,7 @@ WRITE_MISSING_VIDEOS = True
 # such as PROJA_05_01 -- silently imported that project's cohort-01 sheet.
 
 # A requested cohort: letters, an optional underscore, one or two digits
-# (CNT_05, cnt05). Anything longer -- an animal id, a typo -- is refused by
+# (PROJA_05, proja05). Anything longer -- an animal id, a typo -- is refused by
 # name rather than having its trailing number reinterpreted as a cohort.
 _REQUESTED_COHORT_RE = re.compile(r"^([A-Za-z]+)_?(\d{1,2})$")
 
@@ -243,7 +243,7 @@ def cohort_status(cohort: str) -> dict:
     # A pin is IN FORCE only while it names one of the cohort's files; once
     # that file is renamed, moved or deleted, find_cohort_sheet reads the
     # newest file instead. WHY decided here and not taken from pinned_sheet:
-    # this listing used to call such a cohort "pinned" and "not ambiguous"
+    # this listing would otherwise call such a cohort "pinned" and "not ambiguous"
     # while a file nobody chose was the one imported.
     stored = pinned_sheet(cohort_id)
     pin = stored if stored and any(c.name == stored for c in cands) else None
@@ -329,7 +329,7 @@ def _ledger_or_none() -> Optional[str]:
     WHY soft here: the ledger's folder comes from the settings, and when a
     settings file is damaged working it out raises. status() must still return
     -- its "problem" line is what tells the person WHICH file is damaged; a
-    raise here used to end ``mousedb-sheets status`` in a traceback instead."""
+    raise here would otherwise end ``mousedb-sheets status`` in a traceback instead."""
     try:
         return str(_ledger())
     except ConfigError:
@@ -342,7 +342,7 @@ def status() -> dict:
     Two folders: the tracking sheets (every project named in the lab
     settings, sheet_projects) and ASPA's frozen workbooks; both are listed."""
     from .cohort_sheets import aspa_data_dir_state, available_aspa_cohorts
-    # The state, not only the folder. WHY: "no folder" used to be reported as
+    # The state, not only the folder. WHY: "no folder" would otherwise be reported as
     # "not configured" whatever the cause, so a folder set correctly on a
     # drive that was merely disconnected sent the person to set it again.
     d, d_reason, d_raw = _cs.cohort_sheets_dir_state()
@@ -500,7 +500,7 @@ def _not_saved_reason(r: dict, dry_run: bool) -> Optional[str]:
     WHY: animal_records.sync_cohort REPLACES a cohort's animal details with the
     workbook's. The importer saves a workbook whole or not at all: an import
     that records an error undoes everything it read (its result then holds
-    the errors, success False and 'not_saved'). The animal details used to be
+    the errors, success False and 'not_saved'). The animal details would otherwise be
     replaced even then, so for that run they described the new workbook while
     every other table still held the old one -- two parts of the database
     disagreeing about the same animals, with nothing saying which was right.
@@ -618,10 +618,10 @@ def _import_one(cohort_id: str, sheet, dry_run: bool, triggered_by: str, imp=Non
             # Under the cross-task mutex, one cohort at a time. WHY:
             # this import commits to connectome.db like the reach and
             # brain imports, but did not take the mutex they share, so
-            # on 2026-09-15 it overlapped a long import and four of six
-            # cohorts failed "database is locked". Per cohort, not
+            # it could overlap a long import and cohorts failed
+            # "database is locked". Per cohort, not
             # around the whole loop: reading the workbooks is slow and
-            # must not keep the hourly imports waiting.
+            # must not keep the scheduled imports waiting.
             from .task_mutex import hold
             with hold(waiting_for="another database task"):
                 r = imp.import_cohort_file(sheet, dry_run=False)
@@ -717,7 +717,7 @@ def requested_cohort_id(text: str) -> Tuple[Optional[str], Optional[str]]:
     in the lab settings (sheet_projects) has no sheet here, and its cohorts are
     never given another project's. Anything else -- an animal id, a typo -- is
     not a cohort id. WHY one function for every command that takes a cohort
-    (import, pin, unpin, ``mousedb cohort-sheets --cohort``): each used to keep
+    (import, pin, unpin, ``mousedb cohort-sheets --cohort``): each would otherwise keep
     only the trailing number, so 'pin PROJAB_01' pinned PROJA_01's sheet and
     'import --cohort PROJA_05_01' imported PROJA_01's."""
     from . import sheet_projects
@@ -765,14 +765,14 @@ def _import_aspa_one(text: str, dry_run: bool, triggered_by: str) -> dict:
 
     letter = aspa_letter(text)
     if letter is None:
-        # 'ASPA_J': the cohort named by its LETTER, which is how the lab names
-        # these cohorts and how status() labels a letter cohort whose status
+        # 'ASPA_J': the cohort named by its LETTER, which is how the ASPA sheets
+        # name these cohorts and how status() labels a letter cohort whose status
         # failed. aspa_letter does not read that form, so it is read here --
         # only a single trailing letter, never a digit (see below).
         m = re.fullmatch(r"ASPA_?([A-Z])", text.strip().upper())
         letter = m.group(1) if m else None
     if letter is None:
-        # Refused rather than guessed. This used to fall back to the id's last
+        # Refused rather than guessed. This would otherwise fall back to the id's last
         # character, which the sheet lookup reads as a cohort NUMBER but the id
         # does not: 'ASPA_99' imported cohort I's workbook (9 -> I) under the
         # cohort id 'ASPA_None'.
@@ -815,7 +815,7 @@ def import_cohorts(cohorts: Optional[List[str]] = None, dry_run: bool = False,
     One cohort failing never stops the others, and NOTHING is swallowed:
     each cohort's outcome -- counts, warnings, or the full error -- is
     returned AND (unless dry_run) appended to the ledger. A requested
-    cohort with no sheet is returned as a failure naming why (it used to be
+    cohort with no sheet is returned as a failure naming why (it would otherwise be
     skipped without a word); it is not written to the ledger, because no
     sheet was read and the ledger is the history of sheets reaching the
     database.
@@ -919,7 +919,7 @@ def _after_import(results: dict, sheets_dir=None, folder_ids=None,
     WHY one step for every route: the reaching pipeline compares each video
     with the hand scores in that file before filing it, and the FIX THESE
     files are how a person learns what in the sheet blocks the pipeline. Each
-    used to be rewritten only by the folder import, so after a button import
+    would otherwise be rewritten only by the folder import, so after a button import
     or ``mousedb import --file`` the pipeline compared against the previous
     scores and the FIX THESE files were up to a day behind.
 
@@ -982,7 +982,7 @@ def snapshot_folder_of(path) -> Optional[str]:
 
     WHY absolute: a path is judged by the folder names in it, and a bare file
     name typed while standing inside an archive folder carries none, so it
-    used to pass. WHY normalised (os.path.abspath, which folds '..'): a path
+    would otherwise pass. WHY normalized (os.path.abspath, which folds '..'): a path
     that climbs OUT of such a folder ('archive/../live') is not inside it.
     Symlinks and mapped drives are left as typed, so the names judged are the
     ones the person sees."""
@@ -1064,7 +1064,7 @@ def import_sheet_file(path, dry_run: bool = False, triggered_by: str = "manual",
     tab's Import button) exactly as a cohort of the sheets folder is imported:
     same mutex, same animal records, same ledger line, same after-import step
     (hand-scores file, FIX THESE files), same result shape as import_cohorts.
-    WHY: this route used to call the importer directly, so nothing recorded
+    WHY: this route would otherwise call the importer directly, so nothing recorded
     it, it did not wait for the database lock, and a failure still exited 0.
     A file the folder route would never read is refused, not imported -- see
     refuse_sheet_file. ``db``: the database to import into (the GUI passes
@@ -1240,7 +1240,7 @@ def import_succeeded(r: dict) -> bool:
     """True only when everything landed: no cohort failed, no letter cohort's
     animal records failed, and nothing stopped the import as a whole. WHY the
     last: an unconfigured or refused folder imports nothing, and "nothing
-    failed" over zero cohorts used to exit 0 -- the scheduled job and the
+    failed" over zero cohorts would otherwise exit 0 -- the scheduled job and the
     update button reported success while no sheet was read."""
     if r.get("problem"):
         return False
@@ -1387,7 +1387,7 @@ def print_import_result(r: dict, show_warnings: int = 3, log=print) -> bool:
 
     ok = import_succeeded(r)
     if r.get("problem"):
-        # The problem is said ONCE, in the closing line. WHY: it used to be
+        # The problem is said ONCE, in the closing line. WHY: it would otherwise be
         # printed on a "[!]" line and then again, word for word, in this line,
         # and the closing line is the one that must carry it (it is the verdict
         # the update dialog shows).
@@ -1464,11 +1464,11 @@ def _pin_command(cohort: str, filename: Optional[str]) -> int:
     Every refusal is ONE plain line and exit 1, never a traceback. WHY: the
     pin guard in cohort_sheets.pin_cohort_sheet raises ValueError for a file
     that cannot be the cohort's sheet (another cohort's, a "Copy of ...", a
-    name not in the folder), and that used to reach the person as a Python
+    name not in the folder), and that would otherwise reach the person as a Python
     traceback. Which files may be pinned is decided there, once; this only
     reports it. The cohort is read by requested_cohort_id first, because the
-    guard keeps only a request's trailing number: 'pin CNTS_01 ...' would
-    otherwise pin CNT_01's sheet."""
+    guard keeps only a request's trailing number: 'pin PROJAB_01 ...' would
+    otherwise pin PROJA_01's sheet."""
     cohort_id, why = requested_cohort_id(cohort)
     try:
         if why:
@@ -1496,7 +1496,7 @@ def _pin_command(cohort: str, filename: Optional[str]) -> int:
 
 def _not_the_sheets_folder(folder) -> Optional[str]:
     """Why ``folder`` cannot be recorded as the sheets folder, or None -- the
-    same tests ``mousedb cohort-sheets --set`` applies. WHY: set-dir used to
+    same tests ``mousedb cohort-sheets --set`` applies. WHY: set-dir would otherwise
     record any text at all; a folder that does not exist, holds no tracking
     sheet, or is a snapshot was saved, and every later status and import then
     said "no tracking-sheet folder is configured" with no hint that the

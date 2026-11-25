@@ -117,7 +117,7 @@ def _scratch_db(tmp_path):
 
 
 def test_a_tab_missing_from_the_workbook_keeps_its_details(tmp_path):
-    """WHY: every tab's details used to be deleted whether or not the tab was
+    """WHY: every tab's details would otherwise be deleted whether or not the tab was
     read, so a tab renamed or cut from the workbook emptied its records."""
     db = _scratch_db(tmp_path)
     p = tmp_path / "PROJA_01.xlsx"

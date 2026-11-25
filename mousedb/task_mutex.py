@@ -4,11 +4,11 @@ WHY THIS EXISTS
 ----------------
 connectome.db lives on a network share in rollback-journal mode, where a
 writer that wants to commit while a long read is in flight goes PENDING --
-and while it is PENDING, every NEW reader is refused. On 2026-09-02 the
-hourly reach import (per-video commits, individually milliseconds) overlapped
-the snapshot's long SELECT * reads, the import sat PENDING behind them, and
-the database answered "locked" to everyone for 22 minutes. Neither task held
-a long transaction; the OVERLAP was the outage.
+and while it is PENDING, every NEW reader is refused. When an
+hourly reach import (per-video commits, individually milliseconds) overlaps
+the snapshot's long SELECT * reads, the import sits PENDING behind them, and
+the database answers "locked" to everyone (22 minutes in one observed case).
+Neither task holds a long transaction; the OVERLAP is the outage.
 
 The scheduled tasks are staggered by minutes, which is a hope, not a
 guarantee, the moment one of them runs long. This mutex is the guarantee:
@@ -26,11 +26,11 @@ every later job (the one-way-door lesson), so the lockfile carries the
 holder's pid: if that process is gone, or the pid now belongs to a process
 started after the lock was taken, the lock is dead and is broken at once.
 A holder that is STILL RUNNING is never overruled, however long it has held
-the lock. Until 2026-10-15 a lock older than ``stale_minutes`` was broken
-regardless; the nightly reach import legitimately held it for hours while
-rewriting phase labels over the share, the brain import broke in at 22:30,
-and both then fought over the database -- "database is locked" for 45
-minutes, nightly. The age rule survives only as the last resort for a
+the lock. Breaking a lock merely for being older than ``stale_minutes``
+would be wrong: a nightly reach import can legitimately hold it for hours
+while rewriting phase labels over the share, and a second task breaking in
+would make both fight over the database ("database is locked" for 45
+minutes). The age rule survives only as the last resort for a
 lockfile whose holder cannot be identified (no psutil, unreadable contents,
 or a holder on another computer, whose process this machine cannot see).
 
@@ -171,7 +171,7 @@ def default_lock_dir() -> Path:
 
     WHY never the working directory: the lock only excludes processes that
     look for it in the SAME place. A machine with ``db_path`` set but not
-    ``mousedb_root`` used to put the lockfile wherever each process happened
+    ``mousedb_root`` would otherwise put the lockfile wherever each process happened
     to be started, so two jobs started from different folders each found the
     lock free and ran against the database together -- the very overlap this
     module exists to prevent.
@@ -410,7 +410,7 @@ class TaskMutex:
         except PermissionError as refused:
             # Windows refuses (access denied) to create a file whose delete is
             # still pending -- "not free yet", and the waiter polls again;
-            # raising used to end a wait that was about to succeed. But the
+            # raising would otherwise end a wait that was about to succeed. But the
             # same error from a folder this login cannot write never clears:
             # _refused tells the two apart and raises for the second.
             return self._refused(self.path, refused)
@@ -521,7 +521,7 @@ class TaskMutex:
         night's work lost -- the scheduler's "restart on failure" does not
         re-run a job that started and then exited with an error, so nothing
         brings it back until its next scheduled run. Waiting means a slow
-        import DELAYS the next job instead of cancelling it. The bound must fit
+        import DELAYS the next job instead of canceling it. The bound must fit
         inside the waiting job's own time limit with room for its own work.
 
         Gives up early, loudly, when the holder has made no progress for

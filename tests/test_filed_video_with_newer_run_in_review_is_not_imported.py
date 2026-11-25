@@ -1,10 +1,10 @@
 """A filed video whose newer run waits in a review queue is not imported.
 
 WHY: the import takes such a video's rows out (it is not done while the new
-run waits for a person). It used to import the old filed results first, every
-night: the same videos imported, withdrawn again, and their cohorts re-labelled
+run waits for a person). It would otherwise import the old filed results first, every
+night: the same videos imported, withdrawn again, and their cohorts re-labeled
 for nothing. Now the filed results are left out (not imported, not in the
-ledger, no cohort re-labelled) until the new run is filed, which is then
+ledger, no cohort re-labeled) until the new run is filed, which is then
 imported as usual.
 """
 import json
@@ -52,7 +52,7 @@ def test_no_nightly_import_and_withdraw_loop(tmp_path, monkeypatch):
     assert res.held == 1 and res.imported == 0 and res.withdrawn == 1
     assert _count(db, VIDEO) == (0, 0) and _ledger_names(tmp_path) == [OTHER]
 
-    # Every night after: nothing imported, nothing withdrawn, nothing re-labelled.
+    # Every night after: nothing imported, nothing withdrawn, nothing re-labeled.
     calls = _relabels(monkeypatch)
     said = []
     res = ir.run(log=said.append)

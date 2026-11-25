@@ -7,9 +7,9 @@ route on.
 WHY THIS IS A CORE MODULE, NOT A RECIPE
     A tool's repo holds what produces its outputs and operates it. This scan
     produces a work queue -- it is not a figure -- and mousedb is the
-    integrator that may call the analysis tools. It was lifted out of the
-    manual_scoring_accuracy figure recipes so that removing those accessories
-    does not take the scan with them. The logic is unchanged; only the path
+    integrator that may call the analysis tools. It was lifted out of a set
+    of figure recipes so that removing those accessories does not take the
+    scan with them. The logic is unchanged; only the path
     defaults now come from mousedb's own configuration instead of being
     hardcoded, so this module carries no site-specific location.
 
@@ -45,8 +45,8 @@ ROUTING
     configured, and still exits 0 -- an unconfigured integration is not a
     failure of the scan.
 
-WHICH PELLETS ARE COMPARED (since 2026-10-22)
-    Every bench-scored pellet of a finished video analysed by the CURRENT
+WHICH PELLETS ARE COMPARED
+    Every bench-scored pellet of a finished video analyzed by the CURRENT
     outcome detector -- the version MouseReach declares in
     <mousereach_pipeline_root>/pipeline_versions.json, read at each run (it
     was a number written into this file, which would have silently matched
@@ -115,7 +115,7 @@ def current_outcome_version() -> str:
 
 # What happened to the PELLET -- retrieved, displaced, or untouched. "Missed" is
 # a word for a REACH (it did not interact with the pellet), never for a pellet:
-# a hand score of 0 says the pellet was not touched (Logan, 2026-10-26).
+# a hand score of 0 says the pellet was not touched.
 HUMAN_SCORE = {0: "untouched", 1: "displaced", 2: "retrieved"}
 ALGO_CATEGORY = {
     "untouched": "untouched",
@@ -142,11 +142,11 @@ JOIN_ALGO = ["subject_id", "session_date", "tray_type", "run_number", "segment_n
 def watcher_blocks_db():
     """Should database writers yield to a running MouseReach watcher?
 
-    Since 2026-08-28 the watcher writes the central database ONLY when
+    The watcher writes the central database ONLY when
     ``central_db`` is configured in ~/.mousereach/config.json (or the
-    MOUSEREACH_CENTRAL_DB environment variable) -- the lab deliberately leaves
-    it unset so mousedb pulls instead. A DLC-only or non-writing watcher must
-    not stall the hourly imports forever. WHY fail-safe stays: if the
+    MOUSEREACH_CENTRAL_DB environment variable) -- a site that lets mousedb
+    pull leaves it unset. A DLC-only or non-writing watcher must
+    not stall the scheduled imports forever. WHY fail-safe stays: if the
     mousereach config cannot be read, assume the watcher could write.
     """
     if not watcher_running():
@@ -191,7 +191,7 @@ def load_paired_pellets(db_path=None, segmap_path=None, cache_dir=None):
     Args:
         db_path: connectome.db (defaults to mousedb's configured database)
         segmap_path: optional pickle of {(video_name, reach_id): segment_num}, used to
-            repair rows written with segment_num = 0 before the 2026-08-20 fix.
+            repair rows written with segment_num = 0 by an older watcher.
         cache_dir: if it holds reach_data.parquet / pellet_scores.parquet, read those
             instead of the database. connectome.db is rollback-journal over SMB, so a
             live watcher blocks readers outright.
@@ -342,7 +342,7 @@ def build_worklist() -> list:
     algorithm say. MouseReach stores it as that pellet's flag reason and its
     review tool shows it beside the pellet. WHY: all a reviewer sees is the
     tool, and finished videos coming back with no reason on screen looked like
-    the reviewer's own answers being lost (2026-10-23)."""
+    the reviewer's own answers being lost."""
     from mousedb.analyzable import finished_videos
 
     rd, ps = load_paired_pellets()
@@ -392,7 +392,7 @@ def route_command():
 
     Read through mousedb.config.get -- environment variable, then the
     person's own settings laid over the machine's -- like every other
-    setting. WHY: it used to read the person's own file only, so a value set
+    setting. WHY: it would otherwise read the person's own file only, so a value set
     once for the computer (``mousedb config --machine --set``) was never seen
     and routing said "not configured" for every other login.
     """
@@ -453,8 +453,8 @@ def main(argv=None) -> int:
     out.write_text(json.dumps(worklist, indent=2))
     n_segments = sum(len(item["segment_nums"]) for item in worklist)
     # Flushed: this runs under a time limit with its output going to a file,
-    # where print() is buffered -- the 2026-10-24 run was stopped mid-routing
-    # and this line, though printed, never reached the log.
+    # where print() is buffered -- a run stopped mid-routing would lose
+    # this line, though printed, before it reached the log.
     print("videos: %d  segments: %d  wrote: %s" % (len(worklist), n_segments, out),
           flush=True)
 

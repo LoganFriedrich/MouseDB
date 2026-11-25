@@ -1,9 +1,9 @@
 """Which program has a file open -- so a "permission denied" can say what to close.
 
-WHY (2026-10-29): the nightly sheet import failed on one cohort's workbook with
-"[Errno 13] Permission denied". The cause was ordinary -- the workbook was open
+WHY: a scheduled sheet import can fail on one cohort's workbook with
+"[Errno 13] Permission denied". The cause is ordinary -- the workbook is open
 in Excel on the same computer, and Excel locks a synced workbook while it is
-open -- but the message gave a person nothing to act on. Windows' Restart
+open -- but the message gives a person nothing to act on. Windows' Restart
 Manager (the part of Windows that says "close these programs" before an
 install) can name the program holding a file, without administrator rights.
 
@@ -12,7 +12,7 @@ list and the caller keeps its original message: this never turns one failure
 into two.
 
 Also here: ``readable_workbook``, which reads a workbook that Excel has open.
-WHY (2026-10-31): a person keeping a sheet open must not stop the import, and
+WHY: a person keeping a sheet open must not stop the import, and
 closing it is not their job. Excel holds the file so that only a reader who also
 tolerates it being renamed or deleted may open it. Python's open() does not offer
 that, so it gets "Permission denied"; asking Windows directly, with every sharing

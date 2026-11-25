@@ -38,8 +38,8 @@ synthetic inputs, the same on any machine. So:
     folders and files beside it (exports, logs, the database) stay guarded.
 
 A unit test must also never contend for the PRODUCTION database-task lock:
-when a real hourly task held it, the suite silently hung for minutes
-(2026-09-04). Constructing TaskMutex without an explicit base_dir resolves to
+when a real hourly task held it, the suite silently hung for minutes.
+Constructing TaskMutex without an explicit base_dir resolves to
 the production logs dir -- that is an instant, loud failure instead.
 """
 import itertools
@@ -331,7 +331,7 @@ def _split_anchor(n):
 
 
 def _spellings(path, drive_map=None, resolve=True):
-    """Every spelling of ``path`` the guard should recognise, normcased, with
+    """Every spelling of ``path`` the guard should recognize, normcased, with
     no trailing separator: as given, abspath, realpath, each part long or
     short (mixed too), and the drive-letter <-> server form of a mapped
     network drive. ``drive_map`` defaults to this computer's mapped drives;
@@ -508,7 +508,7 @@ def _longest_prefix(n, spellings):
 
 
 def _live(path):
-    """The normalised path when it lies under a real location (and not in
+    """The normalized path when it lies under a real location (and not in
     the code's own checkout), else None. Pure string work: an audit hook must
     not open files itself. When a path lies under both a live location and
     an exempt one, the deeper of the two decides -- so the checkout inside the

@@ -1,6 +1,6 @@
 """Every per-reach row carries four levels, under names that say which level.
 
-Owner's rule (2026-11-19): a per-reach row is one reach and repeats its segment
+Rule: a per-reach row is one reach and repeats its segment
 (one pellet), session (one tray = one video) and day (the animal's date). What
 THIS reach did is its own column on every reach: naming the reach that moved a
 pellet answers every other reach at it (they missed); every reach at an
@@ -223,7 +223,7 @@ def test_dictionary_no_longer_claims_untouched_pellets_have_a_causal_reach():
     assert "last reach at an untouched pellet" not in text
 
 
-# --- 2026-11-19 follow-up (owner's decisions) ---------------------------------
+# --- follow-up rules ------------------------------------------------------
 # Every per-reach measurement starts with reach_, in every per-reach file and
 # dictionary; the animal-day file is ODC_days_<cohort>.csv, and a saved
 # limited-export definition naming the old kind ODC_sessions keeps working.

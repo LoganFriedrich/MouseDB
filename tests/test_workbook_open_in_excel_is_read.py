@@ -1,6 +1,6 @@
 """A workbook someone has open is imported anyway, from what was last saved.
 
-2026-10-31: the nightly import failed on a cohort sheet for as long as it stayed
+WHY: a scheduled import failed on a cohort sheet for as long as it stayed
 open in Excel, and asked a person to close it. They should not have to. Measured
 on the real open workbook: Python's open() is refused and a read that allows
 every other use of the file succeeds. The handle below reproduces that state.

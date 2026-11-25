@@ -3,7 +3,7 @@
 WHY THIS EXISTS
 ---------------
 The per-reach export files (each cohort's complete record, summary, analysis
-and sessions files, and each project's combined files) used to be rebuilt
+and sessions files, and each project's combined files) would otherwise be rebuilt
 from scratch whenever ANY of their inputs changed -- one new video, one
 corrected sheet cell -- and rebuilding took hours, almost all of it spent
 re-making files whose content had not changed. The request was: only add
@@ -113,7 +113,7 @@ LEDGER_FORMAT = 1
 # The parts of a cohort's fingerprint, in the order a reason is reported.
 PARTS = ("reaches", "animals", "hand_scores", "video_pellets", "video_sessions", "exclusions",
          "study_facts", "running", "place", "settings", "weights", "recording_status")
-# "weights" and "recording_status" (2026-11-24): the sessions file's day weight
+# "weights" and "recording_status": the sessions file's day weight
 # (also on a tray with no reach, which no reach row carries) and its day
 # recording status come from these tables, so a change in either must rebuild
 # the cohort.

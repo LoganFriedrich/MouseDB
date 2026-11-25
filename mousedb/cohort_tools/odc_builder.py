@@ -2,7 +2,7 @@
 
 Why
 ---
-``2_ODC_Animal_Tracking`` is the 210-column standardised format everything will
+``2_ODC_Animal_Tracking`` is the 210-column standardized format everything will
 eventually be reported in. It has never been filled in for ANY cohort -- 210
 columns by hand was never going to happen. But almost every value already exists
 in the other tabs, so it can be derived instead of typed.

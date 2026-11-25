@@ -337,7 +337,7 @@ def validate(name: str, profile: dict, rules: Optional[Dict[str, dict]] = None) 
         window = {"type": "all"}
     # A kind's old name (layout.KIND_ALIASES) is read as its current one, so a
     # definition saved before a rename keeps working: "ODC_sessions" is
-    # "ODC_days" since 2026-11-19. The stored form carries the current name.
+    # "ODC_days". The stored form carries the current name.
     kinds = [layout.KIND_ALIASES.get(str(k), str(k)) for k in (p.get("kinds") or ALL_KINDS)]
     bad = [k for k in kinds if k not in layout.KINDS]
     if bad:
@@ -479,7 +479,7 @@ def save_profile(name: str, profile: dict, replace: bool = False) -> Path:
     ``replace`` is True (the window asks the person first; the command needs
     --replace), and the one replaced is kept under REPLACED_KEY with the time.
     WHY: a saved definition is a person's work, remade every night; typing a
-    name that is already taken used to overwrite it with no question and no
+    name that is already taken would otherwise overwrite it with no question and no
     copy. Saving exactly what is already saved changes nothing and asks
     nothing."""
     def change(data: dict) -> None:
@@ -1195,7 +1195,7 @@ def _move(src: Path, dst: Path) -> None:
 def _place(staging: Path, folder: Path, out_root: Path, name: str) -> List[str]:
     """Put a new slice in place of the previous one. Returns what was archived.
 
-    WHY THREE STEPS: a remake used to move the previous slice into the archive
+    WHY THREE STEPS: a remake would otherwise move the previous slice into the archive
     first and then copy the new files in. A copy that failed part way (a full
     share; a file held open by a spreadsheet program) left the folder with
     part of a new set, no manifest and no README, while the window said

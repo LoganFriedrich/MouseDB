@@ -142,7 +142,7 @@ def test_the_write_path_applies_the_rule():
 @pytest.fixture(scope="module")
 def written_csvs(tmp_path_factory):
     """Export files written by the real exporters from synthetic inputs
-    (tests/synthetic_exports.py). This check used to read this computer's live
+    (tests/synthetic_exports.py). This check would otherwise read this computer's live
     exports folder -- which no test may touch, and which meant it checked
     nothing on any other machine."""
     from tests.synthetic_exports import build, csv_files

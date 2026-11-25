@@ -1,5 +1,5 @@
 """
-Export functions for Connectome Data Entry.
+Export functions for mousedb.
 
 Supports:
 - Excel export (for legacy tools)
@@ -485,7 +485,7 @@ class QueryExporter:
 
     Example:
         QueryExporter(db) \\
-            .cohorts(["CNT_01", "CNT_02"]) \\
+            .cohorts(["PROJA_01", "PROJA_02"]) \\
             .phases(["Post-Injury_1", "Post-Injury_2"]) \\
             .score_equals(2) \\
             .include_weights() \\
@@ -561,7 +561,7 @@ class QueryExporter:
         """
         Add custom SQL condition on cohort.
 
-        Example: where_cohort("cohort_id LIKE 'CNT%'")
+        Example: where_cohort("cohort_id LIKE 'PROJA%'")
         """
         self._cohort_where.append(sql_condition)
         return self

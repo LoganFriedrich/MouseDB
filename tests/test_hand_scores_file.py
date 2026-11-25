@@ -204,7 +204,7 @@ def test_a_rename_refused_while_a_reader_has_the_file_open_is_retried(tmp_path, 
 def test_a_cohort_seen_once_stays_on_the_sheets_list(tmp_path, monkeypatch):
     """WHY: a cohort with a sheet waits for its first import; one with none is
     settled as having no hand scores and its videos are filed uncompared. A
-    sheet missing from ONE folder listing used to take its cohort off the list."""
+    sheet missing from ONE folder listing would otherwise take its cohort off the list."""
     w = _scratch_writer(tmp_path, monkeypatch)
     w(full_run=True, sheets_seen=["PROJA_77", "PROJA_78"])
     m = w(full_run=True, sheets_seen=["PROJA_78", "PROJA_79"])   # PROJA_77 missing this time
@@ -213,7 +213,7 @@ def test_a_cohort_seen_once_stays_on_the_sheets_list(tmp_path, monkeypatch):
 
 def test_a_manifest_that_cannot_be_read_stops_the_write_and_keeps_the_list(
         tmp_path, monkeypatch):
-    """WHY: an unreadable manifest used to be taken as empty, so one bad read
+    """WHY: an unreadable manifest would otherwise be taken as empty, so one bad read
     shrank the list of cohorts with a sheet to this import's listing -- and a
     never-imported cohort missing from it had its videos filed uncompared.
     A damaged manifest now fails the write and leaves both files as they were;
@@ -274,7 +274,7 @@ def test_a_folder_other_than_the_configured_one_settles_nothing(tmp_path, monkey
 def test_an_import_that_saved_the_scores_counts_even_if_a_later_step_failed(tmp_path, monkeypatch):
     """WHY: a video with no hand score for its session is filed only once an
     import after it was ready brought its cohort's scores in. An import whose
-    animal-details step failed AFTER the scores were saved used to count as no
+    animal-details step failed AFTER the scores were saved would otherwise count as no
     import at all, so those videos kept waiting on accessory information."""
     w = _scratch_writer(tmp_path, monkeypatch)
     sheet_sync._append_ledger({"cohort_id": "PROJA_77", "success": True, "dry_run": False,
@@ -321,7 +321,7 @@ def test_the_import_records_that_its_scores_were_saved_when_the_details_fail(tmp
 def test_two_overlapping_writes_each_keep_the_cohort_the_other_added(tmp_path, monkeypatch):
     """WHY: several import routes rewrite these files, and two can finish at
     the same moment (a button import during the nightly folder import). Each
-    write used to read the previous manifest before taking any lock, so the
+    write would otherwise read the previous manifest before taking any lock, so the
     write that finished last started from the list as it was before the other
     -- and dropped the cohort the other had just added to sheets_seen. The
     whole write is now one writer at a time.

@@ -61,7 +61,7 @@ One row per cohort:
 
 | Column | Meaning |
 |---|---|
-| Cohort | e.g. CNT_NN |
+| Cohort | e.g. PROJA_NN |
 | Status | **Up to date** -- the database matches the sheet's last edit. **Sheet edited since last import** -- someone changed the workbook after it was last imported; import again. **Never imported** -- import it. **LAST IMPORT FAILED** -- the last attempt hit an error; select the row to read it. **NOT SYNCED** (red) -- the last import found the sheet looking broken and removed and changed nothing; select the row to read why, and see "The sheet wins". **N files match -- choose** -- see "Which file is read" below. |
 | Sheet file | The workbook being read as this cohort's sheet. `[pinned]` means a person chose it and that file is still there. `[PIN BROKEN -- see the red box]`, in red, means the file a person chose has gone (see "A broken pin"). |
 | Sheet edited | When that workbook was last saved. |
@@ -149,8 +149,7 @@ A warning is not a failure. Everything else in the workbook was imported.
 
 ### The sheet wins: corrections and removals reach the database
 
-**Why.** Until this was added the import only ever ADDED rows. Two things
-went wrong because of it, and both stayed wrong for weeks:
+**Why.** An import that only ADDED rows would leave two kinds of error in place for good:
 
 - a session typed into the wrong cohort's workbook, imported, and then moved
   to the right workbook stayed in the database under the wrong cohort. Its
@@ -163,7 +162,7 @@ went wrong because of it, and both stayed wrong for weeks:
   imported while it still held the previous cohort's weights and surgeries
   under the new animals' ids. Clearing them from the sheet did nothing.
 
-**What every import now does,** for each cohort, for the rows earlier
+**What every import does,** for each cohort, for the rows earlier
 imports of that cohort's sheet wrote:
 
 | Table | A row is the same row when it has the same ... | Compared and corrected | Removed when |
@@ -171,7 +170,7 @@ imports of that cohort's sheet wrote:
 | pellet scores (`3b_Manual_Tray`) | animal, date, tray, pellet | the score | its tray (animal, date, tray) is no longer in the sheet, or its cell is now empty |
 | weights (`3d`/`3e_Weights`, `1_Weight`, and the weights on `3a_Manual_Ramp`) | animal, date | grams, and % of body weight (see below) | that animal and date has no weight in the sheet any more |
 | ramp days (`3a_Manual_Ramp`) | animal, date | weight, % of body weight, food put in and taken out, food eaten | the row is gone |
-| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anaesthetic, notes, weight on the day, survived; for a tracing injection virus, titre, volume, target, weight, survived) -- see "Survived" below | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
+| surgeries (`4_Contusion_Injury_Details`, `5_SC_Injection_Details`) | animal, date, kind (contusion / tracing) | the readings the import stores (force, displacement, velocity, dwell, surgeon, anesthetic, notes, weight on the day, survived; for a tracing injection virus, titre, volume, target, weight, survived) -- see "Survived" below | the sheet no longer has a performed surgery of that kind on that date for that animal (a row that has become a plan -- its weight cleared -- counts as gone) |
 
 - **The % of body weight on a weight row** is taken from the weight's own tab
   when that tab has a percentage column (`Weight %` on `1_Weight`,
@@ -192,10 +191,7 @@ imports of that cohort's sheet wrote:
   or `0` mean it did not. On the contusion tab a blank cell, or anything
   else (`?`), says nothing: a surgery first imported from such a row is
   stored as survived (the database's default), and a stored flag is left
-  as it is. In earlier versions the contusion tab's `Survived` cell only marked
-  the animal dead and was never stored on the contusion itself, so every
-  contusion read as survived. The first import after that was fixed turns
-  each contusion whose row says `N` from 1 to 0. That is an overwrite, so it
+  as it is. A contusion whose row says `N` and that is stored as survived is turned to 0. That is an overwrite, so it
   counts toward the "more than 25% of the rows overwritten" guard below: a
   cohort in which more than 5 and more than a quarter of its surgery rows
   are deaths gets `NOT SYNCED surgeries` once. Check the `Survived` column,
@@ -203,9 +199,7 @@ imports of that cohort's sheet wrote:
   described below.
 - **The weight on the day of a surgery** (`Subject_Weight (g)`, see "Surgery
   rows" below) is stored on the surgery (`pre_surgery_weight_grams`) for a
-  contusion as for an injection. In earlier versions a contusion's weight was read
-  only to decide that the surgery happened, and then not kept. Contusions
-  imported before then are filled in by the next import; filling an empty
+  contusion as for an injection. A contusion imported without its weight is filled in by the next import; filling an empty
   value never counts toward the guard, so this alone never makes an import
   refuse. (A cohort whose surgeries are refused for another reason, such as
   the Survived catch-up above, gets its weights filled once that is settled.)
@@ -241,9 +235,7 @@ imports of that cohort's sheet wrote:
   survive marks it dead on that day, so when such a row is removed (a row
   copied in from another cohort's workbook, say) or its `Survived` cell is
   corrected to `Y` (a mistyped `N`), and nothing left in the sheet says the
-  animal died, the death is undone and listed (`N deaths undone`). In earlier
-  versions correcting the cell to `Y` corrected only the surgery's flag: the
-  animal stayed dead on that day. "Nothing left in the sheet says the
+  animal died, the death is undone and listed (`N deaths undone`). "Nothing left in the sheet says the
   animal died" means no other contusion row of the animal says `N` and its
   `0a_Metadata` row gives no `Date_of_Death` (a date still ahead does not
   count). When `0a_Metadata` does give one, the animal stays dead and the
@@ -263,10 +255,10 @@ imports of that cohort's sheet wrote:
   plan, and is not taken. Every fill is in the audit log.
 - When an import removes a session date, or adds one, the cohort's **phases
   are worked out again in the same import**, for its pellet scores and its
-  reaches, and the import says how many rows were relabelled. The hand-scores
+  reaches, and the import says how many rows were relabeled. The hand-scores
   file for the reaching pipeline is rewritten at the end of the import as
   always, and the next night's export refresh rebuilds the exports with the
-  new labels (it notices relabelled rows even when no row was added).
+  new labels (it notices relabeled rows even when no row was added).
 - **A dry run** (`--dry-run`, or the Cohort Setup preview) says what an
   import WOULD change and remove, and writes nothing.
 
@@ -285,7 +277,7 @@ times:
    cohort's line, under `sheet_sync`: every changed value with its old and
    new value, every removed row (a removed tray with its 20 old scores), the
    dates that left the cohort's schedule, and under `phases_rederived` how
-   many rows were relabelled. This list is kept whole, never cut short;
+   many rows were relabeled. This list is kept whole, never cut short;
 3. in the database's own audit log (the `audit_log` table and
    `<mousedb_root>/logs/<date>_changes.jsonl`), one entry per row, with the
    row's old values. A removed row can be typed back from there if a removal
@@ -504,8 +496,8 @@ The import catches the case it can line up:
 
 is read as that weekday. As with a year typo, scores an earlier import filed
 under the weekend date are moved to it, and a warning starting `REPAIRED`
-names the rows, for example: `REPAIRED CNT_NN 3b_Manual_Tray: rows CNT_NN_02 P1,
-CNT_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
+names the rows, for example: `REPAIRED PROJA_NN 3b_Manual_Tray: rows PROJA_NN_02 P1,
+PROJA_NN_03 P1 are dated 2025-10-25 (a Saturday, ...) but sit among rows dated
 2025-10-28, and are read as 2025-10-28.` It shows in the red panel and on the
 cohort's FIX THESE file until the sheet is fixed. **What you do:** type the
 date into those cells (a typed date never moves). While several files match
@@ -529,7 +521,7 @@ below; cutting the rows is what moves formula dates.
 
 ### Another cohort's animal is never filed here
 
-An animal belongs to the cohort its id says: in `CNT_NN_SS` the middle number
+An animal belongs to the cohort its id says: in `PROJA_NN_SS` the middle number
 is the cohort. A row in this cohort's workbook that names **another cohort's
 animal** (an animal borrowed between studies, a row left over in a workbook
 copied from the previous cohort, or a typo) is not imported from this
@@ -562,7 +554,7 @@ does not read that cell:
   as having a blank animal id -- so head the column with one of these;
 - or the import reads the cell differently: text such as `n/a`, which it
   takes as an empty cell on `0a_Metadata`, or an id written without
-  underscores (`CNT0103`), which it accepts but the copy does not.
+  underscores (`PROJA0103`), which it accepts but the copy does not.
 
 That line reads `<workbook>: '<tab>' row with unrecognised animal ...
 skipped`, or, for another cohort's id, `<workbook>: '<tab>' row for animal
@@ -585,7 +577,7 @@ with such a row is named.
 | **Import all sheets** / **Import selected** (Tracking Sheets tab) | `gui` | yes | a `FAIL` line in the log box and a box with the summing-up line; the row turns *LAST IMPORT FAILED* |
 | **Update the database now** (9. Where Is My Data tab), or `mousedb update` | `update` | yes | the sheets step shows `[FAIL]` and the whole update reports FAILED |
 | the scheduled sheet import (INSTALL.md, "Scheduled jobs") | `scheduled` | yes | the job ends with exit code 1, which the scheduler shows as a failure |
-| `mousedb-sheets import [--cohort CNT_NN]` | `manual` | yes | exit code 1 |
+| `mousedb-sheets import [--cohort PROJA_NN]` | `manual` | yes | exit code 1 |
 | `mousedb import --all` | `mousedb-import` | yes | exit code 1, after `[FAIL] the import did not complete for every cohort` |
 | `mousedb import --file <workbook>` | `mousedb-import --file` | yes | exit code 1 |
 | `mousedb-refresh-snapshot --import-sheets` | `hourly-refresh` | yes | a `[warn] ... FAILED` line; the snapshot carries on with what the database already holds |
@@ -600,8 +592,7 @@ details (only after an import that saved -- see "When an import fails"),
 write one line per cohort into the import history, wait for the same lock,
 rewrite the hand-scores file for the reaching pipeline and the FIX THESE
 files (see "After every import"), and report a failure as a failure. Only the
-label in the history differs. (The install check used to read every matching
-file itself, outside all of this; it now goes through the same import.)
+label in the history differs.
 
 **Import from Excel... (Cohort Setup)** also offers **Replace**, which deletes
 what earlier imports of the sheet wrote and imports it again in one step it
@@ -621,9 +612,7 @@ not rewritten gives the **Replace saved, with problems** box instead, with
 the reason in it. So does an import-history line that could not be written
 (`[!] import history not written: ...`): the hand-scores file reads that
 line to know the cohort's scores were saved, so until a later import of the
-cohort writes one, videos waiting for those scores keep waiting. (Neither button used to
-copy the animal details or rewrite those two files, so the reaching
-pipeline compared videos with the previous scores until the nightly import.)
+cohort writes one, videos waiting for those scores keep waiting. Both buttons copy the animal details and rewrite those two files, so the reaching pipeline does not compare videos with older scores until the nightly import.
 
 **The lock** is one file under `<mousedb_root>/logs` that every job writing
 the database takes in turn (INSTALL.md, "What happens when another program
@@ -652,8 +641,7 @@ One cohort's import is two steps on one workbook: the import of its tables
 details. The first saves the workbook whole or not at all: if it records an
 error, nothing from that workbook is saved. The second then does not run, so
 each animal's details stay exactly as they were and still agree with the rest
-of the database. (They used to be replaced even when nothing else was saved,
-so for that cohort the two described different versions of the sheet.)
+of the database. (Otherwise the two would describe different versions of the sheet.)
 
 You see it on the line under the cohort's `FAIL` line:
 
@@ -685,7 +673,7 @@ the tabs it could really read, one tab at a time (`0a_Metadata`,
 details are left exactly as they were when:
 
 - the tab is **missing** from the workbook, is empty, or has no animal id
-  column (a renamed tab used to empty its animal details);
+  column;
 - the tab is there but gives **no animal's details at all** while the
   database holds some from it -- most likely a tab caught mid-save or shifted
   columns, not every row deleted on purpose;
@@ -693,9 +681,7 @@ details are left exactly as they were when:
   holds details for from it: more than 5 animals AND more than a quarter of
   them (the same rule as for pellet scores, weights and surgeries in "The
   sheet wins"). A shifted header or a file caught mid-save can read only
-  part of a tab; in earlier versions such a read still replaced the cohort's
-  details and the left-out animals' sex, date of birth, strain ... were gone
-  without a word. Taking out a few animals (5 or fewer, or a quarter or
+  part of a tab; replacing the cohort's details from such a read would wipe the left-out animals' sex, date of birth, strain ... without a word. Taking out a few animals (5 or fewer, or a quarter or
   less) is an edit and is copied. The line names the left-out animals:
   `[!] NOT SYNCED animal details '0a_Metadata': the '0a_Metadata' tab read
   details for only 8 of the 16 animals ... (left out: ...)`;
@@ -705,8 +691,7 @@ details are left exactly as they were when:
 
 This holds for a tab that is missing or renamed just as for one that reads as
 empty: a missing tab whose details the database holds is reported too, never
-kept in silence (a renamed tab used to keep its old details in the exports
-for good while every import said OK).
+kept in silence.
 
 Each such tab is listed with the other refusals, under the cohort's line:
 
@@ -756,7 +741,7 @@ To read every warning of one cohort:
 - without a terminal: **1. Cohort Setup** -> **Import from Excel...** -> pick
   the cohort's sheet in the sheets folder -> read the preview (the first 8)
   -> press **Cancel**. Nothing is written;
-- in a terminal: `mousedb-sheets import --cohort CNT_NN --dry-run --json`.
+- in a terminal: `mousedb-sheets import --cohort PROJA_NN --dry-run --json`.
   Nothing is written.
 
 ### After every import: the hand scores for the reaching pipeline
@@ -767,7 +752,7 @@ never depends on mousedb); it reads one file mousedb writes:
 
 - `<mousedb_root>/exports/hand_scores/hand_pellet_scores.csv`: every hand
   pellet score, one row per pellet, keyed by the session the way the
-  pipeline names its video (`20250709_CNT0207_P1`: date, animal without
+  pipeline names its video (`20250709_PROJA0207_P1`: date, animal without
   underscores, tray type and number);
 - `hand_pellet_scores.json` beside it: when the file was written; for each
   cohort, when its last sheet import that SAVED the cohort's scores finished
@@ -877,8 +862,8 @@ They are shown in two places:
   from somewhere else -- and not at all on a computer with no sheets folder
   configured. It is rewritten after
   every import and **removed by itself once nothing is left**. Do not edit
-  it; it is not read. The import's output names it (`[!] CNT_05: things to fix
-  in the sheet -- see '!! CNT_05 - FIX THESE.xlsx' ...`), and says so if the
+  it; it is not read. The import's output names it (`[!] PROJA_05: things to fix
+  in the sheet -- see '!! PROJA_05 - FIX THESE.xlsx' ...`), and says so if the
   file could not be written (for example because it was open in Excel at
   the time).
 
@@ -943,8 +928,8 @@ The phase labels are worked out again as after any import that adds rows.
 The animal details are left as they were. The cohort's line says why:
 
 ```
-       [!] animal details left as they were: 2 files match CNT_NN's sheet name (...) and none is pinned, ...
-       [!] NOT SYNCED any table: 2 files match CNT_NN's sheet name (...) ... Say which file is the sheet with 'mousedb-sheets pin <cohort> "<file name>"' ...
+       [!] animal details left as they were: 2 files match PROJA_NN's sheet name (...) and none is pinned, ...
+       [!] NOT SYNCED any table: 2 files match PROJA_NN's sheet name (...) ... Say which file is the sheet with 'mousedb-sheets pin <cohort> "<file name>"' ...
 ```
 
 The cohort counts as NOT SYNCED, so the scheduled job's run shows as failed
@@ -952,7 +937,7 @@ every night until a file is pinned -- on the machine that runs the scheduled
 import (pins are kept per machine login, see below). The same holds when a
 pin is broken (see "A broken pin"). The closing line names such a cohort
 apart: `N NOT SYNCED with the sheet -- several files match, pin one with
-'mousedb-sheets pin <cohort> <file>' (CNT_NN)`.
+'mousedb-sheets pin <cohort> <file>' (PROJA_NN)`.
 
 **What this means for the reaching pipeline.** The scores the newest file
 adds are in the database, so they are in the hand-scores file and a video
@@ -974,8 +959,8 @@ that has no pins of its own. A pin is never saved into a damaged settings
 file: the button then says so, names the file, and pins nothing.) To forget a pin,
 press **Forget a pin...** and pick the cohort (the list shows every pinned
 cohort, broken pins included); the cohort's newest file is read again. From a
-terminal: `mousedb-sheets pin CNT_NN "<exact file name>"`; to forget it,
-`mousedb-sheets unpin CNT_NN`.
+terminal: `mousedb-sheets pin PROJA_NN "<exact file name>"`; to forget it,
+`mousedb-sheets unpin PROJA_NN`.
 
 A pin must name a file that is in the sheets folder now. Pinning another
 cohort's file, a name that is never read as a sheet (see above), or a name
@@ -987,7 +972,7 @@ only in capital letters is accepted and saved with the file's real spelling.
 In the tab, if the file you pick was renamed, moved or deleted after the
 table was last read, a *Not pinned* box gives that reason and says *Nothing
 was pinned*; the table is then read again, so select the row and choose from
-the files that are there now. (This used to close the whole mousedb window.)
+the files that are there now.
 An ASPA row has nothing to choose -- one workbook per cohort letter -- and the
 button says so.
 
@@ -1010,9 +995,9 @@ the tab). If the cohort has no file left, put the workbook back in the
 folder, or unpin.
 
 **Naming a cohort in a command.** `--cohort`, `pin`, `unpin` and
-`mousedb cohort-sheets --cohort` take a cohort as `CNT_NN`, `cntNN`, `CNTNN`,
-`NN` or `N` (for example `CNT_05`, `cnt05`, `05` or `5`). Another project's
-id (`PROJB_05`), an animal id (`CNT_05_01`) or anything else is refused in
+`mousedb cohort-sheets --cohort` take a cohort as `PROJA_NN`, `projaNN`, `PROJANN`,
+`NN` or `N` (for example `PROJA_05`, `proja05`, `05` or `5`). Another project's
+id (`PROJB_05`), an animal id (`PROJA_05_01`) or anything else is refused in
 one line, and nothing is imported or pinned for it. An ASPA cohort is named
 `ASPA_NN`, or by its letter, `ASPA_J`.
 
@@ -1119,8 +1104,8 @@ that is missing or renamed is kept as it was and reported
 | `<tab>: no 'Subject_Weight (g)' column ... (restore that column heading)` | Put the heading back exactly as `Subject_Weight (g)`. |
 | `<tab>: surgery not imported: the weight on the day is typed but the animal id is blank ...` | Type the animal id in the sheet row it names. |
 | `<tab>: rows not imported: these animals belong to cohort <other cohort> ...` | Correct the id if it is a typo; otherwise record those rows in that cohort's own workbook. |
-| `<tab>: rows not imported: the animal cell is not an animal id ...` | Correct the quoted cell to the animal's id (`CNT_NN_SS`) or its number. |
-| `<workbook>: '<tab>' row with unrecognised animal ... skipped` | Named instead of the line above where the import itself does not read that cell: another heading, or text it reads differently such as `n/a` or `CNT0103` (see "Another cohort's animal is never filed here"). Correct the cell to the animal's id (`CNT_NN_SS`). |
+| `<tab>: rows not imported: the animal cell is not an animal id ...` | Correct the quoted cell to the animal's id (`PROJA_NN_SS`) or its number. |
+| `<workbook>: '<tab>' row with unrecognised animal ... skipped` | Named instead of the line above where the import itself does not read that cell: another heading, or text it reads differently such as `n/a` or `PROJA0103` (see "Another cohort's animal is never filed here"). Correct the cell to the animal's id (`PROJA_NN_SS`). |
 | `<workbook>: '<tab>' row for animal <animal> skipped: it belongs to cohort <other cohort> ...` | As for `... these animals belong to cohort ...`: correct the id if it is a typo; otherwise record those rows in that cohort's own workbook. |
 | `Animal <animal> was NOT filed under cohort <cohort> ...` | Correct the id, or record the rows in the animal's own cohort's workbook. |
 | `Cohort <cohort> was not in the database ... PLACEHOLDER start of <date> ...` | Type the day-0 weigh-in into the sheet; the next import replaces the placeholder. |
@@ -1138,15 +1123,15 @@ that is missing or renamed is kept as it was and reported
 | `REFUSED: <file> was not imported.` | Run the command on its *Instead* line. |
 | `FAIL ... no tracking sheet for <id>: no sheet name is set for project <P> in the lab settings ...` | If `<P>` is a typo, name the cohort correctly (`PROJECT_NN`). If it is a real project whose sheets should be read, set its sheet name (see "Which projects' sheets are read"). |
 | `FAIL ... '<NN>' names no project, and the sheets folder holds more than one project's sheets ...` | Give the whole cohort id, for example `PROJA_05`: with two projects a bare number could mean either. |
-| `FAIL ... '<text>' is not a cohort id ...` | The same: `CNT_NN` or `NN`, not an animal id. |
-| `FAIL ... no tracking sheet for CNT_NN in the sheets folder (cohorts with a sheet: ...)` | Check the number; `mousedb-sheets status` lists every cohort's sheet. |
+| `FAIL ... '<text>' is not a cohort id ...` | The same: `PROJA_NN` or `NN`, not an animal id. |
+| `FAIL ... no tracking sheet for PROJA_NN in the sheets folder (cohorts with a sheet: ...)` | Check the number; `mousedb-sheets status` lists every cohort's sheet. |
 | `<workbook> is open in another program: read its last saved version` | Nothing to do. This is not a failure: you may leave a workbook open in Excel, and the import reads what was last saved. Changes you have not saved are not in the file; save them and the next import picks them up. |
 | `FAIL ... Could not read the workbook: it is open in <program> (process N) on this computer ...` | Rare. Excel does not cause this; it means the program named is holding the file so that nothing at all can read it. Close that program. Nothing from that workbook was imported this time; the next import (the nightly one, or **Import selected**) reads it. |
 | `FAIL ... Failed to open Excel file: [Errno 13] Permission denied ...` | The same, when Windows could not say which program. Also check that your account can read the file. |
 | `FAIL ... could not acquire the database-task lock: ...` | Another database task held the lock for this import's whole wait (25 minutes from the window, 40 from a terminal or the scheduled job), or showed no progress for 30 minutes, or this import had already given up on it for an earlier cohort. Import again later; if it keeps happening, find the task that is stuck (the message names it). |
 | `Sheets: NOTHING IMPORTED -- ...` | Read the reason on that line; usually the sheets folder is not set or not found (see "Setting the folder"). |
 | `[!] not read as a sheet: <file> -- <reason>` (or `NOT read: ...`) | If it is a cohort's real sheet, rename it so the name starts with its project's sheet name; otherwise nothing. If the reason is that the name fits more than one project, rename it so it fits one. |
-| `[!] CNT_NN is pinned to <file>, which ...` (or `PIN BROKEN: ...`) | Pin the right file again, or unpin (see "A broken pin"). |
+| `[!] PROJA_NN is pinned to <file>, which ...` (or `PIN BROKEN: ...`) | Pin the right file again, or unpin (see "A broken pin"). |
 | `[FAIL] cannot pin '<file>' as the sheet for cohort NN: ... -- nothing was pinned` (in the tab, a *Not pinned* box) | Copy the exact name (from the list in the message, or `mousedb-sheets status`) and pin again. In the tab the table is read again: select the row and choose from the files that are there. |
 | `[FAIL] <folder> ...; the sheets folder setting was not changed` (in the tab, a *Not the sheets folder* box) | Give the folder that holds the live tracking workbooks. If it does hold them, check the sheet names are set (`mousedb sheet-projects --show`): with none set, no file there counts as a sheet. |
 | *Recorded -- but another folder is in use* | The `MOUSEDB_COHORT_SHEETS` environment variable names another folder, and it comes first. Clear or change it. |
@@ -1269,7 +1254,7 @@ folder is merely on a drive that is not connected right now; then connect the
 drive instead, and change nothing.
 
 The folder path is deliberately never written into the code (it typically
-contains a username and the organisation's folder names, and the code is
+contains a username and the organization's folder names, and the code is
 public); it lives only in that local config file. The same is true of every
 other location mousedb uses -- run `mousedb config --show` to see them.
 
@@ -1278,7 +1263,7 @@ other location mousedb uses -- run `mousedb config --show` to see them.
 A new cohort's workbook is made from its project's **template**: an ordinary
 workbook, made once from a cohort sheet the lab is happy with, that says
 what every new sheet of that project looks like -- its tabs, columns,
-formulas, colours and the schedule of rows laid out ahead (the days, the
+formulas, colors and the schedule of rows laid out ahead (the days, the
 phase of each day, the trays). Whatever the template looks like, a new sheet
 looks like. A project with no template cannot get a new sheet; the button
 says so and names the command that makes one (below).
@@ -1376,18 +1361,18 @@ report. If the project already had a template, the old one is kept beside it
 as `PROJA_replaced_<date and time>.xlsx`; nothing is overwritten.
 
 **What the template keeps and clears.** It keeps every tab, column, header,
-formula, colour and column width, and each tab's rows for every animal. It
+formula, color and column width, and each tab's rows for every animal. It
 keeps the SCHEDULE -- typed values that are the same for every animal on a
 day and change from day to day (the phase, the tray, the day number) -- and,
 in tabs with no animal column (a planning or calculations tab), the typed
 values. It clears every date, everywhere, and every other value typed in an
 animal's row (scores, weights, sex, notes). A value that was the same for
-every animal of a one-row-per-animal tab (an anaesthetic, a target level) is
+every animal of a one-row-per-animal tab (an anesthetic, a target level) is
 cleared too, because "the same for everyone so far" is not the same as "the
 same for every cohort"; the report lists each one. To keep one, make the
 template again with `--keep "<tab>:<column header>"` (repeat for each), or
 type it into the template in Excel. It moves a frozen pane far down a tab
-(where someone last scrolled) to the first animal row, and drops colour
+(where someone last scrolled) to the first animal row, and drops color
 rules a person put on particular cells outside the tables.
 
 **The model animal** is the animal with the most rows in the workbook -- the
@@ -1455,9 +1440,7 @@ does exactly the same per cohort: it waits for the lock, imports, records the
 import, and then rewrites the hand-scores file the reaching pipeline compares
 videos with and each cohort's FIX THESE file, printing `OK   hand scores ...`
 (or `FAIL hand scores ... NOT rewritten`, exit code 1) as its last line.
-In earlier versions that command did not wait for the lock and did not rewrite
-those two files, so after it the pipeline compared videos with the previous
-hand scores until the next scheduled import. Without `--apply` it is a dry
+The command waits for the lock and rewrites those two files, so the pipeline does not compare videos with older hand scores until the next scheduled import. Without `--apply` it is a dry
 run: it reads, prints what it would import, and writes nothing.
 **Import all sheets** does not import ASPA scores;
 it only refreshes each ASPA animal's details from its workbook's `ODC` tab.
@@ -1481,10 +1464,10 @@ From a terminal (MouseDB environment active):
 
 ```
 mousedb-sheets status                             # which file, edited when, imported when
-mousedb-sheets import [--cohort CNT_NN] [--dry-run] [--json]
+mousedb-sheets import [--cohort PROJA_NN] [--dry-run] [--json]
 mousedb-sheets import --cohort <cohort> --allow-large-removal   # after checking: see "The sheet wins"
 mousedb-sheets pin PROJA_NN "ProjectA_NN_Animal_Tracking.xlsx"
-mousedb-sheets unpin CNT_NN
+mousedb-sheets unpin PROJA_NN
 mousedb-sheets set-dir "<folder>"
 mousedb cohort-sheets                             # the folder, files not read, broken pins
 ```

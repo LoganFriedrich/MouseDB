@@ -1,10 +1,10 @@
 """Pellet-score import must succeed against the LIVE pellet_scores DDL.
 
-The live connectome.db was created under an older schema where
-``pellet_scores.test_phase`` is NOT NULL; the ORM later relaxed that and the
-importer moved to insert-NULL-then-derive. Against the live table that
-violated the constraint and rolled back every import of a new cohort --
-silently, hourly, for CNT_05 (found 2026-08-28). Phases are now derived
+A database created under an older schema has ``pellet_scores.test_phase``
+NOT NULL; the ORM later relaxed that and the importer moved to
+insert-NULL-then-derive. Against such a table that violated the constraint
+and rolled back every import of a new cohort -- silently, on every scheduled
+run. Phases are now derived
 before the insert. This test builds a scratch database with the live DDL
 (not the ORM's) and imports a small synthetic 3b_Manual_Tray sheet through
 the real code path.

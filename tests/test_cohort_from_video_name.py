@@ -32,9 +32,9 @@ def test_a_long_collage_is_still_one_cohort():
 
 
 def test_a_single_letter_project_is_read_as_written():
-    """Recordings named before ids were normalised still have to land somewhere.
+    """Recordings named before ids were normalized still have to land somewhere.
 
-    They are not wrong, they are just not normalised yet, and showing them as
+    They are not wrong, they are just not normalized yet, and showing them as
     themselves is how anyone notices they exist.
     """
     assert cohort_of("20220811_D13_P3") == "D_13"

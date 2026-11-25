@@ -120,8 +120,8 @@ def importer(monkeypatch):
 
 @pytest.fixture
 def no_database(monkeypatch):
-    """`mousedb import` initialises the database first and runs a completeness
-    report after. Neither may touch a real database here: initialising is a
+    """`mousedb import` initializes the database first and runs a completeness
+    report after. Neither may touch a real database here: initializing is a
     no-op and opening one fails (the report says it could not run)."""
     import mousedb.database as dbmod
 
@@ -231,7 +231,7 @@ class TestImportAll:
 
     def test_one_sheet_per_cohort_not_every_matching_file(self, folder, importer,
                                                          no_database, monkeypatch):
-        """This route used to import EVERY file whose name matched, so a
+        """This route would otherwise import EVERY file whose name matched, so a
         cohort with a second workbook was imported twice from two files. Now
         it imports the one the Tracking Sheets tab shows: the pinned file, or
         the newest."""
@@ -261,7 +261,7 @@ class TestImportAll:
 
     def test_a_named_folder_that_is_not_there_says_so(self, folder, importer, monkeypatch,
                                                       tmp_path, capsys):
-        """It used to print only the CONFIGURED folder's description, which
+        """It would otherwise print only the CONFIGURED folder's description, which
         says nothing about the folder that was actually named."""
         import mousedb.database as dbmod
         opened = []
@@ -322,7 +322,7 @@ class TestImportOneFile:
     def test_a_file_named_relatively_is_recorded_with_its_full_path(
             self, folder, importer, no_database, monkeypatch, tmp_path):
         """The ledger line says where the workbook was. A name typed relative
-        to where the command ran used to be recorded as typed, which says
+        to where the command ran would otherwise be recorded as typed, which says
         nothing once read from anywhere else."""
         f = _workbook(tmp_path / "here" / "Connectome_05_Animal_Tracking.xlsx")
         monkeypatch.chdir(f.parent)
@@ -339,7 +339,7 @@ class TestARequestNamesOnlyItsOwnCohort:
 
     @pytest.mark.parametrize("asked", ["CNTS_01", "ENCR_01", "CNT_05_01", "J", "cohort one"])
     def test_a_request_is_never_rewritten_into_another_cohort(self, folder, importer, asked):
-        """Each of these used to become CNT_01 (or crash): its last number was
+        """Each of these would otherwise become CNT_01 (or crash): its last number was
         taken as a CNT cohort. None of them may import anything."""
         r = ss.import_cohorts([asked], triggered_by="test")
         assert importer.calls == []
@@ -386,7 +386,7 @@ class TestARequestNamesOnlyItsOwnCohort:
     @pytest.mark.parametrize("asked", ["ASPA_J", "aspa_j", "ASPAJ"])
     def test_an_aspa_cohort_named_by_its_letter_still_imports(self, folder, importer,
                                                               monkeypatch, asked):
-        """The lab names these cohorts by letter, and the Tracking Sheets tab
+        """The ASPA sheets name these cohorts by letter, and the Tracking Sheets tab
         labels a letter cohort whose status lookup failed 'ASPA_J'. The old
         last-character fallback imported J for these; refusing a trailing DIGIT
         (ASPA_99 above) must not also refuse a trailing letter."""
@@ -462,7 +462,7 @@ class TestWarningsAreCountedAndShown:
 class TestNothingImportedIsAFailure:
 
     def test_an_unconfigured_folder_exits_nonzero(self, tmp_path, monkeypatch, capsys):
-        """Zero cohorts, zero failures used to read as success: the scheduled
+        """Zero cohorts, zero failures would otherwise read as success: the scheduled
         job and the update button went green while no sheet was read."""
         monkeypatch.setattr(cs, "CONFIG_PATH", tmp_path / "config.json")
         monkeypatch.delenv(cs.ENV_VAR, raising=False)
@@ -471,7 +471,7 @@ class TestNothingImportedIsAFailure:
         assert "NOTHING IMPORTED" in capsys.readouterr().out
 
     def test_the_problem_is_said_once_in_the_closing_line(self):
-        """It used to be printed on a '[!]' line and then again, word for
+        """It would otherwise be printed on a '[!]' line and then again, word for
         word, in the closing line. The closing line is the one the update
         dialog shows, so that is where it stays."""
         lines = []
@@ -498,7 +498,7 @@ class TestNothingImportedIsAFailure:
 
 @pytest.fixture
 def database_opened(monkeypatch):
-    """Like no_database, but records every attempt to initialise the database,
+    """Like no_database, but records every attempt to initialize the database,
     so a test can prove a refused import never got that far."""
     import mousedb.database as dbmod
     calls = []
@@ -523,7 +523,7 @@ class TestAStaleOrWrongFileIsRefused:
                                           "generated", "backup"])
     def test_a_copy_in_a_snapshot_folder_is_refused_before_anything_is_opened(
             self, folder, importer, database_opened, monkeypatch, tmp_path, capsys, snapshot):
-        """It used to WARN and import anyway -- and this route replaces the
+        """It would otherwise WARN and import anyway -- and this route replaces the
         cohort's animal records, so the old copy overwrote the good ones."""
         f = _workbook(tmp_path / snapshot / "Connectome_05_Animal_Tracking.xlsx")
         assert _run_mousedb(monkeypatch, "import", "--file", str(f)) == 1
@@ -538,7 +538,7 @@ class TestAStaleOrWrongFileIsRefused:
     def test_a_bare_file_name_typed_inside_a_snapshot_folder_is_refused(
             self, folder, importer, database_opened, monkeypatch, tmp_path):
         """A path is judged by its folder names, and a bare name has none of
-        its own: standing inside the archive folder used to slip past."""
+        its own: standing inside the archive folder would otherwise slip past."""
         d = tmp_path / "archive"
         _workbook(d / "Connectome_05_Animal_Tracking.xlsx")
         monkeypatch.chdir(d)
@@ -563,7 +563,7 @@ class TestAStaleOrWrongFileIsRefused:
     def test_a_name_the_sheet_rule_refuses_is_not_imported(
             self, folder, importer, database_opened, monkeypatch, tmp_path, capsys, name):
         """The importer's own file-name rule finds cohort 05 in every one of
-        these, so naming one used to import it -- and an export carries none
+        these, so naming one would otherwise import it -- and an export carries none
         of the sheet's animal tabs, so it would have emptied CNT_05's animal
         records."""
         f = _workbook(tmp_path / "elsewhere" / name)
@@ -624,7 +624,7 @@ class TestPinningSaysWhyInOneLine:
     def test_a_file_that_is_not_the_cohorts_sheet_is_refused_in_one_line(
             self, folder, capsys, name):
         """The guard in cohort_sheets raises ValueError for these; the command
-        used to let it out as a traceback."""
+        would otherwise let it out as a traceback."""
         (folder / "Copy of Connectome_05_Animal_Tracking.xlsx").write_bytes(b"x")
         assert ss.main(["pin", "CNT_05", name]) == 1
         cap = capsys.readouterr()
@@ -644,7 +644,7 @@ class TestPinningSaysWhyInOneLine:
 
     @pytest.mark.parametrize("asked", ["CNTS_05", "CNT_05_01", "J"])
     def test_a_request_is_never_rewritten_into_a_cnt_cohort(self, folder, capsys, asked):
-        """Only the trailing number used to be kept: 'pin CNTS_05 <file>'
+        """Only the trailing number would otherwise be kept: 'pin CNTS_05 <file>'
         pinned CNT_05's sheet."""
         assert ss.main(["pin", asked, "Connectome_05_Animal_Tracking.xlsx"]) == 1
         assert len(_lines(capsys.readouterr().out)) == 1
@@ -664,7 +664,7 @@ class TestPinningSaysWhyInOneLine:
 
     def test_a_pin_whose_file_is_gone_is_announced_once_not_trusted(self, folder, capsys):
         """find_cohort_sheet ignores a pin that names no file and takes the
-        newest; the status listing used to go on saying 'pinned' and 'not
+        newest; the status listing would otherwise go on saying 'pinned' and 'not
         ambiguous'. Now the row shows the open question, and the broken pin
         is named once, on one line under that row."""
         gone = folder / "Connectome_05_Animal_Tracking(2).xlsx"
@@ -745,7 +745,7 @@ class TestTheStatusListing:
 class TestShowingOneCohortsSheet:
 
     def test_another_projects_cohort_is_not_shown_as_cnt(self, folder, monkeypatch, capsys):
-        """`mousedb cohort-sheets --cohort CNTS_01` used to print CNT_01's sheet
+        """`mousedb cohort-sheets --cohort CNTS_01` would otherwise print CNT_01's sheet
         under the name CNTS_01."""
         assert _run_mousedb(monkeypatch, "cohort-sheets", "--cohort", "CNTS_01") == 1
         out = capsys.readouterr().out

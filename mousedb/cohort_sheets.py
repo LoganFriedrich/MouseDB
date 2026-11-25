@@ -21,13 +21,12 @@ The location is NOT in this file, and must not be. Two reasons:
   1. It is lab-specific. Another lab running this code keeps its sheets
      somewhere else entirely, and should not have to edit source to say so.
   2. This repository is public. A synced-folder path carries a username, a
-     drive letter, and an organisation's internal folder names.
+     drive letter, and an organization's internal folder names.
 
 So the path lives in local configuration that is never committed. The FILE NAMES
 are configuration too (mousedb.sheet_projects, in the lab's settings file on the
 shared storage): each project says what its sheets are called, and this module
-asks there. Until 2026-10-29 one project's name was written into this file, so a
-second project's sheets were never recognised.
+asks there, so a second project's sheets are recognized too.
 
 Resolution order, first hit wins:
 
@@ -44,7 +43,7 @@ Resolution order, first hit wins:
      settings file is damaged".
 
 A damaged settings file is never read as empty and never written over
-(mousedb.config.SettingsFileDamaged): losing it used to lose every pin.
+(mousedb.config.SettingsFileDamaged): losing it would otherwise lose every pin.
 
 There is deliberately no built-in fallback path. The previous arrangement was a
 hardcoded default on the ``import`` command pointing at a directory that had since
@@ -75,8 +74,8 @@ IS the sheet (pin_cohort_sheet; the Tracking Sheets tab's "This is the sheet"
 button). A pin must name one of that cohort's files when it is made. If the
 pinned file later goes (renamed, moved, deleted), the pin is BROKEN: the cohort
 falls back to its newest file exactly as if it were unpinned. That fallback
-must never be silent -- it used to be, and the status said "pinned" while a
-file nobody had chosen was imported. broken_pins names each broken pin and the
+must never be silent: a silent fallback lets the status say "pinned" while a
+file nobody had chosen is imported. broken_pins names each broken pin and the
 file being read instead; ``mousedb cohort-sheets`` prints it, and any status
 display must neither call a broken pin "pinned" nor leave it unsaid.
 pinned_sheet returns the RECORD as stored, broken or not, so a display can
@@ -128,8 +127,8 @@ Usage:
     from mousedb.cohort_sheets import cohort_sheets_dir, find_cohort_sheet
 
     d = cohort_sheets_dir()                          # None if unconfigured
-    p = find_cohort_sheet("CNT_05")                  # the live sheet
-    fresh = fetch_cohort_sheet("CNT_05", work_dir)   # a working copy to read
+    p = find_cohort_sheet("PROJA_05")                  # the live sheet
+    fresh = fetch_cohort_sheet("PROJA_05", work_dir)   # a working copy to read
 """
 
 from __future__ import annotations
@@ -144,7 +143,7 @@ CONFIG_PATH = Path.home() / ".mousedb" / "config.json"
 ENV_VAR = "MOUSEDB_COHORT_SHEETS"
 
 # WHICH NAMES ARE SHEETS comes from sheet_projects (the lab's settings). Each
-# project's pattern is anchored at the START of the name. WHY: matching used to
+# project's pattern is anchored at the START of the name. WHY: matching would otherwise
 # be an unanchored search, so ANY file whose name merely CONTAINED the pattern
 # became a candidate -- "Copy of <sheet>", an Excel lock file "~$<sheet>", the
 # "._<sheet>" shadow file a Mac leaves on a network share, a note another tool
@@ -229,14 +228,14 @@ def _read_config() -> dict:
     on this computer, with this person's own file laid over it key by key --
     the SAME merge mousedb.config uses for every other setting.
 
-    WHY merged: this used to read the person's own file only, while the rest of
+    WHY merged: this would otherwise read the person's own file only, while the rest of
     mousedb read both. A sheets folder (or pin, or ASPA folder) set once for
     the whole computer with ``mousedb config --machine --set`` was therefore
     invisible here: every other login -- and the scheduled jobs, if they run
     as one -- had "no sheets folder" while the Setup tab showed one set.
 
     Raises config.SettingsFileDamaged when either file is damaged, never
-    reading it as "nothing set" (see that class for what that used to cost).
+    reading it as "nothing set" (see that class for what that would otherwise cost).
     """
     from . import config as _config
     return _config.merge_settings(_config.read_machine_config(), _own_config())
@@ -492,7 +491,7 @@ def pin_cohort_sheet(cohort: str, filename: Optional[str], sheets_dir=None) -> P
     ValueError and nothing is recorded. So does a correctly shaped name that
     is not in the sheets folder (a typo of a real variant, a file since
     renamed), whenever the folder can be read; the message lists the files
-    the cohort does have. WHY: find_cohort_sheet only honours a pin that names
+    the cohort does have. WHY: find_cohort_sheet only honors a pin that names
     one of the cohort's candidates, so such a pin would be broken from the
     moment it was made -- stored, then ignored, with the newest file imported.
     A name that differs from a real file only in letter case is stored as the
@@ -631,7 +630,7 @@ def broken_pins(sheets_dir=None) -> List[dict]:
     if nothing were pinned -- or None when it has no file at all); and one
     sentence for a person saying what happened and what to do.
 
-    WHY this exists: find_cohort_sheet honours a pin only while it names one
+    WHY this exists: find_cohort_sheet honors a pin only while it names one
     of the cohort's files, and when the pinned file was renamed, moved or
     deleted it fell back to the newest file WITHOUT notice -- the status went
     on saying the cohort was pinned while a file nobody had chosen was the one
@@ -846,7 +845,7 @@ def describe() -> str:
     # character just as file names may. Escaped, a path is still
     # recognisable; unescaped, one accented letter is a crash.
     # A folder that IS set but cannot be used is said as such, with the value
-    # set. WHY: these used to read "not configured" whatever the cause, and a
+    # set. WHY: these would otherwise read "not configured" whatever the cause, and a
     # person whose drive was merely disconnected was sent to set again a
     # folder that was set correctly.
     if d is None and d_reason != DIR_UNSET:

@@ -16,10 +16,10 @@ database's schema. Reasons:
 
 Two kinds, chosen per question:
 
-* SUMMARIES (``animals``, ``sessions``) are materialised as tables, because
+* SUMMARIES (``animals``, ``sessions``) are materialized as tables, because
   they total hundreds of thousands of rows: as views every click on a filter
   or facet would total them again (seconds each). The copy never changes, so a
-  materialised summary cannot go out of date while it is open.
+  materialized summary cannot go out of date while it is open.
 * PROJECTIONS AND JOINS (``reaches``, ``brain_region_counts``,
   ``brain_group_counts``) are views: they only pick columns or join two small
   tables, so they are as fast as the tables beneath them and add nothing to

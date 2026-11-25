@@ -1,7 +1,7 @@
 """The current exports are grouped by project, then cohort, with one combined file
 per kind per project.
 
-WHY (2026-10-29): every cohort's files side by side in one folder made finding one
+WHY: every cohort's files side by side in one folder made finding one
 cohort, or one project, a read through a hundred names; and a person wanting a
 whole project had to stitch the cohort files together by hand. The combined file
 must be exactly the cohort files put together -- the same cells, nothing
@@ -141,7 +141,7 @@ def test_files_from_the_flat_layout_are_archived_not_deleted(snapshot, tmp_path)
 
 def test_a_reader_asks_where_a_file_is_instead_of_writing_the_path(snapshot, tmp_path):
     # Readers outside the exporter use locate(), so the next move of the files
-    # does not break them the way the 2026-10-29 move broke a hand-written path.
+    # does not break them the way a move breaks a hand-written path.
     out = tmp_path / "exports" / "current"
     ox.export(snapshot, out)
     assert layout.locate("reaches_analysis", "PROJA_02", out) == \
@@ -238,7 +238,7 @@ def test_a_cohort_whose_build_failed_keeps_its_files(snapshot, tmp_path, monkeyp
 def test_a_stale_cohort_file_held_open_does_not_stop_the_other_projects(snapshot, tmp_path,
                                                                         monkeypatch):
     """A file another program has open cannot be moved. WHY this test: the move
-    used to raise out of the export, and then no project's combined file, no
+    would otherwise raise out of the export, and then no project's combined file, no
     dictionary and no manifest entry was written that night."""
     import pathlib
     out = tmp_path / "exports" / "current"

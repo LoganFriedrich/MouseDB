@@ -328,7 +328,7 @@ class ExcelImporter:
         the import is real (not a dry run) and recorded no error.
 
         WHY: Database.session() commits whenever its block ends normally. The
-        importer used to skip its own commit when self.errors was not empty,
+        importer would otherwise skip its own commit when self.errors was not empty,
         and the session then committed anyway on the way out -- an import that
         recorded an error would have saved half a workbook. No reader records
         an error part way today (they record warnings), so this guards the
@@ -394,12 +394,12 @@ class ExcelImporter:
         """Detect cohort start date (Day 0 = the earliest food-dep weigh-in).
 
         Day 0 is the first weigh-in, wherever it was recorded. In the current
-        (CNT_05) format that's the earliest date in 3d_Weights; in older cohorts the
+        format that's the earliest date in 3d_Weights; in older workbooks the
         first weigh-in lived in the ramp sheet (3a_Manual_Ramp). So we take the
         EARLIEST date found across both sheets, which covers both layouts. Only if
         neither exists do we fall back to 3b_Manual_Tray (training ~day 4, minus 4).
         The legacy 1_Weight sheet is not consulted, and 3b_Manual_Tray is never used
-        for the primary anchor because it can carry stale/earlier date blocks (CNT_05).
+        for the primary anchor because it can carry stale/earlier date blocks.
         """
         from datetime import timedelta
 
@@ -513,7 +513,7 @@ class ExcelImporter:
                 continue
 
             # The cohort row must exist before an animal is filed under it:
-            # foreign keys are enforced, so a new cohort's metadata used to make
+            # foreign keys are enforced, so a new cohort's metadata would otherwise make
             # the whole import fail. 0a carries no cohort date, so this never
             # creates a cohort -- it refuses, with a warning (_ensure_cohort).
             if not self._ensure_cohort(session, cohort_id, dry_run):
@@ -552,7 +552,7 @@ class ExcelImporter:
         from 0a_Metadata -- filling only what the database holds EMPTY.
 
         WHY: an animal is often created before its metadata row is filled in
-        (from a video, or from an earlier tab), and the import used to read
+        (from a video, or from an earlier tab), and the import would otherwise read
         0a_Metadata only for animals it was creating, so these facts never
         reached animals that already existed. Unlike the rows synced above,
         a subject records no origin: a value already present may have been
@@ -673,8 +673,8 @@ class ExcelImporter:
 
         Handles three formats:
         A) Vertical/long: columns = Date, Day, Animal, Weight_g, ...
-        B) Transposed matrix (dates Row 0, phases Row 1): CNT_02/03/04 style
-        C) Transposed matrix (phases Row 0, dates Row 1): CNT_01 style
+        B) Transposed matrix (dates Row 0, phases Row 1): an older layout
+        C) Transposed matrix (phases Row 0, dates Row 1): the oldest layout
         """
         try:
             df = pd.read_excel(xl, sheet_name=sheet, header=None)
@@ -887,7 +887,7 @@ class ExcelImporter:
     def _import_weights_vertical(self, df: pd.DataFrame, cohort_id: str,
                                   session, dry_run: bool, sheet: str = '3d_Weights'):
         """
-        Import weights from vertical/long format (CNT_05 style).
+        Import weights from vertical/long format (current style).
 
         Columns: Date, Day, Animal, Weight_g, Weight_Pct_Baseline, Notes
         """
@@ -964,7 +964,7 @@ class ExcelImporter:
         Import 3a_Manual_Ramp sheet (food deprivation phase).
 
         Columns (old): Mouse ID, Date, Weight, % body weight, Tray Start (g), Tray End (g), Dif
-        Columns (new/CNT_05): Animal, Date, Day, Weight, Food_Start_(g), Food_End_(g), Food_Eaten_(g)
+        Columns (new): Animal, Date, Day, Weight, Food_Start_(g), Food_End_(g), Food_Eaten_(g)
         """
         try:
             df = pd.read_excel(xl, sheet_name='3a_Manual_Ramp')
@@ -977,7 +977,7 @@ class ExcelImporter:
         # Number ramp days anchored to Day 0 = the cohort start date (the earliest
         # weigh-in, detected across the weights + ramp sheets). If a ramp date equals
         # the start, it IS Day 0 -- older cohorts logged the pre-food-dep weigh-in in
-        # this sheet. In the CNT_05 format Day 0 lives in 3d_Weights, so the earliest
+        # this sheet. In the current format Day 0 lives in 3d_Weights, so the earliest
         # ramp date becomes Day 1. Reads real dates; no calendar-gap arithmetic.
         cohort = session.query(Cohort).filter_by(cohort_id=cohort_id).first()
         start = cohort.start_date if cohort else None
@@ -1277,7 +1277,7 @@ class ExcelImporter:
                 continue
             # The weight on the day (read by the shared rule, so '22.4 g' is
             # stored, not proved and then dropped) is stored on the contusion,
-            # as on an injection. It used to be left out because the import
+            # as on an injection. It would otherwise be left out because the import
             # only added rows, so contusions already imported would never have
             # got it. The sheet-wins sync (_sync_table) now fills a value that
             # was stored empty on every import, and a fill never counts toward
@@ -1321,7 +1321,7 @@ class ExcelImporter:
                 pre_surgery_weight_grams=grams,
             )
             # The Survived cell is stored on the surgery row as well as marking
-            # the animal dead above. WHY: it used to do only the second, so
+            # the animal dead above. WHY: it would otherwise do only the second, so
             # every contusion row kept the column's default of 1 ("survived")
             # and the database disagreed with the sheet about which surgeries
             # an animal died in. Only a readable yes or no is stored: a blank
@@ -1479,7 +1479,7 @@ class ExcelImporter:
             # then the read row matches those stored rows instead of being
             # added beside them. WHY per tray: one stray score under the typed
             # date (typed in by a person, or one the move left because the
-            # date meant already had that pellet) used to send the WHOLE day
+            # date meant already had that pellet) would otherwise send the WHOLE day
             # back to the typed date, storing every other tray of it twice.
             move_repairs = {}
             typed_trays = set()
@@ -1549,7 +1549,7 @@ class ExcelImporter:
     # ------------------------------------------------------------------
     # The sheet wins: keeping what the import wrote in step with the sheet
     # ------------------------------------------------------------------
-    # WHY: the import used to only ADD. A score corrected in the sheet kept
+    # WHY: the import would otherwise only ADD. A score corrected in the sheet kept
     # its old value in the database, and a session typed into the wrong
     # cohort's workbook, imported, then moved to the right workbook stayed in
     # the database under the wrong cohort for good -- a phantom session that
@@ -2313,7 +2313,7 @@ class ExcelImporter:
         # test_phase is NOT NULL in the live database (older DDL than the ORM,
         # which allows NULL) -- the previous insert-NULL-then-update design
         # violated it and rolled back every import of a new cohort, silently,
-        # for the hourly sheet import too. The date set is this sheet's dates
+        # for the scheduled sheet import too. The date set is this sheet's dates
         # plus whatever the db already holds for the cohort, so the gap
         # structure is computed over the same union _assign_pellet_phases uses.
         pairs = {(d, t) for _, d, t, _, _ in rows}
@@ -2539,7 +2539,7 @@ class ExcelImporter:
             self.warnings.append("0_Injection_Calculations: sheet is empty or too small")
             return
 
-        # The lab's required layout (batch blocks -- see
+        # The current layout (batch blocks -- see
         # cohort_tools.make_sheets.INJECTION_CALC_HEADERS) is tried first and
         # wins if present anywhere on the sheet. The two legacy layouts are
         # kept only for cohorts written before it was settled.
@@ -2552,7 +2552,7 @@ class ExcelImporter:
             # Legacy vertical Parameter/Value/Units calculator
             self._import_injection_vertical(df, cohort_id, session, dry_run)
         else:
-            # Legacy single-row horizontal format (CNT_01 style)
+            # Legacy single-row horizontal format
             self._import_injection_horizontal(df, cohort_id, session, dry_run)
 
     def _carried_over_batch(self, cohort_id: str, prep_date, virus_name: str,
@@ -2674,8 +2674,8 @@ class ExcelImporter:
             carried = self._carried_over_batch(
                 cohort_id, prep_date, virus_name, session)
             if carried:
-                # WHY (2026-10-30): a new workbook starts as a copy of an earlier
-                # cohort's, and CNT_05's batch reached CNT_06 and CNT_07 that way
+                # WHY: a new workbook starts as a copy of an earlier cohort's,
+                # and an earlier cohort's batch can reach later cohorts that way
                 # -- recorded as those cohorts' prep. A row this importer wrote
                 # from such a block is taken back, so a sheet that was copied
                 # corrects itself; a row a person entered is never touched.
@@ -2720,7 +2720,7 @@ class ExcelImporter:
         return True
 
     def _import_injection_horizontal(self, df, cohort_id: str, session, dry_run: bool):
-        """Import horizontal injection calculations (CNT_01 format)."""
+        """Import horizontal injection calculations (legacy horizontal format)."""
         if df.shape[0] < 2:
             return
 
@@ -2766,7 +2766,7 @@ class ExcelImporter:
             self.imported_counts['virus_preps'] += 1
 
     def _import_injection_vertical(self, df, cohort_id: str, session, dry_run: bool):
-        """Import vertical injection calculations (CNT_05 format)."""
+        """Import vertical injection calculations (legacy vertical format)."""
         # Build parameter -> value dict from rows 1+
         params = {}
         for row_idx in range(1, len(df)):
@@ -2793,7 +2793,7 @@ class ExcelImporter:
             return
 
         # The prep's date must come from the sheet. This calculator layout has
-        # no date row, and the importer used to stamp the day it ran instead:
+        # no date row, and the importer would otherwise stamp the day it ran instead:
         # the prep looked made on whatever day the import happened, and as the
         # date is the record's key (cohort + prep_date), every new day the
         # import ran added another copy. A parameter named like a date is read
@@ -2846,7 +2846,7 @@ class ExcelImporter:
                         session, dry_run: bool):
         """Import 6_Ladder results -> LadderEntry, for animals already known.
 
-        The lab abandoned the ladder test, and the tab is routinely half
+        A ladder test dropped from a protocol leaves the tab routinely half
         filled: an animal, a date and a test type with the step counts blank.
         That is a test that was scheduled, not a result. So:
           * a row is data only if a step count is filled (a number above 0: a
@@ -2856,9 +2856,9 @@ class ExcelImporter:
             test was abandoned, its empty rows are expected on every sheet and
             will never be filled in, and a line about them on every import
             would only teach people to skip the warnings.
-          * a ladder row never creates an animal. It used to, before reading
-            the counts, and so made an animal that existed nowhere else (two
-            count-less ladder rows were its only trace). A result for an
+          * a ladder row never creates an animal. Creating one before reading
+            the counts would make an animal that exists nowhere else (two
+            count-less ladder rows would be its only trace). A result for an
             animal the database does not know is skipped with a warning.
         """
         tab = '6_Ladder'
@@ -2996,7 +2996,7 @@ class ExcelImporter:
 
         planning_data = {}
         if is_structured:
-            # CNT_05 structured format
+            # Structured format
             phases = []
             for row_idx in range(1, len(df)):
                 row = df.iloc[row_idx]
@@ -3249,7 +3249,7 @@ class ExcelImporter:
             subject_num = int(value)
             return f"{cohort_id}_{subject_num:02d}"
 
-        # Format like "CNT0501" -> "CNT_05_01"
+        # Format like "PROJA0501" -> "PROJA_05_01"
         match = re.match(r'^([A-Z]+)(\d{2})(\d{2})$', value)
         if match:
             return f"{match.group(1)}_{match.group(2)}_{match.group(3)}"
@@ -3280,7 +3280,7 @@ class ExcelImporter:
     def _ascii(text) -> str:
         """Plain-ASCII form of a message. Warnings are printed to Windows
         consoles, which crash on characters outside their code page, and a
-        cell's text (an unrecognised id, a weight typed with a unit) can carry
+        cell's text (an unrecognized id, a weight typed with a unit) can carry
         any character."""
         return str(text).encode('ascii', 'backslashreplace').decode('ascii')
 
@@ -3383,7 +3383,7 @@ class ExcelImporter:
         subject_id = self._normalize_subject_id(raw, cohort_id)
         # validate_subject_id as well: a bare number of three digits in an
         # animal cell (a percentage in a summary block) normalizes to an id
-        # like CNT_04_100, which no animal can have and derive_cohort_id
+        # like PROJA_04_100, which no animal can have and derive_cohort_id
         # would raise on.
         if subject_id is None or not validate_subject_id(subject_id):
             self._note_unimported(
@@ -3413,7 +3413,7 @@ class ExcelImporter:
         cannot be created -- a warning then says why and the caller skips the
         row.
 
-        WHY no invented date: this used to create the cohort with today's date
+        WHY no invented date: this would otherwise create the cohort with today's date
         as its start and the note "Auto-created during import". A cohort whose
         sheet had no weigh-in got, as its start, whatever day the import
         happened to run -- a pilot cohort "started" months after its own
@@ -3495,7 +3495,7 @@ class ExcelImporter:
         imported, passed on in case the cohort has to be created (see
         _ensure_cohort).
         """
-        # Second line of defence behind _resolve_subject_id (callers that build
+        # Second line of defense behind _resolve_subject_id (callers that build
         # ids themselves, such as the frozen-workbook score import, come
         # straight here): an id's own cohort part decides where the animal
         # lives, never the workbook it was typed in.
@@ -3824,7 +3824,7 @@ class BrainGlobeImporter:
     - Brain sample metadata from folder structure
 
     Brain naming convention: {BRAIN#}_{PROJECT}_{COHORT}_{SUBJECT}_{MAG}x_z{ZSTEP}
-    Example: 349_CNT_01_02_1p625x_z4
+    Example: 001_PROJA_01_01_1p625x_z4
     """
 
     # Brain name regex pattern
@@ -3890,7 +3890,7 @@ class BrainGlobeImporter:
         is real (not a dry run) and recorded no error; otherwise rolled back.
 
         WHY: Database.session() commits whenever its block ends normally, and
-        these imports used to ``return`` out of that block on an error. A brain
+        these imports would otherwise ``return`` out of that block on an error. A brain
         whose CSV turned out to be unreadable after its placeholder animal and
         brain row had been added therefore saved those rows anyway -- an import
         that reported [FAIL] still wrote to the database. Same pattern as
@@ -3913,7 +3913,7 @@ class BrainGlobeImporter:
         Parse brain ID into components.
 
         Args:
-            brain_id: e.g., "349_CNT_01_02_1p625x_z4"
+            brain_id: e.g., "001_PROJA_01_01_1p625x_z4"
 
         Returns:
             Dict with brain_number, project, cohort, subject, magnification, z_step
@@ -3987,7 +3987,7 @@ class BrainGlobeImporter:
         # skipped and reported ONCE, by name. WHY: the tracker records every
         # calibration run, including runs on training cubes and test data; one
         # warning per such row, every night, buried any real problem in the
-        # task log ("... and 13 more warnings", 2026-10).
+        # task log ("... and N more warnings").
         not_brains: dict = {}
         with self._import_session(dry_run) as session:
             for _, row in df.iterrows():
@@ -3996,7 +3996,7 @@ class BrainGlobeImporter:
                     continue
                 brain_id = str(brain_id).strip()
 
-                # Handle composite names like "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
+                # Handle composite names like "001_PROJA_01_01/001_PROJA_01_01_1p625x_z4"
                 # Try parts separated by / to find the parseable brain ID
                 brain_info = self.parse_brain_name(brain_id)
                 if not brain_info and '/' in brain_id:
@@ -4039,7 +4039,7 @@ class BrainGlobeImporter:
                 if existing:
                     # A run the tracker names by its own id is brought in line
                     # with the tracker: a run first imported while it was
-                    # 'started', or before it was marked best, used to keep
+                    # 'started', or before it was marked best, would otherwise keep
                     # that first state for good. A run WITHOUT a tracker id
                     # got a made-up one (brain + running number) that need not
                     # name the same run next time, so it is never touched.
@@ -4182,7 +4182,7 @@ class BrainGlobeImporter:
 
         # Everything that can refuse this file is checked BEFORE the database
         # session opens: the brain id, the column layout, the acronym lookup.
-        # WHY: a refusal used to come after the placeholder animal and brain
+        # WHY: a refusal would otherwise come after the placeholder animal and brain
         # row had been added, and the session then saved them although the
         # import reported [FAIL] (see _import_session).
         if not brain_id:
@@ -4681,7 +4681,7 @@ class BrainGlobeImporter:
         """Make the database hold what one brain's counts file says now: its
         region counts and its eLife group counts, all marked final.
 
-        WHY: this used to only ADD rows a brain did not have yet. A brain
+        WHY: this would otherwise only ADD rows a brain did not have yet. A brain
         recounted after its registration was corrected kept its FIRST counts in
         the database, marked final, for good -- the nightly import never
         replaced them, and nothing said so. Now each run compares the file with
@@ -5124,7 +5124,7 @@ class BrainGlobeImporter:
         - 3_Registered_Atlas/ - Registration info
 
         Args:
-            brain_folder: Path to brain folder (e.g., 1_Brains/349_CNT_01_02/349_CNT_01_02_1p625x_z4/)
+            brain_folder: Path to brain folder (e.g., 1_Brains/001_PROJA_01_01/001_PROJA_01_01_1p625x_z4/)
             dry_run: If True, validate only
 
         Returns:
@@ -5180,7 +5180,7 @@ class BrainGlobeImporter:
         if not subject:
             cohort_id = brain_info['cohort_id']
 
-            # The cohort must already exist. This used to create it with today's
+            # The cohort must already exist. This would otherwise create it with today's
             # date as its start -- a date nobody recorded, stored as if it were
             # the start of the study. A brain name carries no date to start a
             # cohort with, and cohorts.start_date cannot be empty, so the brain
@@ -5239,7 +5239,7 @@ class BrainGlobeImporter:
                 return part
 
         # Try to find brain ID pattern within the filename stem
-        # Handles filenames like "349_CNT_01_02_349_CNT_01_02_1p625x_z4_counts.csv"
+        # Handles filenames like "001_PROJA_01_01_001_PROJA_01_01_1p625x_z4_counts.csv"
         stem = path.stem
         match = self._BRAIN_NAME_SEARCH.search(stem)
         if match:
@@ -5412,8 +5412,8 @@ def sync_brain_to_db(brain_name: str,
     Never raises -- catches all exceptions and prints warnings.
 
     Args:
-        brain_name: Brain name from pipeline, e.g. "349_CNT_01_02/349_CNT_01_02_1p625x_z4"
-                    or just "349_CNT_01_02_1p625x_z4"
+        brain_name: Brain name from pipeline, e.g. "001_PROJA_01_01/001_PROJA_01_01_1p625x_z4"
+                    or just "001_PROJA_01_01_1p625x_z4"
         per_brain_csv: Path to the per-brain long-format CSV (string or Path)
         region_counts_dict: Optional pre-parsed {acronym: count}
         hemisphere_counts: Optional {acronym: {'left': N, 'right': N}}
@@ -5425,7 +5425,7 @@ def sync_brain_to_db(brain_name: str,
         from .database import get_db
         from .schema import Base, BrainSample, RegionCount, ElifeRegionCount
 
-        # Extract brain_id from brain_name (handle "349_CNT_01_02/349_CNT_01_02_1p625x_z4")
+        # Extract brain_id from brain_name (handle "001_PROJA_01_01/001_PROJA_01_01_1p625x_z4")
         brain_id = brain_name
         if '/' in brain_name:
             # Try the part after / first (full brain id with mag and z)
@@ -5549,7 +5549,7 @@ def sync_calibration_to_db(brain_name: str, exp_id: str, params_dict: Dict):
     Never raises -- catches all exceptions.
 
     Args:
-        brain_name: Full brain ID, e.g. "349_CNT_01_02_1p625x_z4"
+        brain_name: Full brain ID, e.g. "001_PROJA_01_01_1p625x_z4"
         exp_id: Experiment/run ID from tracker
         params_dict: Dict with keys like ball_xy, ball_z, threshold,
                      cells_detected, status, etc.

@@ -46,7 +46,7 @@ def test_complete_exports_pass_and_their_notes_are_shown(monkeypatch, capsys):
 
 
 def test_a_part_that_fails_makes_the_export_incomplete(tmp_path, monkeypatch):
-    """One writer raising used to leave complete=True: the problem was listed,
+    """One writer raising would otherwise leave complete=True: the problem was listed,
     but the flag people and the job judge by said all was well."""
     def raises(snapshot_dir, out_dir, manifest):
         raise ValueError("cannot read the snapshot table")

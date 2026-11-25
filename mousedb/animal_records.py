@@ -61,7 +61,7 @@ describe a workbook the rest of the database does not hold.
 
 A tab's stored rows are left as they were -- not replaced -- when:
   * the tab was not read at all: missing from the workbook, empty, or without
-    an animal id column. WHY: every tab used to be wiped whether or not it was
+    an animal id column. WHY: every tab would otherwise be wiped whether or not it was
     read, so a renamed tab emptied that tab's records;
   * the tab was read but gives NO record while the database holds some for
     this cohort (unless a person who checked the sheet allows it --
@@ -201,7 +201,7 @@ BROKEN_READ_MAX_REMOVED_FRACTION = 0.25
 # done and not written down, or it was not done and the date was never updated,
 # and either way a person has to look. An UNDATED planned row is never
 # announced: it names no day it is late for. The same window as the expectation
-# catalogue's after_grace level; this is the one place the number lives.
+# catalog's after_grace level; this is the one place the number lives.
 PLANNED_SURGERY_GRACE_DAYS = 14
 
 # A weight as people type it: '22', '22.4', '22,4' (decimal comma), '22 g'. Only a
@@ -282,7 +282,7 @@ def _importer_names_cell(value, cohort_id: str, tab: str) -> bool:
     WHY asked of the importer's own id rule (ExcelImporter._resolve_subject_id,
     on an importer built without a database: only its rule is used) instead of
     worked out again here: the two readers parse ids differently (the
-    importer takes 'CNT0501' and '005'; this module takes 'CNT-05-01'), and a
+    importer takes 'PROJA0501' and '005'; this module takes 'PROJA-05-01'), and a
     second copy of the importer's rule would drift from it -- repeating the
     line, or worse, silencing it.
 

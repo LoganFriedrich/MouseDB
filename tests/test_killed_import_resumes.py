@@ -2,7 +2,7 @@
 stopped.
 
 WHY: the scheduled import has a time limit and is restarted when it is killed.
-The ledger used to be written only at the end of a run, so a run killed just
+The ledger would otherwise be written only at the end of a run, so a run killed just
 before the limit had recorded nothing and the restart imported every file
 again. Now the ledger is saved during the run, never ahead of the database,
 always whole; the cohorts still to re-label are kept until they are done; and
@@ -73,7 +73,7 @@ def test_killed_mid_loop_restart_imports_only_the_rest(tmp_path, monkeypatch):
     with pytest.raises(KeyboardInterrupt):
         ir.run(log=lambda *_: None)
 
-    # The two committed videos are in the ledger; the cohort waits to be re-labelled.
+    # The two committed videos are in the ledger; the cohort waits to be re-labeled.
     assert sorted(k.rsplit("/", 1)[-1] for k in _ledger(tmp_path)) == sorted(done)
     assert _pending(tmp_path) == ["PROJA_01"]
 
@@ -209,7 +209,7 @@ def test_a_dry_run_writes_no_ledger(tmp_path, monkeypatch):
 
 # ---------------------------------------------------------------------------
 # An unreadable ledger stops the run; it is never read as "nothing imported".
-# WHY: an unreadable ledger used to be treated as empty, so the run imported
+# WHY: an unreadable ledger would otherwise be treated as empty, so the run imported
 # every results file again (hours, under the database lock) and said nothing.
 # ---------------------------------------------------------------------------
 

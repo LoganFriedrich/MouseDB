@@ -14,14 +14,14 @@ came from carried both shapes for the same reason.
 
 BUILT FROM THE SAME ROWS AS THE REACH FILE
 ------------------------------------------
-Not from a separate query. Anything summarised here is summarised from exactly
+Not from a separate query. Anything summarized here is summarized from exactly
 the rows that file contains, so the two can never disagree about a session --
 which they would, eventually, if each went back to the database on its own.
 
-EVERY FILED TRAY HAS A ROW -- ALSO ONE WITH NO REACH (2026-11-24)
------------------------------------------------------------------
-Owner: "No reaches means no REACH rows. Session rows should still exist in the
-session files." A tray at which the animal never reached is a result (after an
+EVERY FILED TRAY HAS A ROW -- ALSO ONE WITH NO REACH
+----------------------------------------------------
+No reaches means no REACH rows, but session rows still exist in the session
+files. A tray at which the animal never reached is a result (after an
 injury it is often THE result), so it gets its session row like any other tray:
 0 reaches, and every session-level number that does not depend on reaches
 filled exactly as for any other tray -- the hand scores, the pellets the
@@ -31,7 +31,7 @@ a tray one session-only row (odc_reaches.session_only_rows) that never reaches
 the per-reach file; ``session_only`` names those videos here.
 
 Which columns are filled on such a row and which are NA: every column is
-FILLED except those computed FROM reaches (session_metrics, 2026-11-24: the
+FILLED except those computed FROM reaches (session_metrics: the
 latency to the first reach, the gap between reaches, first-attempt success and
 every per-session kinematics summary), which are NA -- there is no reach to
 measure. The counts of reaches are 0, not blank: "0 pellets reached for" is
@@ -39,8 +39,8 @@ the answer. As on any tray, an Easy or Flat tray's pellet and outcome counts
 are NA (trays.py says why). Each column's dictionary row says what it holds on
 a tray with no reach (NO_REACH_RULES, session_metrics.NO_REACH_RULES).
 
-THE SESSION MEASUREMENTS (2026-11-24, session_metrics)
--------------------------------------------------------
+THE SESSION MEASUREMENTS (session_metrics)
+-------------------------------------------
 The sessions document written by the export (``metrics=True``) also carries
 the day's body weight, the day's pillar reaches, the session's length and
 timing, success given contact, first-attempt success, the median, mean,
@@ -81,7 +81,7 @@ PER_SESSION: List[str] = [
     "pellets_hand_scored", "manual_displaced", "manual_retrieved", "manual_contacted",
     "session_untouched_ai", "session_untouched_hand",
 ] + [c.lower() for c in ar.DAY_OUTCOME_SOURCES] + [
-    # The day's body weight (2026-11-24): the same value every reach row of the
+    # The day's body weight: the same value every reach row of the
     # day carries, so a session-level analysis need not join the reach file for
     # the animal's food-restriction state on the day.
     "body_weight_g", "body_weight_percent_of_free_feeding"]
@@ -165,10 +165,10 @@ def build(reaches: pd.DataFrame,
         no_reach = str(group["video_name"].iloc[0]) in session_only
         row["reaches_in_video"] = 0 if no_reach else int(len(group))
         # Two different numbers, both kept, each under a name that says what it
-        # is. Until 2026-10-16 the second was published as "pellets_presented"
-        # and used as the denominator of every percentage, so a session in which
-        # the animal ignored some pellets showed an inflated success rate (up to
-        # 100% where the truth was 5%). A session is one video of one tray.
+        # is. The second must never be the denominator of a percentage: a
+        # session in which the animal ignored some pellets would show an
+        # inflated success rate (up to 100% where the truth was 5%). A session
+        # is one video of one tray.
         row["pellets_presented"] = PELLETS_PER_TRAY
         row["pellets_reached_for"] = (int(group["pellet_number"].nunique(dropna=True))
                                       if "pellet_number" in group.columns else None)

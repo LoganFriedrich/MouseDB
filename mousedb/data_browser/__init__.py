@@ -16,10 +16,10 @@ WHY IT WORKS ON A PRIVATE COPY -- THE LOCK PROBLEM
 ---------------------------------------------------
 Two files must never be held open by a viewer:
 
-* The LIVE database. It sits on a network share in rollback-journal mode, so
+* The LIVE database. It can sit on a network share in rollback-journal mode, so
   any reader holds a lock that makes a committing writer wait; a viewer left
-  open is a reader that never goes away. A lock there is what made the nightly
-  imports fail with "database is locked" for days (2026-10). The browser never
+  open is a reader that never goes away. A lock there makes the scheduled
+  imports fail with "database is locked" for as long as it is held. The browser never
   opens it: it does not even know its path except to refuse it.
 * The SNAPSHOT files. The nightly snapshot job replaces each
   ``<snapshot_dir>/<table>.parquet`` whole (write beside, then ``os.replace``).

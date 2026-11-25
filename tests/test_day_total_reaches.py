@@ -1,10 +1,10 @@
 """Reaches per animal per testing day, across every tray of that day.
 
 An earlier reach program's "Total Swipes" counted the reaches one animal made in
-one testing session -- one date, every tray of it. The export's own count,
-which used to be called Total_Swipes_AI, counts the reaches of ONE VIDEO (one
-tray), so carrying the earlier name on it invited reading a per-tray count as
-the per-day one. Now:
+one testing session -- one date, every tray of it. The export's own count
+(called Total_Swipes_AI in older files) counts the reaches of ONE VIDEO (one
+tray), so carrying the earlier name on it would invite reading a per-tray count as
+the per-day one. So:
 
   Video_Reaches_AI            reaches in this video (one tray); the old
                               Total_Swipes_AI under a name that says so

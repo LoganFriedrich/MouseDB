@@ -18,11 +18,11 @@ bound only has to be wide enough to leave the biology alone.
 
 The biology is wider than it looks. The percentage is relative to the
 free-feeding weight measured when restriction began, and young mice keep
-growing -- in cohort 03, animals climb smoothly to 115-129% over the ten weeks
-after injury, many of them together, in step with their grams. That is growth,
+growing -- animals can climb smoothly well past 115% over the weeks after
+injury, many of them together, in step with their grams. That is growth,
 not error, and a test that called it an error was asserting something about
-mice that nobody had checked (2026-10-15: the first version used 125% and
-failed on exactly this).
+mice that nobody had checked (the first version used 125% and failed on
+exactly this).
 """
 import pandas as pd
 import pytest
@@ -83,7 +83,7 @@ def _cohorts_in_both_units(tmp_path):
 
 def test_every_cohort_lands_where_a_mouse_can_be(tmp_path):
     """Per cohort, whichever unit it was stored in: the check that would have
-    caught the shipped 9,000%. It used to run on this computer's live snapshot
+    caught the shipped 9,000%. It would otherwise run on this computer's live snapshot
     and so ran nowhere else; a test reads only its own inputs, so the live
     table's mix of units is reproduced here."""
     weights = _cohorts_in_both_units(tmp_path).dropna(subset=["weight_percent"])

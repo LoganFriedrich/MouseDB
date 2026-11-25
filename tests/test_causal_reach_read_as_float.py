@@ -1,6 +1,6 @@
 """A credited reach stays credited when causal_reach arrives as a float.
 
-WHY (2026-11-24): the export adds one session-only row per filed tray with no
+WHY: the export adds one session-only row per filed tray with no
 reach (odc_reaches.build_cohort). Concatenating those rows turns causal_reach
 from 0/1 integers into 0.0/1.0 floats, and the reach outcome read only "1" as
 true -- so in every cohort with such a tray every credited reach read

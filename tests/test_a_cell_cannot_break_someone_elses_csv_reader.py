@@ -105,7 +105,7 @@ def test_a_changed_column_says_so_in_its_own_dictionary_entry():
 @pytest.fixture(scope="module")
 def shipped(tmp_path_factory):
     """Export files written by the real exporters from synthetic inputs that
-    carry every hazard (tests/synthetic_exports.py). These checks used to read
+    carry every hazard (tests/synthetic_exports.py). These checks would otherwise read
     this computer's live exports folder -- which no test may touch, and which
     meant they checked nothing on any other machine."""
     from tests.synthetic_exports import build, csv_files
@@ -125,8 +125,8 @@ def _dictionaries(files):
 # The hazards a dataset must not contain, as raw bytes.
 #
 # WHY BYTES AND NOT CELLS. The first version of this test read every cell of
-# every file with a CSV reader: about 1.5 GB over a network share, cell by cell
-# in Python, and it ran for more than twenty minutes. A test nobody will wait
+# every file with a CSV reader: gigabytes over a network share, cell by cell
+# in Python, and it ran for many minutes. A test nobody will wait
 # for is a test nobody runs.
 #
 # The byte scan is not a weaker check -- it is a stronger one, and it is exact.
@@ -145,7 +145,7 @@ WHY = {
 
 # One compiled scan for every hazard at once: a quote, a tab, or any byte above
 # plain ASCII. Scanning byte by byte in Python was the first attempt and it was
-# unusable -- 1.5 GB is 1.5 billion loop iterations. This hands the same work to
+# unusable -- a gigabyte of exports is a billion loop iterations. This hands the same work to
 # the regex engine, which does it in C at disk speed.
 # The class is built from byte values rather than written as a literal so
 # this source file stays pure ASCII, which the project requires of anything

@@ -32,7 +32,7 @@ WHY these tests exist. Five habits of the sheet importer (mousedb.importers
    workbook's cohort. Text that is not an id at all is reported too.
 
 4. Animals created by an abandoned test. The ladder tab is half filled
-   (animal, date, no counts) and every row used to create its animal before
+   (animal, date, no counts) and every row would otherwise create its animal before
    the counts were read -- one subject existed only because of two count-less
    ladder rows. Ladder rows never create animals now. The test was abandoned,
    so rows without counts are ignored without a word.
@@ -182,7 +182,7 @@ class TestSurgeryProof:
         assert (self._gate(row, '4_Contusion_Injury_Details') is not None) is performed
 
     def test_the_weight_that_proved_an_injection_is_the_weight_stored(self, tmp_path, db):
-        # '22.4 g' proves the surgery under the shared rule; it used to be
+        # '22.4 g' proves the surgery under the shared rule; it would otherwise be
         # stored as blank because the stored value was parsed separately.
         path = workbook(tmp_path, 5, {
             '3d_Weights': weights('CNT_05_01'),
@@ -396,7 +396,7 @@ class TestNoInventedDates:
         assert [w for w in imp.warnings if 'CNT_08' in w and 'NOT imported' in w]
 
     def test_metadata_for_a_cohort_with_no_start_is_reported_not_a_crash(self, tmp_path, db):
-        # Foreign keys are enforced: this used to file the animal under a
+        # Foreign keys are enforced: this would otherwise file the animal under a
         # cohort row that did not exist, and the whole import failed.
         path = workbook(tmp_path, 8, {'0a_Metadata': [
             ['SubjectID', 'Date_of_Birth', 'Date_of_Death', 'Sex', 'Cohort', 'Notes'],
@@ -580,7 +580,7 @@ class TestIdsOfOtherCohorts:
 
     def test_a_three_digit_number_is_reported_not_a_crash(self):
         # A bare number spells "animal N of this cohort"; with three digits it
-        # spells an id no animal can have, which used to raise mid-import.
+        # spells an id no animal can have, which would otherwise raise mid-import.
         imp = ExcelImporter.__new__(ExcelImporter)
         imp.warnings = []
         assert imp._resolve_subject_id(5, 'CNT_04', '7_Stats') == 'CNT_04_05'
@@ -634,7 +634,7 @@ class TestLadder:
         assert warnings_with(result, '6_Ladder', 'no other record', 'CNT_04_15 (2026-03-20)')
 
     def test_the_generated_layout_reads_its_date_from_column_a(self, tmp_path, db):
-        # Its Date is column A (index 0); `find_col(...) or 1` used to turn
+        # Its Date is column A (index 0); `find_col(...) or 1` would otherwise turn
         # that into column B and read the animal id as the date.
         path = workbook(tmp_path, 5, {
             '3d_Weights': weights('CNT_05_01'),
@@ -674,7 +674,7 @@ def _surgery_workbook(tmp_path, cohort_num=5):
 class TestNothingSavedOnError:
     def test_an_error_part_way_undoes_the_whole_workbook(self, tmp_path, db, monkeypatch):
         # Database.session() commits whenever its block ends normally; the
-        # importer used to only skip its OWN commit on an error, and the
+        # importer would otherwise only skip its OWN commit on an error, and the
         # weights, animals and surgeries read before the error were saved.
         from mousedb import backfill
         refreshed = []

@@ -7,8 +7,8 @@ computer -- can hold a write lock, and while it does everyone else is refused.
 
 Before this, a job that met one locked moment died with a stack trace and did
 not run again until its next scheduled time. For a daily job that is a lost
-day, and three were lost in a row without anybody noticing, because a stack
-trace in an unread log is not a report.
+day, and several can be lost in a row without anybody noticing, because a
+stack trace in an unread log is not a report.
 """
 import sqlite3
 
@@ -43,7 +43,7 @@ def wrapped_locked_error():
     return outer
 
 
-# --------------------------------------------------------------- recognising it
+# --------------------------------------------------------------- recognizing it
 def test_a_plain_driver_lock_error_is_recognised():
     assert dc.is_locked_error(locked_error())
 
@@ -81,7 +81,7 @@ def test_work_that_succeeds_first_time_is_not_delayed():
 
 
 def test_a_lock_that_clears_lets_the_job_finish():
-    """The case this exists for: a neighbour finishes writing and we carry on."""
+    """The case this exists for: a neighbor finishes writing and we carry on."""
     clock = FakeClock()
     attempts = []
 

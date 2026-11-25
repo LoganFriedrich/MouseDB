@@ -1,9 +1,8 @@
 """The contact columns: Not applicable on easy/flat for the algorithm; pellet words.
 
-WHY (Logan, 2026-10-26): "the algo shouldn't be analyzing pellet outcomes on easy
-and flat trays ... The result there should be 'not applicable' for the algo
-pellet/reach outcome for flat and easy trays and should be whatever the manual
-says for the manual pellet outcome." And a pellet nobody touched is "untouched";
+WHY: the algorithm does not analyze pellet outcomes on easy and flat trays, so
+there the algorithm's pellet/reach outcome is 'not applicable', and the manual
+pellet outcome is whatever the hand score says. And a pellet nobody touched is "untouched";
 "missed" is a word for a reach. The database computed 'missed' on every easy/flat
 reach and on every undecided pellet, and used 'missed' for untouched pellets.
 """
@@ -23,7 +22,7 @@ OLD_PELLET = "CASE WHEN score = 0 THEN 'missed' ELSE 'contacted' END"
 
 
 def _old_database(path):
-    """The shape the live database had before 2026-10-26."""
+    """The shape a database had before the contact-column schema change."""
     conn = sqlite3.connect(str(path))
     conn.executescript(f"""
         CREATE TABLE reach_data (id INTEGER PRIMARY KEY, tray_type TEXT, interaction_frame INTEGER,
@@ -34,7 +33,7 @@ def _old_database(path):
             contact_group TEXT GENERATED ALWAYS AS ({OLD_PELLET}) VIRTUAL);
     """)
     conn.executemany("INSERT INTO reach_data (tray_type, interaction_frame, segment_outcome) VALUES (?, ?, ?)", [
-        ("F", None, None),                      # 1 flat tray: nothing analysed
+        ("F", None, None),                      # 1 flat tray: nothing analyzed
         ("E", None, None),                      # 2 easy tray
         ("P", 120, "retrieved"),                # 3 the reach that took it
         ("P", None, "retrieved"),               # 4 another reach at the same pellet
@@ -97,7 +96,7 @@ def test_reach_data_csv_says_not_applicable_for_the_algorithm_on_easy_and_flat(t
     refresh_current(snap, out, db_ok=False)
     r = pd.read_csv(out / "reach_data.csv", dtype=str, keep_default_na=False)
     flat, pillar = r[r.tray_type == "F"].iloc[0], r[r.tray_type == "P"].iloc[0]
-    # Published under level-first names since 2026-11-19 (exporters.levels).
+    # Published under level-first names (exporters.levels).
     for column in ("reach_outcome", "reach_causal", "segment_outcome", "reach_contact_group",
                    "segment_contact_group", "outcome_source"):
         assert flat[column] == missing.NOT_APPLICABLE, column

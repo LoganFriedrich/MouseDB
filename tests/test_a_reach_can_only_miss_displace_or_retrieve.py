@@ -2,7 +2,7 @@
 
 WHY THIS TEST EXISTS
 --------------------
-The per-reach outcome column used to spell its first value "Did not move the
+The per-reach outcome column would otherwise spell its first value "Did not move the
 pellet". That is a description of a miss, not the name of one, and naming an
 outcome by what did not happen has a cost: it reads as an absence, and a reader
 who treats it as one drops the majority of the file. Most reaches miss.
@@ -13,7 +13,7 @@ because it decides whether the pellet could still be scored), or takes it
 (retrieved). The only other values allowed in the column are the pipeline saying
 it has not decided yet, which is not an outcome and is never presented as one,
 and "Not applicable" on an easy or flat training tray, where pellets are not
-tracked and there is no pellet answer at all (2026-10-26).
+tracked and there is no pellet answer at all.
 """
 import pandas as pd
 

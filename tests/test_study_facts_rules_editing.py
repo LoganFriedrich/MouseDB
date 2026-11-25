@@ -1,6 +1,6 @@
 """Exceptions can be created, reordered and removed without editing a file by hand.
 
-The GUI tab edits them through set_rules, so these pin the behaviour the tab depends
+The GUI tab edits them through set_rules, so these pin the behavior the tab depends
 on. The ordering cases matter most: a later exception wins over an earlier one, so an
 editor that could not reorder would make a wrong order impossible to correct.
 """

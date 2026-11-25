@@ -3,10 +3,10 @@
 
 WHY
 ---
-ASPA is a project in exactly the way CNT is, and its videos run through the same
+ASPA is a project in exactly the way PROJA is, and its videos run through the same
 pipeline. But no ASPA cohort or subject exists in the database, so
 `sync_file_to_database` skips every ASPA video -- it will not write reach data for
-an animal it has never heard of. Sixty-plus analysed ASPA sessions have nowhere to
+an animal it has never heard of. Analyzed ASPA sessions have nowhere to
 land.
 
 This registers the project, the cohorts, and the animals, so that data can flow.
@@ -14,10 +14,10 @@ This registers the project, the cohorts, and the animals, so that data can flow.
 WHY IT IS NOT JUST "READ THE SHEET"
 -----------------------------------
 The ASPA workbooks are a frozen, hand-kept record and they are not uniform.
-`I.xlsx` has H-cohort animals in its *Weights* and *balance* tabs -- 40 of them,
-identical to `H.xlsx`, evidently left over from copying that workbook -- while the
-real I animals live in *"Ramp" Training Data*. Reading a fixed sheet by name would
-have registered forty H animals as cohort I.
+A workbook can carry an earlier cohort's animals in some of its tabs, left over
+from copying that cohort's workbook, while its own animals live in a different
+tab. Reading a fixed sheet by name would register the earlier cohort's animals
+under this cohort's letter.
 
 So the rule is: collect ids matching THIS cohort's own letter, anywhere in its
 workbook, and cross-check them against the videos that actually exist. Both counts
@@ -64,9 +64,9 @@ def animals_in_sheet(path: Path, letter: str) -> Set[int]:
     """
     import openpyxl
 
-    # "J11", loosely "J1", the surgery sheets' "J-6", and the earlier cohorts'
-    # "OptD12" -- the same "Opt" misnomer that shows up in their filenames, here
-    # on the animal id itself. Without it, D, E, F and G yield no animals at all.
+    # "J11", loosely "J1", a surgery sheet's "J-6", and an "Opt" prefix
+    # ("OptD12") that some workbooks put on the animal id itself. Without it,
+    # those workbooks yield no animals at all.
     pattern = re.compile(r"^(?:Opt)?%s[-\s]?(\d{1,2})$" % re.escape(letter), re.I)
     found: Set[int] = set()
     from mousedb.file_holders import readable_workbook
@@ -90,8 +90,8 @@ def _video_roots() -> List[Path]:
     """Where analysed videos live on this machine.
 
     mousereach's own Paths when that package is importable; otherwise the
-    pipeline root under CONNECTOME_ROOT (the MouseDB env does not have
-    mousereach installed, which is why the dry run used to report 0 videos
+    configured mousereach_pipeline_root (the MouseDB env does not have
+    mousereach installed, which is why the dry run would otherwise report 0 videos
     for every cohort on the very machine that holds them all)."""
     import os
     roots: List[Path] = []

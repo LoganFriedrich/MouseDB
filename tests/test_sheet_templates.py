@@ -1,8 +1,8 @@
 """New cohort sheets are made from the project's template, and every formula
 follows its own animal.
 
-WHY (2026-10-30): the old builder held one layout in code; the lab's real
-workbooks had drifted from it, so a new sheet matched none of them, and a
+WHY: the old builder held one layout in code; the workbooks actually in use
+had drifted from it, so a new sheet matched none of them, and a
 second project could get no correctly formatted sheet at all. A template is a
 cohort workbook with what was measured cleared. The builder repeats the model
 animal's rows for each new animal, and a formula that pointed at "this

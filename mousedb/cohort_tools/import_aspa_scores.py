@@ -2,17 +2,17 @@
 
 WHY
 ---
-ASPA is a project exactly like CNT and its videos run through the same
-pipeline -- but until 2026-08-28 no ASPA manual score had ever reached the
-database, because `mousedb import` reads only Connectome_NN workbooks. With
+ASPA is a project exactly like PROJA and its videos run through the same
+pipeline -- but `mousedb import` reads only the project-pattern cohort
+workbooks, so without this no ASPA manual score reaches the database. With
 no bench scores, the bench-vs-algorithm disagreement scan, the manual-vs-
 automated accuracy figures and the ODC session export all silently excluded
 every ASPA cohort. This closes that.
 
 THE SHEET
 ---------
-Each ASPA workbook (one per cohort letter: I.xlsx, J.xlsx, "K - Contusion
-70kd.xlsx" ...) has a tab '1 - ENTER DATA HERE' in a WIDE layout: one row
+Each ASPA workbook (one per cohort letter: I.xlsx, J.xlsx, "K - <description>.xlsx"
+...) has a tab '1 - ENTER DATA HERE' in a WIDE layout: one row
 per animal-day, then four tray blocks side by side --
 
     Test Date | Test Type | Tray Type | Test Phase | Group | Animal # |
@@ -23,13 +23,13 @@ is read as that day in the month of the rows around it (day_only_dates), and
 scores an earlier import filed under the 1900 date are moved to it.
 
 Pellet cells hold 0 (missed), 1 (displaced), 2 (eaten = retrieved) -- the
-same vocabulary as the CNT sheets. A tray whose 20 cells are all blank was
+same vocabulary as the PROJA sheets. A tray whose 20 cells are all blank was
 not scored and is skipped. A block's tray number is its position (the first
 block is tray 1, the fourth tray 4): the 'Tray #' cell above blocks 2-4 is
 sometimes blank or holds the animal's label instead of a number. A number
 there that disagrees with the position is reported and that tray skipped. Tray Type is Pillar / Easy / Flat -> P / E / F.
 Test Type / Test Phase are the operator's labels and are NOT used: the
-phase is derived from the cohort's date structure exactly as for CNT.
+phase is derived from the cohort's date structure exactly as for PROJA.
 
 Animal ids are encoded the pipeline's way (J11 -> ASPA_10_11: cohort =
 letter's alphabet position); subjects are created if missing, like every
@@ -322,7 +322,7 @@ def main(argv=None) -> int:
         if args.apply:
             # The same route as `mousedb-sheets import --cohort ASPA_xx`: under
             # the cross-task database lock, waiting for whatever import holds
-            # it. WHY: this command used to write straight to the database, so
+            # it. WHY: this command would otherwise write straight to the database, so
             # it could collide with a scheduled import ("database is locked")
             # and its operators were told to run it only when nothing else ran.
             e = _import_aspa_one(L, False, "aspa-scores")
@@ -347,7 +347,7 @@ def main(argv=None) -> int:
     # The step every import that writes ends with (sheet_sync._after_import):
     # the hand-scores file the reaching pipeline compares each video with
     # before filing it, and each cohort's FIX THESE file. WHY here too: this
-    # route used to skip it, so after correcting a letter cohort's scores the
+    # route would otherwise skip it, so after correcting a letter cohort's scores the
     # pipeline went on comparing videos with the previous hand scores until
     # the next scheduled import. After the ledger lines (both files read the
     # ledger) and outside the lock (the hand-scores write takes it itself).

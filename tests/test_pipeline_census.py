@@ -1,7 +1,7 @@
 """The census-database join: promotion, the invariant, and honest refusals.
 
-Identifiers are synthetic (project ABC). The behaviours under test were each
-measured to fail silently before being guarded; assert behaviour, never a
+Identifiers are synthetic (project ABC). The behaviors under test were each
+measured to fail silently before being guarded; assert behavior, never a
 corpus count.
 """
 import pytest
@@ -117,8 +117,8 @@ def test_ledger_missing_is_empty_set(tmp_path):
 
 
 def test_census_age_is_judged_like_the_snapshot():
-    # WHY (2026-10-22): the tab showed a census from 2026-09-02 as current,
-    # with only a timestamp to say otherwise.
+    # WHY: the tab could show a weeks-old census as current, with only a
+    # timestamp to say otherwise.
     import datetime as _dt
     from mousedb.data_status import STALE_CENSUS_HOURS, census_age_hours
     now = _dt.datetime.now()

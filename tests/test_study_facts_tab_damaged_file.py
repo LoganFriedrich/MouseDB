@@ -1,6 +1,6 @@
 """The Study Facts tab says so when its file is damaged, and saves nothing.
 
-WHY: a damaged study-facts file used to read as "nothing set", so the tab showed
+WHY: a damaged study-facts file would otherwise read as "nothing set", so the tab showed
 every fact as NOT SET and the next Set wrote back a file holding only that one
 fact. The file is now refused (study_facts.StudyFactsFileDamaged); the tab must
 show which file is damaged instead of empty values, must not close the window

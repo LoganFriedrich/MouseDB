@@ -53,9 +53,8 @@ STALE_SNAPSHOT_HOURS = 36
 
 # The pipeline census is retaken by the same nightly job, right after the
 # snapshot (refresh_snapshot), so the same allowance applies. WHY it is judged
-# at all: until 2026-10-22 the census was taken only when someone pressed the
-# button, and the tab showed a census from 2026-09-02 -- seven weeks old -- as
-# its pipeline counts, with only a timestamp to say so.
+# at all: a census taken only when someone pressed a button could be weeks old
+# and still be shown as the pipeline counts, with only a timestamp to say so.
 STALE_CENSUS_HOURS = 36
 
 
@@ -253,7 +252,7 @@ def session_list_lines(rows: List[dict]) -> List[str]:
 # mousedb reads them directly (it does not import mousereach), so the names are
 # restated here and must follow MouseReach's layout. The deep-review queue was
 # renamed from "flagged_for_review" to "deep_review" when the pipeline moved to
-# "the folder is the state" (2026-09-14); reading the old name after that
+# "the folder is the state"; reading the old name after that
 # showed every cohort's deep-review count as a silent 0.
 TRIAGE_QUEUE = "triage"
 DEEP_REVIEW_QUEUE = "deep_review"

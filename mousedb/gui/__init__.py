@@ -1,1 +1,1 @@
-"""PyQt GUI components for Connectome Data Entry."""
+"""PyQt GUI components for mousedb data entry."""

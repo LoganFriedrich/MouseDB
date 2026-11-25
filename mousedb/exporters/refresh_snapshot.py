@@ -57,7 +57,7 @@ DEFAULT_SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured
 
 # Tables refreshed here. Add to this list rather than writing a parallel
 # export path if something else needs a snapshot of another table later.
-# "weights" was missing until 2026-10-14, and with it the only per-session
+# "weights" must be here: it carries the only per-session
 # measurement the lab records by hand for every animal on every testing day: body
 # weight in grams and as a percentage of free-feeding weight. The exports read
 # this snapshot, so a table absent from here is absent from every export that
@@ -67,22 +67,22 @@ TABLES = ["pellet_scores", "reach_data", "subjects", "cohorts", "animal_records"
           "weights", "video_pellets", "video_sessions",
           "projects", "surgeries", "brain_samples", "region_counts",
           "elife_region_counts", "session_recording_status"]
-# "video_pellets" (2026-10-16): one row per pellet the pipeline cut each video
+# "video_pellets": one row per pellet the pipeline cut each video
 # into, reached for or not. Without it the exports could only count pellets that
 # had a reach, and "pellets presented" came out below 20 in most sessions.
 #
-# "video_sessions" (2026-11-24): one row per filed tray session, reached at or
+# "video_sessions": one row per filed tray session, reached at or
 # not. Without it a tray with no reach left no trace in any export, and the
 # sessions files dropped it (a post-injury tray with 0 reaches is a result).
 #
-# "session_recording_status" (2026-11-24): one row per session whose recording
+# "session_recording_status": one row per session whose recording
 # FAILED (mousedb.recording_issues). The sessions export reports, on each row,
 # whether a recording of that animal-day failed; it reads the snapshot only, so
 # the table has to be in it. Small (one row per failed recording). A database
 # without the table yet is skipped like any other table newer than it, and the
 # export then writes NA (unknown), never "no issue".
 #
-# "projects" .. "elife_region_counts" (2026-11-12): read by the data browser
+# "projects" .. "elife_region_counts": read by the data browser
 # (mousedb.data_browser), which shows the snapshot and NEVER the live
 # database -- so a table missing from here is a table nobody can browse. They
 # are small (one row per project, surgery, brain, and brain region), so they
@@ -166,9 +166,8 @@ def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
     """Move ``tmp`` onto ``out``, waiting while a reader has ``out`` open.
 
     WHY: on Windows, replacing a file fails ("Access is denied") while ANY
-    program has it open -- whatever sharing that program asked for (tested
-    2026-11-12: even a reader that opened it with delete sharing blocks the
-    replace). Snapshot readers open these files at any time of day. Without a
+    program has it open -- whatever sharing that program asked for (even a
+    reader that opened it with delete sharing blocks the replace). Snapshot readers open these files at any time of day. Without a
     wait, a person refreshing the Where Is My Data tab, or opening the data
     browser, at the moment of the swap would fail the whole nightly refresh.
     A reader lets go within seconds, so the swap retries once a second.
@@ -232,8 +231,8 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
 
     # Under the cross-task mutex: these SELECT * reads are exactly the long
     # SHARED locks that put a concurrently-committing import into PENDING
-    # starvation (22 minutes of "database is locked" for every reader,
-    # 2026-09-02). Serialized, this runs the moment the import finishes.
+    # starvation (22 minutes of "database is locked" for every reader).
+    # Serialized, this runs the moment the import finishes.
     import contextlib
     from ..task_mutex import hold
     counts = {}
@@ -260,7 +259,7 @@ def refresh(db_path: Path = None, snapshot_dir: Path = None,
                 # file, where Python buffers it until the process ends -- a
                 # run that took an hour on a busy share looked exactly like a
                 # hung one (only its header in the log), and one was stopped
-                # by hand for that reason (2026-09-14).
+                # by hand for that reason.
                 # A table newer than this database (animal_records before the first
                 # sheet import that creates it) is skipped, not a failed snapshot.
                 if not con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -309,7 +308,7 @@ def import_sheets_first(force: bool = False) -> bool:
     try:
         # Through sheet_sync so every cohort's outcome -- success OR the exact
         # error -- lands in the ledger the Tracking Sheets tab reads. The
-        # previous 'mousedb import --all' subprocess rolled back CNT_05 every
+        # previous 'mousedb import --all' subprocess rolled back PROJA_05 every
         # hour for weeks and nobody could see it.
         from mousedb.sheet_sync import import_cohorts
         r = import_cohorts(triggered_by="hourly-refresh")
@@ -413,7 +412,7 @@ def main(argv=None) -> int:
     from ..prefetch import warmed
     #
     # The cross-task mutex is taken HERE, once, around every attempt -- not by
-    # each attempt. WHY: refresh() used to take it itself, so a retry queued
+    # each attempt. WHY: refresh() would otherwise take it itself, so a retry queued
     # for it all over again; an import that slipped in during the pause could
     # make the retry wait the whole --lock-wait-minutes a second time, and the
     # job overran its time limit part way through rewriting the exports. Held
@@ -443,7 +442,7 @@ def main(argv=None) -> int:
                 gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
                 # The window opens at the first outside lock, not when this
                 # run started: the reads before it (an hour on a large
-                # database) used to spend the window, and so -- when
+                # database) would otherwise spend the window, and so -- when
                 # refresh() still took the mutex inside the attempt -- did
                 # the wait for the import ahead of it, before one retry.
                 from_first_lock=True,
@@ -521,8 +520,8 @@ def retake_census() -> bool:
     snapshot it is joined with. Never raises; True when it was retaken.
 
     WHY here: the census was taken only when someone pressed 'Refresh pipeline
-    view', and the tab showed a census seven weeks old as its pipeline counts
-    (found 2026-10-22). This job already runs nightly and the census joins with
+    view', and the tab could show a census weeks old as its pipeline counts.
+    This job already runs nightly and the census joins with
     the snapshot just written, so it goes last. It reads pipeline folders only
     -- no database lock is held. A failure does NOT change this job's exit
     code: the scheduler would re-run the whole snapshot for it. It is printed
@@ -552,7 +551,7 @@ def _finish(counts: dict, force: bool) -> int:
 
     WHY non-zero: the exports are what people read ("where is my data?"),
     and this job is what keeps them current. A run that refreshed the
-    snapshot but not the exports used to print a [warn] and exit 0, so the
+    snapshot but not the exports would otherwise print a [warn] and exit 0, so the
     task looked healthy while ``exports/current`` stayed as it was; nothing
     that checks the scheduled jobs looks for [warn]. A failure now prints
     [FAIL] and fails the task."""
@@ -569,8 +568,7 @@ def _finish(counts: dict, force: bool) -> int:
     # start if a watcher was running -- so after a successful snapshot the
     # database IS readable. The hourly scheduled task runs without --force,
     # and tying db_ok to --force meant those files were never refreshed and
-    # MANIFEST.json said odc_sessions_refreshed=False every hour (found
-    # 2026-08-28). The guard is asked once more because the snapshot can take
+    # MANIFEST.json said odc_sessions_refreshed=False every hour. The guard is asked once more because the snapshot can take
     # a while and a watcher may have started since; --force still overrides
     # (that caller vouches nothing else can be writing).
     db_ok = force or (snapshot_ok and not watcher_blocks_db())

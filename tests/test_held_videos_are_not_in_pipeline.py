@@ -154,7 +154,7 @@ def test_archive_bucket_keeps_quarantined_out_of_failed(tmp_path):
     (c,) = b.get_archive_cohort_rollup()
     (a,) = b.get_archive_animal_rollup()
     for r in (s, c, a):
-        # Only the one 'failed' video is Failed (quarantined used to be
+        # Only the one 'failed' video is Failed (quarantined would otherwise be
         # folded in here, making it 4).
         assert r.failed == 1
         assert r.quarantined == 3

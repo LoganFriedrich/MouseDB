@@ -134,12 +134,6 @@ example `States mousedb does not know: some_state=2` (`mousedb video-status`
 adds `(counted in none of the above)` before the colon). If you see that line,
 MouseDB needs updating to describe the new state.
 
-(Before this was fixed, In Review and Not on this computer did not exist:
-those videos were counted as In Progress / In Pipeline, and crystallized
-videos as In Progress. `mousedb archive-status` also showed quarantined
-videos as Failed, and had no Other count, so a row with an unknown state did
-not add up to its Total.)
-
 In `--json` output: `summary`, each cohort and each animal carry
 `in_review`, `not_on_this_node`, `quarantined` and `other` (an object mapping
 each unknown state to its count, for example `{"some_state": 2}`).
@@ -156,14 +150,11 @@ MouseDB reads the file this computer's watcher **writes**, found in this order:
    a computer is set up this way when its watcher must keep its database on a
    local disk. When this is set but the file does not exist, the views say so
    and show nothing: an older `watcher.db` that may still sit in the
-   processing folder is NOT shown instead, because the watcher no longer
-   writes it and its numbers are out of date;
+   processing folder is NOT shown instead, because the watcher does not
+   write it and its numbers are out of date;
 3. `watcher.db` in the `processing_root` folder named in the same file;
 4. `watcher.db` in the MouseReach pipeline folder of mousedb's own settings
    (`mousedb config --show`).
-
-(Before this was fixed, step 2 did not exist, so on a computer set up as in
-step 2 these views showed the old file's numbers.)
 
 The views only read. Each refresh opens the file read-only, runs a few
 counting queries over its videos table, and closes it again; nothing is kept

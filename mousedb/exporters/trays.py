@@ -3,7 +3,7 @@
 WHY THIS EXISTS
 ---------------
 On the easy and flat training trays the pellets are presented but not tracked, and
-no pellet outcome is computed (lab decision, 2026-10-23). Such a video is not cut
+no pellet outcome is computed. Such a video is not cut
 into one segment per pellet either: all of its reaches sit in one stretch, the
 whole video. So on every reach from one of those trays, every question about a
 pellet -- what happened to it, what the reach did to it, which reach decided it,
@@ -11,11 +11,11 @@ how many reaches were aimed at it -- has no answer. The word for that is
 "Not applicable" (or an empty cell, in a file whose convention for an absent
 number is NA).
 
-Before 2026-10-26 the exports left these rows to the general rules, which gave
+The general rules would give these rows
 four different wrong answers on the same rows: "Undetermined" (reads as a pellet
 still waiting for a person to decide it), "pellet still available" (a claim about
-a pellet nobody tracked), "missed" (a claim that every reach missed), and numbers
-such as 337 reaches "at this pellet" (the whole video counted as one pellet). A
+a pellet nobody tracked), "missed" (a claim that every reach missed), and counts
+of reaches "at this pellet" that were the whole video counted as one pellet. A
 reader could not tell a training tray's non-answer from a pillar pellet's real one.
 
 Each exporter names the columns that ask about a pellet and calls ``blank_where``
@@ -32,8 +32,8 @@ import pandas as pd
 OUTCOME_FREE_TRAYS = ("E", "F")
 
 # The database's per-reach columns that carry the ALGORITHM's pellet or reach
-# outcome. On an easy or flat tray each reads "Not applicable" (Logan,
-# 2026-10-26: the algorithm does not analyse pellet outcomes there). The hand
+# outcome. On an easy or flat tray each reads "Not applicable" (the
+# algorithm does not analyze pellet outcomes there). The hand
 # scores are not among them: on every tray they say what the hand score says.
 ALGO_PELLET_COLUMNS = (
     "outcome", "causal_reach", "interaction_frame", "distance_to_interaction",

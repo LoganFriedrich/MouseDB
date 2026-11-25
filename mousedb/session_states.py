@@ -2,7 +2,7 @@
 
 WHY THE SHEETS ARE THE DENOMINATOR
 ----------------------------------
-"How close are we to done?" used to be answered from the pipeline alone:
+"How close are we to done?" would otherwise be answered from the pipeline alone:
 the pipeline census counts every session the pipeline's folders account for
 and how many of them are finished. That answer cannot see a recording that
 never reached the pipeline. A cohort's sessions were scored by hand in its
@@ -38,7 +38,7 @@ this order:
                     (<pipeline>/attention/*.json, read only).
   filed             finished and in the final output folder (Analyzed).
   in_processing     on the server and moving: waiting to be cut, being
-                    posed, in the analysis steps, or analysed and waiting
+                    posed, in the analysis steps, or analyzed and waiting
                     for the sheet's next import to be compared with its
                     hand scores (that hold releases itself).
   not_on_server     scored in the sheet, but no video of it is anywhere in

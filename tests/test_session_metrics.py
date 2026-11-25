@@ -181,7 +181,7 @@ def test_6_kinematics_median_mean_sem_n_over_every_reach(built):
     # easy tray: every reach counts
     assert _v(built, E1, col("n")) == 2 and _v(built, E1, col("mean")) == 50
     assert _v(built, E1, rot("sem")) == 0
-    # frame numbers and tracking confidence are not summarised
+    # frame numbers and tracking confidence are not summarized
     assert not [c for c in built[0].columns if c.startswith("session_") and
                 ("start_frame" in c or "confidence" in c)]
 

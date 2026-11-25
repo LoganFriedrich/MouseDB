@@ -1,7 +1,7 @@
 """The cohort-setup tab's Import and Replace buttons end the way every sheet
 import ends.
 
-WHY: both buttons used to stop after the importer and a ledger line. The
+WHY: both buttons would otherwise stop after the importer and a ledger line. The
 animal details, the hand-scores file the reaching pipeline compares each video
 with, and the FIX THESE files beside the sheets then described the previous
 import until the nightly one -- so the pipeline went on comparing videos with

@@ -15,7 +15,7 @@ questions the census exists for:
    on a recording PC for over a year;
 2. the pipeline's own workload and how many of it are NOT done yet,
 3. WHERE every unfinished one sits (categories that name real folders), and
-4. percentages and pace-based completion estimates, always labelled as
+4. percentages and pace-based completion estimates, always labeled as
    estimates with their basis.
 
 The per-cohort numbers come from mousedb.data_status (analysis snapshot +
@@ -559,8 +559,8 @@ class DataStatusTab(QWidget):
         an_txt = "unavailable" if analyzed is None else str(analyzed)
         if t.get("session_only"):
             an_txt += "  (+%d E/F-only)" % t["session_only"]
-        # Say how OLD, as for the snapshot below: a bare timestamp let a
-        # seven-week-old census pass for current (2026-10-22).
+        # Say how OLD, as for the snapshot below: a bare timestamp let an
+        # old census pass for current.
         stale = pc.get("stale", False)
         lines = []
         if stale:

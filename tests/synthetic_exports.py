@@ -1,7 +1,7 @@
 """A folder of export files written by the real exporters from synthetic inputs.
 
 WHY: some checks are about the files the exports ship -- no byte that breaks a
-CSV reader, no column name ODC refuses. They used to read this computer's live
+CSV reader, no column name ODC refuses. They would otherwise read this computer's live
 exports folder, so they ran only where the lab's data was configured, read the
 lab's data while doing it, and tested nothing anywhere else. They now run on
 files the same code writes here, from inputs that include the awkward values

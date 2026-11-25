@@ -17,7 +17,7 @@ about one problem twice -- or not at all:
 
 2. An animal cell neither reader can read was named TWICE per import -- by the
    importer ("the animal cell is not an animal id") and by animal_records
-   ("row with unrecognised animal ... skipped"). The fix must not overshoot:
+   ("row with unrecognized animal ... skipped"). The fix must not overshoot:
    the importer reads a row's animal id under only some headings (on
    0a_Metadata, 'SubjectID' and 'Animal' only), and a cell under any other
    heading is read by animal_records alone. Staying silent there would leave

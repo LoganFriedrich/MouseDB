@@ -1,6 +1,6 @@
 """sheet_sync: status, pinning and the import ledger.
 
-WHY: nothing used to record when a sheet was imported or whether it worked,
+WHY: nothing would otherwise record when a sheet was imported or whether it worked,
 so 'is the database current?' had no answer and a failing import was
 invisible. These tests pin the status verdicts and the it's-this-one pin.
 """
@@ -17,7 +17,7 @@ import mousedb.sheet_sync as ss
 def mutex_holds(monkeypatch):
     """Record every acquisition of the cross-task database mutex instead of
     taking the PRODUCTION lock (it lives under the configured logs folder, and a
-    unit test contending with a real hourly task hangs the suite -- 2026-09-02)."""
+    unit test contending with a real scheduled task hangs the suite)."""
     import contextlib
     from mousedb import task_mutex
     seen = []
@@ -43,7 +43,7 @@ def folder(tmp_path, monkeypatch):
 
 def test_full_import_refreshes_letter_cohort_odc_records(folder, monkeypatch, mutex_holds, tmp_path):
     """WHY: frozen letter cohorts' animal details live in their ODC tab; without this
-    pass the per-reach export's animal columns stayed blank for them (2026-09-15)."""
+    pass the per-reach export's animal columns stayed blank for them."""
     import mousedb.importers as imp
     import mousedb.animal_records as ar
     import mousedb.database as dbmod
@@ -152,9 +152,8 @@ class TestImportLedger:
 
     def test_a_real_import_takes_the_database_mutex_per_cohort(self, folder, monkeypatch, mutex_holds):
         """WHY: this import commits to connectome.db but did not take the mutex
-        the reach import and the snapshot share, so on 2026-09-15 four of six
-        cohorts failed "database is locked" while another task held the
-        database. One acquisition per cohort (not around the whole loop), and
+        the reach import and the snapshot share, so cohorts failed
+        "database is locked" while another task held the database. One acquisition per cohort (not around the whole loop), and
         none on a dry run, which touches nothing."""
         class Fake:
             def import_cohort_file(self, *a, **k):

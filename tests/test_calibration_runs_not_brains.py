@@ -1,6 +1,6 @@
 """Calibration runs that name no brain are reported once, by name and count.
 
-WHY (2026-10-22): the tracker records every calibration run, including runs on
+WHY: the tracker records every calibration run, including runs on
 training cubes and test data. The nightly brain import warned once per such row
 ("Could not parse brain ID: training_data", ...), every night, which buried any
 real problem in the task log.

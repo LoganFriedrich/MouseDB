@@ -1,10 +1,10 @@
 """The snapshot is one refresh's tables, never a mix of two -- and readers can
 tell which refresh they read.
 
-WHY: the refresh used to replace the tables one at a time as it read them. A
+WHY: the refresh would otherwise replace the tables one at a time as it read them. A
 run stopped part way (a locked database, the time limit, a person) left the
 first tables new and the rest old, and every reader joined them as if they
-were one snapshot: reaches labelled by one night's rules beside animals and
+were one snapshot: reaches labeled by one night's rules beside animals and
 pellets from another. Now every table is staged first, all are swapped in
 together, and a generation stamp says which refresh the folder holds.
 """

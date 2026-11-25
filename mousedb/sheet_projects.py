@@ -1,13 +1,13 @@
 """Which projects keep tracking sheets, and what their sheets are called.
 
-WHY THIS MODULE EXISTS (2026-10-29)
------------------------------------
-Until now one project's sheet name was written into the code, and every part
-of mousedb that finds, imports, pins or creates a tracking sheet assumed that
-one project. A lab that starts a second project (a new wing of a study, a
-pilot) had nowhere to say what that project's sheets are called: its sheets
-were never recognised, never imported, and their hand scores never reached the
-reaching pipeline -- while the second project's videos went on being analysed.
+WHY THIS MODULE EXISTS
+----------------------
+A sheet name written into the code would make every part of mousedb that
+finds, imports, pins or creates a tracking sheet assume one project. A lab
+that starts a second project (a new wing of a study, a pilot) would have
+nowhere to say what that project's sheets are called: its sheets would never
+be recognized or imported, and their hand scores would never reach the
+reaching pipeline -- while the second project's videos went on being analyzed.
 
 So the projects are configuration. Each project names the pattern its
 workbooks follow; everything that looks for a sheet asks here. The tool knows
@@ -42,7 +42,7 @@ Inspect and set with::
     mousedb sheet-projects --show
     mousedb sheet-projects --set PROJA "ProjectA_{NN}_Animal_Tracking.xlsx"
 
-THERE IS NO BUILT-IN DEFAULT. With no project set, no file is recognised as a
+THERE IS NO BUILT-IN DEFAULT. With no project set, no file is recognized as a
 sheet, and every place that lists sheets says so and names the command above
 (the "no built-in defaults" rule every lab setting follows: a guessed name is a
 wrong import waiting to happen).

@@ -1,13 +1,12 @@
 """The analysis export must load and be usable without being cleaned first.
 
-Its format is not a matter of taste. It was taken from a dataset an analysis
-collaborator assembled and sent back, and the point of copying it is that their
-existing analysis runs against it unchanged.
+Its format is not a matter of taste. It follows the layout an existing
+analysis expects, and the point of keeping it is that the analysis runs against
+it unchanged.
 
 A format that is only written down drifts the first time somebody adds a column.
-This project has already paid for that lesson: the "console output is ASCII only"
-rule was documented for a long time, the scripts drifted anyway, and a tick
-character stopped the extraction of a 37 GB brain before it read a slice. So each
+A documented "console output is ASCII only" rule drifts the same way, and one
+stray non-ASCII character can stop a long extraction before it reads anything. So each
 quality of the format is asserted here, and a violation fails rather than ships.
 """
 import re

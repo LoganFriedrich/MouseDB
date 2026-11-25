@@ -6,7 +6,7 @@ as proof. Those columns are filled in BEFORE the day -- the blank-sheet
 generator and a workbook copied from the previous cohort carry them on every
 row -- so a whole cohort's planned injections were copied into animal_records
 as injections that had happened, and went out in the shared ODC dataset with a
-titre and a 0 mL anaesthetic volume for animals nobody had operated on. The
+titre and a 0 mL anesthetic volume for animals nobody had operated on. The
 contusion rule had the same hole (a dwell of 0 and Survived both outlive a
 partial clearing of the row).
 

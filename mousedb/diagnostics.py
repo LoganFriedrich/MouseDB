@@ -1,5 +1,5 @@
 """
-Data completeness diagnostics for Connectome Data Entry.
+Data completeness diagnostics for mousedb.
 
 Checks all cohorts (or a specific cohort) for missing data and flags issues
 using severity levels: CRITICAL, WARNING, INFO.
@@ -18,7 +18,7 @@ Usage:
 CLI:
     mousedb check                    # All cohorts, hide INFO
     mousedb check --verbose          # Show everything
-    mousedb check --cohort CNT_04    # Single cohort
+    mousedb check --cohort PROJA_04    # Single cohort
     mousedb check --json             # JSON output
 """
 
@@ -102,7 +102,7 @@ def check_cohort_completeness(
         session: Active SQLAlchemy database session
         cohort_id: Cohort to check
         pilot_cohorts: Set of cohort IDs that are pilot/exploratory
-                       (get INFO-level severity only). Defaults to {'CNT_00'}.
+                       (get INFO-level severity only). Defaults to {'PROJA_00'}.
 
     Returns:
         CohortReport with findings

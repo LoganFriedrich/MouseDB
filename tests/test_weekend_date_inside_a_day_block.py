@@ -1,6 +1,6 @@
 """A weekend-dated run inside a weekday's block is read as that weekday.
 
-WHY (2026-10-26): CNT_04's tray tab dates its rows with formulas that count a
+WHY: a cohort's tray tab dates its rows with formulas that count a
 fixed number of rows up the sheet. After a row was cut, the rows of animals
 02-04, tray 1, sitting in the 2025-10-28 block computed to 2025-10-25 -- a
 Saturday, when nothing is recorded -- so their scores were filed under a day

@@ -3,9 +3,7 @@
 WHY THIS EXISTS
 ---------------
 An ODC-SCI submission is TWO files: the dataset and a Data Dictionary. A
-dataset whose dictionary is missing fails to upload. Until 2026-08-28 no
-dictionary existed anywhere in this project (the doc some exporters pointed
-at, REACH_KINEMATIC_DATA_DICTIONARY.md, was never written). This module is
+dataset whose dictionary is missing fails to upload. This module is
 the single source of every column's definition; the current-exports
 refresher writes one dictionary CSV beside each dataset CSV, and REFUSES to
 call an export complete if a column has no dictionary row -- undocumented
@@ -36,7 +34,7 @@ ODC_DICTIONARY_COLUMNS = [
 
 # -- ODC's rules for what a variable may be called ----------------------------
 #
-# From ODC's own guide to naming variables (read 2026-10-14; linked from the
+# From ODC's own guide to naming variables (linked from the
 # Data Dictionary specification, which defers to it):
 #
 #   * a name MUST START WITH A LETTER;
@@ -64,7 +62,7 @@ ODC_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.]*$")
 ODC_NAME_MAX = 64
 
 # Characters that MEAN something, spelled out rather than deleted: "cat#" is a
-# catalogue number and "%" is a percentage, and dropping either would quietly
+# catalog number and "%" is a percentage, and dropping either would quietly
 # change what the column says it holds.
 _NAME_WORDS = {"#": " number ", "%": " percent ", "&": " and ",
                "+": " plus ", "@": " at "}
@@ -73,7 +71,7 @@ _NAME_WORDS = {"#": " number ", "%": " percent ", "&": " and ",
 def odc_name(raw: str) -> str:
     """A legal ODC variable name for `raw`, as close to it as the rules allow.
 
-    Legal, but not guaranteed UNIQUE: two different headers can normalise to the
+    Legal, but not guaranteed UNIQUE: two different headers can normalize to the
     same name, and a 65th character being cut off is one way that happens. Use
     odc_names() for a whole table, which is the only place a collision can be
     seen -- and must be, because two columns sharing a name means two columns
@@ -427,12 +425,11 @@ ODC_REACH_ANIMAL = [
          "", "text", "Yes; No",
          "Yes=came through every recorded surgery; "
          "No=at least one surgery is recorded as not survived"),
-    # THIS DESCRIPTION WAS WRONG UNTIL 2026-10-14 and said so in detail: it
-    # described the export deciding an exclusion itself, writing "Total exclusion"
-    # for any animal that died in a surgery. That logic was removed (see _animal in
+    # The export never decides an exclusion itself, and never writes "Total
+    # exclusion" for an animal that died in a surgery (see _animal in
     # odc_reaches: the decision is the reader's, and the surgery fact is carried in
-    # Survived_All_Surgeries instead), but the description stayed behind, telling a
-    # reader a rule the file no longer follows.
+    # Survived_All_Surgeries instead). The description must say so, or it tells a
+    # reader a rule the file does not follow.
     _row("Exclusion_in_origin_study", "Exclusion in origin study",
          "Whether the study this data came from excluded this animal, exactly as that "
          "study's own tracking sheet records it. Nothing here is inferred: no animal is "
@@ -548,7 +545,7 @@ DICTIONARIES: Dict[str, List[dict]] = {
     "reach_data": REACH_DATA,
     "manual_scores": MANUAL_SCORES,
     "ODC_days": ODC_SESSIONS,
-    "ODC_sessions": ODC_SESSIONS,   # the kind's name before 2026-11-19
+    "ODC_sessions": ODC_SESSIONS,   # the kind's older name
 }
 
 

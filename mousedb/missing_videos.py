@@ -595,7 +595,7 @@ def build_parser(ap=None):
     """The options of ``mousedb missing-videos``. ``mousedb``'s own command line
     adds them to its subcommand through this function, and ``python -m
     mousedb.missing_videos`` builds its parser here too. WHY one function: the
-    subcommand used to hand everything after its name on as a block
+    subcommand would otherwise hand everything after its name on as a block
     (argparse.REMAINDER), which refuses a block that starts with an option, so
     every option -- --help, --cohort, --write, and the --acknowledge line the
     FIX THESE files print -- failed with "unrecognized arguments"."""

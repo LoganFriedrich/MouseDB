@@ -1,9 +1,9 @@
-"""The hourly snapshot job and the per-cohort ODC session exports.
+"""The scheduled snapshot job and the per-cohort ODC session exports.
 
-WHY: refresh_snapshot's main() used to hand db_ok=--force to the current
-exports, and the hourly scheduled task runs without --force -- so the
+WHY: refresh_snapshot's main() would otherwise hand db_ok=--force to the current
+exports, and the scheduled task runs without --force -- so the
 per-cohort ODC_sessions_*.csv files were never refreshed and MANIFEST.json
-said odc_sessions_refreshed=False every hour (found 2026-08-28). These tests
+said odc_sessions_refreshed=False on every run. These tests
 pin that a successful snapshot vouches for the database, that --force still
 overrides, that a watcher appearing after the snapshot withholds the vouch,
 and that a watcher running before it still aborts the whole run.
@@ -25,13 +25,13 @@ def configured(tmp_path, monkeypatch):
 
     Also stubs out the cross-process task mutex: refresh() acquires the
     PRODUCTION database lock (under the configured logs dir), and a unit
-    test must never contend for it -- when a real hourly task held that
-    lock, this suite silently hung for many minutes (2026-09-02)."""
+    test must never contend for it -- when a real scheduled task held that
+    lock, this suite silently hung for many minutes."""
     import contextlib
     from mousedb import pipeline_census, task_mutex
     monkeypatch.setattr(task_mutex, "hold",
                         lambda *a, **k: contextlib.nullcontext())
-    # The job retakes the pipeline census last: a 25-minute scan of the real
+    # The job retakes the pipeline census last: a long scan of the real
     # pipeline folders that no unit test may start.
     monkeypatch.setattr(pipeline_census, "refresh",
                         lambda *a, **k: {"generated_at": "2026-10-22T00:00:00",
@@ -104,8 +104,8 @@ def _census_calls(monkeypatch, order, fail=False):
 
 
 def test_the_census_is_retaken_after_the_exports(configured, monkeypatch):
-    # WHY (2026-10-22): the census was retaken only by a button, and the tab
-    # showed one seven weeks old as its pipeline counts.
+    # WHY: when the census was retaken only by a button, the tab could show
+    # one weeks old as its pipeline counts.
     order = []
     _census_calls(monkeypatch, order)
     monkeypatch.setattr(rs, "watcher_blocks_db", lambda: False)
@@ -209,7 +209,7 @@ def test_a_long_wait_for_the_task_lock_does_not_use_up_the_retry_window(configur
                                                                        monkeypatch):
     """refresh() may wait up to --lock-wait-minutes for the cross-task lock
     before it reads anything. That wait must not count against --retry-minutes:
-    a "database is locked" met right after it used to find the window spent
+    a "database is locked" met right after it would otherwise find the window spent
     and fail the night's refresh without a single retry."""
     from mousedb import db_contention as dc
 

@@ -1,5 +1,5 @@
 """
-Validation helpers for Connectome Data Entry.
+Validation helpers for mousedb.
 
 These validators are used by both the database schema and the GUI
 to provide consistent, user-friendly error messages.
@@ -67,13 +67,13 @@ def validate_project_code(value: str) -> Tuple[bool, str]:
     return True, ""
 
 
-# Compact animal ID format: letters followed by 4+ digits (e.g., CNT0115)
+# Compact animal ID format: letters followed by 4+ digits (e.g., PROJA0115)
 _COMPACT_ID_PATTERN = re.compile(r'^([A-Za-z]+)(\d{2})(\d{2})$')
 
 
 def compact_id_to_subject_id(animal_id: str) -> Optional[str]:
     """
-    Convert compact animal ID (CNT0115) to database format (CNT_01_15).
+    Convert compact animal ID (PROJA0115) to database format (PROJA_01_15).
 
     Returns None if the ID cannot be parsed.
     """
@@ -101,7 +101,7 @@ def validate_animal_ids(animal_ids: List[str],
     Gracefully handles database unavailability.
 
     Args:
-        animal_ids: List of IDs in any format (CNT0115 or CNT_01_15)
+        animal_ids: List of IDs in any format (PROJA0115 or PROJA_01_15)
         db_path: Optional database path override
 
     Returns:
@@ -448,9 +448,9 @@ def compute_phase_stats(session, cohort_id: str) -> list:
     from collections import defaultdict
 
     # Maps test_phase prefixes to summary category names
-    # Handles both underscore format (CNT_01) and space format (CNT_02)
+    # Handles both underscore format and space format (older workbooks)
     PHASE_MAP = {
-        # Underscore format (CNT_01 style)
+        # Underscore format
         'Training_Flat': 'Flat Training',
         'Training_Pillar': 'Pillar Training',
         'Pre-Injury_Test': 'Last 3',
@@ -461,7 +461,7 @@ def compute_phase_stats(session, cohort_id: str) -> list:
         'Rehab_Easy': 'Rehab Easy',
         'Rehab_Flat': 'Rehab Flat',
         'Rehab_Pillar': 'Rehab Pillar',
-        # Space format (CNT_02 style)
+        # Space format
         'Flat Training': 'Flat Training',
         'Pillar Training': 'Pillar Training',
         'Pre-Injury Test': 'Last 3',
@@ -472,7 +472,7 @@ def compute_phase_stats(session, cohort_id: str) -> list:
         'Rehab Easy': 'Rehab Easy',
         'Rehab Flat': 'Rehab Flat',
         'Rehab Pillar': 'Rehab Pillar',
-        # Generic rehab (CNT_01 style where rehab isn't split by tray type)
+        # Generic rehab (older workbooks where rehab isn't split by tray type)
         'Rehab_': 'Rehab',
     }
 

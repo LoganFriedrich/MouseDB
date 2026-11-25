@@ -27,14 +27,14 @@ Thumbs.db
 *.xlsx
 *.xls
 
-# Claude
+# Local assistant state
 .claude/
 mousedb/utils/IDK.py
 
 # AI-agent tooling state (OMC, etc.) -- not part of the deliverable
 .omc/
 
-# Stray pytest cache directories on NAS (regenerated automatically; permission-quirky)
+# Stray pytest cache directories on a network share (regenerated automatically; permission-quirky)
 pytest-cache-files-*/
 
 # Top-level paper-figure scratch scripts -- internal, not the package
@@ -44,18 +44,16 @@ pytest-cache-files-*/
 # Internal analysis design docs / scratch notes -- kept outside the repo
 KinematicFeatureDecompositionAnalys.md
 
-# Imported reference (lab's historical DLC / R analysis project, ~584MB) -- external,
-# kept local only as a reading reference for kinematic PCA conventions
+# Imported reference (an external historical analysis project) -- kept local
+# only as a reading reference for kinematic PCA conventions
 mousedb/historical_kinematic_analysis/
 
-# Agent/personal notes -- never published. See CLAUDE.md on notes placement.
+# Agent/personal notes -- never published.
 .notes/
 
-# Accessory/analysis leftovers that must never reach this public repo.
-# endpoint_ck_analysis was removed from the tool repo as an accessory, but its
-# on-disk _bundled_data still holds a full copy of connectome.db and cached
-# parquet of real animal data. Untracked and unignored, a single `git add -A`
-# would publish the research database. Ignore the whole tree.
+# Database files and the removed endpoint_ck_analysis tree: a local copy can
+# hold a database and cached parquet of animal data, and a single `git add -A`
+# would publish it.
 mousedb/endpoint_ck_analysis/
 endpoint_ck_analysis/
 *.db

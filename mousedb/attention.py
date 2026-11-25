@@ -9,7 +9,7 @@ something only a person can fix, usually in the tracking sheet. Left in a log
 it is never seen. So it is put where people look -- the tab they open to find
 their data, and the folder where the sheet itself is edited. (A session with
 no hand scores at all is not listed: it was never scored by hand, so there is
-nothing to compare and nothing to fix -- Logan, 2026-10-26.)
+nothing to compare and nothing to fix.)
 
 WHAT IS GATHERED
 ----------------

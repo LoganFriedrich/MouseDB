@@ -6,8 +6,8 @@ mousedb is an optional integrator: it reads the outputs of the lab's tools
 (MouseReach, MouseBrain) and holds the colony/experiment records. Every one
 of those locations is a property of ONE lab's machines, not of the tool, so
 none of them may be written into the source (this is a public repository).
-Until 2026-08-28 a dozen modules each carried their own drive-letter default;
-a new machine, a moved share, or another lab got silent wrong answers.
+Per-module drive-letter defaults would give a new machine, a moved share, or
+another lab silent wrong answers, so every location is read from here.
 
 Where values come from, in order:
   1. an environment variable (per key, listed below) -- for one-off runs,
@@ -48,7 +48,7 @@ Keys (config.json name -> environment variable):
   mousereach_pipeline_root  MOUSEREACH_PIPELINE_ROOT   MouseReach's shared pipeline folder (Analyzed/, Processing/ ...)
   mousebrain_pipeline_root  MOUSEBRAIN_PIPELINE_ROOT   MouseBrain's pipeline folder
   mousebrain_registry_root  MOUSEBRAIN_REGISTRY_ROOT   MouseBrain's analysis registry (default: <pipeline>/Registry;
-                                                       the same variable MouseBrain itself honours, so both agree)
+                                                       the same variable MouseBrain itself honors, so both agree)
   cohort_sheets_dir         MOUSEDB_COHORT_SHEETS   (managed by mousedb.cohort_sheets)
   mousereach_route_cmd / mousereach_env             (managed by mousedb.bench_scan)
   lab_name                  MOUSEDB_LAB_NAME        the "Laboratory" value written into generated sheets / ODC exports
@@ -129,7 +129,7 @@ def read_settings_file(path) -> dict:
 
     Read as utf-8-sig. WHY: a file saved from Windows Notepad may start with a
     byte-order mark, which plain utf-8 JSON parsing rejects -- and a file
-    rejected for that reason used to read as empty (see SettingsFileDamaged).
+    rejected for that reason would otherwise read as empty (see SettingsFileDamaged).
     """
     path = Path(path)
     try:
@@ -194,7 +194,7 @@ def update_settings_file(path, change) -> Path:
         <name>.damaged-<time>, the file itself is left exactly as it was, and
         the message names both. WHY: writing back "what could be read" from a
         damaged file is writing back almost nothing -- every other setting
-        and pin used to be lost that way;
+        and pin would otherwise be lost that way;
       * writes a temporary file beside it and swaps it in with os.replace, so
         a crash or a full disk mid-write leaves the old file whole rather than
         a half-written one (which the next read would find damaged);

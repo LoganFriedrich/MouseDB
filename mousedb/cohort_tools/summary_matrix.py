@@ -2,11 +2,11 @@
 
 The problem
 -----------
-CNT_05's ``3c_Manual_Summary`` is in tidy/long form -- one row per animal per
+PROJA_05's ``3c_Manual_Summary`` is in tidy/long form -- one row per animal per
 session (214 rows). That is fine for a machine and useless for a human: to follow
 one mouse you filter and scroll, and nothing is visible at a glance.
 
-CNT_01-03 used a matrix instead, and it worked because BOTH directions carry
+PROJA_01-03 used a matrix instead, and it worked because BOTH directions carry
 meaning: read ACROSS a row to see one mouse's trajectory over the experiment, read
 DOWN a column to compare every mouse on a given day. A header row labels each
 session's phase (Ramp / Flat / Pillar), so you can see where the protocol changed
@@ -16,7 +16,7 @@ This rebuilds that layout from the long data:
 
     <metric>   | 2025-07-31 | 2025-08-01 | 2025-08-04 | ...
                | Flat       | Flat       | Flat       | ...
-    CNT_05_01  | 80.0       | 76.2       | 62.5       | ...
+    PROJA_05_01  | 80.0       | 76.2       | 62.5       | ...
     ...
     AVG        | ...
     AVG w/o .. | ...        (optional exclusions, as the old sheets did)

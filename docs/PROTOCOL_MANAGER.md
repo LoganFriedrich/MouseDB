@@ -25,8 +25,7 @@ Pick the protocol in the list on the left.
 
 **Change a phase with Edit Phase.** Select the phase's row and press **Edit
 Phase**; the dialog shows every value of the phase. The phases table itself
-cannot be typed into -- double-clicking a cell does nothing. (It could be typed
-into before, and a value typed there was thrown away on Save.)
+cannot be typed into -- double-clicking a cell does nothing. (A value typed there would not be saved, so the table is locked.)
 
 What happens on **Save Protocol** depends on what you changed:
 
@@ -59,9 +58,6 @@ number.
 A protocol saved this way from a **variant** (a protocol that inherits its
 phases from another) is a complete protocol of its own: it holds all its
 phases and no longer follows the protocol the variant came from.
-
-(Before this was fixed, Save on an existing protocol kept only the name and
-description, threw every phase change away, and still said "updated".)
 
 ## Deleting
 

@@ -4,7 +4,7 @@ WHY: over a network share a cold SQLite table scan runs at a fraction of a
 megabyte per second; the same scan runs at tens of MB/s once the file is in
 the operating system's cache, and that cache is dropped when the last handle
 on the file closes. So the warm-up must (a) read the whole file and (b) keep
-it open until the job inside the block is done (2026-10-16).
+it open until the job inside the block is done.
 """
 import os
 import sys
