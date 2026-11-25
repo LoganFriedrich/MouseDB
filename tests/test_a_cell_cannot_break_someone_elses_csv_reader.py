@@ -105,7 +105,7 @@ def test_a_changed_column_says_so_in_its_own_dictionary_entry():
 @pytest.fixture(scope="module")
 def shipped(tmp_path_factory):
     """Export files written by the real exporters from synthetic inputs that
-    carry every hazard (tests/synthetic_exports.py). These checks used to read
+    carry every hazard (tests/synthetic_exports.py). These checks would otherwise read
     this computer's live exports folder -- which no test may touch, and which
     meant they checked nothing on any other machine."""
     from tests.synthetic_exports import build, csv_files

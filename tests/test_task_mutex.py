@@ -213,7 +213,7 @@ def _unguarded_mutex(monkeypatch):
 
 def test_with_only_db_path_set_the_lock_sits_beside_the_database(tmp_path, monkeypatch):
     """Two jobs exclude each other only if they look for the lock in the SAME
-    place. With db_path set and mousedb_root not, the lockfile used to go into
+    place. With db_path set and mousedb_root not, the lockfile would otherwise go into
     each process's working directory, so jobs started from different folders
     each found it free."""
     _unguarded_mutex(monkeypatch)

@@ -2,7 +2,7 @@
 
 WHY each test exists:
 
-* A dead holder's lock that a waiter breaks is written to the log. It used to
+* A dead holder's lock that a waiter breaks is written to the log. It would otherwise
   be written as "database-task lock" whatever the lock was, so a broken
   current-exports lock sent the person to look at the database jobs.
 * On Windows, creating a lockfile whose delete is still pending (the holder

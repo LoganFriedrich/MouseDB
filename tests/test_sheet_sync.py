@@ -1,6 +1,6 @@
 """sheet_sync: status, pinning and the import ledger.
 
-WHY: nothing used to record when a sheet was imported or whether it worked,
+WHY: nothing would otherwise record when a sheet was imported or whether it worked,
 so 'is the database current?' had no answer and a failing import was
 invisible. These tests pin the status verdicts and the it's-this-one pin.
 """

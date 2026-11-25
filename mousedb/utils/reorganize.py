@@ -139,7 +139,7 @@ def _parse_args(argv):
 
 def main(argv=None) -> int:
     """Interactive reshape. Returns the process exit code."""
-    # WHY argparse first: --help used to be ignored and the script went
+    # WHY argparse first: --help would otherwise be ignored and the script went
     # straight to listing files and prompting.
     args = _parse_args(argv)
     directory = args.dir

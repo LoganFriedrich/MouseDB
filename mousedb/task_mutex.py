@@ -171,7 +171,7 @@ def default_lock_dir() -> Path:
 
     WHY never the working directory: the lock only excludes processes that
     look for it in the SAME place. A machine with ``db_path`` set but not
-    ``mousedb_root`` used to put the lockfile wherever each process happened
+    ``mousedb_root`` would otherwise put the lockfile wherever each process happened
     to be started, so two jobs started from different folders each found the
     lock free and ran against the database together -- the very overlap this
     module exists to prevent.
@@ -410,7 +410,7 @@ class TaskMutex:
         except PermissionError as refused:
             # Windows refuses (access denied) to create a file whose delete is
             # still pending -- "not free yet", and the waiter polls again;
-            # raising used to end a wait that was about to succeed. But the
+            # raising would otherwise end a wait that was about to succeed. But the
             # same error from a folder this login cannot write never clears:
             # _refused tells the two apart and raises for the second.
             return self._refused(self.path, refused)

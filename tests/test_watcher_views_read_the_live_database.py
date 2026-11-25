@@ -6,7 +6,7 @@ WHY: a node may point its watcher at a database other than the default
 (``db_path`` in the ``watcher`` section of ~/.mousereach/config.json, set
 because SQLite over a network share loses writes). The watcher then writes
 ONLY that file; the default ``<processing_root>/watcher.db`` may still sit
-beside it, full of old rows. mousedb used to open the default, so its views
+beside it, full of old rows. mousedb would otherwise open the default, so its views
 showed a stale copy as the pipeline's state. And even the
 right file holds only THIS computer's watcher records -- other computers'
 work and the review queues' folders are not in it -- so every view now says

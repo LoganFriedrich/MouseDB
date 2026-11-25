@@ -59,7 +59,7 @@ class TestNothingLabSpecificInSource:
 
     @pytest.mark.parametrize("path", [cs.__file__, __file__])
     def test_no_numbers_describing_one_labs_sheets(self, path):
-        """The WHY behind 'no built-in default' used to be told with one lab's
+        """The WHY behind 'no built-in default' would otherwise be told with one lab's
         own figures -- file sizes in KB, row and weight counts in the
         thousands, an edit date. Those describe a corpus, not the defect, and
         this repository is public: the reason stays, the figures go. These

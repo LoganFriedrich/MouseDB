@@ -3,7 +3,7 @@
 WHY THIS EXISTS
 ---------------
 The per-reach export files (each cohort's complete record, summary, analysis
-and sessions files, and each project's combined files) used to be rebuilt
+and sessions files, and each project's combined files) would otherwise be rebuilt
 from scratch whenever ANY of their inputs changed -- one new video, one
 corrected sheet cell -- and rebuilding took hours, almost all of it spent
 re-making files whose content had not changed. The request was: only add

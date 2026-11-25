@@ -11,8 +11,8 @@ Mode 1 (New Cohort): Creates a complete template with:
 - Only manually-entered data left blank (pellet scores, weights, surgery details)
 
 Usage:
-    mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01 --mice 16
-    mousedb-make-sheets --new --cohort CNT_05 --start-date 2025-02-01  # defaults to 16 mice
+    mousedb-make-sheets --new --cohort PROJA_05 --start-date 2025-02-01 --mice 16
+    mousedb-make-sheets --new --cohort PROJA_05 --start-date 2025-02-01  # defaults to 16 mice
 
 A NEW SHEET NEVER REPLACES A FILE. The folder a new sheet is written into is
 usually the folder of live tracking sheets (the Tracking Sheets tab's "New
@@ -22,7 +22,7 @@ source-of-record workbook. So ``--new`` / create_new_cohort_file:
   * accepts the cohort name only in the exact form PREFIX_NN -- a project
     prefix this builder knows (NEW_SHEET_PROJECTS), one underscore, two digits,
     nothing before or after -- and takes the file name's cohort number from
-    that parse. (It used to take whatever followed the LAST underscore, so
+    that parse. (It would otherwise take whatever followed the LAST underscore, so
     another project's id, or any text ending "_01", named cohort 01's existing
     workbook and replaced it with an empty one.)
   * refuses when the folder already holds a workbook for that cohort, under
@@ -33,7 +33,7 @@ source-of-record workbook. So ``--new`` / create_new_cohort_file:
     its real name only if that name is still free at that moment, by an
     operation that cannot replace a file. A workbook that appears while the
     new one is being built is therefore never overwritten either.
-  * never closes Excel. (It used to force-close every Excel window on the
+  * never closes Excel. (It would otherwise force-close every Excel window on the
     machine, losing unsaved work, when a save was blocked.)
 
 A refusal raises NewSheetRefused, worded for a person; on the command line it
@@ -197,14 +197,14 @@ def generate_subject_ids(cohort_name, num_mice):
     Generate SubjectIDs in format CNT_XX_YY
     
     Args:
-        cohort_name: e.g., "CNT_05" 
+        cohort_name: e.g., "PROJA_05" 
         num_mice: number of mice (default 16)
     
     Returns:
-        List of SubjectIDs like ['CNT_05_01', 'CNT_05_02', ...]
+        List of SubjectIDs like ['PROJA_05_01', 'PROJA_05_02', ...]
     """
-    # Extract cohort number from name (e.g., "CNT_05" -> "05")
-    # Handle both "CNT_05" and "05" formats
+    # Extract cohort number from name (e.g., "PROJA_05" -> "05")
+    # Handle both "PROJA_05" and "05" formats
     if "_" in cohort_name:
         parts = cohort_name.split("_")
         cohort_num = parts[-1]  # Get last part
@@ -231,7 +231,7 @@ def create_0a_metadata(subject_ids):
         "Date_of_Birth": [None] * len(subject_ids),
         "Date_of_Death": [None] * len(subject_ids),
         "Sex": [None] * len(subject_ids),
-        "Cohort": [subject_ids[0].rsplit("_", 1)[0]] * len(subject_ids),  # e.g., "CNT_05"
+        "Cohort": [subject_ids[0].rsplit("_", 1)[0]] * len(subject_ids),  # e.g., "PROJA_05"
         "Notes": [None] * len(subject_ids),
     })
     return df
@@ -322,22 +322,22 @@ def create_0_virus_preparation(cohort_name, num_groups=2, viruses_per_group=3):
     Script 1 reads this to populate 5_SC_Injection_Details.
     
     Args:
-        cohort_name: e.g., "CNT_05" or "ENCR_01" - used for group naming
+        cohort_name: e.g., "PROJA_05" or "ENCR_01" - used for group naming
         num_groups: Number of injection group templates to create (default 2)
         viruses_per_group: Number of virus rows per group (default 3)
     
     Returns:
         dict with structure info for write_0_virus_preparation
     """
-    # Extract prefix for group naming (CNT_05 -> CNT_05.01, ENCR_01 -> ENCR.01)
+    # Extract prefix for group naming (PROJA_05 -> PROJA_05.01, ENCR_01 -> ENCR.01)
     if "_" in cohort_name:
         parts = cohort_name.split("_")
-        # For CNT_05, we want CNT_05.01 style
+        # For PROJA_05, we want PROJA_05.01 style
         # For ENCR_01, we want ENCR.01 style
         if parts[0].upper() == "ENCR":
             group_prefix = parts[0].upper()  # Just "ENCR"
         else:
-            group_prefix = cohort_name  # Full "CNT_05"
+            group_prefix = cohort_name  # Full "PROJA_05"
     else:
         group_prefix = cohort_name
     
@@ -2264,7 +2264,7 @@ class NewSheetRefused(ValueError):
 
 class CohortName(NamedTuple):
     """A cohort name that passed parse_cohort_name."""
-    cohort_id: str      # "CNT_05": upper-case prefix, underscore, two digits
+    cohort_id: str      # "PROJA_05": upper-case prefix, underscore, two digits
     prefix: str         # "CNT"
     number: str         # "05"
     project_type: str   # "cnt"
@@ -2278,15 +2278,15 @@ class CohortName(NamedTuple):
 
 def parse_cohort_name(text) -> CohortName:
     """Read a typed cohort name strictly: the WHOLE text must be a known
-    project prefix, one underscore and two digits ("CNT_07"). Anything else
+    project prefix, one underscore and two digits ("PROJA_07"). Anything else
     raises NewSheetRefused saying what form is expected.
 
     WHY strict: the name becomes the file name written into the sheets folder.
     The old reading kept whatever followed the last underscore, so "PROJAB_01",
-    "CNT_05_01" or any typo ending "_01" wrote Connectome_01_Animal_Tracking.xlsx
+    "PROJA_05_01" or any typo ending "_01" wrote ProjectA_01_Animal_Tracking.xlsx
     -- cohort 01's existing sheet. A bare number ("07") is refused too: it names
     no project, and the project decides the file name. Surrounding spaces and
-    the letter case of the prefix are forgiven (" cnt_07 " -> CNT_07): neither
+    the letter case of the prefix are forgiven (" proja_07 " -> PROJA_07): neither
     can change which file is meant, and the canonical form is what is written.
     """
     t = "" if text is None else str(text).strip()
@@ -2476,7 +2476,7 @@ def create_new_cohort_file(cohort_name, start_date, num_mice, output_dir=None,
     NEVER REPLACES A FILE").
 
     Args:
-        cohort_name: exactly PREFIX_NN, e.g. "CNT_05" or "ENCR_01" (parse_cohort_name)
+        cohort_name: exactly PREFIX_NN, e.g. "PROJA_05" or "ENCR_01" (parse_cohort_name)
         start_date: Food deprivation start date (datetime or string YYYY-MM-DD or YYYYMMDD)
         num_mice: Number of mice in cohort (1-99; subject numbers have two digits)
         output_dir: Output directory (default: 'generated' subdirectory)

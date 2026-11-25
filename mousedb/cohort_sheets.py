@@ -43,7 +43,7 @@ Resolution order, first hit wins:
      settings file is damaged".
 
 A damaged settings file is never read as empty and never written over
-(mousedb.config.SettingsFileDamaged): losing it used to lose every pin.
+(mousedb.config.SettingsFileDamaged): losing it would otherwise lose every pin.
 
 There is deliberately no built-in fallback path. The previous arrangement was a
 hardcoded default on the ``import`` command pointing at a directory that had since
@@ -74,8 +74,8 @@ IS the sheet (pin_cohort_sheet; the Tracking Sheets tab's "This is the sheet"
 button). A pin must name one of that cohort's files when it is made. If the
 pinned file later goes (renamed, moved, deleted), the pin is BROKEN: the cohort
 falls back to its newest file exactly as if it were unpinned. That fallback
-must never be silent -- it used to be, and the status said "pinned" while a
-file nobody had chosen was imported. broken_pins names each broken pin and the
+must never be silent: a silent fallback lets the status say "pinned" while a
+file nobody had chosen is imported. broken_pins names each broken pin and the
 file being read instead; ``mousedb cohort-sheets`` prints it, and any status
 display must neither call a broken pin "pinned" nor leave it unsaid.
 pinned_sheet returns the RECORD as stored, broken or not, so a display can
@@ -143,7 +143,7 @@ CONFIG_PATH = Path.home() / ".mousedb" / "config.json"
 ENV_VAR = "MOUSEDB_COHORT_SHEETS"
 
 # WHICH NAMES ARE SHEETS comes from sheet_projects (the lab's settings). Each
-# project's pattern is anchored at the START of the name. WHY: matching used to
+# project's pattern is anchored at the START of the name. WHY: matching would otherwise
 # be an unanchored search, so ANY file whose name merely CONTAINED the pattern
 # became a candidate -- "Copy of <sheet>", an Excel lock file "~$<sheet>", the
 # "._<sheet>" shadow file a Mac leaves on a network share, a note another tool
@@ -228,14 +228,14 @@ def _read_config() -> dict:
     on this computer, with this person's own file laid over it key by key --
     the SAME merge mousedb.config uses for every other setting.
 
-    WHY merged: this used to read the person's own file only, while the rest of
+    WHY merged: this would otherwise read the person's own file only, while the rest of
     mousedb read both. A sheets folder (or pin, or ASPA folder) set once for
     the whole computer with ``mousedb config --machine --set`` was therefore
     invisible here: every other login -- and the scheduled jobs, if they run
     as one -- had "no sheets folder" while the Setup tab showed one set.
 
     Raises config.SettingsFileDamaged when either file is damaged, never
-    reading it as "nothing set" (see that class for what that used to cost).
+    reading it as "nothing set" (see that class for what that would otherwise cost).
     """
     from . import config as _config
     return _config.merge_settings(_config.read_machine_config(), _own_config())
@@ -845,7 +845,7 @@ def describe() -> str:
     # character just as file names may. Escaped, a path is still
     # recognisable; unescaped, one accented letter is a crash.
     # A folder that IS set but cannot be used is said as such, with the value
-    # set. WHY: these used to read "not configured" whatever the cause, and a
+    # set. WHY: these would otherwise read "not configured" whatever the cause, and a
     # person whose drive was merely disconnected was sent to set again a
     # folder that was set correctly.
     if d is None and d_reason != DIR_UNSET:

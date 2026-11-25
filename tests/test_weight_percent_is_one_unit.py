@@ -83,7 +83,7 @@ def _cohorts_in_both_units(tmp_path):
 
 def test_every_cohort_lands_where_a_mouse_can_be(tmp_path):
     """Per cohort, whichever unit it was stored in: the check that would have
-    caught the shipped 9,000%. It used to run on this computer's live snapshot
+    caught the shipped 9,000%. It would otherwise run on this computer's live snapshot
     and so ran nowhere else; a test reads only its own inputs, so the live
     table's mix of units is reproduced here."""
     weights = _cohorts_in_both_units(tmp_path).dropna(subset=["weight_percent"])

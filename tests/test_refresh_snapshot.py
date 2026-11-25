@@ -1,6 +1,6 @@
 """The scheduled snapshot job and the per-cohort ODC session exports.
 
-WHY: refresh_snapshot's main() used to hand db_ok=--force to the current
+WHY: refresh_snapshot's main() would otherwise hand db_ok=--force to the current
 exports, and the scheduled task runs without --force -- so the
 per-cohort ODC_sessions_*.csv files were never refreshed and MANIFEST.json
 said odc_sessions_refreshed=False on every run. These tests
@@ -209,7 +209,7 @@ def test_a_long_wait_for_the_task_lock_does_not_use_up_the_retry_window(configur
                                                                        monkeypatch):
     """refresh() may wait up to --lock-wait-minutes for the cross-task lock
     before it reads anything. That wait must not count against --retry-minutes:
-    a "database is locked" met right after it used to find the window spent
+    a "database is locked" met right after it would otherwise find the window spent
     and fail the night's refresh without a single retry."""
     from mousedb import db_contention as dc
 

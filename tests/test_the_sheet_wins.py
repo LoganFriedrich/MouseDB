@@ -1,6 +1,6 @@
 """The tracking sheet is the source of record for the rows the sheet import wrote.
 
-WHY: the import used to only add. A value corrected in the sheet kept its old
+WHY: the import would otherwise only add. A value corrected in the sheet kept its old
 value in the database, and a session typed into the wrong cohort's workbook,
 imported, then moved to the right workbook stayed behind as a phantom session
 no sheet holds. A cohort's phases are derived from its set of session dates,
@@ -691,7 +691,7 @@ def _hand_score(db, animal, day, tray, pellet=1):
 
 
 def test_a_score_typed_in_by_hand_under_a_typo_date_pulls_nothing_back_on_a_guess(tmp_path):
-    """WHY: on a guess the import used to read a whole year-typo DAY as typed
+    """WHY: on a guess the import would otherwise read a whole year-typo DAY as typed
     when anything at all was stored under it. One score a person had typed in
     under that date (which the repair never moves) sent every tray of the day
     back to the typed date and stored them all a second time, a year away.

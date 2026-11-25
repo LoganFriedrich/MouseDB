@@ -102,7 +102,7 @@ def test_a_second_press_while_an_update_runs_is_refused(root):
 
 
 def test_a_long_running_update_is_never_taken_over(root):
-    """An update whose steps take hours is still running: its lock used to be
+    """An update whose steps take hours is still running: its lock would otherwise be
     taken over after 2 hours by age alone, and the first update then deleted
     the second one's lock on its way out."""
     second = []
@@ -297,7 +297,7 @@ def test_an_earlier_version_still_sees_this_update_after_two_hours(root, monkeyp
 
 
 def test_two_presses_at_the_same_moment_never_both_run(root, monkeypatch):
-    """The update lock used to be taken by checking that a file did not exist
+    """The update lock would otherwise be taken by checking that a file did not exist
     and then writing it, so a second press landing between the first press's
     check and its write found no lock and ran too. Here the second press is
     made at exactly that moment: just before the first press writes any lock

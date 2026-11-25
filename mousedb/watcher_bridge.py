@@ -66,7 +66,7 @@ STATE_DISPLAY = {
 }
 
 # 'crystallized' is a filed video locked for a publication: its analysis is
-# finished, so it counts as done (it used to count as 'in progress').
+# finished, so it counts as done (it would otherwise count as 'in progress').
 DONE_STATES = frozenset(['processed', 'archiving', 'archived', 'crystallized'])
 
 # Work the pipeline still has to do on this computer ('In Progress').

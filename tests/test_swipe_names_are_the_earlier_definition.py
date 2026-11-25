@@ -3,12 +3,12 @@
 swipe_length, swipe_breadth, swipe_area, swipe_speed, path_length,
 swipe_duration_frames and path_over_frames are the names an earlier reach
 program gave its per-swipe measures, and the analysis document keeps them so a
-script written against that program's files keeps running. Until this change
-they held the pipeline's OWN measures (extension past the nose in mm, lateral
-deviation, swept area, peak speed per frame, anchored path length, reach
-duration): different quantities, in different units, under a name that said
-otherwise. Now they hold the extractor's legacy_swipe_* values, and the
-pipeline's measures keep the extractor's own names.
+script written against that program's files keeps running. They
+hold the extractor's legacy_swipe_* values, never the pipeline's OWN measures
+(extension past the nose in mm, lateral deviation, swept area, peak speed per
+frame, anchored path length, reach duration): those are different quantities, in
+different units, under a name that would say otherwise. The pipeline's measures
+keep the extractor's own names.
 
 A reach filed before extractor 2.6.0 has no legacy value. Its swipe_* cells are
 NA -- never the pipeline's measure standing in, which would mix two definitions

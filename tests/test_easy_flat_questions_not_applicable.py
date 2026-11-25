@@ -2,7 +2,7 @@
 
 WHY: on those training trays the pellets are not tracked, no outcome
 is computed, and the video is not cut into one stretch per pellet. The exports
-used to fill those rows by the general rules and so answered the pellet questions
+would otherwise fill those rows by the general rules and so answered the pellet questions
 wrongly, four different ways: "Undetermined" (reads as a pellet waiting for a
 person), "pellet still available", contact group "missed", and counts of
 "reaches at this pellet" that were the whole video. A pillar row beside them must keep its real answer.

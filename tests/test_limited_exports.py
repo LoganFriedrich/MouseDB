@@ -664,7 +664,7 @@ def test_a_folder_left_part_way_says_so_and_the_next_make_mends_it(lab, monkeypa
 # ------------------------------------------------- the day-window yes/no rule
 # WHY: an analysis often uses some DAYS of each animal (for instance its last N
 # test days before the injury), not some animals. A per-animal rule cannot say
-# that, so such a column used to be filled by a one-off script. The day-window
+# that, so such a column would otherwise be filled by a one-off script. The day-window
 # rule decides yes/no for each (animal, test day) from the sheet's records and
 # carries that answer to every row of that day.
 

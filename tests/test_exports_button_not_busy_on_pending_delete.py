@@ -3,7 +3,7 @@ previous refresh let go of the lock.
 
 WHY: on Windows a lockfile whose delete is still pending refuses both to be
 re-created and to be read for a moment. The no-wait path (the "Refresh exports
-now" button) used to read that unreadable file as a holder ("unknown") and
+now" button) would otherwise read that unreadable file as a holder ("unknown") and
 tell the person the exports were already being written -- when nothing was.
 It must wait out the pending delete, as it does for a lockfile that is gone.
 """

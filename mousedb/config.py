@@ -129,7 +129,7 @@ def read_settings_file(path) -> dict:
 
     Read as utf-8-sig. WHY: a file saved from Windows Notepad may start with a
     byte-order mark, which plain utf-8 JSON parsing rejects -- and a file
-    rejected for that reason used to read as empty (see SettingsFileDamaged).
+    rejected for that reason would otherwise read as empty (see SettingsFileDamaged).
     """
     path = Path(path)
     try:
@@ -194,7 +194,7 @@ def update_settings_file(path, change) -> Path:
         <name>.damaged-<time>, the file itself is left exactly as it was, and
         the message names both. WHY: writing back "what could be read" from a
         damaged file is writing back almost nothing -- every other setting
-        and pin used to be lost that way;
+        and pin would otherwise be lost that way;
       * writes a temporary file beside it and swaps it in with os.replace, so
         a crash or a full disk mid-write leaves the old file whole rather than
         a half-written one (which the next read would find damaged);

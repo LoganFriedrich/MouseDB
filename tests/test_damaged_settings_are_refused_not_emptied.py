@@ -1,7 +1,7 @@
 """A damaged settings file is never read as "nothing set", and never written over.
 
 WHY: a settings file that was not valid JSON (a hand edit that lost a comma,
-a save cut off half-way) used to read as EMPTY. Every location and every
+a save cut off half-way) would otherwise read as EMPTY. Every location and every
 pinned sheet in it silently became "not configured" -- and the next
 ``mousedb config --set``, "Set sheets folder" or "This is the sheet" wrote the
 file back holding that ONE new value, so every other setting and every pin was

@@ -314,7 +314,7 @@ def combine_all(root: Path, kinds: Iterable[str], projects: Iterable[str],
     A project left with NO cohort file of a kind has its old combined file of
     that kind archived (never deleted), listed under
     ``archived_combined_files``. WHY: the combined file is built from the
-    cohort files on disk; with none left it used to stay as it was, holding
+    cohort files on disk; with none left it would otherwise stay as it was, holding
     cohorts that are no longer exported and looking current."""
     for project in sorted(set(projects)):
         for kind in kinds:

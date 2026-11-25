@@ -238,7 +238,7 @@ def test_a_cohort_whose_build_failed_keeps_its_files(snapshot, tmp_path, monkeyp
 def test_a_stale_cohort_file_held_open_does_not_stop_the_other_projects(snapshot, tmp_path,
                                                                         monkeypatch):
     """A file another program has open cannot be moved. WHY this test: the move
-    used to raise out of the export, and then no project's combined file, no
+    would otherwise raise out of the export, and then no project's combined file, no
     dictionary and no manifest entry was written that night."""
     import pathlib
     out = tmp_path / "exports" / "current"

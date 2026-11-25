@@ -2,7 +2,7 @@
 
 WHY THIS TEST EXISTS
 --------------------
-The per-reach outcome column used to spell its first value "Did not move the
+The per-reach outcome column would otherwise spell its first value "Did not move the
 pellet". That is a description of a miss, not the name of one, and naming an
 outcome by what did not happen has a cost: it reads as an absence, and a reader
 who treats it as one drops the majority of the file. Most reaches miss.

@@ -6,7 +6,7 @@ means the calculation, because without it the reader cannot tell what they are
 comparing. An "area" could be a convex hull, a bounding box or a polygon through
 the tracked points, and the three are not the same number.
 
-These descriptions used to be generated from the column NAME, which gives the
+These descriptions would otherwise be generated from the column NAME, which gives the
 reader back the words they just read. The rule: if something is a calculated
 value, its description must say how it was calculated.
 

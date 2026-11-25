@@ -130,8 +130,8 @@ def test_the_command_line_says_busy_with_its_own_exit_code(tmp_path, capsys):
 # A command that WAITS (no --no-wait) and runs out of wait -- its budget used
 # up, or the other refresh showing no progress -- must say so in one plain line
 # that names the exports lock, change nothing, and exit with its own code. It
-# used to end in a Python traceback that spoke of "the database-task lock", a
-# different lock, which sent the person to look at the wrong jobs.
+# would otherwise end in a Python traceback that spoke of "the database-task lock", a
+# different lock, which would send the person to look at the wrong jobs.
 
 def test_the_command_line_says_when_its_wait_ran_out(tmp_path, capsys, monkeypatch):
     monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")

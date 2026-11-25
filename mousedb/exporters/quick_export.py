@@ -48,7 +48,7 @@ def main(argv=None) -> int:
     base_dir = Path(args.dir) if args.dir else Path.cwd()
     gen_dir = base_dir / GENERATED
 
-    # WHY check up front: a missing folder used to surface as a pandas
+    # WHY check up front: a missing folder would otherwise surface as a pandas
     # FileNotFoundError traceback that said nothing about what this command
     # expects or where it looked.
     if not gen_dir.is_dir():

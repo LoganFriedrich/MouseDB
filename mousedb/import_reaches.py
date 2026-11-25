@@ -377,7 +377,7 @@ def read_ledger(consequence: str = BEFORE_IMPORTING) -> Optional[Dict[str, str]]
     """The import ledger; None when there is none yet (confirmed from a folder
     listing, see ``_confirmed_absent``). Raises ``StateFileUnreadable`` when
     one exists but cannot be read (see ``_read_state_file``: an unreadable
-    ledger used to mean "import every file again", silently).
+    ledger would otherwise mean "import every file again", silently).
 
     None and {} are kept apart so that the run says "no ledger yet" only when
     there truly is none: a ledger that exists and is empty (left by a run
@@ -494,7 +494,7 @@ def update_pending_phases(change: Callable[[set], set],
     window whose own phase refresh failed adds that cohort
     (``Database._queue_for_reach_import``). The commonest reason that refresh
     fails is a database busy with the running reach import -- so the two write
-    the list at the very moments they are most likely to overlap. Each used to
+    the list at the very moments they are most likely to overlap. Each would otherwise
     read the file, change it in memory and write it back: a window write that
     landed between the import's read and its write was overwritten, and that
     cohort kept labels from its old dates with nothing reporting it.
@@ -1000,10 +1000,9 @@ def withdraw_videos_back_in_review(conn: sqlite3.Connection, root: Path, filed: 
     WHY: filing means done. The database holds a video's reaches because the
     video was filed, and it is sent back to a review queue only when something
     in it is not done after all (a pellet nobody answered, a disagreement with
-    the hand scores, an "are you sure?"). Before this change its rows stayed --
-    with the answers it had before it went back -- and went out in every export
-    as if finished. Now they leave
-    the database until the video is filed again.
+    the hand scores, an "are you sure?"). Leaving its rows would keep
+    the answers it had before it went back in every export, as if finished. So
+    they leave the database until the video is filed again.
 
     HOW: each such video's rows in reach_data, video_pellets and
     video_sessions are first copied to ``<backup_root>/<video>_reach_data.csv``,
@@ -1304,7 +1303,7 @@ def run(all_files: bool = False, dry_run: bool = False, include_processing: bool
                     # the disagreement router (or review-return) moved its bundle
                     # into a queue mid-run. That is normal traffic, not an import
                     # failure -- the file will be found again wherever it lands.
-                    # (Before this was handled, it failed the whole run.)
+                    # (Treating it as a failure would fail the whole run.)
                     res.skipped += 1
                     res.messages.append("%s: vanished mid-run (moved to a review queue?) -- skipped" % p.name)
                     log("  [skip] %s vanished mid-run (moved to a review queue?)" % p.name)

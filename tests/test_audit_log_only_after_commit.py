@@ -2,7 +2,7 @@
 
 Database.log_change records a change twice: an AuditLog row in the database
 and a line in logs/<date>_changes.jsonl. The row is part of the caller's
-transaction. The file line used to be appended at once, when log_change was
+transaction. The file line would otherwise be appended at once, when log_change was
 called. When that transaction then rolled back -- a constraint failure, a
 crash, a canceled import -- the database had no change but the file still
 claimed one: a false audit trail, in the very file a person reads to answer
@@ -21,7 +21,7 @@ before that happens:
   not silent either.
 
 The same SQLAlchemy behavior that matters for SAVEPOINTs (after_commit also
-fires when a SAVEPOINT is released) used to start the phase refresh before the
+fires when a SAVEPOINT is released) would otherwise start the phase refresh before the
 real commit, while the outer transaction still held the write lock; the last
 test pins that too.
 """

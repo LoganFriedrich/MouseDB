@@ -7,7 +7,7 @@ hidden before mousedb is imported).
 WHY here and not only in conftest.py: pytest loads tests/conftest.py only for
 test files inside tests/. A test file written somewhere else -- a quick
 scenario check that borrows this suite's helpers with
-``from tests.test_the_sheet_wins import ...`` -- used to run with this
+``from tests.test_the_sheet_wins import ...`` -- would otherwise run with this
 computer's REAL configuration. Its synthetic import then ended, as every
 import does, by rewriting the hand-scores file and the FIX THESE files at the
 configured (live) locations, while its import history pointed at a test file:

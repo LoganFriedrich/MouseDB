@@ -1,7 +1,7 @@
 """A Replace removes only what the sheet import wrote, and only if the re-import lands.
 
 WHY these tests exist. The Cohort Setup tab's "Replace (delete + re-import)" button
-used to:
+would otherwise:
 
 - delete every row of the cohort in seven tables, including rows a person typed in
   through the GUI (their entered_by is a user name, not 'excel_import'). Re-reading
@@ -385,7 +385,7 @@ def test_replace_changes_nothing_while_another_task_holds_the_lock(db, tmp_path,
 # A correction typed into the Ramp tab must count as typed in by hand
 # --------------------------------------------------------------------------
 # WHY: the Ramp tab also writes the day's body weight into the weights table.
-# When the sheet import had already written that day's weight, the tab used to
+# When the sheet import had already written that day's weight, the tab would otherwise
 # change the grams but leave entered_by as the import's mark, so the next
 # Replace deleted the correction and silently put the sheet's old value back.
 

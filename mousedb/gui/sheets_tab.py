@@ -4,7 +4,7 @@ WHY THIS TAB EXISTS
 -------------------
 The tracking workbooks are the hand-kept record of every animal (weights,
 ramps, injury, surgery, manual tray scores). They are filled in "eventually",
-and the database only knows what was imported from them. Importing used to be
+and the database only knows what was imported from them. Without this tab, importing is
 a terminal command, or a scheduled background job with no visible result, so
 an import that failed and rolled back could go unnoticed for a long time.
 This tab is the visible, clickable version: per cohort it shows WHICH
@@ -14,7 +14,7 @@ forget a pin, set the folder, and create a new blank sheet.
 
 WHAT IT SAYS OUT LOUD
 ---------------------
-Which file is read for a cohort is a decision, and two such decisions used to
+Which file is read for a cohort is a decision, and two such decisions would otherwise
 be invisible here: a PIN whose file has since been renamed, moved or deleted
 (the cohort then quietly reads its newest file instead), and a file that LOOKS
 like a sheet but is refused as one ("Copy of ...", an export a tool wrote from
@@ -36,8 +36,8 @@ one) are caught where they happen and explained in plain words.
 THE ONE WRITE
 -------------
 It lives in mousedb's own GUI (mousedb-entry) because importing sheets is
-this tool's job; it used to be a tab inside MouseReach that shelled out to
-this environment, which made MouseReach depend on a tool it should not know.
+this tool's job; a tab inside MouseReach would have to shell out to
+this environment, making MouseReach depend on a tool it should not know.
 All work runs off the GUI thread. Importing only READS the workbooks. The one
 thing here that writes into the sheets folder is "New cohort sheet...", and it
 only ever creates a NEW file: the name must be exactly <PROJECT>_NN, and it
@@ -650,7 +650,7 @@ class TrackingSheetsTab(QWidget):
         if not d:
             return
         # Judged and saved as an ABSOLUTE path, by the same tests as
-        # 'mousedb-sheets set-dir'. WHY: this button used to accept any folder
+        # 'mousedb-sheets set-dir'. WHY: this button would otherwise accept any folder
         # with "tracking" in a workbook's name -- a folder of refused copies or
         # an archive snapshot was saved, and every status afterwards said "not
         # configured" with no hint that the setting itself was the problem.

@@ -80,12 +80,11 @@ def _read_state_file(p: Path, what: str, kind: Any, start_over: str,
     """The parsed content of ``p``; None when the file does not exist.
 
     WHY THIS REFUSES INSTEAD OF STARTING AFRESH: the ledger is the only record
-    of which results files are already in the database. Until this was
-    changed, a ledger that could not be read (a share error, a file another
-    program had damaged) was treated as EMPTY, so the run imported every file
-    again: every reach of every filed video rewritten over the share, a run of
+    of which results files are already in the database. A ledger that could not be read (a share error, a file another
+    program had damaged) must not be treated as EMPTY: the run would import every
+    file again, every reach of every filed video rewritten over the share, a run of
     several hours that holds the database lock all that time -- and nothing
-    said why. A ledger that is truly missing (a new database, a new machine)
+    would say why. A ledger that is truly missing (a new database, a new machine)
     still starts empty: then importing everything is the right thing to do --
     but "truly missing" is believed only from a folder listing
     (``_confirmed_absent``), never from a FileNotFoundError alone, which a
@@ -141,7 +140,7 @@ def _write_json_atomically(p: Path, obj: Any) -> None:
     its ledger during the run, see ``import_reaches.LEDGER_SAVE_SECONDS``; the
     analysis mirror saves its ledger and manifest once, at the end). A kill in
     the middle of a plain write_text left a truncated file, which the next
-    run cannot read -- the reach import used to start a NEW ledger and
+    run cannot read -- the reach import would otherwise start a NEW ledger and
     re-import every file, and the Where Is My Data tab showed a half-written
     manifest as unreadable. The new content goes to a temporary file beside
     the target first and is swapped in whole with os.replace. On Windows the

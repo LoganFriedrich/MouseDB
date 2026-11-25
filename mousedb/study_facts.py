@@ -39,7 +39,7 @@ A damaged file is refused, never read as empty
 ----------------------------------------------
 A file that exists but is not valid JSON (a half-written save, a hand edit with
 a stray comma) raises StudyFactsFileDamaged from every reader and every writer,
-naming the file. WHY: it used to read as "nothing set", so every export quietly
+naming the file. WHY: it would otherwise read as "nothing set", so every export quietly
 wrote its study-fact columns blank as if nobody had ever set them, and the next
 Set (tab or command) wrote back a file holding only that one fact -- every other
 project's facts and exception rules gone. Writes go through

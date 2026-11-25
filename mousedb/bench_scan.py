@@ -392,7 +392,7 @@ def route_command():
 
     Read through mousedb.config.get -- environment variable, then the
     person's own settings laid over the machine's -- like every other
-    setting. WHY: it used to read the person's own file only, so a value set
+    setting. WHY: it would otherwise read the person's own file only, so a value set
     once for the computer (``mousedb config --machine --set``) was never seen
     and routing said "not configured" for every other login.
     """

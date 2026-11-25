@@ -233,7 +233,7 @@ def test_the_command_line_refusal_is_one_line_and_its_own_exit_code(sheets, caps
 
 def test_fix_mode_never_writes_over_its_own_input(tmp_path):
     """--fix keeps the input's name, so an --output-dir naming the input's own
-    folder used to replace the sheet in place. The input is a REAL workbook:
+    folder would otherwise replace the sheet in place. The input is a REAL workbook:
     the old code fails to load a few bytes of text and so never reaches the
     save, which would let this test pass against the very code it guards."""
     import openpyxl
@@ -540,7 +540,7 @@ def test_saying_no_at_the_confirmation_starts_nothing(sheets, make_tab, ui, monk
 
 def test_a_pin_that_cannot_be_made_is_a_message_not_a_crash(sheets, make_tab, ui):
     """The file chosen was renamed since the table was read: pin_cohort_sheet
-    raises ValueError, which used to escape the slot and abort the GUI."""
+    raises ValueError, which would otherwise escape the slot and abort the GUI."""
     (sheets / "Connectome_05_Animal_Tracking.xlsx").write_bytes(REAL)
     row = {"cohort_id": "CNT_05", "project": "CNT", "state": "up_to_date",
            "sheet": "Connectome_05_Animal_Tracking.xlsx", "ambiguous": True,
@@ -675,7 +675,7 @@ def test_set_folder_says_when_an_environment_variable_overrides_it(sheets, tmp_p
                                                                    ui):
     """The environment variable (here: the 'sheets' fixture) comes before the
     recorded setting, so choosing another folder would change nothing -- and
-    used to say only "recorded"."""
+    would otherwise say only "recorded"."""
     other = tmp_path / "other_sheets"
     other.mkdir()
     (other / "Connectome_02_Animal_Tracking.xlsx").write_bytes(REAL)

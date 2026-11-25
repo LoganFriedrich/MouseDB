@@ -20,10 +20,10 @@ from sqlalchemy.engine import Engine
 # The algorithm does not analyze pellet outcomes on easy and flat trays: there
 # the algorithm's pellet/reach outcome is 'not applicable', and the manual
 # pellet outcome is whatever the hand score says. And a PELLET nobody touched is
-# "untouched" -- "missed" is a word for a reach. Before this change the two
-# algorithm columns said 'missed' on every easy/flat reach (nothing was
-# measured there) and on every pellet the algorithm had not decided, and the
-# pellet columns used 'missed' for an untouched pellet.
+# "untouched" -- "missed" is a word for a reach. So the two
+# algorithm columns never say 'missed' on an easy/flat reach (nothing is
+# measured there) or on a pellet the algorithm has not decided, and the
+# pellet columns never use 'missed' for an untouched pellet.
 #
 # Per reach, from the algorithm: did THIS reach meet the pellet (a frame of
 # contact was identified -- only ever on the reach credited with the pellet)?
@@ -53,8 +53,8 @@ Base = declarative_base()
 # VALIDATION HELPERS
 # =============================================================================
 
-SUBJECT_ID_PATTERN = re.compile(r'^[A-Z]+_\d{2}_\d{2}$')  # CNT_05_01
-COHORT_ID_PATTERN = re.compile(r'^[A-Z]+_\d{2}$')  # CNT_05
+SUBJECT_ID_PATTERN = re.compile(r'^[A-Z]+_\d{2}_\d{2}$')  # PROJA_05_01
+COHORT_ID_PATTERN = re.compile(r'^[A-Z]+_\d{2}$')  # PROJA_05
 PROJECT_CODE_PATTERN = re.compile(r'^[A-Z]+$')  # CNT, ENCR
 
 def validate_subject_id(subject_id: str) -> bool:
@@ -73,7 +73,7 @@ def parse_subject_id(subject_id: str) -> tuple:
     return parts[0], int(parts[1]), int(parts[2])
 
 def derive_cohort_id(subject_id: str) -> str:
-    """Derive cohort ID from subject ID: CNT_05_01 -> CNT_05"""
+    """Derive cohort ID from subject ID: PROJA_05_01 -> PROJA_05"""
     project, cohort_num, _ = parse_subject_id(subject_id)
     return f"{project}_{cohort_num:02d}"
 
@@ -338,7 +338,7 @@ class Cohort(Base):
     """A batch of mice with the same start date."""
     __tablename__ = 'cohorts'
 
-    cohort_id = Column(String(20), primary_key=True)  # CNT_05
+    cohort_id = Column(String(20), primary_key=True)  # PROJA_05
     project_code = Column(String(10), ForeignKey('projects.project_code'), nullable=False)
     start_date = Column(Date, nullable=False)  # Food deprivation start
     num_mice = Column(Integer, default=16)
@@ -389,7 +389,7 @@ class Subject(Base):
     """Individual mouse/animal."""
     __tablename__ = 'subjects'
 
-    subject_id = Column(String(20), primary_key=True)  # CNT_05_01
+    subject_id = Column(String(20), primary_key=True)  # PROJA_05_01
     cohort_id = Column(String(20), ForeignKey('cohorts.cohort_id'), nullable=False)
     date_of_birth = Column(Date)
     date_of_death = Column(Date)
@@ -924,7 +924,7 @@ class BrainSample(Base):
     Brain sample linking a subject to their tissue imaging data.
 
     Brain naming convention: {BRAIN#}_{PROJECT}_{COHORT}_{SUBJECT}_{MAG}x_z{ZSTEP}
-    Example: 001_CNT_01_01_1p625x_z4
+    Example: 001_PROJA_01_01_1p625x_z4
     """
     __tablename__ = 'brain_samples'
     __table_args__ = (
@@ -933,7 +933,7 @@ class BrainSample(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     subject_id = Column(String(20), ForeignKey('subjects.subject_id'), nullable=False)
-    brain_id = Column(String(50), nullable=False)  # e.g., "001_CNT_01_01_1p625x_z4"
+    brain_id = Column(String(50), nullable=False)  # e.g., "001_PROJA_01_01_1p625x_z4"
     brain_number = Column(Integer)  # Sequential brain number (1)
 
     # Imaging parameters

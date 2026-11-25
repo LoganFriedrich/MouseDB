@@ -521,7 +521,7 @@ class ProtocolBuilderDialog(QDialog):
         a changed name or description is saved in place; changed phases are
         NEVER written into it -- cohorts already assigned to it were scheduled
         from those phases -- and are offered as a new protocol instead.
-        WHY: Save used to keep only the name and description of an existing
+        WHY: Save would otherwise keep only the name and description of an existing
         protocol and still say 'updated', so every phase edit made here was
         silently thrown away."""
         name = self.proto_name_edit.text().strip()

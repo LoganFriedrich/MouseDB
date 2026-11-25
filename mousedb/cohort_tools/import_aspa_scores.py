@@ -322,7 +322,7 @@ def main(argv=None) -> int:
         if args.apply:
             # The same route as `mousedb-sheets import --cohort ASPA_xx`: under
             # the cross-task database lock, waiting for whatever import holds
-            # it. WHY: this command used to write straight to the database, so
+            # it. WHY: this command would otherwise write straight to the database, so
             # it could collide with a scheduled import ("database is locked")
             # and its operators were told to run it only when nothing else ran.
             e = _import_aspa_one(L, False, "aspa-scores")
@@ -347,7 +347,7 @@ def main(argv=None) -> int:
     # The step every import that writes ends with (sheet_sync._after_import):
     # the hand-scores file the reaching pipeline compares each video with
     # before filing it, and each cohort's FIX THESE file. WHY here too: this
-    # route used to skip it, so after correcting a letter cohort's scores the
+    # route would otherwise skip it, so after correcting a letter cohort's scores the
     # pipeline went on comparing videos with the previous hand scores until
     # the next scheduled import. After the ledger lines (both files read the
     # ledger) and outside the lock (the hand-scores write takes it itself).

@@ -456,7 +456,7 @@ def summarize_registry(reg: dict) -> dict:
     as that header, and the row carries ``approved_method_recorded_at`` (when
     MouseBrain last wrote it; None in a registry written before MouseBrain
     recorded it) so every place that shows the count shows that date beside
-    it. WHY: the header used to be written once, when the registry was
+    it. WHY: the header would otherwise be written once, when the registry was
     created, and a later change of the approved method showed "0 stale" with
     nothing to say the comparison was against an old method."""
     entries = reg.get("entries") or {}
@@ -735,7 +735,7 @@ def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root
     listing failed), the run listed no analysis at all (``reason`` is then
     that run-level message), or the key names no analysis.
 
-    WHY: such keys used to be kept silently -- only a "N kept" count in the
+    WHY: such keys would otherwise be kept silently -- only a "N kept" count in the
     summary line, exit code 0, and nothing on the Where Is My Data tab --
     so a mirror frozen for a reason nobody could see looked current."""
     held: Dict[str, int] = {}

@@ -102,7 +102,7 @@ def check_cohort_completeness(
         session: Active SQLAlchemy database session
         cohort_id: Cohort to check
         pilot_cohorts: Set of cohort IDs that are pilot/exploratory
-                       (get INFO-level severity only). Defaults to {'CNT_00'}.
+                       (get INFO-level severity only). Defaults to {'PROJA_00'}.
 
     Returns:
         CohortReport with findings

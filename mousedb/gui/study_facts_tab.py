@@ -8,10 +8,10 @@ injury. The exports need them on every row, so they are declared once, per proje
 and stored outside the code (they are facts about ONE lab; a tool that carries them
 cannot be given to another lab).
 
-Until this tab existed the only way to set them was a terminal command, and the only
-way to write an EXCEPTION to one was to hand-edit a JSON file -- which means that in
-practice a column stayed blank, or wrong, because the person who knew the answer had
-no way to enter it. That is the failure this corrects: every routine action has a
+Without this tab the only way to set them is a terminal command, and the only
+way to write an EXCEPTION to one is to hand-edit a JSON file -- which means that in
+practice a column stays blank, or wrong, because the person who knows the answer has
+no way to enter it. That is the failure this prevents: every routine action has a
 button, and the command line is for people who choose it, never the only door.
 
 WHAT AN EXCEPTION IS

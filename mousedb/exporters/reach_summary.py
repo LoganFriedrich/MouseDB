@@ -45,7 +45,7 @@ DISPLACED_IN = "Displaced into the scoring area"
 DISPLACED_OUT = "Displaced out of reach"
 NEVER_TOUCHED = "Never touched"
 # A REACH CAN DO THREE THINGS: miss, displace, retrieve. Nothing else is a reach
-# outcome. This used to read "Did not move the pellet", which is a description of
+# outcome. This would otherwise read "Did not move the pellet", which is a description of
 # a miss rather than the name of one -- and naming an outcome by what did not
 # happen invites a reader to treat it as an absence and drop the row. A miss is a
 # reach: the animal reached, and the pellet stayed where it was.

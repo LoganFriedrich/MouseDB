@@ -107,7 +107,7 @@ LEDGER_NAME = "updates.jsonl"
 #
 # The snapshot step: 12 hours. WHY: a full refresh of a large database over a
 # network share can take more than an hour by itself, and the one-hour limit
-# every step used to share stopped it every time -- part way through
+# every step would otherwise share stopped it every time -- part way through
 # rewriting the current exports, so the button could never finish and left
 # the exports half rewritten. The refresh bounds its own waiting (the
 # database-task lock wait, the retry window), so what is left is real work.

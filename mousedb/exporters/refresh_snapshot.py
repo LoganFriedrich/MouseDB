@@ -412,7 +412,7 @@ def main(argv=None) -> int:
     from ..prefetch import warmed
     #
     # The cross-task mutex is taken HERE, once, around every attempt -- not by
-    # each attempt. WHY: refresh() used to take it itself, so a retry queued
+    # each attempt. WHY: refresh() would otherwise take it itself, so a retry queued
     # for it all over again; an import that slipped in during the pause could
     # make the retry wait the whole --lock-wait-minutes a second time, and the
     # job overran its time limit part way through rewriting the exports. Held
@@ -442,7 +442,7 @@ def main(argv=None) -> int:
                 gap_minutes=min(DEFAULT_GAP_MINUTES, max(1, args.retry_minutes // 3)),
                 # The window opens at the first outside lock, not when this
                 # run started: the reads before it (an hour on a large
-                # database) used to spend the window, and so -- when
+                # database) would otherwise spend the window, and so -- when
                 # refresh() still took the mutex inside the attempt -- did
                 # the wait for the import ahead of it, before one retry.
                 from_first_lock=True,
@@ -551,7 +551,7 @@ def _finish(counts: dict, force: bool) -> int:
 
     WHY non-zero: the exports are what people read ("where is my data?"),
     and this job is what keeps them current. A run that refreshed the
-    snapshot but not the exports used to print a [warn] and exit 0, so the
+    snapshot but not the exports would otherwise print a [warn] and exit 0, so the
     task looked healthy while ``exports/current`` stayed as it was; nothing
     that checks the scheduled jobs looks for [warn]. A failure now prints
     [FAIL] and fails the task."""

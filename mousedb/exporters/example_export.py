@@ -262,8 +262,8 @@ def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None
 
     # NEVER sample a row whose session has a problem nobody can fix now. An
     # "Unscheduled" date (e.g. a day filmed after injury that is not a protocol
-    # timepoint) is never hand-scored. Their rows are
-    # correct and they stay in the export -- but showing one as an EXAMPLE wastes
+    # timepoint) is never hand-scored. Rows of such a date are
+    # correct and stay in the export -- but showing one as an EXAMPLE wastes
     # the reader's attention on a known dead end, because every hand-scored
     # column reads NA and none of that is about the format being checked.
     clean = frame

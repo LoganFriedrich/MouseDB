@@ -61,7 +61,7 @@ describe a workbook the rest of the database does not hold.
 
 A tab's stored rows are left as they were -- not replaced -- when:
   * the tab was not read at all: missing from the workbook, empty, or without
-    an animal id column. WHY: every tab used to be wiped whether or not it was
+    an animal id column. WHY: every tab would otherwise be wiped whether or not it was
     read, so a renamed tab emptied that tab's records;
   * the tab was read but gives NO record while the database holds some for
     this cohort (unless a person who checked the sheet allows it --

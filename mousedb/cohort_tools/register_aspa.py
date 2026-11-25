@@ -91,7 +91,7 @@ def _video_roots() -> List[Path]:
 
     mousereach's own Paths when that package is importable; otherwise the
     configured mousereach_pipeline_root (the MouseDB env does not have
-    mousereach installed, which is why the dry run used to report 0 videos
+    mousereach installed, which is why the dry run would otherwise report 0 videos
     for every cohort on the very machine that holds them all)."""
     import os
     roots: List[Path] = []

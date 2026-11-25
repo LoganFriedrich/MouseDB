@@ -279,7 +279,7 @@ def _animal(sid: str, cohort_id: str, sheet: dict, subject: dict, facts: dict,
     facts = _sf.apply_rules(cohort_id, facts, sheet)
     # WHAT HAPPENED, NOT WHETHER IT COUNTS.
     #
-    # This used to read the per-surgery Survived columns and write "Total
+    # This would otherwise read the per-surgery Survived columns and write "Total
     # exclusion" for any animal that died. That is a verdict, and it is not ours
     # to reach: nothing in the tracking sheet excludes an animal, and whether an
     # animal belongs in an analysis depends on the question being asked.
@@ -1276,7 +1276,7 @@ def load_snapshot(snapshot_dir: Path) -> dict:
     names = pq.read_schema(snapshot_dir / "reach_data.parquet").names
     # Only the surrogate key is left behind. extended_features IS read: it carries the
     # per-reach measurements (174 from extractor 2.6.0) the complete document exists to contain (see
-    # mousedb.exporters.extended_features for what dropping it used to cost).
+    # mousedb.exporters.extended_features for what dropping it would otherwise cost).
     t = {"reach": pd.read_parquet(snapshot_dir / "reach_data.parquet",
                                   columns=[c for c in names if c != "id"])}
     for key, name in (("subjects", "subjects"), ("pellets", "pellet_scores"), ("records", "animal_records"),
@@ -1753,7 +1753,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
         gone -= build_failed
         # One cohort at a time, and a failure is a problem, never a crash: a
         # file held open by another program (or a share refusing the move)
-        # used to raise out of export(), and the combined files of EVERY
+        # would otherwise raise out of export(), and the combined files of EVERY
         # project, the dictionaries and the manifest entries were then not
         # written that night. Now that cohort is reported as a failure (so the
         # skip signature is not saved and the next run tries again) and
@@ -1861,7 +1861,7 @@ def main(argv=None) -> int:
         # it to finish first, and keep it out while this runs (the reasons are
         # at exporters.current.EXPORTS_LOCK). Decided by WHERE the files go,
         # not by whether --out-dir was typed: an --out-dir that names the live
-        # folder used to skip the lock and write beside a running refresh.
+        # folder would otherwise skip the lock and write beside a running refresh.
         from .current import (EXIT_LOCK_FOLDER, EXIT_LOCK_TIMEOUT, hold_exports_lock,
                               lock_folder_message, lock_timeout_message)
         from ..task_mutex import LockFolderNotWritable, LockWaitTimeout

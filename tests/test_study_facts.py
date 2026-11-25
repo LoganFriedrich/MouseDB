@@ -1,7 +1,7 @@
 """Study-wide ODC facts live in a local file, never in source (mousedb.study_facts).
 
 WHY: these facts (strain, supplier, study leader, injury device) belong to one
-lab's study. They used to be typed into the sheet generators, which put a
+lab's study. They would otherwise be typed into the sheet generators, which put a
 person's name in a public repository and stamped the same strain on studies
 that used a different line. An unset fact must come back EMPTY, not guessed.
 """
@@ -46,7 +46,7 @@ def test_blank_value_in_file_counts_as_unset(facts_file):
 
 # ---------------------------------------------------------------------------
 # A damaged file is refused, never read as "nothing set" and never written over.
-# WHY: it used to read as empty, so every export wrote its study-fact columns
+# WHY: it would otherwise read as empty, so every export wrote its study-fact columns
 # blank without a word, and the next Set wrote back a file holding only that
 # one fact -- every other project's facts and exception rules gone.
 # ---------------------------------------------------------------------------

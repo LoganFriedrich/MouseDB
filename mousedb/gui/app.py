@@ -5362,7 +5362,7 @@ class CohortSetupTab(QWidget):
         and the FIX THESE files beside the sheets are rewritten, and ONE line
         goes into the import ledger. Import is sheet_sync.import_sheet_file
         itself; Replace finishes through sheet_sync.after_gui_replace. WHY:
-        both used to stop after the importer, so the pipeline compared
+        both would otherwise stop after the importer, so the pipeline compared
         videos against the previous scores until the nightly import.
         """
         from ..importers import ExcelImporter

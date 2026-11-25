@@ -1,7 +1,7 @@
 """A filed video whose newer run waits in a review queue is not imported.
 
 WHY: the import takes such a video's rows out (it is not done while the new
-run waits for a person). It used to import the old filed results first, every
+run waits for a person). It would otherwise import the old filed results first, every
 night: the same videos imported, withdrawn again, and their cohorts re-labeled
 for nothing. Now the filed results are left out (not imported, not in the
 ledger, no cohort re-labeled) until the new run is filed, which is then

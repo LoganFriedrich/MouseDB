@@ -236,7 +236,7 @@ class TestNoArchiveOnAShortListing:
     """WHY: a mirrored file is archived when the ledger has it and this run's
     listing of the source does not. A listing that came back short -- one
     registry.json not seen once, a folder that could not be opened, a share
-    that answered with nothing -- used to move every mirrored file of the
+    that answered with nothing -- would otherwise move every mirrored file of the
     analysis (or of all of them) to the archive. Archiving needs proof that
     the files are gone: the analysis listed completely, or its folder gone."""
 
@@ -365,7 +365,7 @@ class TestNoArchiveOnAShortListing:
 
 
 class TestLedgerAndManifestAreSafe:
-    """WHY: the ledger is the only record of what was mirrored. It used to be
+    """WHY: the ledger is the only record of what was mirrored. It would otherwise be
     written with a plain overwrite and read as EMPTY when it could not be
     parsed -- so a run killed mid-write left half a ledger, the next run
     treated nothing as mirrored before, and a file MouseBrain withdrew
@@ -620,7 +620,7 @@ class TestApprovedMethodDateIsShown:
 class TestHeldAnalysisShowsItsReason:
     """WHY: an analysis whose registry.json was not read this run (missing,
     unlistable, unreadable) gets a manifest row with no counts. Its status
-    line used to fall through to "approved method as recorded at an unknown
+    line would otherwise fall through to "approved method as recorded at an unknown
     date -- registry written before the date was kept", blaming an old
     MouseBrain, while the real reason sat only in the manifest's problems,
     which the Where Is My Data tab never showed."""
@@ -833,7 +833,7 @@ class TestConfirmWithdrawn:
         return sorted(p.relative_to(base).as_posix() for p in base.rglob("*") if p.is_file())
 
     # WHY the next two: a confirmed analysis whose MIRROR folders cannot be
-    # listed used to be reported "nothing of it was archived" while the run
+    # listed would otherwise be reported "nothing of it was archived" while the run
     # went on to archive every file of it the ledger knew of -- the output
     # contradicted itself, and the person was told the mirror was left alone
     # when it was not. It is now held whole: the message is true as written.
@@ -961,7 +961,7 @@ class TestConfirmWithdrawn:
     def test_a_held_mirror_without_its_registry_copy_is_settled_by_the_confirm(self, roots):
         # WHY: the nightly run holds a folder that lost its registry.json for
         # as long as the mirror holds files of that analysis, and names this
-        # command as the way out. The command used to look only for the
+        # command as the way out. The command would otherwise look only for the
         # mirror's copy of registry.json (and the ledger); with that one copy
         # gone and a new ledger it answered "check the name", archived
         # nothing, and the analysis failed every later run with no way to
@@ -1327,7 +1327,7 @@ class TestAStoppedRunIsShown:
 
 class TestImportBrains:
     def test_without_summary_dir_and_without_config_raises_config_error(self, monkeypatch):
-        """cli.py used to reference a module constant that no longer existed:
+        """cli.py would otherwise reference a module constant that no longer existed:
         NameError on every run without --summary-dir. The default must come
         from config, and the failure must say what to set."""
         from mousedb import cli, config
@@ -1439,7 +1439,7 @@ class TestElifeFromSummaryCsv:
 class TestImportBrainsExitCode:
     """A brain import that did not land must exit non-zero and END its output
     with a [FAIL] line. WHY: the scheduler judges a job by its exit code and the
-    task check reads lines that START with [FAIL]; a refused brain used to print
+    task check reads lines that START with [FAIL]; a refused brain would otherwise print
     "[FAIL]" mid-line and the job exited 0, so the scheduler showed success
     over brains that never reached the database."""
 
@@ -1523,7 +1523,7 @@ class TestImportBrainsExitCode:
         assert rc == 1
 
     def test_the_command_line_exits_with_what_the_command_returned(self, monkeypatch):
-        """cli.main used to drop a command's return value, so every
+        """cli.main would otherwise drop a command's return value, so every
         ``return 1`` in a command still exited 0."""
         from mousedb import cli
         monkeypatch.setattr(cli, "cmd_status", lambda args: 1)

@@ -39,9 +39,9 @@ hand_pellet_scores.json  beside it:
                             no sheet -- so its videos are filed without the
                             hand-score comparison. A sheet that drops out of one
                             folder listing (the sync program mid-update, the
-                            file open elsewhere, renamed for a moment) used to
+                            file open elsewhere, renamed for a moment) would otherwise
                             take its cohort off the list, and a cohort never
-                            imported yet then had its videos filed uncompared.
+                            imported yet would then have its videos filed uncompared.
                             A cohort whose sheet is really gone and was never
                             imported keeps its videos waiting, listed, until a
                             person sees to it.
@@ -131,7 +131,7 @@ REPLACE_WAIT_SECONDS = 0.5
 def _replace(tmp: Path, target: Path) -> None:
     """os.replace, retried while Windows refuses it because the target is open.
     WHY: a reader holds the file only for a moment; failing the whole write on
-    that moment used to leave the scores file new and its manifest old."""
+    that moment would otherwise leave the scores file new and its manifest old."""
     for attempt in range(REPLACE_TRIES):
         try:
             os.replace(tmp, target)

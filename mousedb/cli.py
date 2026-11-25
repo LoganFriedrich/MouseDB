@@ -182,7 +182,7 @@ def cmd_cohort_sheets(args):
     print(describe())
     if args.cohort:
         # The cohort is read by the same rule as every other command that takes
-        # one. WHY: this used to keep only the trailing number, so asking for
+        # one. WHY: this would otherwise keep only the trailing number, so asking for
         # another project's cohort 01 (or an animal id ending in 01) showed
         # a different cohort's sheet under the name that was asked for.
         from .sheet_sync import requested_cohort_id, _ascii
@@ -224,20 +224,20 @@ def cmd_import(args):
     from .cohort_sheets import cohort_sheets_dir, describe
 
     if not args.all and not args.file:
-        # WHY a sentence: with neither, this used to crash on Path(None).
+        # WHY a sentence: with neither, this would otherwise crash on Path(None).
         print("Say what to import: --all (every cohort's sheet) or --file <workbook>.")
         sys.exit(1)
 
     if args.all:
-        # Where the sheets actually are, not where they used to be. The old
-        # default pointed at a folder that no longer existed -- so this command
-        # found nothing and said so in
+        # Where the sheets actually are, not a stale default. A default that
+        # points at a folder that no longer exists would make this command
+        # find nothing and say so in
         # a way that read like "nothing to import".
         if args.directory:
             # Absolute, so the ledger records where the sheets were read from.
             cohorts_dir = Path(os.path.abspath(args.directory))
             if not cohorts_dir.is_dir():
-                # WHY its own sentence: this used to print only the CONFIGURED
+                # WHY its own sentence: this would otherwise print only the CONFIGURED
                 # folder's description, which says nothing about the folder
                 # that was actually named.
                 print(sheet_sync._ascii(f"Not a folder: {cohorts_dir} -- nothing was imported."))
@@ -270,7 +270,7 @@ def cmd_import(args):
             print(sheet_sync._ascii(f"Error: File not found: {excel_path}"))
             sys.exit(1)
         # REFUSED, not warned about. WHY: this route REPLACES the cohort's
-        # animal records with the file's contents, so a stale copy (it used to
+        # animal records with the file's contents, so a stale copy (it would otherwise
         # be imported after a warning) overwrote good records until the next
         # scheduled import, and its rows stayed for good. The same files the
         # folder route never reads are refused here -- see
@@ -291,7 +291,7 @@ def cmd_import(args):
     if args.all:
         # One chosen sheet per cohort (a pinned file, else the newest), the
         # same choice the Tracking Sheets tab shows -- not every file whose
-        # name matches, which is what this route used to import.
+        # name matches, which is what this route would otherwise import.
         result = sheet_sync.import_cohorts(
             None, dry_run=args.dry_run, triggered_by="mousedb-import",
             sheets_dir=cohorts_dir if args.directory else None)
@@ -322,7 +322,7 @@ def cmd_import(args):
 
     # Last, after the report: a failed cohort fails the command. WHY: the
     # update button and any scheduler read the exit code, and this command
-    # used to exit 0 whatever happened, so a failing import looked green.
+    # would otherwise exit 0 whatever happened, so a failing import looks green.
     if not ok:
         print("[FAIL] the import did not complete for every cohort -- the reasons are above")
         raise SystemExit(1)
@@ -727,7 +727,7 @@ def cmd_video_status(args):
     done = sum(summary.by_state.get(s, 0) for s in DONE_STATES)
     # In progress = work the pipeline still has to do here. Videos waiting for
     # a reviewer, and videos this computer has no file for, are counted on
-    # their own: they used to be folded into 'in progress'.
+    # their own: they would otherwise be folded into 'in progress'.
     in_progress = summary.in_progress_count
 
     print(f"\nOverall: {summary.total_videos} videos, "
@@ -1080,7 +1080,7 @@ def cmd_import_brains(args):
     # Where MouseBrain's 2_Data_Summary is: given, or derived from the configured
     # pipeline root. Resolved BEFORE the database is opened so an unconfigured
     # machine stops with the exact `mousedb config --set` line and touches
-    # nothing. WHY: this used to reference a module constant that no longer
+    # nothing. WHY: this would otherwise reference a module constant that no longer
     # existed -- a NameError on every run without --summary-dir (2026-08).
     summary_dir = None
     if args.summary_dir:
@@ -1130,7 +1130,7 @@ def _import_brains_body(args, summary_dir):
     that case its LAST line starts with ``[FAIL]`` and names what was left out.
     WHY both: the operating system's scheduler judges the job by its exit code,
     and a check that reads the job's log looks for lines that START with
-    ``[FAIL]``. A refused brain used to be reported only as "[FAIL]" in the
+    ``[FAIL]``. A refused brain would otherwise be reported only as "[FAIL]" in the
     middle of its own line while the job exited 0, so the scheduler showed
     success over brains that never reached the database."""
     import csv as csv_mod
@@ -2023,7 +2023,7 @@ def main():
     except ConfigError as e:  # WHY: the message already names the exact fix; a traceback hides it
         print("[FAIL] %s" % e)
         raise SystemExit(1)
-    # A command that returns a non-zero number exits with it. WHY: this used to
+    # A command that returns a non-zero number exits with it. WHY: this would otherwise
     # be dropped, so a command's "return 1" (a brain import that waited out the
     # database lock, or refused a brain) still exited 0, and the scheduler and
     # the "Update the database now" button -- both read the exit code --

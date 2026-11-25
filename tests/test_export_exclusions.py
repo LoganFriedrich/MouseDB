@@ -425,7 +425,7 @@ def test_dropping_then_blanking_raises_no_pandas_copy_warning():
 
 # ------------------------------------------- an input that cannot be read
 
-# WHY: a check whose input EXISTS but cannot be read tonight used to be
+# WHY: a check whose input EXISTS but cannot be read tonight would otherwise be
 # skipped (with a note, or for a collage database with nothing at all), so
 # the entries it would have left out went into the analysis files and the
 # nightly job stayed green. Such an input now stops the checks, so the

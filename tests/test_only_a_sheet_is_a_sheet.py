@@ -251,7 +251,7 @@ class TestRefusalsAreShownNotHidden:
 
 class TestAPinCannotNameARefusedFile:
     """find_cohort_sheet honors a pin only if it names one of the cohort's
-    candidates. A pin on any other name used to be stored, shown as "pinned"
+    candidates. A pin on any other name would otherwise be stored, shown as "pinned"
     in every status listing, and then silently ignored -- the newest file was
     still the one imported. Now that some names are refused as sheets, the
     names a person might type into ``mousedb-sheets pin`` include ones that
@@ -442,7 +442,7 @@ class TestABrokenPinIsAnnounced:
         """Not only file names: the folder path describe() prints, and the
         config path (it holds the user's home folder name), come from the
         machine and can hold any character too. One accented letter in a
-        folder name used to make `mousedb cohort-sheets` crash on a console."""
+        folder name would otherwise make `mousedb cohort-sheets` crash on a console."""
         d = tmp_path / "Donn\u00e9es"
         d.mkdir()
         (d / REAL).write_bytes(b"real")

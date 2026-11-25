@@ -391,9 +391,9 @@ def odc_reaches_signature(snapshot_dir: Path) -> dict:
     # The signature covers the INPUTS; this part covers the exporter ITSELF.
     # A change to the code that writes these files (a new column, a different
     # word in a cell, a new dictionary entry) must rebuild them even when no
-    # data changed. Until this was derived from the code it was a number bumped
-    # by hand, and a change made without bumping it was silently skipped: the
-    # run reused the previous run's files and its record of what it wrote.
+    # data changed. It is derived from the code, not a number bumped
+    # by hand: a change made without bumping one would be silently skipped, the
+    # run reusing the previous run's files and its record of what it wrote.
     sig["output_format"] = exporter_code_hash()
     # Which grant holds which project decides where the files go, so a change
     # to it must re-export even when no data changed.
