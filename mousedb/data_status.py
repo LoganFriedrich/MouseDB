@@ -692,7 +692,8 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
             "sheet_progress": sp_by_cohort.get(cid),
         })
 
-    manifest = require("mousedb_root") / "exports" / "current" / "MANIFEST.json"
+    from .output_folders import all_cohorts_dir
+    manifest = all_cohorts_dir(require("mousedb_root")) / "MANIFEST.json"
     if manifest.is_file():
         try:
             m = json.loads(manifest.read_text(encoding="utf-8"))
@@ -711,7 +712,8 @@ def status(snapshot_dir: Path = SNAPSHOT_DIR) -> dict:
 
     # Tissue analyses mirrored from MouseBrain's registry (mousedb import-analyses)
     try:
-        amp = require("mousedb_root") / "exports" / ANALYSES_MANIFEST_NAME
+        from .import_analyses import manifest_path as analyses_manifest_path
+        amp = analyses_manifest_path()
         out["analyses"] = read_analyses_manifest(amp)
         out["problems"].extend(read_analyses_manifest_problems(amp))
     except Exception as e:

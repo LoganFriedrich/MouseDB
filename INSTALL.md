@@ -340,9 +340,55 @@ All subjects with session summaries for analysis:
 |----------|---------|
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
 | `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete), and `reach_rows_without_file.json` (videos with reaches in the database whose results file is gone from the pipeline -- reported, never removed; shown on the Where Is My Data tab), and `brain_counts_without_file.json` (brains with final counts in the database whose counts file is not in MouseBrain's summary folder -- reported, never removed; shown on the Where Is My Data tab; an unreadable one only shows as a problem there). If `reach_imports.json` or `reach_imports_phases_pending.json` exists but cannot be read, the reach import stops with a `[FAIL]` line saying what to do (docs/WHERE_IS_MY_DATA.md, "An unreadable ledger stops the import"); an unreadable `reach_rows_without_file.json` never stops it -- it only shows as a problem on the Where Is My Data tab. Likewise, if `analysis_imports.json` exists but cannot be read, `mousedb import-analyses` stops with a `[FAIL]` line and copies or archives nothing (docs/WHERE_IS_MY_DATA.md, "The mirror's ledger") |
-| `<mousedb_root>/exports/` | Generated exports; `exports/current/` is the folder people open |
-| `<mousedb_root>/exports/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarized in `exports/ANALYSES_MANIFEST.json` |
-| `<mousedb_root>/_archived/` | Mirrored files whose source was withdrawn -- moved here, never deleted |
+| `<mousedb_root>/exports/Behavior/All_Cohorts/` | The full export: everything the database holds, per grant, project and cohort. The folder people open |
+| `<mousedb_root>/exports/Behavior/Selected_Cohorts/<name>/` | Limited exports: a saved, filtered copy of part of the full export |
+| `<mousedb_root>/exports/Behavior/Hand_Scores/` | The hand-score file the reaching pipeline reads (`hand_pellet_scores.csv` and its `.json`) |
+| `<mousedb_root>/exports/Behavior/Sessions_Without_Video/` | `missing_session_videos.csv`: hand-scored sessions the reaching pipeline has no video for |
+| `<mousedb_root>/exports/Tissue/<analysis>/`, `figures/<analysis>/` | Mirrors of MouseBrain's analysis registry (measurements, figures, `registry.json` provenance); summarized in `exports/ANALYSES_MANIFEST.json` |
+| `<mousedb_root>/reports/MouseReach_Video_Processing_Progress/` | The weekly page (`mousedb-weekly-report`) |
+| `<mousedb_root>/_archived/` | Files the exporters replaced (`exports_current/`, `exports_subsets/`) and mirrored files whose source was withdrawn (`analyses/`) -- moved here, never deleted |
+
+### Renaming an output folder
+
+Every folder name in the table above is written once in the code, in
+`mousedb/output_folders.py`; every part of mousedb that writes or reads one of
+these folders asks there. To rename one:
+
+1. Wait until no mousedb job is running (the nightly jobs, a "Refresh exports
+   now").
+2. Change the name in `mousedb/output_folders.py`, update the names in these
+   guides, run the tests (`tests/test_output_folders.py` fails for a guide or
+   help text that still names a folder the code no longer uses), and install
+   the new code.
+3. Rename the existing folder on disk to the new name, with everything in it.
+   Keep the hidden files of the full export (`.export_units.json`,
+   `.odc_reaches_signature.json`) and `SUBSETS_STATUS.json` where they are
+   inside their folders. A folder left under its old name is not read and not
+   rewritten: the next export would build a second, new folder beside it.
+4. Tell every program outside mousedb that reads the folder its new place.
+   The reaching pipeline reads the hand-score file at the path in ITS lab
+   settings (`hand_scores.path`); set that to the new
+   `.../exports/Behavior/Hand_Scores/hand_pellet_scores.csv`, or its videos
+   wait for hand scores it can no longer find.
+
+The first export after any new install rebuilds every file of the full export
+(see "The snapshot job also rewrites the exports" below), so the night after a
+rename takes as long as a full rebuild.
+
+**A tissue analysis under another folder name.** The mirror puts each
+analysis in `exports/Tissue/<its registered name>/`. To keep one under a
+different folder name (a name that reads better to the people browsing), add
+it to the lab settings file (`<mousedb_root>/config/mousedb_lab_config.json`):
+
+```json
+"analysis_mirror_folders": {"<registered analysis name>": "<folder name>"}
+```
+
+The mirror then reads and writes that folder for the analysis's export files.
+Its figures (`figures/<analysis>/`) and log (`logs/<analysis>.log`) keep the
+registered name. A folder name that is not one plain name, or one folder
+given to two analyses, stops `mousedb import-analyses` with a message naming
+the entry.
 
 ## Validation Rules
 
@@ -540,7 +586,7 @@ from what they imported, then the bench check, which reads the snapshot):
 | reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented, and the session itself in `video_sessions`, so a tray with no reach still gets its row in the sessions files. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
 | brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables; a recounted brain's counts replace its old ones. Exits 1, with a last line starting `[FAIL]` that names what was left out, when any brain (or the calibration runs) did not land, or when it gave up waiting for the database. A brain the database refuses keeps this job failing every night until the cause is fixed -- that is on purpose |
 | analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/current/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then, only when those exports are complete, remakes every saved limited export not marked "not nightly" (docs/WHERE_IS_MY_DATA.md, "Limited exports"; one that cannot be made also makes the job exit 1); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it), and, when the census was retaken, brings the database's record of failed recordings up to date from it (`Failed recordings imported: ...`) and rewrites `exports/missing_videos/missing_session_videos.csv` (`List of sessions without a video written: ...`) -- a failure of these last three prints `[FAIL]` but does not change the exit code. Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/Behavior/All_Cohorts/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then, only when those exports are complete, remakes every saved limited export not marked "not nightly" (docs/WHERE_IS_MY_DATA.md, "Limited exports"; one that cannot be made also makes the job exit 1); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it), and, when the census was retaken, brings the database's record of failed recordings up to date from it (`Failed recordings imported: ...`) and rewrites `exports/Behavior/Sessions_Without_Video/missing_session_videos.csv` (`List of sessions without a video written: ...`) -- a failure of these last three prints `[FAIL]` but does not change the exit code. Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
 | bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
@@ -744,7 +790,7 @@ with its age shown. Pass
 ### The snapshot job also rewrites the exports -- including the per-reach files
 
 `refresh_snapshot` ends by calling `exporters.current.refresh_current()`, so it
-is the thing that regenerates `exports/current/` on a schedule. Two consequences
+is the thing that regenerates `exports/Behavior/All_Cohorts/` on a schedule. Two consequences
 that are easy to be caught by:
 
 - **Whatever code that machine has installed is the code that writes the
@@ -753,7 +799,7 @@ that are easy to be caught by:
   INSTALLED copy. Deploy first, then regenerate.
 - **The per-reach files are skipped when their inputs are unchanged**
   (`odc_reaches_signature` / `_odc_reaches_csvs` in `exporters/current.py`,
-  signature in `exports/current/.odc_reaches_signature.json`). The signature
+  signature in `exports/Behavior/All_Cohorts/.odc_reaches_signature.json`). The signature
   covers EVERY input those files and `analysis_EXCLUSIONS.csv` are built from:
   the content (SHA-256) of the snapshot tables `reach_data`, `subjects`,
   `pellet_scores`, `animal_records`, `video_pellets`, `video_sessions` and `weights`; the
@@ -790,7 +836,7 @@ that are easy to be caught by:
   first changed cohort. Small shared files (the dictionaries,
   `analysis_EXCLUSIONS.csv`) are rewritten only when their bytes change, so
   their times -- which the limited exports go by -- only move when they do.
-  The record of all this is `exports/current/.export_units.json` (the
+  The record of all this is `exports/Behavior/All_Cohorts/.export_units.json` (the
   "ledger"), written only after every file is in place; a run that stops
   part-way leaves the old ledger, whose recorded sizes and times then no
   longer match the files that were replaced, so those cohorts are rebuilt
@@ -811,7 +857,7 @@ that are easy to be caught by:
   snapshot. It refuses the live exports folder as `--work`. It never reads
   connectome.db.
 - **A failed or incomplete export fails the job.** If rewriting
-  `exports/current/` raises, or any part of it failed (a cohort's file, a
+  `exports/Behavior/All_Cohorts/` raises, or any part of it failed (a cohort's file, a
   combined file, the exclusion checks), or `MANIFEST.json` comes out with
   `"complete": false`, the job prints `[FAIL]` and exits 1. This is on purpose: a job that only warned would look healthy while people kept reading old files.
 
@@ -833,7 +879,7 @@ the stamp before and after they read. A new generation landing mid-read makes
 them read again; a snapshot that holds two generations (a refresh stopped
 during the swap, or a table replaced by something other than the refresh) is
 refused with a message saying it is whole again after the next successful
-refresh. `exports/current/MANIFEST.json` and the data browser's
+refresh. `exports/Behavior/All_Cohorts/MANIFEST.json` and the data browser's
 `about_this_copy` table record the generation they were built from. A script
 of your own should do the same: `snapshot_generation.read_consistent(folder,
 read_function)` returns what it read and the generation id, or raises rather

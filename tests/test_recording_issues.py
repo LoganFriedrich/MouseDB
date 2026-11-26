@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 from mousedb import attention, missing_videos as mv, recording_issues as ri
+from mousedb.output_folders import hand_scores_dir
 
 VIEW = "2026-03-20T02:00:00"
 REC = "20260302_PROJA0101,PROJA0102,PROJA0001,PROJA0002,PROJA0003,PROJA0004,PROJA0005,PROJA0006_P2.mkv"
@@ -26,7 +27,7 @@ KEYS = ["20260302_PROJA0101_P2", "20260302_PROJA0102_P2"]
 
 
 def _hand(root, sessions, seen=("PROJA_01",)):
-    d = Path(root) / "exports" / "hand_scores"
+    d = hand_scores_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     with open(d / "hand_pellet_scores.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

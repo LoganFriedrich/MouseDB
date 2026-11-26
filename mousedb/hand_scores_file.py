@@ -11,7 +11,7 @@ imports mousedb,
 so mousedb hands it the scores as a plain file at a path the pipeline is
 configured to read.
 
-WHAT IS WRITTEN (in <mousedb_root>/exports/hand_scores/)
+WHAT IS WRITTEN (in <mousedb_root>/exports/Behavior/Hand_Scores/)
 --------------------------------------------------------
 hand_pellet_scores.csv   one row per hand-scored pellet:
     video_key      the session as the pipeline names its video:
@@ -109,8 +109,8 @@ COLUMNS = ["video_key", "pellet", "score", "subject_id", "cohort_id", "project",
 
 
 def out_dir() -> Path:
-    from .config import require
-    return require("mousedb_root") / "exports" / "hand_scores"
+    from .output_folders import hand_scores_dir
+    return hand_scores_dir()
 
 
 def video_key(subject_id: str, session_date, tray_type: str, tray_number) -> str:

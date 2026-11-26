@@ -124,6 +124,12 @@ def _sample_sessions(reach: pd.DataFrame, target_rows: int) -> pd.DataFrame:
     return reach[reach["video_name"].isin(chosen)]
 
 
+def default_out_dir() -> Path:
+    """The example's own folder, inside the full-export folder."""
+    from ..output_folders import all_cohorts_dir
+    return all_cohorts_dir(require("mousedb_root")) / FOLDER_NAME
+
+
 def _inside_live_exports(folder: Path) -> bool:
     """True when ``folder`` is inside (or is) the live current-exports folder,
     however it was spelled -- decided by where the files go, not by whether a
@@ -152,8 +158,7 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
     lock: nothing else writes there."""
     started = time.time()
     cohort = cohort.upper()
-    out_dir = Path(out_dir) if out_dir else (
-        Path(require("mousedb_root")) / "exports" / "current" / FOLDER_NAME)
+    out_dir = Path(out_dir) if out_dir else default_out_dir()
 
     from .. import snapshot_generation
     reach_generation = snapshot_generation.generation_of(Path(snapshot_dir()))
@@ -249,8 +254,7 @@ def sample(cohort: str = "CNT_01", rows: int = 3, out_dir: Optional[Path] = None
     columns, so a raw CSV line is unreadable on anything but a wide screen, and
     a wrong value is easiest to see next to its own column name.
     """
-    out_dir = Path(out_dir) if out_dir else (
-        Path(require("mousedb_root")) / "exports" / "current" / FOLDER_NAME)
+    out_dir = Path(out_dir) if out_dir else default_out_dir()
     path = out_dir / ("reaches_%s_analysis.csv" % cohort.upper())
     if not path.exists():
         return "%s does not exist yet" % path

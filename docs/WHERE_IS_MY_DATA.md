@@ -9,7 +9,7 @@ are what you keep, analyze and send.
 
 ## The short answer
 
-`<mousedb_root>/exports/current/` (run `mousedb config --show` to see the
+`<mousedb_root>/exports/Behavior/All_Cohorts/` (run `mousedb config --show` to see the
 folder on this machine) -- rewritten by the scheduled job with everything the
 database currently holds, as CSV files you can open in Excel, R or Python,
 each with a data dictionary beside it:
@@ -30,7 +30,7 @@ each with a data dictionary beside it:
 ### How the folder is arranged
 
 ```
-exports/current/
+exports/Behavior/All_Cohorts/
     reach_data.csv, manual_scores.csv     every project at once
     *_DATA_DICTIONARY.csv                 one per kind of file, for every project and cohort
     analysis_EXCLUSIONS.csv, MANIFEST.json, README.txt
@@ -605,7 +605,7 @@ night takes about as long as a full rebuild.
 Often you need only part of the exports: a few cohorts, the last sessions
 before the injury, the pillar trays, a handful of columns, and a column saying
 which animals (or which days of each animal) go into one analysis. A **limited export** is exactly that: a
-copy of part of `exports/current/`, made by mousedb, saved by name so it can be
+copy of part of `exports/Behavior/All_Cohorts/`, made by mousedb, saved by name so it can be
 made again.
 
 **Nothing is calculated again.** Every value in a limited export is copied,
@@ -686,7 +686,7 @@ again (in the window, or with `--save` and its options), or copy its
 lab settings file (see "Where the definitions are kept").
 
 **A full export that is not complete is never cut.** When a part of the
-nightly (or a "Refresh exports now") export failed, `exports/current/MANIFEST.json`
+nightly (or a "Refresh exports now") export failed, `exports/Behavior/All_Cohorts/MANIFEST.json`
 says `"complete": false` and lists the problems; the files of the part that
 failed are an earlier run's, or missing. A limited export made from it would
 mix two runs without showing it, so the button, `--run` and `--dry-run` all
@@ -731,7 +731,7 @@ them all.
 
 ### What you get
 
-`<mousedb_root>/exports/subsets/<name>/`:
+`<mousedb_root>/exports/Behavior/Selected_Cohorts/<name>/`:
 
 | file | what it is |
 |---|---|
@@ -943,7 +943,7 @@ The Where Is My Data tab shows one line per saved limited export below the
 export files: when it was last made, or `[FAIL] <name>: ...` with the reason
 (for example a column that the full export no longer has). A limited export
 that cannot be made also makes the nightly job report a failure. The record
-behind those lines is `exports/subsets/SUBSETS_STATUS.json`.
+behind those lines is `exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json`.
 
 ### Where the definitions are kept
 
@@ -1078,7 +1078,7 @@ nearly done on pillar trays while its overall figure is low.
 
 ### What it reads, and when the numbers change
 
-It reads the hand-scores file (`<mousedb_root>/exports/hand_scores/`,
+It reads the hand-scores file (`<mousedb_root>/exports/Behavior/Hand_Scores/`,
 rewritten after every sheet import), the pipeline view
 (`<mousedb_root>/logs/pipeline_census.json`, retaken every night), the
 acknowledgements file, and the reaching pipeline's own attention lists (for
@@ -1153,7 +1153,7 @@ already writing:
   is about to write into the live exports folder -- also when `--out-dir`
   names that folder; into a folder of your own it does not wait.
   `mousedb export-example` does the same for its example folder (by default
-  `exports/current/Example`, inside the live folder): it reads and builds
+  `exports/Behavior/All_Cohorts/Example`, inside the live folder): it reads and builds
   first, then waits, holds the lock only for the few seconds it writes, and
   into a folder of your own (`--out-dir`) it does not wait. If the other
   refresh is still writing when that time is up, or shows no sign of progress
@@ -1227,13 +1227,13 @@ so it is ready before anyone asks (for a meeting, say). Run it on a schedule
 (Task Scheduler, weekly) or by hand:
 
     conda activate <your MouseDB environment>
-    mousedb-weekly-report                 # into <mousedb_root>/reports/Where is my data/
+    mousedb-weekly-report                 # into <mousedb_root>/reports/MouseReach_Video_Processing_Progress/
     mousedb-weekly-report --out <folder>  # somewhere else
 
 Each run writes two files in that folder:
 
-- `Where is my data YYYY-MM-DD.html` -- that run's page, kept.
-- `Where is my data - LATEST.html` -- the same page, replaced every run.
+- `MouseReach video processing progress YYYY-MM-DD.html` -- that run's page, kept.
+- `MouseReach video processing progress - LATEST.html` -- the same page, replaced every run.
 
 The page shows, from the tracking sheets, the pipeline census and the database
 snapshot:
@@ -1512,14 +1512,18 @@ that registry here:
 
 | what | where it lands |
 |---|---|
-| measurements and other data files, plus `registry.json` (the provenance) | `<mousedb_root>/exports/<analysis>/...` |
+| measurements and other data files, plus `registry.json` (the provenance) | `<mousedb_root>/exports/Tissue/<analysis>/...` (or under the folder name the lab settings give that analysis; see "Renaming an output folder" in INSTALL.md) |
 | figures | `<mousedb_root>/figures/<analysis>/...` |
 | the analysis's registration log | `<mousedb_root>/logs/<analysis>.log` |
 | one summary of every analysis | `<mousedb_root>/exports/ANALYSES_MANIFEST.json` |
 
-Relative paths and modification times are kept, so a path recorded in
-`registry.json` (`exports/<analysis>/<sample>/measurements.csv`) resolves
-under `<mousedb_root>` exactly as it does in MouseBrain's registry. Only new
+Modification times are kept, and so is each file's path inside its analysis:
+a path recorded in `registry.json` as
+`exports/<analysis>/<sample>/measurements.csv` is
+`<mousedb_root>/exports/Tissue/<analysis>/<sample>/measurements.csv` here
+(the tissue analyses sit together in `Tissue/`, apart from the behavior
+exports in `Behavior/`); a figure or log path resolves under `<mousedb_root>`
+exactly as it does in MouseBrain's registry. Only new
 or changed files are copied. A file MouseBrain withdraws is not deleted here:
 it is moved to `<mousedb_root>/_archived/analyses/<date_time>/`.
 
@@ -1658,10 +1662,10 @@ Which files that is depends on what MouseBrain still has of the analysis:
 - the whole analysis folder is gone: everything of it is archived.
 
 **How the mirror tells an analysis from another folder.** The three places
-the mirror writes to -- `<mousedb_root>/exports/<name>/`,
-`<mousedb_root>/figures/<name>/` and `<mousedb_root>/logs/<name>.log` -- also
-hold things that are NOT mirrored analyses: mousedb's own export folders, and
-the log files of its other jobs. So a name is treated as an analysis only when
+the mirror writes to -- `<mousedb_root>/exports/Tissue/<name>/`,
+`<mousedb_root>/figures/<name>/` and `<mousedb_root>/logs/<name>.log` -- can
+also hold things that are NOT mirrored analyses: a folder someone keeps beside
+the analyses, and the log files of mousedb's other jobs. So a name is treated as an analysis only when
 at least one of these is true:
 
 1. the ledger has lines for it (this job copied files of it and recorded
@@ -1670,7 +1674,7 @@ at least one of these is true:
    its `registry.json` is there, or the mirror holds a copy of at least one
    file of it (same place, same size, same modification time -- which is how
    this job's own copies look);
-3. the mirror holds `exports/<name>/registry.json` -- the copy of MouseBrain's
+3. the mirror holds `exports/Tissue/<name>/registry.json` -- the copy of MouseBrain's
    own record, which only a mirrored analysis has.
 
 `--confirm-withdrawn <name>` archives nothing for a name that meets none of
@@ -1695,10 +1699,10 @@ What it does NOT do:
 - accept a name that is not an analysis: `[FAIL] --confirm-withdrawn
   <name>: the mirror holds no analysis by that name ... -- check the name`,
   the command ends with exit code 1, and nothing is archived or moved. That
-  covers a mistyped name (no file under the mirror's `exports/<name>/` or
+  covers a mistyped name (no file under the mirror's `exports/Tissue/<name>/` or
   `figures/<name>/`, no `logs/<name>.log`, no line in the ledger) AND a name
   that has files under it but meets none of the three marks above -- for
-  example one of mousedb's own export folders, or the log of another job.
+  example a folder kept beside the analyses, or the log of another job.
   The message then also says how many files sit under the name and that
   they were left where they are. A path (anything with `/`, `\` or `:`) is
   refused the same way as a wrong name.
@@ -2103,7 +2107,7 @@ video's name is then wrong, and the recording is probably there under the other
 name -- correct whichever is wrong.
 
 The full list, one row per session, is
-`<mousedb_root>\exports\missing_videos\missing_session_videos.csv` (columns:
+`<mousedb_root>\exports\Behavior\Sessions_Without_Video\missing_session_videos.csv` (columns:
 cohort, animal, day, tray, session name, `missing`, `recording_failed` or
 `acknowledged`, days since the session, other trays the pipeline holds for
 that animal and day, the recording name to look for, what to do, who
@@ -2116,7 +2120,7 @@ nothing else writes it.
 **What is checked, and against what.**
 
 - The hand scores are mousedb's own hand-scores file
-  (`exports\hand_scores\hand_pellet_scores.csv`, rewritten after every sheet
+  (`exports\Behavior\Hand_Scores\hand_pellet_scores.csv`, rewritten after every sheet
   import). What the pipeline knows is the pipeline census the tab already uses
   (`logs\pipeline_census.json`, retaken every night by the snapshot job, or by
   **Refresh pipeline view**). Nothing new walks the folders, and the live
@@ -2260,7 +2264,7 @@ stay in `manual_scores.csv` and in the session files like any other.
 
   Nothing needs fixing; the line is there so you know.
 - In the list of hand-scored sessions without a video
-  (`exports\missing_videos\missing_session_videos.csv`): each session of the
+  (`exports\Behavior\Sessions_Without_Video\missing_session_videos.csv`): each session of the
   recording with status `recording_failed` -- not `missing` -- and the
   columns `recording_issue_reason`, `recording` and `hand_scored` (whether the
   trays were scored). Nobody is told to go looking for these on the recording
@@ -2513,7 +2517,7 @@ mousedb import-reaches           # pull new MouseReach results into reach_data
 mousedb import-analyses          # mirror MouseBrain's analysis registry (exports, figures, provenance)
 mousedb-current-exports          # rewrite reach_data.csv and manual_scores.csv, and the per-reach files of every cohort that changed (+ the combined files of their projects and the dictionaries): what "Refresh exports now" does
 mousedb-current-exports --full   # the same, but every cohort's files rebuilt from nothing
-mousedb export-incremental-check --snapshot-dir <copy> --work <empty folder> --previous <copy of exports/current>
+mousedb export-incremental-check --snapshot-dir <copy> --work <empty folder> --previous <copy of exports/Behavior/All_Cohorts>
                                  # prove on real data that the incremental export equals a full rebuild (INSTALL.md)
 mousedb-current-exports --db-ok  # also the ODC session files (only when nothing is writing)
 mousedb-current-exports --no-wait  # stop at once (exit 3) if another refresh is writing

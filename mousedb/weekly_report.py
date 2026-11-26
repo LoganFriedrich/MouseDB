@@ -27,10 +27,12 @@ zero instead (a missing number must not look like "nothing there").
 WHAT IS WRITTEN
 ---------------
 In the folder given (the scheduled job uses
-<mousedb_root>/reports/Where is my data/):
+<mousedb_root>/reports/MouseReach_Video_Processing_Progress/; the names are
+in output_folders):
 
-    Where is my data YYYY-MM-DD.html   one page per run, kept
-    Where is my data - LATEST.html     the same page, overwritten each run
+    MouseReach video processing progress YYYY-MM-DD.html   one page per run, kept
+    MouseReach video processing progress - LATEST.html     the same page,
+                                                           overwritten each run
 
 HTML because it opens in any browser by double-clicking and its tables paste
 into Word or a Google Doc as tables. Both files are written to a temporary
@@ -67,12 +69,15 @@ STAGES = [
     ("recording_issue", "Recording failed (never analyzed)"),
 ]
 
-FOLDER_NAME = "Where is my data"
-
-
 def default_out() -> Path:
-    from .config import require
-    return Path(require("mousedb_root")) / "reports" / FOLDER_NAME
+    from .output_folders import video_progress_dir
+    return video_progress_dir()
+
+
+def _default_shown() -> str:
+    """The default folder as the help names it: its path inside <mousedb_root>."""
+    from .output_folders import shown, video_progress_dir
+    return shown(video_progress_dir)
 
 
 def _stage(info: dict) -> str:
@@ -414,9 +419,11 @@ def write(out: Optional[Path] = None, now: Optional[datetime] = None) -> Path:
     out = Path(out) if out else default_out()
     out.mkdir(parents=True, exist_ok=True)
     page = build(now)
-    dated = out / ("%s %s.html" % (FOLDER_NAME, now.strftime("%Y-%m-%d")))
+    # Named for what the page is, in the folder's own words (output_folders).
+    from .output_folders import VIDEO_PROGRESS_FILE_STEM as stem
+    dated = out / ("%s %s.html" % (stem, now.strftime("%Y-%m-%d")))
     _write(dated, page)
-    _write(out / ("%s - LATEST.html" % FOLDER_NAME), page)
+    _write(out / ("%s - LATEST.html" % stem), page)
     return dated
 
 
@@ -424,7 +431,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=None,
-                    help="folder to write into (default <mousedb_root>/reports/Where is my data)")
+                    help="folder to write into (default <mousedb_root>/%s)"
+                         % _default_shown())
     args = ap.parse_args(argv)
     try:
         p = write(args.out)

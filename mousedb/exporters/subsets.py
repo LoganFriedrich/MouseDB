@@ -11,13 +11,13 @@ with nothing to say what it was cut from or how.
 
 The rule this module keeps: **a limited export is a filtered copy of the
 exports that already exist. It never recomputes a value.** Every cell in a
-slice is a cell of exports/current, byte for byte. So a slice can never
+slice is a cell of exports/Behavior/All_Cohorts, byte for byte. So a slice can never
 disagree with the full export it was cut from, and every fix that reaches the
 full export reaches the slice the next time it is made.
 
 WHAT IT WRITES
 --------------
-``<mousedb_root>/exports/subsets/<name>/``::
+``<mousedb_root>/exports/Behavior/Selected_Cohorts/<name>/``::
 
     ODC_reaches_<name>.csv, reaches_<name>_summary.csv, reaches_<name>_analysis.csv,
     sessions_<name>_analysis.csv, ODC_days_<name>.csv
@@ -33,7 +33,7 @@ WHAT IT WRITES
 A previous slice of the same name is MOVED to the archive when the new one is
 put in place, never deleted: ``<mousedb_root>/_archived/exports_subsets/<name>/
 <time>/``. A remake that cannot put every new file in place puts the previous
-slice back (see _place), so the folder holds one complete set or the other. ``exports/subsets/SUBSETS_STATUS.json`` records every attempt to make
+slice back (see _place), so the folder holds one complete set or the other. ``exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json`` records every attempt to make
 each slice -- including one that failed, and why -- so the Where Is My Data tab
 can show it.
 
@@ -148,7 +148,6 @@ REPLACED_KEY = "export_subsets_replaced"
 MANIFEST_NAME = "SUBSET_MANIFEST.json"
 STATUS_NAME = "SUBSETS_STATUS.json"
 EXCLUSIONS_NAME = "analysis_EXCLUSIONS.csv"
-SUBSETS_DIR = "subsets"
 
 ALL_KINDS = tuple(layout.KINDS)
 WINDOW_TYPES = ("all", "last_before_injury", "dates")
@@ -525,20 +524,19 @@ def remove_profile(name: str) -> Path:
 # ----------------------------------------------------------------- locations
 
 def subsets_root() -> Path:
-    """<mousedb_root>/exports/subsets."""
-    from ..config import export_path, require
-    require("mousedb_root")
-    return export_path() / SUBSETS_DIR
+    """The limited-exports folder (output_folders.selected_cohorts_dir; an
+    unset mousedb_root stops with the command that sets it)."""
+    from ..output_folders import selected_cohorts_dir
+    return selected_cohorts_dir()
 
 
 def archive_root(out_root: Path) -> Path:
     """Where replaced slices go: <mousedb_root>/_archived/exports_subsets when the
-    slices are in the usual <mousedb_root>/exports/subsets (the same place the full
+    slices are in a root's usual limited-exports folder (the same place the full
     export's replaced files go, beside it), else <out_root>/_archived."""
+    from ..output_folders import selected_cohorts_archive
     out_root = Path(out_root)
-    if out_root.name == SUBSETS_DIR and out_root.parent.name == "exports":
-        return out_root.parent.parent / "_archived" / "exports_subsets"
-    return out_root / "_archived"
+    return selected_cohorts_archive(out_root) or (out_root / "_archived")
 
 
 # ------------------------------------------------------------- the selection
@@ -1563,9 +1561,9 @@ def build_parser(ap=None):
                     help="if the exports are being rewritten right now, stop at once "
                          "(exit code %d) instead of waiting" % EXIT_BUSY)
     ap.add_argument("--current-dir", type=Path, help="the full export to cut from "
-                    "(default: <mousedb_root>/exports/current)")
+                    "(default: <mousedb_root>/exports/Behavior/All_Cohorts)")
     ap.add_argument("--out-dir", type=Path, help="where slices go "
-                    "(default: <mousedb_root>/exports/subsets)")
+                    "(default: <mousedb_root>/exports/Behavior/Selected_Cohorts)")
     ap.add_argument("--snapshot-dir", type=Path, help="the analysis snapshot (default: configured)")
     g = ap.add_argument_group("the definition (with --save, or with --run/--dry-run for a one-off)")
     g.add_argument("--project", help="every cohort of this project (e.g. PROJA)")

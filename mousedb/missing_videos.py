@@ -16,7 +16,7 @@ hand score have a video at all?"
 WHAT IS COMPARED
 ----------------
 * The hand scores: mousedb's own hand-scores file
-  (<mousedb_root>/exports/hand_scores/hand_pellet_scores.csv, written from
+  (<mousedb_root>/exports/Behavior/Hand_Scores/hand_pellet_scores.csv, written from
   the database after every sheet import; see hand_scores_file). One session
   there = one animal, one day, one tray, named the way the pipeline names its
   single-animal video (<YYYYMMDD>_<animal>_<tray>).
@@ -59,7 +59,7 @@ WHAT HAPPENS TO A MISSING SESSION
 * The cohort's "!! <cohort> - FIX THESE.xlsx" file (attention.py) gets one
   line per missing recording (day + tray), naming its animals and saying
   what to do.
-* <mousedb_root>/exports/missing_videos/missing_session_videos.csv lists
+* <mousedb_root>/exports/Behavior/Sessions_Without_Video/missing_session_videos.csv lists
   every missing session, one row each, acknowledged ones included. Written
   only by mousedb: after every sheet import, after the nightly census is
   retaken, and by `mousedb missing-videos --write`.
@@ -106,7 +106,6 @@ GRACE_KEY = "missing_video_grace_days"
 SOURCE = "missing videos"
 KIND = "missing_video"
 ACK_NAME = "missing_videos_acknowledged.json"
-CSV_DIR_NAME = "missing_videos"
 CSV_NAME = "missing_session_videos.csv"
 KIND_FAILED = "recording_failed"
 CSV_COLUMNS = ["cohort_id", "subject_id", "session_date", "tray", "video_key",
@@ -149,7 +148,8 @@ def _root() -> Path:
 
 def scores_path(mousedb_root: Optional[Path] = None) -> Path:
     from .hand_scores_file import FILE_NAME
-    return Path(mousedb_root or _root()) / "exports" / "hand_scores" / FILE_NAME
+    from .output_folders import hand_scores_dir
+    return hand_scores_dir(mousedb_root or _root()) / FILE_NAME
 
 
 def ack_path(mousedb_root: Optional[Path] = None) -> Path:
@@ -157,7 +157,14 @@ def ack_path(mousedb_root: Optional[Path] = None) -> Path:
 
 
 def csv_path(mousedb_root: Optional[Path] = None) -> Path:
-    return Path(mousedb_root or _root()) / "exports" / CSV_DIR_NAME / CSV_NAME
+    from .output_folders import sessions_without_video_dir
+    return sessions_without_video_dir(mousedb_root or _root()) / CSV_NAME
+
+
+def csv_shown() -> str:
+    """The list file as messages name it: its path inside <mousedb_root>."""
+    from .output_folders import sessions_without_video_dir, shown
+    return shown(sessions_without_video_dir, CSV_NAME)
 
 
 def read_hand_sessions(path: Path) -> Dict[str, dict]:
@@ -482,8 +489,8 @@ def fold_for_tab(found: List[dict]) -> List[dict]:
         folded.append({"cohort_id": cid, "source": SOURCE, "kind": KIND, "says": (
             "%s: %d hand-scored session(s) in %d recording(s) (%s) have no video anywhere "
             "in the reaching pipeline. Each recording, and what to do, is listed in "
-            "'!! %s - FIX THESE.xlsx' beside the sheet and in exports/%s/%s"
-            % (cid, n, len(its), span, cid, CSV_DIR_NAME, CSV_NAME))})
+            "'!! %s - FIX THESE.xlsx' beside the sheet and in %s"
+            % (cid, n, len(its), span, cid, csv_shown()))})
     return folded + out
 
 
@@ -606,7 +613,7 @@ def build_parser(ap=None):
                     help="Days after a session before its video counts as missing "
                          "(default: the %s setting, else %d)" % (GRACE_KEY, GRACE_DAYS_DEFAULT))
     ap.add_argument("--write", action="store_true",
-                    help="Also rewrite exports/%s/%s" % (CSV_DIR_NAME, CSV_NAME))
+                    help="Also rewrite %s" % csv_shown())
     ap.add_argument("--acknowledge", nargs="+", metavar="SELECTOR",
                     help="Stop listing these gaps: a cohort, <cohort>:<YYYY-MM-DD>, or a "
                          "session (<YYYYMMDD>_<animal>_<tray>)")

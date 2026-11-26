@@ -7,6 +7,7 @@ may be guessed when no source records a value.
 import pandas as pd
 
 from mousedb.exporters import odc_reaches as ox
+from mousedb.output_folders import all_cohorts_dir
 
 
 def _reach():
@@ -103,7 +104,7 @@ def test_sex_from_scoring_tab_normalised_and_leader_from_author():
 
 
 def test_letter_cohort_file_names_carry_the_letter_and_old_names_are_archived(tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     out.mkdir(parents=True)
     (out / "ODC_reaches_ASPA_04.csv").write_text("old")
     df, rows = _build(_records())

@@ -18,6 +18,7 @@ import pytest
 
 from mousedb import snapshot_generation
 from mousedb.exporters import layout, subsets
+from mousedb.output_folders import all_cohorts_dir, selected_cohorts_dir
 
 # Cohort PROJA_01: animals 01, 02; first injury 2026-03-10 (animal 02's date is later).
 # Cohort PROJA_02: animal 01; injury 2026-04-10.
@@ -132,9 +133,9 @@ def lab(tmp_path, monkeypatch):
     snap = tmp_path / "snapshot"
     holder = {}
     _write_snapshot(snap, holder)
-    cur = tmp_path / "exports" / "current"
+    cur = all_cohorts_dir(tmp_path)
     _write_current(cur, holder["generation"])
-    out = tmp_path / "exports" / "subsets"
+    out = selected_cohorts_dir(tmp_path)
     locks = tmp_path / "locks"
     locks.mkdir()
 
@@ -399,11 +400,11 @@ def test_the_analysis_mirror_leaves_the_subsets_folder_alone(tmp_path, monkeypat
     db = tmp_path / "db"
     monkeypatch.setenv("MOUSEDB_ROOT", str(db))
     monkeypatch.setenv("MOUSEBRAIN_PIPELINE_ROOT", str(tmp_path / "pipeline"))
-    slice_dir = db / "exports" / "subsets" / "pre"
+    slice_dir = selected_cohorts_dir(db) / "pre"
     slice_dir.mkdir(parents=True)
     (slice_dir / "ODC_reaches_pre.csv").write_text(CSV)
     (slice_dir / subsets.MANIFEST_NAME).write_text("{}")
-    (db / "exports" / "subsets" / subsets.STATUS_NAME).write_text("{}")
+    (selected_cohorts_dir(db) / subsets.STATUS_NAME).write_text("{}")
     for _ in range(2):
         res = ia.run(log=lambda *a: None)
         assert res.errors == 0
@@ -411,7 +412,7 @@ def test_the_analysis_mirror_leaves_the_subsets_folder_alone(tmp_path, monkeypat
     assert not (db / "_archived").exists() or not any((db / "_archived").rglob("ODC_reaches_pre.csv"))
     m = json.loads((db / "exports" / "ANALYSES_MANIFEST.json").read_text())
     assert [r["analysis_name"] for r in m["analyses"]] == ["Alpha"]
-    assert "subsets" not in json.dumps(m.get("problems", []))
+    assert selected_cohorts_dir(db).name not in json.dumps(m.get("problems", []))
 
 
 def test_a_definition_file_is_checked_without_being_saved(lab, tmp_path):

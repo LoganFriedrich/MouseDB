@@ -325,8 +325,10 @@ def db_path() -> Optional[Path]:
 
 
 def export_path() -> Optional[Path]:
+    # The folder's name, like every output folder's, is in output_folders.
+    from .output_folders import exports_dir
     root = mousedb_root()
-    return root / "exports" if root else None
+    return exports_dir(root) if root else None
 
 
 def log_path() -> Optional[Path]:

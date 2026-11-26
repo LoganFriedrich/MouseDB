@@ -552,7 +552,7 @@ def _finish(counts: dict, force: bool) -> int:
     WHY non-zero: the exports are what people read ("where is my data?"),
     and this job is what keeps them current. A run that refreshed the
     snapshot but not the exports would otherwise print a [warn] and exit 0, so the
-    task looked healthy while ``exports/current`` stayed as it was; nothing
+    task looked healthy while ``exports/Behavior/All_Cohorts`` stayed as it was; nothing
     that checks the scheduled jobs looks for [warn]. A failure now prints
     [FAIL] and fails the task."""
     snapshot_ok = True
@@ -582,7 +582,7 @@ def _finish(counts: dict, force: bool) -> int:
         m = refresh_current(db_ok=db_ok, lock_wait_seconds=EXPORTS_LOCK_WAIT_MINUTES * 60)
     except Exception as e:
         print("  [FAIL] current exports not refreshed: %s: %s. The files in "
-              "exports/current are still those of the last good refresh."
+              "exports/Behavior/All_Cohorts are still those of the last good refresh."
               % (type(e).__name__, e), flush=True)
         return 1
     print("Current exports: %d files, complete=%s%s" % (
@@ -618,7 +618,7 @@ def _remake_limited_exports() -> int:
 
     Runs after the database-task lock and the exports lock are both released
     (main); each slice takes the exports lock again while it reads. A slice
-    that fails prints [FAIL], is recorded in exports/subsets/SUBSETS_STATUS.json
+    that fails prints [FAIL], is recorded in exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json
     (shown on the Where Is My Data tab), and fails the job, because a slice
     someone relies on has not been updated. The pipeline census is still
     retaken after it."""

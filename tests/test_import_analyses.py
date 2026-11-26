@@ -105,7 +105,7 @@ class TestMirror:
         for rel in ("exports/Alpha_Detection/registry.json",
                     "exports/Alpha_Detection/S1/measurements.csv",
                     "figures/Beta_ROI/A1/R1/S1.png", "logs/Beta_ROI.log"):
-            src, dst = reg / rel, db / rel
+            src, dst = reg / rel, ia.mirror_path(db, rel)
             assert dst.is_file(), rel
             assert dst.read_bytes() == src.read_bytes()
             assert int(dst.stat().st_mtime) == int(src.stat().st_mtime), rel
@@ -158,15 +158,15 @@ class TestMirror:
         os.utime(f, (time.time() + 100, time.time() + 100))
         res = ia.run(log=_quiet)
         assert res.copied == 1 and res.skipped == 2 * FILES_PER_ANALYSIS - 1
-        assert (db / "exports" / "Beta_ROI" / "S1" / "measurements.csv").read_text() == f.read_text()
+        assert (ia.mirror_exports_dir(db, "Beta_ROI") / "S1" / "measurements.csv").read_text() == f.read_text()
 
     def test_a_pre_existing_identical_destination_is_skipped_on_the_first_run(self, roots):
         reg, db = roots
         # the tree is already there (an earlier copy), with the same mtimes: nothing to copy
         import shutil
         for rel in ("exports/Alpha_Detection/S1/measurements.csv", "logs/Alpha_Detection.log"):
-            (db / rel).parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(str(reg / rel), str(db / rel))
+            ia.mirror_path(db, rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(reg / rel), str(ia.mirror_path(db, rel)))
         res = ia.run(log=_quiet)
         assert res.skipped == 2 and res.copied == 2 * FILES_PER_ANALYSIS - 2
         ledger = json.loads((db / "logs" / "analysis_imports.json").read_text())
@@ -241,7 +241,7 @@ class TestNoArchiveOnAShortListing:
     the files are gone: the analysis listed completely, or its folder gone."""
 
     def _mirrored(self, db, rel):
-        return (db / rel).is_file()
+        return ia.mirror_path(db, rel).is_file()
 
     def test_a_folder_without_its_registry_keeps_its_mirror_and_is_an_error(self, roots):
         reg, db = roots
@@ -474,7 +474,7 @@ class TestOneMirrorAtATime:
         assert ia.main([]) == 1
         out = capsys.readouterr().out
         assert "[FAIL] import-analyses not run" in out
-        assert not (db / "exports" / "Alpha_Detection").exists()
+        assert not ia.mirror_exports_dir(db, "Alpha_Detection").exists()
         assert not (db / "logs" / "analysis_imports.json").exists()
 
     def test_a_dry_run_takes_no_lock(self, roots, held):
@@ -712,7 +712,7 @@ class TestHeldFilesAreNeverSilent:
         assert res.errors == 1
         assert any("Alpha_Detection" in m and "could not be confirmed gone" in m
                    for m in res.messages), res.messages
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
         rows = {r["analysis_name"]: r for r in res.manifest}
         assert rows["Alpha_Detection"]["problems"]
         assert not rows["Beta_ROI"]["problems"]
@@ -757,7 +757,7 @@ class TestAFolderWithNothingRegisteredIsNoError:
         _write(reg / "exports" / "Gamma_New" / "S1" / "measurements.csv", "id\n1\n")
         res = ia.run(log=_quiet)
         assert res.errors == 0
-        assert not (db / "exports" / "Gamma_New").exists()       # nothing copied of it
+        assert not ia.mirror_exports_dir(db, "Gamma_New").exists()       # nothing copied of it
 
     def test_a_folder_whose_files_are_mirrored_is_still_an_error(self, roots):
         reg, db = roots
@@ -775,8 +775,8 @@ class TestAFolderWithNothingRegisteredIsNoError:
 
     def _alpha_held(self, db, res):
         assert res.errors >= 1 and res.archived == 0
-        assert (db / "exports" / "Alpha_Detection" / "registry.json").is_file()
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "registry.json").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
         assert not (db / "_archived").exists()
         manifest = json.loads((db / "exports" / "ANALYSES_MANIFEST.json").read_text())
         rows = {r["analysis_name"]: r for r in manifest["analyses"]}
@@ -809,14 +809,14 @@ class TestAFolderWithNothingRegisteredIsNoError:
         (db / "logs" / "analysis_imports.json").unlink()
         (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
 
-        def unlistable(dest, analysis):
+        def unlistable(dest, analysis, names=None):
             raise PermissionError("access denied")
         monkeypatch.setattr(ia, "mirror_files_of", unlistable)
         res = ia.run(log=_quiet)
         assert res.errors == 1 and res.archived == 0
         assert any("could not be listed" in m and "Alpha_Detection" in m for m in res.messages)
         assert "Alpha_Detection" in {r["analysis_name"] for r in res.manifest}
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
 
 
 class TestConfirmWithdrawn:
@@ -839,15 +839,16 @@ class TestConfirmWithdrawn:
     # when it was not. It is now held whole: the message is true as written.
 
     def _mirror_unlistable(self, monkeypatch):
-        def unlistable(dest, analysis):
-            raise PermissionError(13, "Access is denied", str(dest / "exports" / analysis))
+        def unlistable(dest, analysis, names=None):
+            raise PermissionError(13, "Access is denied",
+                                  str(ia.mirror_exports_dir(dest, analysis, names)))
         monkeypatch.setattr(ia, "mirror_files_of", unlistable)
 
     def _all_mirrored(self, db):
         for rel in ("exports/Alpha_Detection/registry.json",
                     "exports/Alpha_Detection/S1/measurements.csv",
                     "figures/Alpha_Detection/A1/R1/S1.png", "logs/Alpha_Detection.log"):
-            assert (db / rel).is_file(), rel
+            assert ia.mirror_path(db, rel).is_file(), rel
 
     def test_a_confirmed_folder_without_registry_is_held_when_the_mirror_cannot_be_listed(
             self, roots, monkeypatch):
@@ -898,7 +899,7 @@ class TestConfirmWithdrawn:
         assert ia.main(["--confirm-withdrawn", "Alpha_Detection",
                         "--confirm-withdrawn", "Beta_ROI"]) == 0
         assert len(self._archived(db)) == 2 * FILES_PER_ANALYSIS
-        assert not (db / "exports" / "Alpha_Detection" / "registry.json").exists()
+        assert not (ia.mirror_exports_dir(db, "Alpha_Detection") / "registry.json").exists()
         assert json.loads((db / "logs" / "analysis_imports.json").read_text()) == {}
 
     def test_only_the_confirmed_one_is_archived_when_nothing_is_listed(self, roots):
@@ -910,7 +911,7 @@ class TestConfirmWithdrawn:
         res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
         assert res.archived == FILES_PER_ANALYSIS
         assert all("Alpha_Detection" in k for k in self._archived(db))
-        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()   # held back
+        assert (ia.mirror_exports_dir(db, "Beta_ROI") / "registry.json").is_file()   # held back
         assert res.errors >= 1
         assert any("--confirm-withdrawn <analysis>" in m and "Beta_ROI" in m
                    for m in res.messages), res.messages
@@ -921,7 +922,7 @@ class TestConfirmWithdrawn:
         (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
         res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
         assert res.errors == 0 and res.archived == FILES_PER_ANALYSIS
-        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()
+        assert (ia.mirror_exports_dir(db, "Beta_ROI") / "registry.json").is_file()
         assert "Alpha_Detection" not in {r["analysis_name"] for r in res.manifest}
 
     def test_without_its_registry_the_whole_mirror_goes_even_files_still_at_the_source(
@@ -948,7 +949,7 @@ class TestConfirmWithdrawn:
         ia.run(log=_quiet)
         res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
         assert res.errors == 0 and res.archived == 0
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
 
     def test_a_mistyped_name_archives_nothing_and_fails(self, roots, capsys):
         reg, db = roots
@@ -970,7 +971,7 @@ class TestConfirmWithdrawn:
         reg, db = roots
         ia.run(log=_quiet)
         (reg / "exports" / "Alpha_Detection" / "registry.json").unlink()
-        (db / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        (ia.mirror_exports_dir(db, "Alpha_Detection") / "registry.json").unlink()
         (db / "logs" / "analysis_imports.json").unlink()        # a new ledger
         nightly = ia.run(log=_quiet)
         assert nightly.errors == 1 and nightly.archived == 0
@@ -981,7 +982,7 @@ class TestConfirmWithdrawn:
         assert sorted(a.split("/", 1)[1] for a in self._archived(db)) == [
             "exports/Alpha_Detection/S1/measurements.csv",
             "figures/Alpha_Detection/A1/R1/S1.png", "logs/Alpha_Detection.log"]
-        assert not (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").exists()
+        assert not (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").exists()
         # the source is never touched, and the hold is over
         assert (reg / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
         after = ia.run(log=_quiet)
@@ -1003,7 +1004,7 @@ class TestConfirmWithdrawn:
         monkeypatch.setattr(ia, "_confirmed_absent", lambda path: False, raising=False)
         res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
         assert res.archived == 0 and res.errors >= 1
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
 
     def test_dry_run_counts_but_moves_nothing(self, roots):
         reg, db = roots
@@ -1028,8 +1029,8 @@ class TestConfirmWithdrawnOnlyTouchesAnAnalysis:
 
     def _other(self, db):
         """Files this tool keeps under a name that is no analysis."""
-        return [_write(db / "exports" / self.OTHER / "table.csv", "id\n1\n"),
-                _write(db / "exports" / self.OTHER / "sub" / "MANIFEST.json", "{}"),
+        return [_write(ia.mirror_exports_dir(db, self.OTHER) / "table.csv", "id\n1\n"),
+                _write(ia.mirror_exports_dir(db, self.OTHER) / "sub" / "MANIFEST.json", "{}"),
                 _write(db / "figures" / self.OTHER / "plot.png", b"\x89PNG other"),
                 _write(db / "logs" / ("%s.log" % self.OTHER), "a job's own log\n")]
 
@@ -1103,8 +1104,8 @@ class TestConfirmWithdrawnOnlyTouchesAnAnalysis:
         res = ia.run(log=_quiet, confirm_withdrawn=["Alpha_Detection"])
         assert res.errors == 0, res.messages
         assert res.archived == FILES_PER_ANALYSIS
-        assert not (db / "exports" / "Alpha_Detection" / "registry.json").exists()
-        assert (db / "exports" / "Beta_ROI" / "registry.json").is_file()
+        assert not (ia.mirror_exports_dir(db, "Alpha_Detection") / "registry.json").exists()
+        assert (ia.mirror_exports_dir(db, "Beta_ROI") / "registry.json").is_file()
 
     def test_with_no_mark_at_all_the_files_stay(self, roots, capsys):
         # The documented corner: the source folder wholly gone, a new
@@ -1114,13 +1115,13 @@ class TestConfirmWithdrawnOnlyTouchesAnAnalysis:
         ia.run(log=_quiet)
         import shutil
         shutil.rmtree(str(reg / "exports" / "Alpha_Detection"))
-        (db / "exports" / "Alpha_Detection" / "registry.json").unlink()
+        (ia.mirror_exports_dir(db, "Alpha_Detection") / "registry.json").unlink()
         (db / "logs" / "analysis_imports.json").unlink()
         capsys.readouterr()
         assert ia.main(["--confirm-withdrawn", "Alpha_Detection"]) == 1
         assert "check the name" in capsys.readouterr().out
         assert not (db / "_archived").exists()
-        assert (db / "exports" / "Alpha_Detection" / "S1" / "measurements.csv").is_file()
+        assert (ia.mirror_exports_dir(db, "Alpha_Detection") / "S1" / "measurements.csv").is_file()
         assert (db / "figures" / "Alpha_Detection" / "A1" / "R1" / "S1.png").is_file()
 
 

@@ -69,7 +69,7 @@ only a person can fix, gathered from every tool --
   recording that failed");
 * sessions scored by hand whose video is nowhere in the pipeline (one line
   per cohort; each recording, with where to look for it, is in the FIX THESE
-  file and in exports/missing_videos/). A gap nobody can close is
+  file and in exports/Behavior/Sessions_Without_Video/). A gap nobody can close is
   acknowledged once: mousedb missing-videos --acknowledge ... (see
   docs/WHERE_IS_MY_DATA.md, "Sessions scored by hand that have no video").
 Each cohort's list is also written beside its sheet, in
@@ -169,7 +169,7 @@ some sessions (e.g. each animal's last 3 pillar sessions before the injury),
 some tray types, some columns, and an optional yes/no column per animal.
 Nothing is calculated again: every value is copied from the full export. The
 window saves the definition by name (for everyone) and makes the files in
-exports\\subsets\\<name>\\, with their data dictionaries, the exclusions for
+exports\\Behavior\\Selected_Cohorts\\<name>\\, with their data dictionaries, the exclusions for
 those sessions and a SUBSET_MANIFEST.json saying what was chosen. Making it
 again archives the previous files, never deletes them; saved ones are remade
 after the nightly export when anything they hold changed. Each saved one has
@@ -247,7 +247,7 @@ def run_exports_program(timeout_seconds: Optional[float] = None) -> dict:
 
 def limited_export_lines() -> list:
     """One line per saved limited export: when it was last made, or [FAIL] and
-    why (exports/subsets/SUBSETS_STATUS.json). WHY on this tab: the nightly job
+    why (exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json). WHY on this tab: the nightly job
     remakes them while nobody watches, and a failure must be seen without
     opening a log."""
     try:
@@ -258,7 +258,7 @@ def limited_export_lines() -> list:
         return ["  [!] limited exports: the saved definitions could not be read: %s" % e]
     if not saved:
         return []
-    lines = ["LIMITED EXPORTS (exports\\subsets):"]
+    lines = ["LIMITED EXPORTS (exports\\Behavior\\Selected_Cohorts):"]
     for name in sorted(saved):
         s = status.get(name) or {}
         if not s:
@@ -403,7 +403,7 @@ class DataStatusTab(QWidget):
              "example the last 3 pillar sessions before the injury), tray types and "
              "columns -- saved by name so it can be made again. Nothing is calculated "
              "again; every value is copied from the full export. Files go to "
-             "exports\\subsets\\<name>.", ""),
+             "exports\\Behavior\\Selected_Cohorts\\<name>.", ""),
             ("Refresh exports now", self.refresh_exports,
              "Rewrite reach_data.csv, manual_scores.csv, every cohort's reach files and "
              "each project's combined reach files from the latest snapshot right now "

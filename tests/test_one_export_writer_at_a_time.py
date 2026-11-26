@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from mousedb.exporters import current
+from mousedb.output_folders import all_cohorts_dir
 
 
 def _snapshot(tmp_path):
@@ -169,7 +170,7 @@ def test_the_per_reach_command_says_when_its_wait_ran_out(tmp_path, capsys, monk
     out = capsys.readouterr().out
     assert code not in (0, 1), code
     assert "still writing" in out and "current-exports lock" in out, out
-    assert not (root / "exports" / "current").exists()
+    assert not all_cohorts_dir(root).exists()
 
 
 def test_the_per_reach_command_locks_the_live_folder_however_it_is_named(tmp_path, capsys,
@@ -182,9 +183,10 @@ def test_the_per_reach_command_locks_the_live_folder_however_it_is_named(tmp_pat
     monkeypatch.setenv("MOUSEDB_LOCK_WAIT_MINUTES", "0")
     snap = _snapshot(tmp_path)
     root = tmp_path / "root"
-    (root / "exports" / "current").mkdir(parents=True)
+    all_cohorts_dir(root).mkdir(parents=True)
     monkeypatch.setattr(config, "require", lambda key: root)
-    spelled = root / "exports" / "other" / ".." / "current"
+    live = all_cohorts_dir(root)
+    spelled = live.parent / "other" / ".." / live.name
     holder = current.hold_exports_lock(lock_wait_seconds=0)
     try:
         code = odc_reaches.main(["--snapshot-dir", str(snap), "--out-dir", str(spelled)])
@@ -193,7 +195,7 @@ def test_the_per_reach_command_locks_the_live_folder_however_it_is_named(tmp_pat
     out = capsys.readouterr().out
     assert code == current.EXIT_LOCK_TIMEOUT, (code, out)
     assert "current-exports lock" in out, out
-    assert not any((root / "exports" / "current").iterdir()), "it wrote without the lock"
+    assert not any(all_cohorts_dir(root).iterdir()), "it wrote without the lock"
 
 
 def test_the_per_reach_command_into_a_private_folder_does_not_wait(tmp_path, monkeypatch):

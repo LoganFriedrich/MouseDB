@@ -5,9 +5,9 @@ WHY THIS EXISTS
 The end of the lab's workflow is a person asking "where is my data?" and
 expecting a current CSV of everything the database holds, formatted to
 ODC-SCI, with a data dictionary beside it. This module writes, and the nightly
-refresh keeps current, one folder:
+refresh keeps current, one folder (its name is in output_folders):
 
-    Databases/exports/current/
+    <mousedb_root>/exports/Behavior/All_Cohorts/
         reach_data.csv                    one row per detected reach
         reach_data_DATA_DICTIONARY.csv
         manual_scores.csv                 one row per hand-scored pellet
@@ -42,11 +42,12 @@ import pandas as pd
 
 from . import data_dictionary as dd
 from . import layout, missing, trays
-from .. import DEFAULT_EXPORT_PATH
+from .. import MOUSEDB_ROOT
 
 from ..config import at_import as _at_import, require, snapshot_dir as _snapshot_dir
+from ..output_folders import all_cohorts_dir
 
-CURRENT_DIR = (Path(DEFAULT_EXPORT_PATH) / "current") if DEFAULT_EXPORT_PATH else None
+CURRENT_DIR = all_cohorts_dir(MOUSEDB_ROOT) if MOUSEDB_ROOT else None
 DEFAULT_SNAPSHOT_DIR = _at_import(_snapshot_dir)  # None until configured
 
 # Column order of reach_data.csv: identity first, then the reach, then
@@ -665,7 +666,7 @@ def refresh_current(snapshot_dir: Path = None, out_dir: Path = None,
     ``rebuild_all``: rebuild every per-reach file from nothing instead of only
     the cohorts that changed (exporters.incremental)."""
     snapshot_dir = snapshot_dir or require("snapshot_dir")
-    out_dir = out_dir or CURRENT_DIR or (require("mousedb_root") / "exports" / "current")
+    out_dir = out_dir or CURRENT_DIR or all_cohorts_dir(require("mousedb_root"))
     snapshot_dir, out_dir = Path(snapshot_dir), Path(out_dir)
     # Taken BEFORE anything is read or emptied: the snapshot generation is then
     # judged after any run we waited for has finished, and the staging folder
