@@ -304,7 +304,7 @@ starts `NOT SYNCED <table>: ...`, printed under the cohort's line with
 broken (<cohorts>)`; the scheduled job ends with exit code 1, so the
 scheduler shows a failure; the Tracking Sheets tab shows the cohort as
 **NOT SYNCED** in red; and the line is listed in the red **Needs your
-attention** box of the Where Is My Data tab and in the cohort's FIX THESE
+attention** box of the MouseReach Video Processing Progress tab and in the cohort's FIX THESE
 file beside the sheet.
 
 What to do:
@@ -575,7 +575,7 @@ with such a row is named.
 | How you start it | Recorded in the history as | Waits for the lock | When it fails |
 |---|---|---|---|
 | **Import all sheets** / **Import selected** (Tracking Sheets tab) | `gui` | yes | a `FAIL` line in the log box and a box with the summing-up line; the row turns *LAST IMPORT FAILED* |
-| **Update the database now** (9. Where Is My Data tab), or `mousedb update` | `update` | yes | the sheets step shows `[FAIL]` and the whole update reports FAILED |
+| **Update the database now** (9. MouseReach Video Processing Progress tab), or `mousedb update` | `update` | yes | the sheets step shows `[FAIL]` and the whole update reports FAILED |
 | the scheduled sheet import (INSTALL.md, "Scheduled jobs") | `scheduled` | yes | the job ends with exit code 1, which the scheduler shows as a failure |
 | `mousedb-sheets import [--cohort PROJA_NN]` | `manual` | yes | exit code 1 |
 | `mousedb import --all` | `mousedb-import` | yes | exit code 1, after `[FAIL] the import did not complete for every cohort` |
@@ -850,7 +850,7 @@ Some things only a person can fix, mostly in the sheet:
 
 They are shown in two places:
 
-- **Where Is My Data**: a red **Needs your attention (N)** box at the top,
+- **MouseReach Video Processing Progress**: a red **Needs your attention (N)** box at the top,
   one line each (hidden when there is nothing). It is gathered again each
   time the tab refreshes.
 - **Beside the sheet**: after every import that writes (any route, Cohort

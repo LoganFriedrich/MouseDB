@@ -81,9 +81,9 @@ def test_a_dry_run_reports_but_writes_no_list(tmp_path, monkeypatch):
     assert _report(tmp_path) is None
 
 
-def test_where_is_my_data_names_them(tmp_path):
+def test_video_processing_progress_names_them(tmp_path):
     problem = getattr(data_status, "rows_without_file_problem", None)
-    assert problem is not None, "Where Is My Data does not report rows without a results file"
+    assert problem is not None, "MouseReach Video Processing Progress does not report rows without a results file"
     p = tmp_path / LIST_NAME
     assert problem(p) is None          # never checked
     p.write_text(json.dumps({"checked_at": "2026-01-02T21:00:00", "count": 0,

@@ -1,4 +1,4 @@
-"""Where is my data? -- one answer per cohort, as JSON for the GUI.
+"""MouseReach Video Processing Progress -- one answer per cohort, as JSON for the GUI.
 
 WHY THIS EXISTS
 ---------------
@@ -161,7 +161,7 @@ def _pipeline_root() -> Path:
 # <list>.coverage.json beside each list; the lab keeps its lists in this
 # folder under the pipeline root. WHY: a study asks for particular sessions,
 # spread over many cohorts and recordings, and the per-cohort table cannot say
-# how far those have got -- "where is my data" for a study was unanswerable.
+# how far those have got -- a study could not see its own progress.
 SESSION_LISTS_FOLDER = "priority_lists"
 COVERAGE_SUFFIX = ".coverage.json"
 
@@ -465,7 +465,7 @@ def rows_without_file_problem(path: Path) -> Optional[str]:
     return ("%d video(s) have reaches in the database but no results file in the "
             "pipeline, and are not in review (%s; found by the reach import of %s). "
             "Nothing was removed: put the file back, or hand the line to whoever "
-            "looks after the database (docs/WHERE_IS_MY_DATA.md, 'Reaches whose "
+            "looks after the database (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, 'Reaches whose "
             "results file has gone'). "
             "Full list: %s" % (len(videos), shown, report.get("checked_at") or "?", path))
 
@@ -496,7 +496,7 @@ def brains_without_file_problem(path: Path) -> Optional[str]:
     return ("%d brain(s) have final counts in the database but no counts file in "
             "MouseBrain's summary folder (%s; found by the brain import of %s). "
             "Nothing was removed: put the file back, or hand the line to whoever "
-            "looks after the database (docs/WHERE_IS_MY_DATA.md, 'Brains whose "
+            "looks after the database (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, 'Brains whose "
             "counts file has gone'). Full list: %s"
             % (len(brains), shown, report.get("checked_at") or "?", path))
 

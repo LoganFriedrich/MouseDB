@@ -380,7 +380,7 @@ def watcher_scope_lines(status: WatcherStatus) -> List[str]:
     WHY: the watcher database records what THIS computer's watcher did. Work
     done by other computers, and anything moved by hand, is not in it, so its
     counts are not the pipeline's state. The pipeline's state is its folders,
-    which the pipeline census reads (Where Is My Data tab). A person reading
+    which the pipeline census reads (MouseReach Video Processing Progress tab). A person reading
     these views must be told which of the two they are looking at."""
     when = watcher_db_last_written(status) or "unknown"
     # Say which rule found the file. WHY: only the file named by this
@@ -404,7 +404,7 @@ def watcher_scope_lines(status: WatcherStatus) -> List[str]:
     return [
         head,
         "Work done by other watchers is not in these records. The whole "
-        "pipeline's state, read from its folders, is on the Where Is My Data tab.",
+        "pipeline's state, read from its folders, is on the MouseReach Video Processing Progress tab.",
     ]
 
 

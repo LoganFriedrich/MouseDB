@@ -1,4 +1,4 @@
-"""Where Is My Data tab -- the answer to the question at the end of every cohort.
+"""MouseReach Video Processing Progress tab -- the answer to the question at the end of every cohort.
 
 WHY THIS TAB EXISTS
 -------------------
@@ -65,13 +65,13 @@ only a person can fix, gathered from every tool --
 * a sheet import that failed;
 * a recording that FAILED and was set aside by the pipeline (one line per
   recording: "recording failed: <recording>, <reason>"; acknowledged once with
-  the same command as a missing video -- docs/WHERE_IS_MY_DATA.md, "A
+  the same command as a missing video -- docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "A
   recording that failed");
 * sessions scored by hand whose video is nowhere in the pipeline (one line
   per cohort; each recording, with where to look for it, is in the FIX THESE
   file and in exports/Behavior/Sessions_Without_Video/). A gap nobody can close is
   acknowledged once: mousedb missing-videos --acknowledge ... (see
-  docs/WHERE_IS_MY_DATA.md, "Sessions scored by hand that have no video").
+  docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "Sessions scored by hand that have no video").
 Each cohort's list is also written beside its sheet, in
 "!! <cohort> - FIX THESE.xlsx" (rewritten after every import, removed when
 nothing is left).
@@ -93,7 +93,7 @@ Done = filed / scored in the sheet. Videos the pipeline holds with no sheet
 row are counted separately ("No sheet row") and never in done.
 Terminal: mousedb sheet-progress (--list names every missing recording).
 
-WHERE IS MY DATA -- one row per cohort:
+MOUSEREACH VIDEO PROCESSING PROGRESS -- one row per cohort:
 
 * Animals: how many animals the database knows for the cohort (a number in
   brackets = created from a video before the sheet named them).
@@ -197,7 +197,7 @@ damaged ledger, or another run held the lock too long): the analysis lines
 are still those of the last run that finished, and the line goes when a run
 finishes. "[!] analysis mirror: the record of its last stopped run cannot be
 read" means the tab could not look at that record, so it cannot say whether
-the last run stopped: press Refresh, and check the share if it stays. Guide: docs/WHERE_IS_MY_DATA.md,
+the last run stopped: press Refresh, and check the share if it stays. Guide: docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md,
 "How tissue analysis outputs get here".
 """
 
@@ -314,13 +314,13 @@ class DataStatusTab(QWidget):
     def _build_ui(self):
         root = QVBoxLayout(self)
         head = QHBoxLayout()
-        title = QLabel("<b>Where Is My Data</b>")
+        title = QLabel("<b>MouseReach Video Processing Progress</b>")
         title.setStyleSheet("font-size: 14px;")
         head.addWidget(title, 1)
         helpb = QPushButton("?")
         helpb.setFixedWidth(28)
         helpb.setToolTip("Quick guide to this tab")
-        helpb.clicked.connect(lambda: QMessageBox.information(self, "Where Is My Data", QUICK_GUIDE))
+        helpb.clicked.connect(lambda: QMessageBox.information(self, "MouseReach Video Processing Progress", QUICK_GUIDE))
         head.addWidget(helpb)
         root.addLayout(head)
 

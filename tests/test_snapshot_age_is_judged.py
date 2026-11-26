@@ -1,4 +1,4 @@
-"""Every figure in "where is my data" is as of the snapshot, so its age matters.
+"""Every figure on the MouseReach Video Processing Progress tab is as of the snapshot, so its age matters.
 
 The snapshot is rewritten by a scheduled job. When that job fails -- most often
 because another program had the database locked -- the numbers do not go wrong,

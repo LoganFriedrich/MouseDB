@@ -1,4 +1,4 @@
-"""Weekly 'Where is my data' page: stage counting and the not-started reasons."""
+"""Weekly 'MouseReach Video Processing Progress' page: stage counting and the not-started reasons."""
 from collections import Counter
 
 from mousedb import weekly_report as w

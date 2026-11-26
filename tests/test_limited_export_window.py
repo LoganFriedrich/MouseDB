@@ -1,4 +1,4 @@
-"""A limited export can be defined, saved and made from the Where Is My Data tab.
+"""A limited export can be defined, saved and made from the MouseReach Video Processing Progress tab.
 
 WHY: routine lab work never needs a terminal. The window must save the same
 definition the command takes, offer only cohorts and columns the full export

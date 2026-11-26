@@ -120,7 +120,7 @@ def watcher_running() -> bool:
 
 
 # How long a swap waits for readers of the old file to let go. Readers of the
-# snapshot (the Where Is My Data tab, the bench scan, the data browser making
+# snapshot (the MouseReach Video Processing Progress tab, the bench scan, the data browser making
 # its private copy) hold a table file for seconds, so two minutes is generous;
 # a reader that holds one longer than that is a defect to find, and the job
 # still fails loudly rather than waiting forever.
@@ -157,7 +157,7 @@ DEFAULT_LOCK_WAIT_MINUTES = 165
 # been replaced under it) with complete=false in MANIFEST.json -- either way
 # the night's imports are not in the exports until someone presses "Refresh
 # exports now" after it finishes, or the next nightly run writes them. The
-# operator docs (WHERE_IS_MY_DATA.md) say so. The bound stays short anyway:
+# operator docs (MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md) say so. The bound stays short anyway:
 # a late night costs one day's freshness, a stopped job costs a mixed folder.
 EXPORTS_LOCK_WAIT_MINUTES = 15
 
@@ -168,7 +168,7 @@ def swap_in(tmp: Path, out: Path, wait_seconds: float = None) -> None:
     WHY: on Windows, replacing a file fails ("Access is denied") while ANY
     program has it open -- whatever sharing that program asked for (even a
     reader that opened it with delete sharing blocks the replace). Snapshot readers open these files at any time of day. Without a
-    wait, a person refreshing the Where Is My Data tab, or opening the data
+    wait, a person refreshing the MouseReach Video Processing Progress tab, or opening the data
     browser, at the moment of the swap would fail the whole nightly refresh.
     A reader lets go within seconds, so the swap retries once a second.
     """
@@ -516,7 +516,7 @@ def _after_exports(rc: int) -> int:
 
 
 def retake_census() -> bool:
-    """Retake the pipeline census for the Where Is My Data tab, after the
+    """Retake the pipeline census for the MouseReach Video Processing Progress tab, after the
     snapshot it is joined with. Never raises; True when it was retaken.
 
     WHY here: the census was taken only when someone pressed 'Refresh pipeline
@@ -539,7 +539,7 @@ def retake_census() -> bool:
                               t.get("finished_files"), c.get("scan_seconds")), flush=True)
         return True
     except Exception as e:
-        print("  [FAIL] pipeline census not retaken: %s. The Where Is My Data tab "
+        print("  [FAIL] pipeline census not retaken: %s. The MouseReach Video Processing Progress tab "
               "keeps the previous census and shows its age." % e, flush=True)
         return False
 
@@ -549,7 +549,7 @@ def _finish(counts: dict, force: bool) -> int:
     job's exit code: 1 when the exports could not be rewritten or came out
     incomplete (MANIFEST.json ``complete`` False), else 0.
 
-    WHY non-zero: the exports are what people read ("where is my data?"),
+    WHY non-zero: the exports are what people read,
     and this job is what keeps them current. A run that refreshed the
     snapshot but not the exports would otherwise print a [warn] and exit 0, so the
     task looked healthy while ``exports/Behavior/All_Cohorts`` stayed as it was; nothing
@@ -619,7 +619,7 @@ def _remake_limited_exports() -> int:
     Runs after the database-task lock and the exports lock are both released
     (main); each slice takes the exports lock again while it reads. A slice
     that fails prints [FAIL], is recorded in exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json
-    (shown on the Where Is My Data tab), and fails the job, because a slice
+    (shown on the MouseReach Video Processing Progress tab), and fails the job, because a slice
     someone relies on has not been updated. The pipeline census is still
     retaken after it."""
     try:

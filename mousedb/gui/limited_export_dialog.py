@@ -1,4 +1,4 @@
-"""The "Make a limited export..." window of the Where Is My Data tab.
+"""The "Make a limited export..." window of the MouseReach Video Processing Progress tab.
 
 WHY THIS EXISTS
 ---------------
@@ -81,7 +81,7 @@ export -- nothing is calculated again -- so it always agrees with the full expor
    names that the exports no longer have: untick it to take it out.
 5. Optional: a yes/no column. Give it a name; pick a rule, or leave it blank
    to fill in later. A rule is set up once in the lab settings file (see "The
-   yes/no column" in WHERE_IS_MY_DATA.md). Some rules decide per animal; a
+   yes/no column" in MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md). Some rules decide per animal; a
    "day_window" rule decides per animal-day: yes on every row of each
    animal's last N test days before its cohort's first injury, no on every
    other row.
@@ -102,7 +102,7 @@ previous files are put back and you are told; a NOT_COMPLETE.txt in the folder
 means even that failed: make it again. Saved limited
 exports with "remake nightly" ticked are made again after the nightly export
 whenever anything they hold has changed.
-Full guide: docs/WHERE_IS_MY_DATA.md, "Limited exports".
+Full guide: docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "Limited exports".
 """
 
 

@@ -41,7 +41,7 @@ mousedb entry
 ## Opening MouseDB (for everyone, no terminal)
 
 - **MouseDB** on the desktop, or Start menu -> **MouseDB** folder -> **MouseDB**:
-  the MouseDB window (tracking sheets, Where Is My Data, data entry).
+  the MouseDB window (tracking sheets, MouseReach Video Processing Progress, data entry).
 - **MouseDB - Browse the data**, in the same two places: the read-only data
   browser (docs/DATA_BROWSER.md).
 
@@ -83,7 +83,7 @@ in each person's own settings.
 
 ## Data browser (optional)
 
-The "Browse the data" button (Where Is My Data tab) and `mousedb-data-browser`
+The "Browse the data" button (MouseReach Video Processing Progress tab) and `mousedb-data-browser`
 show the database's snapshot in each person's web browser, read-only. They need
 one extra package set, installed once in the MouseDB environment:
 
@@ -229,7 +229,7 @@ this order:
 | **6. Dashboard** | statistics per cohort and animal (see below) |
 | **7. Database Browser** | the raw database tables |
 | **8. Tracking Sheets** | import the lab's tracking workbooks; start a new cohort sheet ([docs/TRACKING_SHEETS.md](docs/TRACKING_SHEETS.md)) |
-| **9. Where Is My Data** | per-cohort data status, the whole pipeline's counts, the current exports, "Update the database now" ([docs/WHERE_IS_MY_DATA.md](docs/WHERE_IS_MY_DATA.md)) |
+| **9. MouseReach Video Processing Progress** | per-cohort data status, the whole pipeline's counts, the current exports, "Update the database now" ([docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md](docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md)) |
 | **10. Study Facts** | the facts no sheet records, and the exceptions to them |
 | **Extra: Weight Entry** | weights for a whole cohort on one date |
 | **Extra: Single Animal** | pellet scores for one animal (see below) |
@@ -241,7 +241,7 @@ when the window was started from one, otherwise in
 
 There is no Video Pipeline or Archive Status tab. Those two tabs showed one
 computer's MouseReach watcher records as if they were the pipeline's state,
-and were removed: the whole pipeline is on **9. Where Is My Data**. The same
+and were removed: the whole pipeline is on **9. MouseReach Video Processing Progress**. The same
 watcher records are still in `mousedb video-status` and `mousedb
 archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 
@@ -292,7 +292,7 @@ archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 | `mousedb export ... --output <path>` | Write the export to `<path>`. Refused before the database is opened (`REFUSED` / `Why` / `Instead`, exit code 1) when `<path>` is inside the tracking-sheets folder or the ASPA folder, or is named like a cohort's tracking sheet: the export would empty the workbook that is there |
 | `mousedb export --unified` | Export unified reaches parquet |
 | (where the files go) | Without `--output`, into `<mousedb_root>/exports/`: `<cohort>_tracking.xlsx` (the plain export), `<cohort>_ODC.xlsx` (`--odc`), `unified_reaches.parquet` (`--unified`). `--all-formats` writes the first two (not the parquet); with `--output` it is the folder they go into |
-| (every `mousedb export` above) | A cohort that is still running gets an EMPTY phase in these files (`Test_Phase` in the two workbooks, `test_phase` in the unified parquet), the same rule as the nightly exports, decided from the database's reach rows; the command prints `Phase left empty (cohort still running): <cohorts>`. Why, how "running" is decided, and how to release a finished cohort's labels early: docs/WHERE_IS_MY_DATA.md, "A cohort that is still running has no phase labels yet" |
+| (every `mousedb export` above) | A cohort that is still running gets an EMPTY phase in these files (`Test_Phase` in the two workbooks, `test_phase` in the unified parquet), the same rule as the nightly exports, decided from the database's reach rows; the command prints `Phase left empty (cohort still running): <cohorts>`. Why, how "running" is decided, and how to release a finished cohort's labels early: docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "A cohort that is still running has no phase labels yet" |
 | `mousedb entry` | Launch GUI |
 | `mousedb check [--cohort <cohort>] [-v] [--json]` | Data-completeness report per cohort (what each cohort is missing in the database). Like every command that opens the database, it first brings the table layout up to date (as `mousedb init` does); otherwise it only reads |
 | `mousedb dump [<table>] [-o <folder>]` | Copy database tables (projects, cohorts, subjects, weights, pellet scores, ramp entries, surgeries, virus preps, audit log) to CSV files for a person to look at, by default into `<mousedb_root>/database_dump`. Apart from bringing the table layout up to date (as `mousedb init` does), the database is only read |
@@ -306,8 +306,8 @@ archive-status` ([docs/WATCHER_VIEWS.md](docs/WATCHER_VIEWS.md)).
 | `mousedb-status`, `mousedb-init`, `mousedb-new-cohort`, `mousedb-import`, `mousedb-export`, `mousedb-entry`, `mousedb-browse`, `mousedb-check`, `mousedb-video-status`, `mousedb-archive-status`, `mousedb-import-brains`, `mousedb-import-reaches`, `mousedb-import-analyses` | The same as `mousedb <command>` (for example `mousedb-check` = `mousedb check`), with the same options |
 | `mousedb import-reaches --pellets-only` | Fill the per-pellet table (`video_pellets`: one row per pellet the pipeline cut each video into, reached for or not) and the per-session table (`video_sessions`: one row per tray session, including a tray at which the animal never reached) from every features file, touching nothing else. A filed video whose newer run waits in a review queue is skipped (the output counts them): it is not done, and the nightly import keeps it out of the database until the new run is filed. Run once after upgrading; the nightly import keeps it current afterwards |
 | `mousedb import-reaches` | Pull new or changed MouseReach `*_features.json` results into `reach_data` (`--dry-run` to count only) |
-| `mousedb import-analyses` | Mirror MouseBrain's analysis registry (exports, figures, logs, provenance) into `<mousedb_root>/exports/<analysis>`, `figures/<analysis>`, `logs/`; writes `exports/ANALYSES_MANIFEST.json` (`--dry-run` to count only). Only one runs at a time: a second one (the nightly task and the "Update the database now" button on the Where Is My Data tab (`mousedb update`) at once) waits for the first, using the lock file `logs/.import-analyses.task.lock`, and ends with `[FAIL] import-analyses not run: ...` if it waited too long |
-| `mousedb import-brains --all` | Import BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` (`--summary-dir` to point elsewhere). A brain whose counts file changed (a recount) has its stored counts REPLACED; an unchanged one is left alone; `--update` replaces even unchanged ones (docs/WHERE_IS_MY_DATA.md, "How brain counts get here"). If anything did not land -- a brain the database refused, a file whose name holds no brain ID, the calibration runs, a brain's eLife counts -- the LAST line starts with `[FAIL]` and names each one, and the command exits 1 (so the scheduler shows the job as failed). `--csv` and `--calibration` exit 1 the same way. A brain that is refused writes nothing at all -- not even its animal or its brain row -- so fixing the cause and running the import again is all there is to do |
+| `mousedb import-analyses` | Mirror MouseBrain's analysis registry (exports, figures, logs, provenance) into `<mousedb_root>/exports/<analysis>`, `figures/<analysis>`, `logs/`; writes `exports/ANALYSES_MANIFEST.json` (`--dry-run` to count only). Only one runs at a time: a second one (the nightly task and the "Update the database now" button on the MouseReach Video Processing Progress tab (`mousedb update`) at once) waits for the first, using the lock file `logs/.import-analyses.task.lock`, and ends with `[FAIL] import-analyses not run: ...` if it waited too long |
+| `mousedb import-brains --all` | Import BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` (`--summary-dir` to point elsewhere). A brain whose counts file changed (a recount) has its stored counts REPLACED; an unchanged one is left alone; `--update` replaces even unchanged ones (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "How brain counts get here"). If anything did not land -- a brain the database refused, a file whose name holds no brain ID, the calibration runs, a brain's eLife counts -- the LAST line starts with `[FAIL]` and names each one, and the command exits 1 (so the scheduler shows the job as failed). `--csv` and `--calibration` exit 1 the same way. A brain that is refused writes nothing at all -- not even its animal or its brain row -- so fixing the cause and running the import again is all there is to do |
 
 ## Export Formats
 
@@ -339,7 +339,7 @@ All subjects with session summaries for analysis:
 | Location | Purpose |
 |----------|---------|
 | `<mousedb_root>/connectome.db` | SQLite database (single source of truth) |
-| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete), and `reach_rows_without_file.json` (videos with reaches in the database whose results file is gone from the pipeline -- reported, never removed; shown on the Where Is My Data tab), and `brain_counts_without_file.json` (brains with final counts in the database whose counts file is not in MouseBrain's summary folder -- reported, never removed; shown on the Where Is My Data tab; an unreadable one only shows as a problem there). If `reach_imports.json` or `reach_imports_phases_pending.json` exists but cannot be read, the reach import stops with a `[FAIL]` line saying what to do (docs/WHERE_IS_MY_DATA.md, "An unreadable ledger stops the import"); an unreadable `reach_rows_without_file.json` never stops it -- it only shows as a problem on the Where Is My Data tab. Likewise, if `analysis_imports.json` exists but cannot be read, `mousedb import-analyses` stops with a `[FAIL]` line and copies or archives nothing (docs/WHERE_IS_MY_DATA.md, "The mirror's ledger") |
+| `<mousedb_root>/logs/` | Audit trail (JSONL) and the import ledgers (`sheet_imports.jsonl`, `reach_imports.json`, `analysis_imports.json`), and `reach_imports_phases_pending.json` (cohorts the reach import still has to re-label; do not delete), and `reach_rows_without_file.json` (videos with reaches in the database whose results file is gone from the pipeline -- reported, never removed; shown on the MouseReach Video Processing Progress tab), and `brain_counts_without_file.json` (brains with final counts in the database whose counts file is not in MouseBrain's summary folder -- reported, never removed; shown on the MouseReach Video Processing Progress tab; an unreadable one only shows as a problem there). If `reach_imports.json` or `reach_imports_phases_pending.json` exists but cannot be read, the reach import stops with a `[FAIL]` line saying what to do (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "An unreadable ledger stops the import"); an unreadable `reach_rows_without_file.json` never stops it -- it only shows as a problem on the MouseReach Video Processing Progress tab. Likewise, if `analysis_imports.json` exists but cannot be read, `mousedb import-analyses` stops with a `[FAIL]` line and copies or archives nothing (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "The mirror's ledger") |
 | `<mousedb_root>/exports/Behavior/All_Cohorts/` | The full export: everything the database holds, per grant, project and cohort. The folder people open |
 | `<mousedb_root>/exports/Behavior/Selected_Cohorts/<name>/` | Limited exports: a saved, filtered copy of part of the full export |
 | `<mousedb_root>/exports/Behavior/Hand_Scores/` | The hand-score file the reaching pipeline reads (`hand_pellet_scores.csv` and its `.json`) |
@@ -411,7 +411,7 @@ If you modify the package code:
 
 **After installing new code, close and reopen every open MouseDB window**
 (every person logged in to that computer). A window keeps the code it was
-started with. In particular a Where Is My Data tab opened before an install
+started with. In particular a MouseReach Video Processing Progress tab opened before an install
 that added the current-exports lock still runs the OLD in-window export: it
 takes no lock and empties the shared staging folder, so a press of
 **Refresh exports now** there can spoil a nightly refresh running at the same
@@ -583,10 +583,10 @@ from what they imported, then the bench check, which reads the snapshot):
 | job | command | cadence | what it does |
 |---|---|---|---|
 | sheet import | `python -m mousedb.sheet_sync import --triggered-by scheduled` | daily | imports the tracking workbooks (they are filled in by hand, so more often only adds load) |
-| reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented, and the session itself in `video_sessions`, so a tray with no reach still gets its row in the sessions files. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/WHERE_IS_MY_DATA.md, "A stopped import carries on") |
+| reach import | `python -m mousedb.import_reaches` | daily | pulls new or changed MouseReach `*_features.json` results into `reach_data`, then re-derives the test-phase labels of every cohort a new video touched, writing only the rows whose label changes. Also records every pellet of each video in `video_pellets`, so the exports can tell how many pellets a tray presented, and the session itself in `video_sessions`, so a tray with no reach still gets its row in the sessions files. Saves its ledger every few minutes while it runs, so a run stopped by the time limit and restarted carries on where it stopped (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "A stopped import carries on") |
 | brain import | `python -m mousedb.cli import-brains --all` | daily | pulls BrainGlobe region counts, calibration runs and eLife group counts from MouseBrain's `3D_Cleared/2_Data_Summary` into the brain tables; a recounted brain's counts replace its old ones. Exits 1, with a last line starting `[FAIL]` that names what was left out, when any brain (or the calibration runs) did not land, or when it gave up waiting for the database. A brain the database refuses keeps this job failing every night until the cause is fixed -- that is on purpose |
 | analysis import | `python -m mousedb.import_analyses` | daily | mirrors MouseBrain's analysis registry (exports, figures, logs, provenance) into the mousedb folders and writes `exports/ANALYSES_MANIFEST.json` |
-| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/Behavior/All_Cohorts/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then, only when those exports are complete, remakes every saved limited export not marked "not nightly" (docs/WHERE_IS_MY_DATA.md, "Limited exports"; one that cannot be made also makes the job exit 1); then retakes the pipeline census the Where Is My Data tab shows (`--skip-census` to leave it), and, when the census was retaken, brings the database's record of failed recordings up to date from it (`Failed recordings imported: ...`) and rewrites `exports/Behavior/Sessions_Without_Video/missing_session_videos.csv` (`List of sessions without a video written: ...`) -- a failure of these last three prints `[FAIL]` but does not change the exit code. Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
+| snapshot | `python -m mousedb.exporters.refresh_snapshot` | daily | takes the parquet snapshot of the database (all tables written aside first, then put in place together as one numbered generation -- see "The snapshot is replaced in one piece" below) and rewrites `exports/Behavior/All_Cohorts/` (one folder per project, one per cohort inside it, and a combined file per kind per project), including the per-cohort `ODC_sessions_*.csv` (those read the database, which a successful snapshot has just shown to be readable; `MANIFEST.json` says whether they were refreshed); then, only when those exports are complete, remakes every saved limited export not marked "not nightly" (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md, "Limited exports"; one that cannot be made also makes the job exit 1); then retakes the pipeline census the MouseReach Video Processing Progress tab shows (`--skip-census` to leave it), and, when the census was retaken, brings the database's record of failed recordings up to date from it (`Failed recordings imported: ...`) and rewrites `exports/Behavior/Sessions_Without_Video/missing_session_videos.csv` (`List of sessions without a video written: ...`) -- a failure of these last three prints `[FAIL]` but does not change the exit code. Exits 1 with a `[FAIL]` line when the snapshot or the exports could not be written, or the exports came out incomplete. `--lock-wait-minutes` (default 165) is how long it waits behind another mousedb job |
 | bench-sheet check | `python -m mousedb.bench_scan` | daily | REPORTS only: finds never-reviewed pellets where the hand score and the pipeline disagree and writes the worklist to `logs/never_reviewed_worklist.json` under `mousedb_root` (`--out` to put it elsewhere). It sends nothing to review. Do not schedule it with `--route`: MouseReach now compares each video with its hand scores BEFORE filing it, so disagreements go to review on their own, and a scheduled `--route` would send finished, filed videos back to the review queue (and so out of the database). `--route` is for a deliberate run by hand only |
 
 Cadence is a judgement about how fresh the data needs to be, not a fixed part of
@@ -614,7 +614,7 @@ analysis import do not check for a watcher at all.
 
 **mousedb ships no job that checks whether the scheduled jobs succeeded.**
 (The tab does show the snapshot's age, failed sheet imports and failed limited
-exports.) The Where Is My Data tab and `mousedb-data-status` also read a
+exports.) The MouseReach Video Processing Progress tab and `mousedb-data-status` also read a
 health report,
 `<mousedb_root>/logs/health.json`, that a scheduled check of your own writes
 (mousedb does not ship one). Without that file they show the problem
@@ -743,7 +743,7 @@ restarted. The setting does no harm and covers a task that cannot start at all
 for the wait budget. With cron, a wrapper that re-queues on a non-zero exit is
 the equivalent. When a job does give up, its log says so with `[FAIL]`; run
 it by hand once the holder has finished (or press **Update the database now**
-on the Where Is My Data tab).
+on the MouseReach Video Processing Progress tab).
 
 Keep the scheduler's own "stop the task if it runs longer than" limit
 generous (hours, not minutes) for the jobs that write the database. That limit
@@ -765,7 +765,7 @@ when the last handle on the file closes (`mousedb/prefetch.py`; the log line
 seconds. `MOUSEDB_PREFETCH=0` turns it off.
 
 **How you find out it happened.** The failing job's log says so in one sentence,
-and `mousedb-data-status` and the GUI's Where Is My Data tab both report the
+and `mousedb-data-status` and the GUI's MouseReach Video Processing Progress tab both report the
 snapshot's AGE in words and turn it red past `STALE_SNAPSHOT_HOURS`
 (`mousedb/data_status.py`, 36 h by default -- raise it if the snapshot job runs
 less often than daily). That age line is the thing that catches a job that has
@@ -774,7 +774,7 @@ that have not announced a problem.
 
 ### The snapshot job also retakes the pipeline census
 
-The pipeline counts on the Where Is My Data tab ("should exist", "finished on
+The pipeline counts on the MouseReach Video Processing Progress tab ("should exist", "finished on
 disk", where every unfinished video sits) come from a census of the MouseReach
 pipeline folders, cached in `logs/pipeline_census.json` under `mousedb_root`.
 After writing the exports, `refresh_snapshot` retakes it
@@ -874,7 +874,7 @@ time and SHA-256. During the swap the stamp says `"swapping"`.
 some tables from tonight and the rest from an earlier night, and every reader would join them as one snapshot.
 
 What readers do (`mousedb/snapshot_generation.py`): the exports, the data
-browser, the Where Is My Data tab, the bench check and the example export check
+browser, the MouseReach Video Processing Progress tab, the bench check and the example export check
 the stamp before and after they read. A new generation landing mid-read makes
 them read again; a snapshot that holds two generations (a refresh stopped
 during the swap, or a table replaced by something other than the refresh) is

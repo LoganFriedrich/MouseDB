@@ -4,7 +4,7 @@ WHAT IT MAKES
 -------------
 Two shortcuts, each in two places:
 
-* **MouseDB** -- the MouseDB window (tracking sheets, Where Is My Data, data
+* **MouseDB** -- the MouseDB window (tracking sheets, MouseReach Video Processing Progress, data
   entry). Runs ``pythonw -m mousedb.gui``.
 * **MouseDB - Browse the data** -- the read-only data browser. Runs
   ``pythonw -m mousedb.data_browser``.
@@ -75,7 +75,7 @@ class Shortcut:
 # Icon numbers in %SystemRoot%\System32\imageres.dll: 76 a checklist (records,
 # data entry), 13 a page under a magnifying glass (looking through data).
 GUI = Shortcut("MouseDB", "mousedb.gui",
-               "Open MouseDB: tracking sheets, Where Is My Data, data entry", 76)
+               "Open MouseDB: tracking sheets, MouseReach Video Processing Progress, data entry", 76)
 BROWSER = Shortcut("MouseDB - Browse the data", "mousedb.data_browser",
                    "Browse what mousedb holds (read-only copy of the snapshot)", 13)
 SHORTCUTS = (GUI, BROWSER)

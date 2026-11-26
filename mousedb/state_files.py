@@ -141,7 +141,7 @@ def _write_json_atomically(p: Path, obj: Any) -> None:
     analysis mirror saves its ledger and manifest once, at the end). A kill in
     the middle of a plain write_text left a truncated file, which the next
     run cannot read -- the reach import would otherwise start a NEW ledger and
-    re-import every file, and the Where Is My Data tab showed a half-written
+    re-import every file, and the MouseReach Video Processing Progress tab showed a half-written
     manifest as unreadable. The new content goes to a temporary file beside
     the target first and is swapped in whole with os.replace. On Windows the
     swap fails while another program has the file open (the census and the

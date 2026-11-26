@@ -1,4 +1,4 @@
-"""Where Is My Data counts review queues honestly.
+"""MouseReach Video Processing Progress counts review queues honestly.
 
 The deep-review queue folder was renamed (flagged_for_review -> deep_review).
 Reading the old name made every cohort's deep-review count a silent 0, which

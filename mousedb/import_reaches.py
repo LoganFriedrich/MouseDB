@@ -65,7 +65,7 @@ WHAT IT DOES
   8. REPORTS (never removes) every video that has rows in the database but no
      results file anywhere it looked and is not in a review queue: in the run's
      output and in ``<mousedb_root>/logs/reach_rows_without_file.json``, which
-     the Where Is My Data tab shows. See ``rows_without_a_filed_file``.
+     the MouseReach Video Processing Progress tab shows. See ``rows_without_a_filed_file``.
 
 Usage:
     mousedb import-reaches                 # what is new or changed

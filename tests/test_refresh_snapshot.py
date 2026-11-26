@@ -175,7 +175,7 @@ def test_a_write_that_fails_keeps_the_previous_snapshot_intact(configured, monke
 @pytest.mark.skipif(sys.platform != "win32",
                     reason="only Windows refuses to replace a file that is open")
 def test_swap_waits_for_a_reader_to_let_go(tmp_path):
-    """WHY: anything reading the snapshot (the Where Is My Data tab, the data
+    """WHY: anything reading the snapshot (the MouseReach Video Processing Progress tab, the data
     browser making its private copy) holds a table file open for seconds. On
     Windows a replace fails while the file is open, so without a wait one such
     read at the wrong moment failed the whole nightly refresh."""

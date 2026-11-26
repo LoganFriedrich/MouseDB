@@ -16,7 +16,7 @@ WHAT IS LEFT OUT: ``reach_data.extended_features``, a block of about 165
 numbers per reach stored as one JSON text. It is most of the snapshot's size,
 and as one cell of JSON it cannot be sorted or filtered by anyone who does not
 write code. The same values, one column each, are in the exports
-(``reaches_<cohort>_summary.csv`` and friends; docs/WHERE_IS_MY_DATA.md).
+(``reaches_<cohort>_summary.csv`` and friends; docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md).
 """
 from __future__ import annotations
 
@@ -177,7 +177,7 @@ def check_one_generation(snapshot_dir: Path):
             "The snapshot cannot be browsed right now: %s. A copy made from it would "
             "show some tables from one night and some from another. Open the data "
             "browser again after the next successful snapshot refresh (or run it "
-            "now: \"Update the database now\" on the Where Is My Data tab)." % why)
+            "now: \"Update the database now\" on the MouseReach Video Processing Progress tab)." % why)
     return st, stamp
 
 
@@ -273,7 +273,7 @@ def build(snapshot_dir=None, root: Optional[Path] = None,
             "There is no snapshot to browse yet: %s has no reach_data.parquet.\n"
             "The snapshot is written by the scheduled snapshot refresh "
             "(mousedb-refresh-snapshot), or by \"Update the database now\" on the "
-            "Where Is My Data tab. Once it has run, open the data browser again."
+            "MouseReach Video Processing Progress tab. Once it has run, open the data browser again."
             % snapshot_dir)
 
     root = Path(root) if root is not None else cache_root()

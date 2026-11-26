@@ -81,7 +81,7 @@ REFUSED_PAGE = (
     "<h2>Open the data browser from MouseDB</h2>"
     "<p>This address belongs to a data browser window that you did not open from "
     "here, or that has since been closed and reopened.</p>"
-    "<p>Use the <b>Browse the data</b> button on MouseDB's <i>Where Is My Data</i> "
+    "<p>Use the <b>Browse the data</b> button on MouseDB's <i>MouseReach Video Processing Progress</i> "
     "tab, or the <b>MouseDB - Browse the data</b> shortcut on your desktop.</p>"
     % TITLE).encode()
 

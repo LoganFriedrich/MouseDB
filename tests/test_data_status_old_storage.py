@@ -1,4 +1,4 @@
-"""Where Is My Data says what still exists only on an old storage root.
+"""MouseReach Video Processing Progress says what still exists only on an old storage root.
 
 WHY: MouseReach's legacy inventory found recordings that exist only
 on a retired storage root, where no watcher looks; the root cannot be retired

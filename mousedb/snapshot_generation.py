@@ -9,7 +9,7 @@ locked database, the scheduler's time limit, a person ending it -- left the
 first tables from tonight and the rest from an earlier night: reaches labeled
 by one night's phase rules joined with animals, weights and pellets from
 another. Nothing in the folder said so, and every reader (exports, the data
-browser, the Where Is My Data tab, the bench check, analysis scripts) read
+browser, the MouseReach Video Processing Progress tab, the bench check, analysis scripts) read
 the mix as if it were one snapshot.
 
 HOW IT WORKS NOW

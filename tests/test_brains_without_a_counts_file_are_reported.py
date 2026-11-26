@@ -6,7 +6,7 @@ MouseBrain (its cohort or subject corrected in the folder name), or whose
 counts were withdrawn, kept its counts in the database marked final under the
 old id -- a renamed brain was there twice -- and nothing said so. Removing them
 automatically would turn a listing that missed a file into lost counts, so the
-import reports them (its output, a list file, the Where Is My Data tab) and
+import reports them (its output, a list file, the MouseReach Video Processing Progress tab) and
 removes nothing, and its exit code does not change.
 """
 import json
@@ -100,9 +100,9 @@ def test_a_dry_run_reports_but_writes_no_list(env, capsys):
     assert not env["without_file"].exists()
 
 
-def test_where_is_my_data_names_them(tmp_path):
+def test_video_processing_progress_names_them(tmp_path):
     problem = getattr(data_status, "brains_without_file_problem", None)
-    assert problem is not None, "Where Is My Data does not report brains without a counts file"
+    assert problem is not None, "MouseReach Video Processing Progress does not report brains without a counts file"
     p = tmp_path / 'brain_counts_without_file.json'
     assert problem(p) is None                             # never checked
     p.write_text(json.dumps({"checked_at": "2026-01-02T22:30:00", "count": 0, "brains": []}),

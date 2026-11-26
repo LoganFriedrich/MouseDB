@@ -1480,7 +1480,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
     than formatting it onto the share a number at a time.
 
     incremental: rewrite only the cohorts whose inputs changed, keeping the
-    rest (exporters.incremental; the nightly refresh and the Where Is My Data
+    rest (exporters.incremental; the nightly refresh and the MouseReach Video Processing Progress
     button use it). rebuild_all: with incremental, ignore the ledger and
     rebuild everything (then write a new ledger).
     """
@@ -1577,7 +1577,7 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
                 entry["dictionary"] = SHARED_DICTIONARIES["complete"]
             manifest["files"][name("ODC_reaches")] = entry
             # Each document under its own name. The counts above describe them
-            # too, but a reader of the manifest (and the Where Is My Data tab)
+            # too, but a reader of the manifest (and the MouseReach Video Processing Progress tab)
             # looks for a file by its name, and a report that is not listed by
             # name is a report nobody knows is there.
             if not analysis_only:

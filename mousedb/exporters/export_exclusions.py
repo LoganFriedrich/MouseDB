@@ -301,7 +301,7 @@ COLLAGE_TRIES = 3
 COLLAGE_RETRY_SECONDS = 20
 # The longest one database can hold up one listing before it counts as
 # unreadable: every try waits out its busy timeout, with a pause between tries
-# -- 130 seconds, "a little over two minutes" in docs/WHERE_IS_MY_DATA.md.
+# -- 130 seconds, "a little over two minutes" in docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md.
 # A refresh lists the databases TWICE (input_signature, to decide whether
 # anything changed, then compute()), so a database that stays locked can hold
 # a refresh up for twice this. Change the docs when these numbers change.

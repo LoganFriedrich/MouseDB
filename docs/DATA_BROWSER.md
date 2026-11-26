@@ -11,7 +11,7 @@ Any of these:
 - Or open the Windows **Start** menu, find the **MouseDB** folder, and click
   **MouseDB - Browse the data**.
 - Or, inside MouseDB (double-click **MouseDB** on the desktop), open the
-  **Where Is My Data** tab and press **Browse the data** (the purple button).
+  **MouseReach Video Processing Progress** tab and press **Browse the data** (the purple button).
 
 The desktop and Start-menu shortcuts are there for everyone who logs in to a
 computer that has been set up for it (see "For whoever looks after mousedb"
@@ -98,8 +98,8 @@ to save the rows exactly as filtered and sorted.
   rows** and press **Export CSV**. The file opens in Excel.
 - A CSV of a big selection (all reaches of a project) can be hundreds of
   megabytes. For whole-project tables, use the ready-made exports in the
-  current exports folder instead (Where Is My Data -> **Open exports folder**;
-  see [Where is my data?](WHERE_IS_MY_DATA.md)). Those are what you send to
+  current exports folder instead (MouseReach Video Processing Progress -> **Open exports folder**;
+  see [MouseReach Video Processing Progress](MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md)). Those are what you send to
   someone else.
 
 ## How fresh is it? Why is it a copy?
@@ -113,7 +113,7 @@ that snapshot was written and how old it was when you opened the browser.
   copy. If a new snapshot is written while it is open, the small window tells
   you.
 - Videos still waiting for review in MouseReach are not in the database at all,
-  so they are not here either. The **Where Is My Data** tab lists them.
+  so they are not here either. The **MouseReach Video Processing Progress** tab lists them.
 
 Why a copy and not the database itself: people leave viewers open for hours or
 days. A viewer holding the live database open makes the importers wait, and
@@ -143,9 +143,9 @@ Every problem is reported in a message box saying what to do. The common ones:
 | message | what to do |
 |---|---|
 | *The data browser is not installed in this Python environment* | Whoever looks after mousedb installs it once (see INSTALL.md, "Data browser"). |
-| *There is no snapshot to browse yet* | The snapshot job has not run on this computer yet. After it runs (nightly, or **Update the database now** on the Where Is My Data tab), try again. |
+| *There is no snapshot to browse yet* | The snapshot job has not run on this computer yet. After it runs (nightly, or **Update the database now** on the MouseReach Video Processing Progress tab), try again. |
 | *The snapshot is being rewritten right now ...* | The nightly job is putting a new snapshot in place (seconds). The window waits for it (up to 15 minutes) and carries on. |
-| *The snapshot cannot be browsed right now ...* | A refresh stopped while it was replacing the snapshot, so the snapshot holds tables from two nights, and a copy would mix them. Open the browser again after the next successful refresh, or press **Update the database now** on the Where Is My Data tab. |
+| *The snapshot cannot be browsed right now ...* | A refresh stopped while it was replacing the snapshot, so the snapshot holds tables from two nights, and a copy would mix them. Open the browser again after the next successful refresh, or press **Update the database now** on the MouseReach Video Processing Progress tab. |
 | *The snapshot was replaced by a newer one while your copy was being made ...* | Open the data browser again; it copies the new snapshot. |
 | *Open the data browser from MouseDB* (in the web browser) | You opened an old link or bookmark. Use the button or the desktop shortcut. |
 | The web browser did not open | Press **Open in my web browser** in the small window. |

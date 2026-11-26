@@ -1,4 +1,4 @@
-"""A button pressed while the Where Is My Data tab is busy says so, and only then.
+"""A button pressed while the MouseReach Video Processing Progress tab is busy says so, and only then.
 
 WHY: Refresh and "Refresh exports now" pressed while another job of the tab
 ran did nothing and said nothing -- the exports button even wrote

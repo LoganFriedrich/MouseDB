@@ -6794,7 +6794,7 @@ class DataEntryWindow(QMainWindow):
 
         # (No Video Pipeline / Archive Status tabs. They showed one computer's
         # MouseReach watcher records as if they were the pipeline's state and
-        # were removed; the whole pipeline is on the Where Is My Data tab, and
+        # were removed; the whole pipeline is on the MouseReach Video Processing Progress tab, and
         # `mousedb video-status` / `mousedb archive-status` still read one
         # watcher's records for whoever needs them -- see docs/WATCHER_VIEWS.md.)
 
@@ -6807,13 +6807,13 @@ class DataEntryWindow(QMainWindow):
         except Exception as e:
             print("[!] Tracking Sheets tab unavailable: %s" % e)
 
-        # 9. WHERE IS MY DATA - per-cohort data status + the current exports folder
+        # 9. MOUSEREACH VIDEO PROCESSING PROGRESS - per-cohort data status + the current exports folder
         try:
             from .data_status_tab import DataStatusTab
             self.data_status_tab = DataStatusTab(self.db)
-            self.tabs.addTab(self.data_status_tab, "9. Where Is My Data")
+            self.tabs.addTab(self.data_status_tab, "9. MouseReach Video Processing Progress")
         except Exception as e:
-            print("[!] Where Is My Data tab unavailable: %s" % e)
+            print("[!] MouseReach Video Processing Progress tab unavailable: %s" % e)
 
         # 10. STUDY FACTS - the facts no sheet records, and the exceptions to them.
         # WHY a tab: these fill columns in every export, and until this existed the

@@ -13,7 +13,7 @@ still real and are kept.
 HOW MOUSEDB LEARNS OF THEM
 --------------------------
 From the pipeline census only (``pipeline_census.json``, retaken every night
-by the snapshot job and by the Where Is My Data tab's refresh button). The
+by the snapshot job and by the MouseReach Video Processing Progress tab's refresh button). The
 census lists each recording issue -- the recording, the reason, who or what
 flagged it and when, and the sessions it was meant to hold -- and gives each
 of those sessions the element ``recording_issue``. mousedb never imports the
@@ -29,7 +29,7 @@ WHERE IT GOES
   day) carries ``Recording_Status`` and ``Recording_Issue_Reason``. The census
   is taken after that night's exports are written, so a recording flagged
   today shows in the export files after the NEXT night's refresh.
-* The Where Is My Data tab and the cohort's FIX THESE file: one line per
+* The MouseReach Video Processing Progress tab and the cohort's FIX THESE file: one line per
   failed recording, "recording failed: <recording>, <reason>"
   (missing_videos.items).
 * The list of hand-scored sessions without a video (missing_videos.py): such

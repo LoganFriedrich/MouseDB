@@ -57,6 +57,9 @@ VIDEO_PROGRESS = "MouseReach_Video_Processing_Progress"
 # The weekly page's file names start with this ("<stem> YYYY-MM-DD.html",
 # "<stem> - LATEST.html"): the folder's name in words.
 VIDEO_PROGRESS_FILE_STEM = "MouseReach video processing progress"
+# The same name as a label: the weekly page's heading and title, and the
+# window's tab.
+VIDEO_PROGRESS_TITLE = "MouseReach Video Processing Progress"
 
 ARCHIVE = "_archived"
 ARCHIVE_ALL_COHORTS = "exports_current"

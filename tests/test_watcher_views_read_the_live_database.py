@@ -115,7 +115,7 @@ def test_both_commands_say_these_are_one_computers_records(node, capsys, command
     assert "this computer's watcher only" in out
     assert str(node["live"]) in out
     assert _when_written(node["live"]) in out
-    assert "Where Is My Data" in out
+    assert "MouseReach Video Processing Progress" in out
     out.encode("ascii")  # printed to a Windows console: ASCII only
 
 
