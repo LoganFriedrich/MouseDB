@@ -6,7 +6,7 @@ recorded (its own watcher database), laid out as if it were the pipeline's
 state. Work done on other computers and anything waiting in the review
 queues' folders was not in them, so a person reading them saw videos as not
 started, or missing, that the pipeline had in fact handled. The lab decided
-to remove them. The whole pipeline is on the Where Is My Data tab (read from
+to remove them. The whole pipeline is on the MouseReach Video Processing Progress tab (read from
 the pipeline's folders); `mousedb video-status` and `mousedb archive-status`
 still show one watcher's records, each saying so above its numbers.
 
@@ -60,12 +60,12 @@ def test_the_tabs_after_the_database_browser_are_numbered_on(window):
     # The first tabs are built unconditionally; the later ones each sit in
     # their own try/except, so only the ones that built are checked here.
     assert "7. Database Browser" in titles
-    for later in ("8. Tracking Sheets", "9. Where Is My Data", "10. Study Facts"):
+    for later in ("8. Tracking Sheets", "9. MouseReach Video Processing Progress", "10. Study Facts"):
         bare = later.split(". ", 1)[1]
         built = [t for t in titles if t.endswith(bare)]
         assert built == [later] or built == [], titles
-    # Where Is My Data -- the whole pipeline's state -- stays.
-    assert "9. Where Is My Data" in titles
+    # MouseReach Video Processing Progress -- the whole pipeline's state -- stays.
+    assert "9. MouseReach Video Processing Progress" in titles
 
 
 def test_the_watcher_tab_modules_are_gone():

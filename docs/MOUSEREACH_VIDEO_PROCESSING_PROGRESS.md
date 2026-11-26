@@ -1,8 +1,8 @@
-# Where is my data?
+# MouseReach Video Processing Progress
 
 This page is for the person doing the work. No codebase knowledge assumed.
 
-**Just want to look?** The **Browse the data** button on the Where Is My Data
+**Just want to look?** The **Browse the data** button on the MouseReach Video Processing Progress
 tab opens every table the database holds in your web browser -- sort, filter,
 save as CSV, no code. See [Browse the data](DATA_BROWSER.md). The files below
 are what you keep, analyze and send.
@@ -615,7 +615,7 @@ reaches the full export reaches the limited export the next time it is made.
 
 ### Making one (no terminal)
 
-1. Open the MouseDB window, tab **9. Where Is My Data**, and press **Make a
+1. Open the MouseDB window, tab **9. MouseReach Video Processing Progress**, and press **Make a
    limited export...**. A window opens.
 2. At the top, pick a saved limited export from the list to change or remake
    it, or leave it on "(a new limited export)" and type a **Name** (letters,
@@ -763,7 +763,7 @@ room, and make it again.
 
 Only if undoing ALSO fails is the folder left part-way. Then a file
 `NOT_COMPLETE.txt` in it says so and where the previous files went, the
-window shows the same message (starting `[FAIL]`), and the Where Is My Data
+window shows the same message (starting `[FAIL]`), and the MouseReach Video Processing Progress
 tab shows the failure. Do not use the files there; make the limited export
 again -- that moves everything in the folder, the note included, to the
 archive and writes a complete set.
@@ -939,7 +939,7 @@ incomplete, nothing is remade: a slice of a partial export would be partial
 too. A remake you start yourself (the button or `--run`) always writes the
 files.
 
-The Where Is My Data tab shows one line per saved limited export below the
+The MouseReach Video Processing Progress tab shows one line per saved limited export below the
 export files: when it was last made, or `[FAIL] <name>: ...` with the reason
 (for example a column that the full export no longer has). A limited export
 that cannot be made also makes the nightly job report a failure. The record
@@ -981,7 +981,7 @@ limited export (or ask whoever looks after the lab settings).
 ## How far along are we? Counted against the tracking sheets
 
 **Every "how far along" number mousedb gives is counted against the tracking
-sheets, not against the videos.** The Where Is My Data tab, the weekly page and
+sheets, not against the videos.** The MouseReach Video Processing Progress tab, the weekly page and
 `mousedb sheet-progress` all give the same figure:
 
 > **done = sessions filed / sessions scored by hand in the sheets**
@@ -1060,7 +1060,7 @@ nearly done on pillar trays while its overall figure is low.
 
 ### Where you see it
 
-- **Where Is My Data tab**: the bold line above the table ("PROGRESS AGAINST
+- **MouseReach Video Processing Progress tab**: the bold line above the table ("PROGRESS AGAINST
   THE TRACKING SHEETS"), with "NOT ON THE SERVER YET" on a red background when
   any session is overdue; and per cohort the columns *Done (filed /
   sheet-scored)*, *Not on server yet* (red when any is overdue; the number in
@@ -1093,11 +1093,11 @@ recordings, the tab says so under the line; failed recordings are then
 counted where the pipeline view puts them (usually "not on the server yet")
 until the pipeline is updated.
 
-## The longer answer: the "Where Is My Data" tab
+## The longer answer: the "MouseReach Video Processing Progress" tab
 
 Open the mousedb GUI (double-click **MouseDB** on the desktop, or Start menu ->
 **MouseDB** -> **MouseDB**; from a terminal: MouseDB environment active, then
-`mousedb-entry`) and find **9. Where Is My Data**. One row per cohort:
+`mousedb-entry`) and find **9. MouseReach Video Processing Progress**. One row per cohort:
 
 | column | meaning |
 |---|---|
@@ -1468,7 +1468,7 @@ has rows but no file and is not in a review queue:
   is treated as a broken listing, never as "every file is gone"), and a run
   that stopped earlier (an unreadable ledger or list, a failed save). So the
   list can be older than the last import; its date tells you how old;
-- on the **Where Is My Data** tab, among the problems at the top, with that
+- on the **MouseReach Video Processing Progress** tab, among the problems at the top, with that
   date (`found by the reach import of <checked_at>`).
 
 Nothing is deleted, and the import still succeeds: a listing that missed some
@@ -1538,18 +1538,18 @@ next run that can see the files carries on as normal. The cases:
 | the whole analysis folder `exports/<analysis>` is gone, and other analyses are still there | archives every mirrored file of that analysis (MouseBrain withdrew it) |
 | the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror holds nothing of that analysis (neither the ledger nor the mirror's own folders) | nothing to do, and not an error: a line `[note] <analysis>: exports/<analysis> has no registry.json and nothing of it is in the mirror ...`. MouseBrain makes this folder as soon as anything opens that analysis's registry, before anything is registered in it -- a new analysis, or a mistyped name given to `mousebrain-registry --name ...`. Once MouseBrain registers something in it, the next run mirrors it. A folder made by a mistyped name can be left alone; it costs nothing here. |
 | the folder `exports/<name>` is there but has no `registry.json`, and files ARE kept under that name on the mousedb side, but nothing marks them as the mirror of an analysis (see "How the mirror tells an analysis from another folder" below) | nothing to do, and not an error: a line `[note] <name>: exports/<name> has no registry.json, and the N file(s) kept under that name on the mousedb side are not copies of anything in it ...; they are left as they are`. This is what happens when MouseBrain's registry was opened with a name that mousedb already uses for a folder of its own. Those files are not touched, and the run does not suggest `--confirm-withdrawn` for them (that option refuses the name too). |
-| the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror already holds files of that analysis | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`, and the Where Is My Data tab shows the analysis's line ending with that reason. The run looks in the mirror's own folders as well as the ledger, so this holds after `--set-aside-ledger` or on a machine whose ledger is new too ("holds files of that analysis" is judged by the three marks listed under "How the mirror tells an analysis from another folder" below). If the mirror's folders of it cannot be opened, the line says so instead and nothing is archived. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If MouseBrain set a damaged `registry.json` aside (MouseBrain's `logs` folder then holds `<analysis>.registry.json.unreadable-<time>`) and no new one has been written yet, this job keeps failing every night until the next registration in that analysis writes a new `registry.json` or MouseBrain's registry is repaired (see MouseBrain's registry guide). If the analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
+| the folder `exports/<analysis>` is there but has no `registry.json`, and the mirror already holds files of that analysis | archives nothing of it, copies nothing of it: `[FAIL] <analysis>: exports/<analysis> has no registry.json ...`, and the MouseReach Video Processing Progress tab shows the analysis's line ending with that reason. The run looks in the mirror's own folders as well as the ledger, so this holds after `--set-aside-ledger` or on a machine whose ledger is new too ("holds files of that analysis" is judged by the three marks listed under "How the mirror tells an analysis from another folder" below). If the mirror's folders of it cannot be opened, the line says so instead and nothing is archived. Usually MouseBrain is part-way through rebuilding the registry, or the share answered short; run again later. If MouseBrain set a damaged `registry.json` aside (MouseBrain's `logs` folder then holds `<analysis>.registry.json.unreadable-<time>`) and no new one has been written yet, this job keeps failing every night until the next registration in that analysis writes a new `registry.json` or MouseBrain's registry is repaired (see MouseBrain's registry guide). If the analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
 | a folder of the analysis cannot be opened (a network error, no permission) | archives nothing of it: `[FAIL] <analysis>: its files could not be listed ...`. The other analyses are mirrored as usual. |
 | a file is to be archived, but the mirror's own copy of it cannot be looked at (a network error, no permission) | leaves that copy where it is and keeps it in the ledger: `[FAIL] archive <path>: ...`. The next run that can see the copy archives it. |
-| an analysis folder is missing from the listing, but a second look cannot confirm it is gone (the share answered short, or the second listing failed) | archives nothing of it: `[FAIL] 1 analysis folder(s) missing from the listing of ... could not be confirmed gone ...`, naming the analyses. The Where Is My Data tab shows that analysis's line ending `[FAIL] <analysis>: its folder was missing from the listing of exports/ but could not be confirmed gone ...`. Check that the share is reachable and run again; if the analysis really was withdrawn, the next run that can confirm it archives its mirror. |
+| an analysis folder is missing from the listing, but a second look cannot confirm it is gone (the share answered short, or the second listing failed) | archives nothing of it: `[FAIL] 1 analysis folder(s) missing from the listing of ... could not be confirmed gone ...`, naming the analyses. The MouseReach Video Processing Progress tab shows that analysis's line ending `[FAIL] <analysis>: its folder was missing from the listing of exports/ but could not be confirmed gone ...`. Check that the share is reachable and run again; if the analysis really was withdrawn, the next run that can confirm it archives its mirror. |
 | the ledger holds a line that names no analysis | keeps it, archives nothing for it: `[FAIL] 1 ledger entry names no analysis ...`. Such a line does not belong in the mirror's ledger; run `mousedb import-analyses --set-aside-ledger` (see "The mirror's ledger" below). |
-| no analysis at all is listed, yet the mirror holds files | archives nothing: `[FAIL] no analysis registry was listed ...`. The Where Is My Data tab still shows one line per analysis the mirror holds, ending `[FAIL] <analysis>: not listed this run (no analysis registry was listed at all) ...`, and a `[!] analysis mirror: no analysis registry was listed ...` line with the whole message. Run `mousedb config --show` and check that `mousebrain_registry_root` points at MouseBrain's registry folder (when it is not set, the mirror uses the `Registry` folder inside `mousebrain_pipeline_root`, so check that one instead) and that the share is reachable. If every analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
+| no analysis at all is listed, yet the mirror holds files | archives nothing: `[FAIL] no analysis registry was listed ...`. The MouseReach Video Processing Progress tab still shows one line per analysis the mirror holds, ending `[FAIL] <analysis>: not listed this run (no analysis registry was listed at all) ...`, and a `[!] analysis mirror: no analysis registry was listed ...` line with the whole message. Run `mousedb config --show` and check that `mousebrain_registry_root` points at MouseBrain's registry folder (when it is not set, the mirror uses the `Registry` folder inside `mousebrain_pipeline_root`, so check that one instead) and that the share is reachable. If every analysis really was withdrawn, see "When MouseBrain really withdrew an analysis" below. |
 
 `ANALYSES_MANIFEST.json` has one row per analysis: how many samples are
 registered, how many are **current**, how many are **stale vs approved**
 (current, but produced with a method other than the one the analysis now
 approves -- re-run them before using them), how many were **invalidated**,
-and when the mirror was taken. The Where Is My Data tab shows the same
+and when the mirror was taken. The MouseReach Video Processing Progress tab shows the same
 numbers as one line per analysis under the export files, for example:
 
     Analysis <analysis>: 40 current, 3 stale vs approved (approved method as recorded 2026-01-31 14:05), 2 invalidated, imported ...
@@ -1692,7 +1692,7 @@ What it does NOT do:
 - archive anything of the analysis when the MIRROR's own folders of it
   cannot be listed: `[FAIL] --confirm-withdrawn <analysis>: the mirror's
   folders of it could not be listed ...; nothing of it was archived`, and the
-  analysis's line on the Where Is My Data tab ends with that reason. Nothing
+  analysis's line on the MouseReach Video Processing Progress tab ends with that reason. Nothing
   of that analysis is moved -- not even files the run would archive without
   the option -- because the run cannot tell what the mirror holds of it.
   Check the share and run the same command again;
@@ -1728,7 +1728,7 @@ The option is for a run a person starts on purpose; the nightly task never
 uses it.
 
 **Only one mirror runs at a time.** The nightly task and the **Update the database now**
-button on the Where Is My Data tab (`mousedb update`) both start
+button on the MouseReach Video Processing Progress tab (`mousedb update`) both start
 `mousedb import-analyses`. When one is already
 running, the second waits for it (its output says what it is waiting for),
 then runs and normally finds nothing left to copy. If it waits longer than
@@ -1760,7 +1760,7 @@ so must be archived). Do not edit or delete it.
 - A ledger that is there but cannot be read (damaged, half written): the run
   stops before copying or archiving anything. Its last line starts with
   `[FAIL] import-analyses not run:`, names the file and says what to do, and
-  the job fails (exit code 1). The Where Is My Data tab shows the same
+  the job fails (exit code 1). The MouseReach Video Processing Progress tab shows the same
   message as `[!] analysis mirror: the last run stopped before mirroring
   anything ...` until a run finishes, so the stop is seen without opening
   the task log; every nightly run fails the same way until the ledger is
@@ -1935,7 +1935,7 @@ every brain that has counts but no file:
   counts file at all does not check (an empty folder is treated as a broken
   listing, never as "every brain is gone"), so the list can be older than
   the last import; its date tells you how old;
-- on the **Where Is My Data** tab, among the problems at the top, with that
+- on the **MouseReach Video Processing Progress** tab, among the problems at the top, with that
   date (`found by the brain import of <checked_at>`).
 
 Nothing is deleted, and the import's result does not change: a listing that
@@ -2045,7 +2045,7 @@ or the sheet has those two trays' rows the other way round. The reaching pipelin
 holds such a video. It is NOT sent to a review queue: nobody answering pellets
 there could settle which tray it is.
 
-**Where you see it.** In red on the Where Is My Data tab, and as a line in the
+**Where you see it.** In red on the MouseReach Video Processing Progress tab, and as a line in the
 cohort's "!! <cohort> - FIX THESE.xlsx" file beside its sheet. The line names the
 video, both trays, how well the results matched each, and -- when the other tray's
 video is analyzed too -- whether that one matches back (which is what a swap
@@ -2091,7 +2091,7 @@ animal, one day, one tray), that its video is somewhere the pipeline knows
 about -- a recording waiting to be cut, a video being posed or analyzed, one in
 a review queue or quarantine, or a filed one in Analyzed.
 
-**What you see.** A red line per cohort at the top of the Where Is My Data tab:
+**What you see.** A red line per cohort at the top of the MouseReach Video Processing Progress tab:
 
     PROJA_03: 256 hand-scored session(s) in 24 recording(s) (<first day> to <last day>) have no video anywhere in the reaching pipeline. ...
 
@@ -2215,7 +2215,7 @@ anything is written):
 **When it stops showing.** The acknowledgement is written at once to
 `<mousedb_root>/logs/missing_videos_acknowledged.json`. Then:
 
-- **Where Is My Data tab**: the next time the tab reads its status (press
+- **MouseReach Video Processing Progress tab**: the next time the tab reads its status (press
   **Refresh**; it also reads it when the window opens and after **Update the
   database now** or **Refresh pipeline view**). Its red line goes; a missing session
   is then counted as "acknowledged as lost" (still not done), and a failed
@@ -2257,7 +2257,7 @@ stay in `manual_scores.csv` and in the session files like any other.
 
 **What you see.**
 
-- On the Where Is My Data tab, in red, and in the cohort's
+- On the MouseReach Video Processing Progress tab, in red, and in the cohort's
   `!! <cohort> - FIX THESE.xlsx`: one line per failed recording,
 
       recording failed: <recording file name>, <reason>. Its sessions (...) will never have a video to analyze; ...
@@ -2320,7 +2320,7 @@ reads the pipeline's code and never writes into its folders.
 
 ## The "Update the database now" button
 
-On the Where Is My Data tab, the green button **Update the database now**
+On the MouseReach Video Processing Progress tab, the green button **Update the database now**
 pulls everything that is new into the database and rewrites what you see,
 in this fixed order:
 

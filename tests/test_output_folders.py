@@ -81,6 +81,24 @@ def test_the_weekly_page_is_named_for_what_it_is(tmp_path, monkeypatch):
         "MouseReach video processing progress 2026-01-05.html"]
 
 
+def test_the_page_the_tab_and_the_guide_carry_the_folders_name():
+    """One name for one thing: the folder, its files, the page's heading and
+    title, the window's tab and the guide. WHY: a person who opened the
+    folder looks for the same words in the window and in the guides."""
+    from mousedb import weekly_report
+    words = of.VIDEO_PROGRESS_TITLE
+    assert words == "MouseReach Video Processing Progress"
+    assert of.VIDEO_PROGRESS == words.replace(" ", "_")
+    assert of.VIDEO_PROGRESS_FILE_STEM.lower() == words.lower()
+    page = weekly_report.build(now=datetime(2026, 1, 5, 10, 0))
+    assert "<title>%s 2026-01-05</title>" % words in page
+    assert "<h1>%s</h1>" % words in page
+    app = (REPO / "mousedb" / "gui" / "app.py").read_text(encoding="utf-8")
+    assert '"9. %s"' % words in app
+    guide = REPO / "docs" / (words.upper().replace(" ", "_") + ".md")
+    assert guide.read_text(encoding="utf-8").startswith("# %s" % words)
+
+
 # ------------------------------------------------- the guides and help texts
 
 def _texts():

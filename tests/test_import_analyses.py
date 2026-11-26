@@ -453,7 +453,7 @@ class TestLedgerAndManifestAreSafe:
 
 class TestOneMirrorAtATime:
     """WHY: the nightly task and the "Update the database now" button on the
-    Where Is My Data tab (mousedb update) both start the mirror, and nothing kept two runs apart: each reads the ledger at the
+    MouseReach Video Processing Progress tab (mousedb update) both start the mirror, and nothing kept two runs apart: each reads the ledger at the
     start and rewrites it at the end, so the second dropped the first's
     entries. A run now takes its own lock; one that cannot get it in time
     says so and changes nothing."""
@@ -623,7 +623,7 @@ class TestHeldAnalysisShowsItsReason:
     line would otherwise fall through to "approved method as recorded at an unknown
     date -- registry written before the date was kept", blaming an old
     MouseBrain, while the real reason sat only in the manifest's problems,
-    which the Where Is My Data tab never showed."""
+    which the MouseReach Video Processing Progress tab never showed."""
 
     def test_a_row_with_problems_names_the_reason(self):
         from mousedb import data_status as ds
@@ -657,7 +657,7 @@ class TestHeldAnalysisShowsItsReason:
 
 class TestHeldFilesAreNeverSilent:
     """WHY: when the mirror keeps files back instead of archiving them, the
-    reason must reach the Where Is My Data tab. A run that listed no analysis
+    reason must reach the MouseReach Video Processing Progress tab. A run that listed no analysis
     at all wrote a manifest with no rows ({"analyses": []}), so the tab showed
     no analysis and no reason while the mirror still held every file; and a
     folder missing from the listing whose absence could not be confirmed was
@@ -1192,7 +1192,7 @@ class TestAStoppedRunIsShown:
     """WHY: some runs stop before they write anything -- a ledger they refuse
     to read, a lock that does not come free in time, a registry folder that
     cannot be reached. ANALYSES_MANIFEST.json then stays as the last good run
-    wrote it, so the Where Is My Data tab went on showing normal analysis
+    wrote it, so the MouseReach Video Processing Progress tab went on showing normal analysis
     lines, with the reason only in the scheduler's task log. A damaged ledger
     fails every night until a person acts, so that silence could last. The
     stop must show on the tab, with its reason, until a run finishes."""

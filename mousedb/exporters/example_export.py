@@ -145,7 +145,7 @@ def build(cohort: str = "CNT_01", target_rows: int = DEFAULT_ROWS,
     """Write the example folder. Returns what was written and how long it took.
 
     ONE WRITER AT A TIME. The default folder is inside the live
-    current-exports folder, which the nightly job, the Where Is My Data button
+    current-exports folder, which the nightly job, the MouseReach Video Processing Progress button
     and the export commands rewrite. Writing into it while one of those runs
     could leave a half-written file or have this folder rearranged under it,
     so the writing here holds the same lock they do (exporters.current,

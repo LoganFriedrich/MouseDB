@@ -2,7 +2,7 @@
 
 WHY THIS EXISTS
 ---------------
-The end of the lab's workflow is a person asking "where is my data?" and
+The end of the lab's workflow is a person asking for their data and
 expecting a current CSV of everything the database holds, formatted to
 ODC-SCI, with a data dictionary beside it. This module writes, and the nightly
 refresh keeps current, one folder (its name is in output_folders):
@@ -61,7 +61,7 @@ REACH_DATA_ORDER_LAST = ["extended_features"]
 
 README = """CURRENT EXPORTS -- everything mousedb knows, as of the time in MANIFEST.json.
 These files are regenerated automatically (nightly on the processing server)
-and by the "Where Is My Data" tab in mousedb. There is one data dictionary
+and by the "MouseReach Video Processing Progress" tab in mousedb. There is one data dictionary
 per kind of file, shared by every cohort's file of that kind. Do not edit them; edit the
 source (tracking sheets, review tools) and they will be regenerated.
 
@@ -85,7 +85,7 @@ HOW THE FOLDER IS ARRANGED
                           index is counted again over the combined rows.
   In a script             do not write a file's path out; ask mousedb where it
                           is (locate in mousedb.exporters.layout -- see the
-                          Where Is My Data guide). A written-out path breaks if
+                          MouseReach Video Processing Progress guide). A written-out path breaks if
                           the folder is ever rearranged again; asking does not.
 
 reach_data.csv            One row per reach the pipeline detected, with the
@@ -152,7 +152,7 @@ Every file here leaves it empty ("Undetermined" in the complete record and the
 summary, NA in the analysis files) for a cohort the lab has declared
 in_progress, or, when nothing is declared, whose last session is less than 30
 days old. MANIFEST.json lists those cohorts under reach_data.csv and
-manual_scores.csv (phase_withheld_for_running_cohorts). The Where Is My Data guide says how to
+manual_scores.csv (phase_withheld_for_running_cohorts). The MouseReach Video Processing Progress guide says how to
 declare a cohort over.
 
 ODC-SCI submission = a dataset CSV + its DATA_DICTIONARY CSV, together.
@@ -586,7 +586,7 @@ EXPORTS_LOCK = "current-exports"
 EXPORTS_LOCK_LABEL = "the current-exports lock"
 
 BUSY_MESSAGE = ("the current exports are already being written by another refresh "
-                "(the nightly job, the Where Is My Data button or a command) -- "
+                "(the nightly job, the MouseReach Video Processing Progress button or a command) -- "
                 "try again when it finishes; nothing was changed")
 
 
@@ -710,7 +710,7 @@ def _refresh_current_locked(snapshot_dir: Path, out_dir: Path, db_ok: bool,
     }
     # A part that FAILED makes the whole refresh incomplete: its files are
     # the previous run's (or missing), and "complete" is what the nightly job
-    # and the Where Is My Data tab judge the exports by.
+    # and the MouseReach Video Processing Progress tab judge the exports by.
     for fn in (_reach_data_csv, _manual_scores_csv, _odc_reaches_csvs):
         try:
             if fn is _odc_reaches_csvs and rebuild_all:

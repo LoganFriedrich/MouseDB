@@ -1049,7 +1049,7 @@ def cmd_recording_issues(args):
         raise SystemExit(1)
     if census is None:
         print("[FAIL] no pipeline view has been taken yet (press 'Refresh pipeline view' on "
-              "the Where Is My Data tab, or wait for the nightly snapshot job)")
+              "the MouseReach Video Processing Progress tab, or wait for the nightly snapshot job)")
         raise SystemExit(1)
     recs = recordings(census)
     print("Failed recordings in the pipeline view of %s: %d" % (census.get("generated_at"),

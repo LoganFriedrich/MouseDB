@@ -1,8 +1,8 @@
-"""Where is my data? -- written to a file on a schedule, for a person to open.
+"""MouseReach Video Processing Progress -- written to a file on a schedule, for a person to open.
 
 WHY THIS EXISTS
 ---------------
-The Where Is My Data tab answers the question when someone opens the GUI and
+The MouseReach Video Processing Progress tab answers the question when someone opens the GUI and
 asks. A lab meeting needs the answer ready BEFORE anyone asks: a page that is
 already written, dated, and can be copied into meeting notes. This module
 writes that page from what mousedb already has -- it measures nothing new:
@@ -331,12 +331,13 @@ def build(now: Optional[datetime] = None) -> str:
     """The page, as HTML text. Every section reads its own source and says so
     when it cannot; one unreadable source never stops the page."""
     from .pipeline_census import load_cached as read_cache
+    from .output_folders import VIDEO_PROGRESS_TITLE as title
     now = now or datetime.now()
     problems: List[str] = []
-    parts = ["<!doctype html><meta charset=utf-8><title>Where is my data %s</title><style>%s</style>"
-             % (now.strftime("%Y-%m-%d"), CSS),
-             "<h1>Where is my data</h1><p class=sub>Written %s by mousedb's weekly report.</p>"
-             % now.strftime("%A %d %B %Y, %H:%M")]
+    parts = ["<!doctype html><meta charset=utf-8><title>%s %s</title><style>%s</style>"
+             % (title, now.strftime("%Y-%m-%d"), CSS),
+             "<h1>%s</h1><p class=sub>Written %s by mousedb's weekly report.</p>"
+             % (title, now.strftime("%A %d %B %Y, %H:%M"))]
 
     try:
         census = read_cache()

@@ -67,7 +67,7 @@ THINGS WORTH KNOWING
   and will still do nothing.
 
 AFTER A CHANGE
-Re-export to see it: "Where Is My Data" -> update, or the nightly job. The exports are
+Re-export to see it: "MouseReach Video Processing Progress" -> update, or the nightly job. The exports are
 rebuilt from the database plus these facts.
 """
 

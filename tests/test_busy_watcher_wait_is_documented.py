@@ -9,7 +9,7 @@ from pathlib import Path
 
 from mousedb.exporters import export_exclusions as ee
 
-DOC = Path(__file__).resolve().parent.parent / "docs" / "WHERE_IS_MY_DATA.md"
+DOC = Path(__file__).resolve().parent.parent / "docs" / "MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md"
 
 
 def test_the_documented_wait_matches_the_retry_settings():

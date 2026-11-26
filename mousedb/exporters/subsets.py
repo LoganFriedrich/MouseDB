@@ -34,7 +34,7 @@ A previous slice of the same name is MOVED to the archive when the new one is
 put in place, never deleted: ``<mousedb_root>/_archived/exports_subsets/<name>/
 <time>/``. A remake that cannot put every new file in place puts the previous
 slice back (see _place), so the folder holds one complete set or the other. ``exports/Behavior/Selected_Cohorts/SUBSETS_STATUS.json`` records every attempt to make
-each slice -- including one that failed, and why -- so the Where Is My Data tab
+each slice -- including one that failed, and why -- so the MouseReach Video Processing Progress tab
 can show it.
 
 WHERE A SLICE IS DEFINED
@@ -569,7 +569,7 @@ def _require_complete(name: str, manifest: dict, current: Path) -> None:
         "limited export %s: the full export in %s is not complete (its MANIFEST.json "
         "says complete=%s: %s). Some of its files may be from an earlier run or missing, "
         "so a slice of it could mix two runs. Nothing was written. Rewrite the full "
-        "export ('Refresh exports now' on the Where Is My Data tab, or wait for the "
+        "export ('Refresh exports now' on the MouseReach Video Processing Progress tab, or wait for the "
         "nightly job) and make this again once it is complete."
         % (name, current, manifest.get("complete"), said))
 
@@ -650,7 +650,7 @@ def last_days_before(cohorts: List[str], snapshot_dir: Optional[Path],
                 "(they were written before snapshot refreshes were numbered), and the "
                 "snapshot is now %s: the days for %s cannot be shown to come from the same "
                 "night's records as the files. Rewrite the full export ('Refresh exports "
-                "now' on the Where Is My Data tab) and try again." % (generation, what))
+                "now' on the MouseReach Video Processing Progress tab) and try again." % (generation, what))
         raise SubsetRefused(
             "the current exports were made from snapshot %s, but the snapshot is now %s: the "
             "days for %s would be chosen from a different night's records than the files. "
@@ -1337,7 +1337,7 @@ def _not_complete(folder: Path, name: str, archive: Path, error: Exception) -> N
 
 def _record_status(out_root: Path, name: str, entry: dict) -> None:
     """One line per slice in SUBSETS_STATUS.json: the last attempt and how it went,
-    so a failure at night is seen on the Where Is My Data tab."""
+    so a failure at night is seen on the MouseReach Video Processing Progress tab."""
     path = Path(out_root) / STATUS_NAME
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

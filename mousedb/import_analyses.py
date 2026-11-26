@@ -37,7 +37,7 @@ WHAT IT DOES
      it is and is reported as an error; a run that lists no registry at all
      while the ledger holds files archives nothing (see ``archivable_keys``).
      Every file kept back this way is an error of the run with its reason,
-     and shows on the Where Is My Data tab (see ``held_problems``). A folder
+     and shows on the MouseReach Video Processing Progress tab (see ``held_problems``). A folder
      with no registry.json and nothing of it in the mirror -- neither in the
      ledger nor in the mirror's own folders, which are looked at too because
      a new or set-aside ledger knows nothing of earlier copies -- is not an
@@ -68,7 +68,7 @@ WHAT IT DOES
   5. A run that stops before it finishes (an unreadable ledger, a lock that
      did not come free in time, a registry it cannot reach) writes no
      manifest; it records the stop in ``<mousedb_root>/logs/
-     analysis_import_last_failure.json`` instead, which the Where Is My Data
+     analysis_import_last_failure.json`` instead, which the MouseReach Video Processing Progress
      tab shows until a run finishes and removes it (see ``record_stop``).
 
 It writes NO database rows -- only files under <mousedb_root> -- so, unlike
@@ -435,7 +435,7 @@ def mirror_files_of(dest: Path, analysis: str,
 # WHY A RECORD OF ITS OWN: some stops happen before the run writes anything
 # -- a ledger it refuses to read, a lock it could not get in time, a registry
 # folder it cannot reach. ANALYSES_MANIFEST.json is then left as the last
-# good run wrote it, so the Where Is My Data tab went on showing normal
+# good run wrote it, so the MouseReach Video Processing Progress tab went on showing normal
 # analysis lines with no reason anywhere but the scheduler's task log, which
 # nobody opens -- and a damaged ledger fails every night until a person acts.
 # The stop is therefore written to a small file of this tool's own, which the
@@ -495,7 +495,7 @@ def read_stop(path: Path) -> Optional[dict]:
 
 
 def stop_line(rec: dict) -> str:
-    """The Where Is My Data line for a stopped run (shown with ``[!]``)."""
+    """The MouseReach Video Processing Progress line for a stopped run (shown with ``[!]``)."""
     when = str(rec.get("stopped_at") or "?").replace("T", " ")
     if rec.get("before_mirroring", True):
         head = "the last run stopped before mirroring anything (%s)" % when
@@ -619,10 +619,10 @@ def write_manifest(rows: List[dict], imported_at: str, root: Path,
     WHY the run-level list: a run that held mirrored files back without
     archiving them (see ``held_problems``) can have no row to hang the reason
     on -- when the source listed no analysis at all, the rows were empty and
-    the manifest said only ``{"analyses": []}``, so the Where Is My Data tab
+    the manifest said only ``{"analyses": []}``, so the MouseReach Video Processing Progress tab
     showed no analysis and no reason while the mirror still held every file.
     data_status shows these problems as ``[!]`` lines."""
-    # Atomic for the same reason as the ledger: the Where Is My Data tab reads
+    # Atomic for the same reason as the ledger: the MouseReach Video Processing Progress tab reads
     # this file, and a half-written one showed there as "manifest unreadable".
     p = manifest_path()
     _write_json_atomically(p, {"imported_at": imported_at, "source_root": str(root),
@@ -830,7 +830,7 @@ def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root
     that run-level message), or the key names no analysis.
 
     WHY: such keys would otherwise be kept silently -- only a "N kept" count in the
-    summary line, exit code 0, and nothing on the Where Is My Data tab --
+    summary line, exit code 0, and nothing on the MouseReach Video Processing Progress tab --
     so a mirror frozen for a reason nobody could see looked current."""
     held: Dict[str, int] = {}
     unnamed: List[str] = []
@@ -991,7 +991,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             # machine whose mirror already exists knows nothing of earlier
             # copies; deciding from it alone read "nothing to keep safe"
             # while the mirror still held the analysis, and the analysis
-            # dropped off the Where Is My Data tab with no reason given.
+            # dropped off the MouseReach Video Processing Progress tab with no reason given.
             # WHY not "any file under that name": see held_as_analysis.
             others: List[Path] = []     # files under the name that mark no analysis
             in_mirror = analysis in mirrored
@@ -1273,7 +1273,7 @@ def main(argv=None) -> int:
             print(json.dumps(res.as_dict(), indent=1))
         return 1 if res.errors else 0
     # One mirror at a time. WHY: the nightly task and the "Update the
-    # database now" button on the Where Is My Data tab (mousedb update) both
+    # database now" button on the MouseReach Video Processing Progress tab (mousedb update) both
     # run this, and nothing kept them apart. Each run reads the ledger at the
     # start and rewrites it at the end, so two at once dropped the other's
     # entries (files then copied and hashed again), and both could move the
@@ -1317,7 +1317,7 @@ def main(argv=None) -> int:
                 err = clear_stop()
                 if err:
                     print("[!] the record of an earlier stopped run (%s) could not be "
-                          "removed (%s); the Where Is My Data tab still shows it -- run again"
+                          "removed (%s); the MouseReach Video Processing Progress tab still shows it -- run again"
                           % (stop_record_path(), err))
                     rc = 1
     except LockWaitTimeout as e:
@@ -1345,7 +1345,7 @@ def _stopped(args, msg: str, before_mirroring: bool) -> int:
     if not args.dry_run:
         err = record_stop(msg, before_mirroring)
         if err:
-            print("[!] this stop could not be recorded for the Where Is My Data tab (%s)" % err)
+            print("[!] this stop could not be recorded for the MouseReach Video Processing Progress tab (%s)" % err)
     return 1
 
 

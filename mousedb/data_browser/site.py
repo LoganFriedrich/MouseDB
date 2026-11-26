@@ -370,7 +370,7 @@ def front_page(present) -> str:
         "of every column. To save what you are looking at, use the <b>CSV</b> link "
         "(tick <i>stream all rows</i> to get every matching row, not just this page).</p>"
         "<p>Reviews still waiting in MouseReach are not in the database; the "
-        "<i>Where Is My Data</i> tab shows them.</p>" % "".join(items))
+        "<i>MouseReach Video Processing Progress</i> tab shows them.</p>" % "".join(items))
 
 
 def metadata(built: BuildResult, present) -> dict:
@@ -410,7 +410,7 @@ SETTINGS = {
     "max_csv_mb": 0,
     "default_page_size": 100,
     # No "download the whole database" link: the copy is a viewing aid, the
-    # files to keep or send are the exports (docs/WHERE_IS_MY_DATA.md).
+    # files to keep or send are the exports (docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md).
     "allow_download": False,
     "truncate_cells_html": 200,
     # Off: Datasette would otherwise try every column of a table, on every page

@@ -1,7 +1,7 @@
 """mousedb export-example writes into the live exports folder only under the lock.
 
 WHY: its default folder is exports/Behavior/All_Cohorts/Example, inside the folder the
-nightly job, the Where Is My Data button and the export commands rewrite under
+nightly job, the MouseReach Video Processing Progress button and the export commands rewrite under
 the current-exports lock. Written without it, the example could be written
 while a refresh rearranges that folder. It now waits for a running refresh and
 writes nothing when the wait runs out; a folder outside the live exports takes

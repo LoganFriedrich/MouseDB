@@ -3800,7 +3800,7 @@ def _content(rows, fields):
 
 # The list `import-brains --all` writes of brains whose final counts are in the
 # database but whose counts file is not in MouseBrain's summary folder (see
-# BrainGlobeImporter.final_brains_without_a_counts_file). The Where Is My Data
+# BrainGlobeImporter.final_brains_without_a_counts_file). The MouseReach Video Processing Progress
 # tab reads it (data_status.brains_without_file_problem).
 BRAINS_WITHOUT_FILE_NAME = "brain_counts_without_file.json"
 # How many of those brains the import's output names; the file holds them all.
@@ -4887,7 +4887,7 @@ class BrainGlobeImporter:
                         f"{brain_id}'s counts, so it is left as it is and the counts the "
                         f"database holds for it are kept. The file was made with another "
                         f"atlas than mousedb's lookup: see 'Unknown acronym' in "
-                        f"docs/WHERE_IS_MY_DATA.md")
+                        f"docs/MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md")
                     return done()
                 self.warnings.append(
                     f"{what}. The database already holds exactly this file's other "

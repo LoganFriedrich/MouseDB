@@ -2,9 +2,9 @@
 
 This page is for the person reading the numbers. No codebase knowledge assumed.
 
-**Looking for where your videos are?** Use the **9. Where Is My Data** tab of
+**Looking for where your videos are?** Use the **9. MouseReach Video Processing Progress** tab of
 the MouseDB window. It reads the pipeline's folders, so it shows every video
-wherever it is (see [Where is my data?](WHERE_IS_MY_DATA.md)). The views on
+wherever it is (see [MouseReach Video Processing Progress](MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md)). The views on
 this page show something narrower: one computer's watcher records.
 
 MouseDB has three places that show what a MouseReach **watcher** has recorded:
@@ -30,7 +30,7 @@ to have both (tabs 8 and 9). They laid one computer's watcher records out as
 if they were the pipeline's state, so a person reading them saw videos that
 another computer had handled, or that waited in a review queue, as not
 started or missing. They were removed; the tabs after them were renumbered
-(Tracking Sheets is now 8, Where Is My Data 9, Study Facts 10). The two
+(Tracking Sheets is now 8, MouseReach Video Processing Progress 9, Study Facts 10). The two
 commands below still show the same records, each with the line saying whose
 records they are.
 
@@ -43,17 +43,17 @@ computer you are sitting at. So:
 - **They show this computer's watcher records only.** Work done on other
   computers is not in them. A video another computer posed, analyzed or filed
   may show here as not started, or not at all.
-- **The whole pipeline's state is on the Where Is My Data tab.** That tab's
+- **The whole pipeline's state is on the MouseReach Video Processing Progress tab.** That tab's
   pipeline counts come from the pipeline census, which reads the pipeline's
   folders -- where every video really is. When the two disagree, the census
-  is right. See [Where is my data?](WHERE_IS_MY_DATA.md).
+  is right. See [MouseReach Video Processing Progress](MOUSEREACH_VIDEO_PROCESSING_PROGRESS.md).
 
 Every one of the views says this above its numbers, in a line like:
 
 ```
 Records of this computer's watcher only: <file> (last written 2099-01-31 14:05).
 Work done by other watchers is not in these records. The whole pipeline's
-state, read from its folders, is on the Where Is My Data tab.
+state, read from its folders, is on the MouseReach Video Processing Progress tab.
 ```
 
 That first line appears only when the file was found through this computer's

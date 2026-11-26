@@ -1,4 +1,4 @@
-"""Where Is My Data says how far each study's list of sessions has got.
+"""MouseReach Video Processing Progress says how far each study's list of sessions has got.
 
 WHY: a study needs particular sessions spread over many cohorts and
 recordings, and the per-cohort table cannot say how far those have got.

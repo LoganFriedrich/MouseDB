@@ -5,7 +5,7 @@ after their name on as one block (argparse.REMAINDER). argparse refuses such a
 block when it starts with an option, so every option failed with
 "unrecognized arguments": --help, --cohort, --write, and the
 `mousedb missing-videos --acknowledge ...` line that the FIX THESE files and
-the Where Is My Data tab tell a person to run. These tests run the command
+the MouseReach Video Processing Progress tab tell a person to run. These tests run the command
 lines exactly as a person types them -- the acknowledge ones are taken from
 the very text the FIX THESE lines print. Every input is synthetic, under
 tmp_path.

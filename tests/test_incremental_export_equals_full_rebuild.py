@@ -463,7 +463,7 @@ def test_the_check_command_refuses_a_used_work_folder(world, tmp_path):
                              "--base-snapshot", str(world.snap)]) == 2
 
 
-def test_where_is_my_data_says_what_the_night_did():
+def test_video_processing_progress_says_what_the_night_did():
     from mousedb.data_status import incremental_summary
     assert incremental_summary(None) == ""
     line = incremental_summary({"mode": "incremental", "at": "T", "cohorts_rewritten": {"A_01": {}},

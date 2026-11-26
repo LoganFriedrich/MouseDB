@@ -55,7 +55,7 @@ WHICH SESSIONS ARE JUDGED
 
 WHAT HAPPENS TO A MISSING SESSION
 ---------------------------------
-* The Where Is My Data tab shows one red line per cohort.
+* The MouseReach Video Processing Progress tab shows one red line per cohort.
 * The cohort's "!! <cohort> - FIX THESE.xlsx" file (attention.py) gets one
   line per missing recording (day + tray), naming its animals and saying
   what to do.
@@ -75,7 +75,7 @@ see recording_issues.py), the census says so. Such a session is listed with
 status "recording_failed", never "missing": there is no video to look for.
 It is judged at once (no grace period: the failure is known), whether or not
 the trays were scored by hand, and only for cohorts with a live sheet. The
-Where Is My Data tab and the cohort's FIX THESE file get one line per failed
+MouseReach Video Processing Progress tab and the cohort's FIX THESE file get one line per failed
 recording: "recording failed: <recording>, <reason>". Nothing can be fixed;
 the line is there so a person knows, and it is acknowledged once like a gap
 (a recording's file name is a selector too).
@@ -221,7 +221,7 @@ def read_census_full(census: Optional[dict] = None):
                               % (cache_path(), e))
         if census is None:
             raise CannotCheck("no pipeline view has been taken yet (press 'Refresh "
-                              "pipeline view' on the Where Is My Data tab, or wait for "
+                              "pipeline view' on the MouseReach Video Processing Progress tab, or wait for "
                               "the nightly snapshot job)")
     try:
         taken = datetime.fromisoformat(str(census.get("generated_at")))

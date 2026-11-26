@@ -3,7 +3,7 @@ and asking a person to decide whether the name or the sheet is wrong.
 
 WHY: a video whose results match another tray's hand scores (the sheet or
 the video's name has the trays swapped) is held by the pipeline outside every
-review queue -- no review can fix it. The Where Is My Data tab and the
+review queue -- no review can fix it. The MouseReach Video Processing Progress tab and the
 cohort's FIX THESE file are where a person learns of it, so the line must say
 which two trays and both ways to fix it. mousedb reads the pipeline's lists;
 it never imports the pipeline.
