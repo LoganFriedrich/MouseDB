@@ -92,7 +92,7 @@ export -- nothing is calculated again -- so it always agrees with the full expor
    window shows now and writes nothing -- it does not save the definition
    either.
 
-The files go to exports\\subsets\\<name>\\: the data files, their data
+The files go to exports\\Behavior\\Selected_Cohorts\\<name>\\: the data files, their data
 dictionaries (only the kept columns), analysis_EXCLUSIONS.csv for these
 sessions, SUBSET_MANIFEST.json (what was chosen, from which export, row counts)
 and README.txt. Making it again moves the previous files to

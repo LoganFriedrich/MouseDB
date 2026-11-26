@@ -14,6 +14,7 @@ import pandas as pd  # noqa: E402
 import pytest  # noqa: E402
 
 from mousedb.exporters import layout, subsets  # noqa: E402
+from mousedb.output_folders import all_cohorts_dir, selected_cohorts_dir
 
 _APP = []
 
@@ -29,7 +30,7 @@ def qt():
 def lab(tmp_path, monkeypatch):
     root = tmp_path / "db"
     monkeypatch.setenv("MOUSEDB_ROOT", str(root))
-    cur = root / "exports" / "current"
+    cur = all_cohorts_dir(root)
     for cohort in ("PROJA_01", "PROJA_02"):
         f = layout.cohort_file(cur, "ODC_reaches", cohort, cohort)
         f.parent.mkdir(parents=True)
@@ -82,7 +83,7 @@ def test_the_tab_has_the_button_and_shows_a_failed_remake(qt, lab, monkeypatch):
     from mousedb.gui import data_status_tab
     assert hasattr(data_status_tab.DataStatusTab, "limited_export")
     subsets.save_profile("pre", {"cohorts": ["PROJA_01"]})
-    out = lab / "exports" / "subsets"
+    out = selected_cohorts_dir(lab)
     out.mkdir(parents=True)
     (out / subsets.STATUS_NAME).write_text(json.dumps({"pre": {
         "ok": False, "last_attempt": "2026-05-02T00:30:00",
@@ -169,7 +170,7 @@ def test_a_column_choice_survives_an_unreadable_dictionary(qt, lab, monkeypatch)
     subsets.save_profile("pre", {"cohorts": ["PROJA_01"], "kinds": ["ODC_reaches"],
                                  "columns": {"ODC_reaches": ["video_name"]}})
     before = subsets.profiles()["pre"]
-    (lab / "exports" / "current" / "ODC_reaches_DATA_DICTIONARY.csv").unlink()
+    (all_cohorts_dir(lab) / "ODC_reaches_DATA_DICTIONARY.csv").unlink()
     d = LimitedExportDialog()
     d.saved.setCurrentText("pre")
     assert d.save() is True

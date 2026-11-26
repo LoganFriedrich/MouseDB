@@ -18,6 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from mousedb import missing_videos as mv  # noqa: E402
 from mousedb import session_states as ss  # noqa: E402
+from mousedb.output_folders import hand_scores_dir
 
 VIEW = "2026-03-20T02:00:00"
 TAKEN = datetime.fromisoformat(VIEW)
@@ -136,7 +137,7 @@ def test_not_on_server_is_red_only_when_overdue_live_and_unacknowledged():
 
 def test_red_sessions_are_exactly_what_missing_videos_lists(tmp_path, monkeypatch):
     root = tmp_path / "db"
-    (root / "exports" / "hand_scores").mkdir(parents=True)
+    hand_scores_dir(root).mkdir(parents=True)
     (root / "logs").mkdir()
     monkeypatch.setenv("MOUSEDB_ROOT", str(root))
     monkeypatch.setenv("MOUSEREACH_PIPELINE_ROOT", str(tmp_path / "pipe"))
@@ -146,7 +147,7 @@ def test_red_sessions_are_exactly_what_missing_videos_lists(tmp_path, monkeypatc
                 ("PROJA_01_03", "2026-03-19", "P1", "PROJA_01"),
                 ("PROJA_02_01", "2026-03-05", "P1", "PROJA_02"),
                 ("PROJB_04_01", "2020-01-01", "P1", "PROJB_04")]
-    with open(root / "exports" / "hand_scores" / "hand_pellet_scores.csv", "w",
+    with open(hand_scores_dir(root) / "hand_pellet_scores.csv", "w",
               newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["video_key", "pellet", "score", "subject_id", "cohort_id", "project",
@@ -154,7 +155,7 @@ def test_red_sessions_are_exactly_what_missing_videos_lists(tmp_path, monkeypatc
         for sid, day, tray, cohort in sessions:
             key = "%s_%s_%s" % (day.replace("-", ""), sid.replace("_", ""), tray)
             w.writerow([key, 1, 0, sid, cohort, cohort.split("_")[0], day, tray])
-    (root / "exports" / "hand_scores" / "hand_pellet_scores.json").write_text(
+    (hand_scores_dir(root) / "hand_pellet_scores.json").write_text(
         json.dumps({"sheets_seen": ["PROJA_01", "PROJA_02"]}))
     (root / "logs" / "pipeline_census.json").write_text(json.dumps({
         "generated_at": VIEW, "recording_issues": [],

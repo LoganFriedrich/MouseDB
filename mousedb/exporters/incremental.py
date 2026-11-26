@@ -77,7 +77,7 @@ is still put in place whole, under a temporary name first.
 
 THE LEDGER
 ----------
-``<exports>/current/.export_units.json`` records, per cohort, its fingerprint,
+``<exports>/Behavior/All_Cohorts/.export_units.json`` records, per cohort, its fingerprint,
 its per-video hashes, what it contributed to the manifest, the dictionaries
 and the exclusions report, and the size and time of each file it wrote; and,
 per combined file, where each cohort starts in it. It is written only after

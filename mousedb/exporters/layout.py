@@ -1,7 +1,7 @@
 """Where each export file lives: one folder per project, one per cohort inside it,
 and a combined file per kind beside the cohort folders.
 
-    exports/current/
+    <the full-export folder>/                        output_folders.all_cohorts_dir
         reach_data.csv, manual_scores.csv, ...       every project, as before
         <kind>_DATA_DICTIONARY.csv                    one per kind, shared by every file of it
         analysis_EXCLUSIONS.csv
@@ -121,10 +121,10 @@ def combined_file(root: Path, kind: str, project: str) -> Path:
 
 
 def current_root() -> Path:
-    """The live exports folder: <mousedb_root>/exports/current."""
-    from ..config import export_path, require
-    require("mousedb_root")              # unset: stops with the command that sets it
-    return export_path() / "current"
+    """The live full-export folder (output_folders.all_cohorts_dir; an unset
+    mousedb_root stops with the command that sets it)."""
+    from ..output_folders import all_cohorts_dir
+    return all_cohorts_dir()
 
 
 def locate(kind: str, cohort_id: str, root: Optional[Path] = None) -> Path:

@@ -81,7 +81,7 @@ def export_cohort_to_excel(db: Database, cohort_id: str,
         Path to the exported file
     """
     from ..config import export_path as _ep, require as _req
-    DEFAULT_EXPORT_PATH = _ep() or (_req("mousedb_root") / "exports")
+    DEFAULT_EXPORT_PATH = _ep() or _req("mousedb_root")   # unset: _req stops with the command that sets it
 
     if output_path is None:
         DEFAULT_EXPORT_PATH.mkdir(parents=True, exist_ok=True)
@@ -201,7 +201,7 @@ def export_odc_format(db: Database, cohort_id: str,
         Path to the exported file
     """
     from ..config import export_path as _ep, require as _req
-    DEFAULT_EXPORT_PATH = _ep() or (_req("mousedb_root") / "exports")
+    DEFAULT_EXPORT_PATH = _ep() or _req("mousedb_root")   # unset: _req stops with the command that sets it
 
     if output_path is None:
         DEFAULT_EXPORT_PATH.mkdir(parents=True, exist_ok=True)
@@ -334,7 +334,7 @@ def export_unified_to_parquet(db: Database, output_path: Optional[Path] = None) 
         Path to the exported file
     """
     from ..config import export_path as _ep, require as _req
-    DEFAULT_EXPORT_PATH = _ep() or (_req("mousedb_root") / "exports")
+    DEFAULT_EXPORT_PATH = _ep() or _req("mousedb_root")   # unset: _req stops with the command that sets it
 
     if output_path is None:
         output_path = DEFAULT_EXPORT_PATH / "unified_reaches.parquet"
@@ -445,7 +445,7 @@ def export_all_formats(db: Database, cohort_id: str,
         Dictionary mapping format name to output path
     """
     from ..config import export_path as _ep, require as _req
-    DEFAULT_EXPORT_PATH = _ep() or (_req("mousedb_root") / "exports")
+    DEFAULT_EXPORT_PATH = _ep() or _req("mousedb_root")   # unset: _req stops with the command that sets it
 
     if output_dir is None:
         output_dir = DEFAULT_EXPORT_PATH

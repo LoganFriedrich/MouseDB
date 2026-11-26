@@ -16,13 +16,14 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from mousedb import attention, missing_videos as mv  # noqa: E402
+from mousedb.output_folders import hand_scores_dir, sessions_without_video_dir
 
 VIEW = "2026-03-20T02:00:00"
 
 
 def _hand(root, sessions, seen=("PROJA_01", "PROJA_02")):
     """sessions: (subject, YYYY-MM-DD, tray, cohort). One pellet row each."""
-    d = Path(root) / "exports" / "hand_scores"
+    d = hand_scores_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     with open(d / "hand_pellet_scores.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -141,7 +142,7 @@ def test_an_acknowledged_gap_stops_nagging_but_a_new_one_in_the_cohort_does_not(
         "20250814_PROJA0101_P1": "acknowledged", "20260301_PROJA0102_P2": "missing"}
     # the list file keeps both, the acknowledged one with who and why
     p = mv.write_csv(res)
-    assert p == root / "exports" / "missing_videos" / "missing_session_videos.csv"
+    assert p == sessions_without_video_dir(root) / "missing_session_videos.csv"
     rows = {r["video_key"]: r for r in csv.DictReader(open(p, encoding="utf-8"))}
     assert rows["20250814_PROJA0101_P1"]["acknowledged_reason"] == "recording PC wiped"
     assert "OBS folder" in rows["20260301_PROJA0102_P2"]["what_to_do"]
@@ -163,7 +164,7 @@ def test_every_import_that_writes_rewrites_the_list(root, monkeypatch):
     results = {}
     sheet_sync._after_import(results, None, None, full_run=False)
     assert results["missing_videos"].startswith("written")
-    assert (root / "exports" / "missing_videos" / "missing_session_videos.csv").is_file()
+    assert (sessions_without_video_dir(root) / "missing_session_videos.csv").is_file()
 
 
 def test_the_command_lists_per_cohort(root, capsys):

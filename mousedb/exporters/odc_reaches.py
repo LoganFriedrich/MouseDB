@@ -927,19 +927,18 @@ def cohort_source(cohort_id: str) -> str:
 
 def archive_old_names(out_dir: Path, old_names: List[str], label: str) -> List[str]:
     """Move files left under a superseded name out of the exports folder (never deleted):
-    into <mousedb root>/_archived/exports_current/<timestamp>_<label>/ when out_dir is the
-    usual exports/current, else into out_dir/_superseded/."""
+    into <mousedb root>/_archived/exports_current/<timestamp>_<label>/ when out_dir is a
+    root's full-export folder (output_folders.all_cohorts_archive), else into
+    out_dir/_superseded/."""
     from datetime import datetime
+    from ..output_folders import all_cohorts_archive
     out_dir = Path(out_dir)
     moved = []
     for name in old_names:
         f = out_dir / name
         if not f.exists():
             continue
-        if out_dir.name == "current" and out_dir.parent.name == "exports":
-            dest = out_dir.parent.parent / "_archived" / "exports_current"
-        else:
-            dest = out_dir / "_superseded"
+        dest = all_cohorts_archive(out_dir) or (out_dir / "_superseded")
         dest = dest / ("%s_%s" % (datetime.now().strftime("%Y-%m-%d_%H%M%S"), label))
         # A name may be a path inside the folder (PROJA/PROJA_05/x.csv): kept as such.
         (dest / name).parent.mkdir(parents=True, exist_ok=True)
@@ -1822,13 +1821,14 @@ def export(snapshot_dir: Path, out_dir: Path, cohorts: Optional[List[str]] = Non
 
 def _is_live_exports_folder(folder: Path) -> bool:
     """True when ``folder`` is the live current-exports folder (the configured
-    ``<mousedb_root>/exports/current``, or the exporter's own default), however
-    it was spelled. Unconfigured: only the exporter's default can be it."""
-    from ..config import require
+    root's full-export folder, output_folders.all_cohorts_dir, or the
+    exporter's own default), however it was spelled. Unconfigured: only the
+    exporter's default can be it."""
+    from ..output_folders import all_cohorts_dir
     from .current import CURRENT_DIR
     live = []
     try:
-        live.append(require("mousedb_root") / "exports" / "current")
+        live.append(all_cohorts_dir())
     except Exception:
         pass
     if CURRENT_DIR is not None:
@@ -1855,7 +1855,8 @@ def main(argv=None) -> int:
     ap.add_argument("--snapshot-dir", type=Path)
     args = ap.parse_args(argv)
     snap = args.snapshot_dir or require("snapshot_dir")
-    out = args.out_dir or (require("mousedb_root") / "exports" / "current")
+    from ..output_folders import all_cohorts_dir
+    out = args.out_dir or all_cohorts_dir()
     if args.out_dir is None or _is_live_exports_folder(args.out_dir):
         # Writing into the live exports folder: wait for any other refresh of
         # it to finish first, and keep it out while this runs (the reasons are

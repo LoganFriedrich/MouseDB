@@ -13,6 +13,7 @@ import pytest
 
 from mousedb.exporters import export_exclusions
 from mousedb.exporters import odc_reaches as ox
+from mousedb.output_folders import all_cohorts_dir
 
 
 def _reach_rows(subject, video, date):
@@ -52,7 +53,7 @@ def _header(path):
 
 
 def test_one_dictionary_per_kind_documents_every_column_of_every_cohort(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     out.mkdir(parents=True)
     # Left over from before: a per-cohort dictionary of each kind.
     (out / "ODC_reaches_PROJA_01_DATA_DICTIONARY.csv").write_text("old")
@@ -89,7 +90,7 @@ def test_one_dictionary_per_kind_documents_every_column_of_every_cohort(snapshot
 
 
 def test_a_one_cohort_export_keeps_the_other_cohorts_variables(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     out.mkdir(parents=True)
     ox.export(snapshot, out)
     ox.export(snapshot, out, cohorts=["PROJA_02"])

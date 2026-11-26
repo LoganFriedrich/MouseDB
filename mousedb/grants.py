@@ -4,8 +4,8 @@ WHY: a lab's projects are grouped by grant -- one grant can fund two projects
 (two wings of one study), each with its own cohorts. Shown flat, the second
 project sits beside the grant's first as if unrelated. The
 exports put each project's folder inside its grant's folder:
-``exports/current/<GRANT>/<PROJECT>/<COHORT>/``; a project in no grant keeps
-``exports/current/<PROJECT>/<COHORT>/``.
+``exports/Behavior/All_Cohorts/<GRANT>/<PROJECT>/<COHORT>/``; a project in no grant keeps
+``exports/Behavior/All_Cohorts/<PROJECT>/<COHORT>/``.
 
 The grants are a fact about the lab, so they live in the lab settings file
 (``mousedb.sheet_projects.config_path``, key "grants"), never in the code:

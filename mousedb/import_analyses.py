@@ -18,9 +18,11 @@ WHAT IT DOES
   1. Finds every ``exports/<analysis>/registry.json`` under the registry root
      (``<mousebrain_pipeline_root>/Registry``).
   2. Mirrors ``exports/<analysis>/**``, ``figures/<analysis>/**`` and
-     ``logs/<analysis>.log`` into ``<mousedb_root>/exports/<analysis>/``,
+     ``logs/<analysis>.log`` into ``<mousedb_root>/exports/Tissue/<analysis>/``
+     (the tissue folder, output_folders.tissue_dir; the lab settings may name
+     another folder for an analysis, see ``mirror_folder_names``),
      ``figures/<analysis>/`` and ``logs/<analysis>.log`` -- same relative
-     paths, same modification times (shutil.copy2). A file is skipped when its
+     paths inside each, same modification times (shutil.copy2). A file is skipped when its
      destination already exists with the same size and modification time (so
      the first run over a tree that was mirrored before copies nothing), or
      when the ledger (``<mousedb_root>/logs/analysis_imports.json``) says it
@@ -328,12 +330,93 @@ def set_aside_ledger(stamp_dir: str) -> Path:
     return target
 
 
-def mirror_files_of(dest: Path, analysis: str) -> List[Path]:
-    """Every file the MIRROR holds for one analysis: ``exports/<a>/**``,
-    ``figures/<a>/**`` and ``logs/<a>.log`` under ``<mousedb_root>``.
+# ---------------------------------------------------------------------------
+# where the mirror keeps each file
+# ---------------------------------------------------------------------------
+#
+# A ledger key is a file's path at the SOURCE (exports/<a>/..., figures/<a>/...,
+# logs/<a>.log). On the mousedb side the figures and the log keep that path
+# under <mousedb_root>; the export files sit under the tissue folder
+# (output_folders.tissue_dir): <mousedb_root>/exports/Tissue/<folder>/..., so
+# the tissue analyses are grouped apart from the behavior exports that share
+# <mousedb_root>/exports. <folder> is the analysis's own name unless the lab
+# settings name another one for it.
+
+FOLDER_NAMES_KEY = "analysis_mirror_folders"   # lab settings: {"<analysis>": "<folder name>"}
+
+
+def mirror_folder_names() -> Dict[str, str]:
+    """{analysis: folder name} from the lab settings file (key
+    ``analysis_mirror_folders``); {} when none is set.
+
+    WHY a setting: the folder a person browses may carry a name that reads
+    better than the name the analysis is registered under (a plural, say).
+    That choice is the lab's, so it is recorded in the lab settings, and the
+    mirror writes into the folder named there instead of making a second one
+    beside it. Raises ValueError, naming the file, for an entry that cannot be
+    used: a folder name that is not one plain folder name, or one folder given
+    to two analyses (their files would overwrite each other)."""
+    from . import sheet_projects
+    try:
+        raw = sheet_projects._read().get(FOLDER_NAMES_KEY) or {}
+    except (OSError, ValueError) as e:
+        raise ValueError("cannot read the lab settings file %s: %s"
+                         % (sheet_projects.config_path(), e)) from None
+    if not isinstance(raw, dict):
+        raise ValueError("%s: %s must map analysis names to folder names"
+                         % (sheet_projects.config_path(), FOLDER_NAMES_KEY))
+    taken: Dict[str, str] = {}
+    for analysis, folder in sorted(raw.items()):
+        if not isinstance(folder, str) or not _plain_name(folder) or not _plain_name(analysis):
+            raise ValueError("%s: %s gives analysis %r the folder %r, which is not one plain "
+                             "folder name" % (sheet_projects.config_path(), FOLDER_NAMES_KEY,
+                                              analysis, folder))
+        if folder.lower() in taken:
+            raise ValueError("%s: %s gives the folder %s to two analyses (%s and %s)"
+                             % (sheet_projects.config_path(), FOLDER_NAMES_KEY, folder,
+                                taken[folder.lower()], analysis))
+        taken[folder.lower()] = analysis
+    return dict(raw)
+
+
+def mirror_exports_dir(dest: Path, analysis: str,
+                       names: Optional[Dict[str, str]] = None) -> Path:
+    """The mirror's folder for one analysis's export files. ``names``: the
+    lab's folder names (mirror_folder_names), read here when not given; a run
+    reads them once and passes them on."""
+    from .output_folders import tissue_dir
+    if names is None:
+        names = mirror_folder_names()
+    return tissue_dir(dest) / names.get(analysis, analysis)
+
+
+def mirror_path(dest: Path, key: str, names: Optional[Dict[str, str]] = None) -> Path:
+    """Where the mirror keeps the file of one ledger key."""
+    parts = key.split("/")
+    if len(parts) >= 3 and parts[0] == "exports":
+        return mirror_exports_dir(dest, parts[1], names).joinpath(*parts[2:])
+    return Path(dest) / key
+
+
+def mirror_key(dest: Path, analysis: str, path: Path,
+               names: Optional[Dict[str, str]] = None) -> str:
+    """The ledger key of a file the mirror holds for ``analysis`` (the reverse
+    of mirror_path)."""
+    try:
+        inside = Path(path).relative_to(mirror_exports_dir(dest, analysis, names))
+    except ValueError:
+        return rel_key(dest, path)
+    return "exports/%s/%s" % (analysis, inside.as_posix())
+
+
+def mirror_files_of(dest: Path, analysis: str,
+                    names: Optional[Dict[str, str]] = None) -> List[Path]:
+    """Every file the MIRROR holds for one analysis: its export files
+    (mirror_exports_dir), ``figures/<a>/**`` and ``logs/<a>.log`` under
+    ``<mousedb_root>``.
     Raises when a folder cannot be listed (a short list would hide files)."""
     found: List[Path] = []
-    for d in (dest / "exports" / analysis, dest / "figures" / analysis):
+    for d in (mirror_exports_dir(dest, analysis, names), dest / "figures" / analysis):
         found.extend(_files_under(d))
     log_file = dest / "logs" / ("%s.log" % analysis)
     try:
@@ -524,7 +607,8 @@ def _new_row(analysis: str, imported_at: str, root: Path) -> dict:
 
 
 def manifest_path() -> Path:
-    return require("mousedb_root") / "exports" / MANIFEST_NAME
+    from .output_folders import exports_dir
+    return exports_dir(require("mousedb_root")) / MANIFEST_NAME
 
 
 def write_manifest(rows: List[dict], imported_at: str, root: Path,
@@ -605,7 +689,8 @@ def archivable_keys(ledger: Dict[str, dict], present: set, listed: set,
 
 
 def held_as_analysis(analysis: str, mirrored: set, mirror_files: List[Path], dest: Path,
-                     root: Path, source_files: Optional[List[Path]]) -> bool:
+                     root: Path, source_files: Optional[List[Path]],
+                     names: Optional[Dict[str, str]] = None) -> bool:
     """Is what the mirror holds under this name the mirror of an ANALYSIS?
     True when at least one of these marks it as one:
 
@@ -616,14 +701,15 @@ def held_as_analysis(analysis: str, mirrored: set, mirror_files: List[Path], des
         modification time, the mark this tool's own copies carry (see
         ``same_file``). A source folder that still has its registry.json
         never gets here: ``run`` takes it as an analysis outright;
-    (c) the mirror holds ``exports/<name>/registry.json``, the copy of
-        MouseBrain's own record that only a mirrored analysis has.
+    (c) the mirror holds ``registry.json`` in its folder of that name
+        (``mirror_exports_dir``), the copy of MouseBrain's own record that
+        only a mirrored analysis has.
 
-    WHY a name alone is not enough: ``<mousedb_root>/exports``, ``figures``
-    and ``logs`` are not the mirror's alone. This tool keeps its own export
-    folders and its other jobs' log files in the same places, under names
-    that are no analysis. Judged by "is there any file under
-    exports/<name>", ``--confirm-withdrawn <name>`` moved such a folder --
+    WHY a name alone is not enough: the tissue folder, ``figures`` and
+    ``logs`` are not the mirror's alone. A folder a person keeps beside the
+    analyses, and this tool's other jobs' log files, sit in the same places
+    under names that are no analysis. Judged by "is there any file under
+    that name", ``--confirm-withdrawn <name>`` moved such a folder --
     live files other tools read -- into the archive, with exit code 0. So
     the confirmation, and the hold that points a person at it, act only on
     a name one of the marks above identifies.
@@ -634,12 +720,14 @@ def held_as_analysis(analysis: str, mirrored: set, mirror_files: List[Path], des
     folder says nothing about what the mirror keeps under that name."""
     if analysis in mirrored:
         return True
-    if any(f == dest / "exports" / analysis / REGISTRY_FILE for f in mirror_files):
+    if names is None:
+        names = mirror_folder_names()
+    if any(f == mirror_exports_dir(dest, analysis, names) / REGISTRY_FILE for f in mirror_files):
         return True
     if source_files and mirror_files:
         for src in source_files:
             try:
-                if same_file(os.stat(src), dest / rel_key(root, src)):
+                if same_file(os.stat(src), mirror_path(dest, rel_key(root, src), names)):
                     return True
             except OSError:
                 continue            # cannot be looked at: no mark from this file
@@ -648,7 +736,8 @@ def held_as_analysis(analysis: str, mirrored: set, mirror_files: List[Path], des
 
 def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present: set,
                          unlistable: set, recognized: set, dest: Path, run_problem,
-                         mirror_listing: Dict[str, List[Path]]) -> Dict[str, dict]:
+                         mirror_listing: Dict[str, List[Path]],
+                         names: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
     """For each analysis a person confirmed withdrawn (``--confirm-withdrawn``),
     the mirror's files of it that neither the ledger nor this run's listing of
     the source holds -- as extra keys for ``archivable_keys``, which still
@@ -686,8 +775,13 @@ def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present:
     ``exports/<name>`` holding a file the mirror has a copy of (the source
     folder wholly gone, or emptied). Nothing then tells those files from
     files kept for another purpose, so they stay where they are."""
+    from .output_folders import shown, tissue_dir
+    if names is None:
+        names = mirror_folder_names()
     extra: Dict[str, dict] = {}
     for a in confirmed:
+        # The mirror's folder of this name, as a person finds it under <mousedb_root>.
+        kept_in = shown(tissue_dir, names.get(a, a)) if _plain_name(a) else ""
         if not _plain_name(a):
             run_problem("--confirm-withdrawn %r: not an analysis name (one folder name, no "
                         "path); nothing was archived for it" % a)
@@ -702,20 +796,20 @@ def confirmed_extra_keys(confirmed: List[str], ledger: Dict[str, dict], present:
             n = len(mirror_listing[a])
             if n:
                 run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name. "
-                            "%d file(s) sit under exports/%s, figures/%s or logs/%s.log, but "
+                            "%d file(s) sit under %s, figures/%s or logs/%s.log, but "
                             "nothing marks them as a mirrored analysis (nothing in the ledger, "
-                            "no exports/%s/%s in the mirror, and no file of theirs is a copy "
+                            "no %s/%s in the mirror, and no file of theirs is a copy "
                             "of one in a folder exports/%s at the source); they were left "
                             "where they are and nothing was archived -- check the name"
-                            % (a, n, a, a, a, a, REGISTRY_FILE, a))
+                            % (a, n, kept_in, a, a, kept_in, REGISTRY_FILE, a))
             else:
                 run_problem("--confirm-withdrawn %s: the mirror holds no analysis by that name "
-                            "(no file under exports/%s or figures/%s, no logs/%s.log, and "
+                            "(no file under %s or figures/%s, no logs/%s.log, and "
                             "nothing in the ledger); nothing was archived -- check the name"
-                            % (a, a, a, a))
+                            % (a, kept_in, a, a))
             continue
         for f in mirror_listing[a]:
-            k = rel_key(dest, f)
+            k = mirror_key(dest, a, f, names)
             if k not in ledger and k not in present:
                 extra[k] = {}
     return extra
@@ -778,7 +872,7 @@ def held_problems(kept: List[str], rows: Dict[str, dict], imported_at: str, root
 def _plain_name(name: str) -> bool:
     """An analysis name as MouseBrain makes one: a single folder name, never
     a path, so ``--confirm-withdrawn`` cannot reach outside the three places
-    the mirror writes to (``exports/<name>``, ``figures/<name>``,
+    the mirror writes to (its tissue folder of that name, ``figures/<name>``,
     ``logs/<name>.log``). That alone does not make the name an analysis:
     other folders and logs of this tool sit in the same places, which is
     what ``held_as_analysis`` is for."""
@@ -799,6 +893,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
     res = ImportResult()
     root = registry_root()
     dest = require("mousedb_root")
+    names = mirror_folder_names()           # read once: the lab's folder names
     if not (root / "exports").is_dir():
         raise FileNotFoundError(
             "no analysis registry at %s (MouseBrain has not registered any analysis yet, "
@@ -854,7 +949,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         if not _plain_name(a):
             continue
         try:
-            mirror_listing[a] = mirror_files_of(dest, a)
+            mirror_listing[a] = mirror_files_of(dest, a, names)
         except OSError as e:
             mirror_unlistable[a] = "%s" % e
 
@@ -903,13 +998,14 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             if not in_mirror:
                 try:
                     others = (mirror_listing[analysis] if analysis in mirror_listing
-                              else mirror_files_of(dest, analysis))
+                              else mirror_files_of(dest, analysis, names))
                 except OSError as e:
                     problem(row, "%s: exports/%s has no %s, and the mirror's folders of it "
                                  "could not be listed (%s); nothing of it was copied or "
                                  "archived -- run again" % (analysis, analysis, REGISTRY_FILE, e))
                     continue
-                in_mirror = held_as_analysis(analysis, mirrored, others, dest, root, files)
+                in_mirror = held_as_analysis(analysis, mirrored, others, dest, root, files,
+                                             names)
             if in_mirror and analysis in confirmed:
                 # A person confirmed the withdrawal: archive its WHOLE mirror
                 # (below) -- files still in the source folder included, since
@@ -978,7 +1074,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
             res.scanned += 1
             st = src.stat()
             stamp = "%d:%d" % (st.st_size, int(st.st_mtime))
-            dst = dest / key
+            dst = mirror_path(dest, key, names)
             prev = ledger.get(key)
             # Fast path: same size and modification time as when it was last
             # mirrored, and the mirror is still there -> unchanged, without
@@ -1019,10 +1115,10 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         # A confirmed name with no folder at the source this run: an analysis
         # only by the ledger or by the mirror's own registry.json copy.
         if a not in recognized and held_as_analysis(a, mirrored, mirror_listing[a],
-                                                    dest, root, None):
+                                                    dest, root, None, names):
             recognized.add(a)
     extra = confirmed_extra_keys(confirmed, ledger, present, unlistable, recognized, dest,
-                                 run_problem, mirror_listing)
+                                 run_problem, mirror_listing, names)
     pool = dict(ledger)
     pool.update(extra)
     gone, kept = archivable_keys(pool, present, listed | withdrawn, folders, root)
@@ -1077,7 +1173,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
         row = rows.get(analysis_of_key(key) or "")
         try:
             if not dry_run:
-                mirror_file(src, dest / key)
+                mirror_file(src, mirror_path(dest, key, names))
                 ledger[key] = {"hash": h or file_hash(src), "stamp": stamp}
             res.copied += 1
             if row is not None:
@@ -1089,7 +1185,7 @@ def run(all_files: bool = False, dry_run: bool = False, limit: Optional[int] = N
 
     for key in gone:
         row = rows.get(analysis_of_key(key) or "")
-        old = dest / key
+        old = mirror_path(dest, key, names)
         try:
             # Is the mirror's copy still there? Asked with os.stat, and "gone"
             # believed only from a folder listing that answers. WHY:

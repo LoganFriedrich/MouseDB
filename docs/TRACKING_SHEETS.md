@@ -750,7 +750,7 @@ Before the reaching pipeline files a video, it compares the video's pellets
 with the session's hand scores. It does not read the database for this (it
 never depends on mousedb); it reads one file mousedb writes:
 
-- `<mousedb_root>/exports/hand_scores/hand_pellet_scores.csv`: every hand
+- `<mousedb_root>/exports/Behavior/Hand_Scores/hand_pellet_scores.csv`: every hand
   pellet score, one row per pellet, keyed by the session the way the
   pipeline names its video (`20250709_PROJA0207_P1`: date, animal without
   underscores, tray type and number);

@@ -13,6 +13,7 @@ import pytest
 
 from mousedb import grants
 from mousedb.exporters import layout
+from mousedb.output_folders import all_cohorts_dir
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ def test_locate_finds_a_cohort_inside_its_grant(lab):
 
 
 def test_the_old_project_folder_is_archived_once_the_new_one_exists(lab):
-    root = lab / "exports" / "current"
+    root = all_cohorts_dir(lab)
     old = root / "PROJA" / "PROJA_05"
     old.mkdir(parents=True)
     (old / "a.csv").write_text("old")

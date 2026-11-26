@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from mousedb import cli, missing_videos as mv
+from mousedb.output_folders import hand_scores_dir
 
 VIEW = "2026-03-20T02:00:00"
 REC = "20260302_PROJA0101,PROJA0102_P2.mkv"
@@ -30,7 +31,7 @@ REC_KEYS = ["20260302_PROJA0101_P2", "20260302_PROJA0102_P2"]
 
 def _hand(root, sessions):
     """sessions: (subject, YYYY-MM-DD, tray, cohort). Two pellet rows each."""
-    d = Path(root) / "exports" / "hand_scores"
+    d = hand_scores_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     with open(d / "hand_pellet_scores.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)

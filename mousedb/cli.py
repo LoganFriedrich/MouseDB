@@ -1757,7 +1757,7 @@ def main():
     # mousedb export-example -- one cohort, fast, for looking at while changing it
     ex_p = subparsers.add_parser(
         'export-example',
-        help='Build ONE cohort of the analysis documents into exports/current/Example, '
+        help='Build ONE cohort of the analysis documents into exports/Behavior/All_Cohorts/Example, '
              'from a sample of its sessions, in a few seconds -- for checking the format '
              'while changing it. Same code as the full export.')
     ex_p.add_argument('--cohort', default='CNT_01', help='Cohort id (default CNT_01)')
@@ -1958,7 +1958,7 @@ def main():
 
     # mousedb hand-scores
     hs_parser = subparsers.add_parser('hand-scores',
-        help='Write every hand pellet score to exports/hand_scores/ for the reaching '
+        help='Write every hand pellet score to exports/Behavior/Hand_Scores/ for the reaching '
              'pipeline (also done after every sheet import)')
     hs_parser.set_defaults(func=cmd_hand_scores)
 

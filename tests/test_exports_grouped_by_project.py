@@ -12,6 +12,7 @@ import pytest
 
 from mousedb.exporters import export_exclusions, layout
 from mousedb.exporters import odc_reaches as ox
+from mousedb.output_folders import all_cohorts_dir
 
 
 
@@ -52,7 +53,7 @@ def _read(path):
 
 
 def test_each_cohort_has_its_own_folder_inside_its_project(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     m = ox.export(snapshot, out)
     for project, cohort in (("PROJA", "PROJA_01"), ("PROJA", "PROJA_02"), ("PROJAB", "PROJAB_01")):
         for kind in layout.REACH_KINDS:
@@ -69,7 +70,7 @@ def test_a_longer_project_code_is_its_own_project_not_a_prefix_match(snapshot, t
     # PROJAB starts with PROJA; it is its own project and must not be filed under it.
     assert layout.project_of("PROJAB_02") == "PROJAB" and layout.project_of("PROJA_02") == "PROJA"
     assert layout.project_of_label("ASPA_04_D") == "ASPA"
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     combined = _read(layout.combined_file(out, "ODC_reaches", "PROJA"))
     assert set(combined["SubjectID"] if "SubjectID" in combined else combined.iloc[:, 0]) \
@@ -78,7 +79,7 @@ def test_a_longer_project_code_is_its_own_project_not_a_prefix_match(snapshot, t
 
 
 def test_the_combined_file_is_the_cohort_files_one_after_the_other(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     m = ox.export(snapshot, out)
     for kind in layout.REACH_KINDS:
         parts = [_read(out / "PROJA" / c / layout.file_name(kind, c)) for c in ("PROJA_01", "PROJA_02")]
@@ -102,7 +103,7 @@ def test_the_combined_file_is_the_cohort_files_one_after_the_other(snapshot, tmp
 
 
 def test_a_column_only_some_cohorts_have_is_filled_and_reported(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     m = ox.export(snapshot, out)
     path = layout.combined_file(out, "ODC_reaches", "PROJA")
     combined = _read(path)
@@ -116,7 +117,7 @@ def test_a_column_only_some_cohorts_have_is_filled_and_reported(snapshot, tmp_pa
 
 
 def test_a_one_cohort_export_still_combines_every_cohort(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     m = ox.export(snapshot, out, cohorts=["PROJA_02"])
     entry = m["files"][layout.key(out, layout.combined_file(out, "reaches_analysis", "PROJA"))]
@@ -124,7 +125,7 @@ def test_a_one_cohort_export_still_combines_every_cohort(snapshot, tmp_path):
 
 
 def test_files_from_the_flat_layout_are_archived_not_deleted(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     out.mkdir(parents=True)
     (out / "ODC_reaches_PROJA_01.csv").write_text("old")
     (out / "reaches_PROJA_01_analysis.csv").write_text("old")
@@ -142,7 +143,7 @@ def test_files_from_the_flat_layout_are_archived_not_deleted(snapshot, tmp_path)
 def test_a_reader_asks_where_a_file_is_instead_of_writing_the_path(snapshot, tmp_path):
     # Readers outside the exporter use locate(), so the next move of the files
     # does not break them the way a move breaks a hand-written path.
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     assert layout.locate("reaches_analysis", "PROJA_02", out) == \
         out / "PROJA" / "PROJA_02" / "reaches_PROJA_02_analysis.csv"
@@ -174,7 +175,7 @@ def _drop_cohort(snapshot, cohort):
 
 
 def test_a_cohort_whose_reaches_are_gone_is_archived_and_leaves_the_combined_file(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     assert (out / "PROJA" / "PROJA_02" / "reaches_PROJA_02_analysis.csv").is_file()
     _drop_cohort(snapshot, "PROJA_02")
@@ -189,7 +190,7 @@ def test_a_cohort_whose_reaches_are_gone_is_archived_and_leaves_the_combined_fil
 
 
 def test_a_project_with_no_cohort_left_has_its_combined_file_archived(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     assert layout.combined_file(out, "ODC_reaches", "PROJAB").is_file()
     _drop_cohort(snapshot, "PROJAB_01")
@@ -200,7 +201,7 @@ def test_a_project_with_no_cohort_left_has_its_combined_file_archived(snapshot, 
 
 
 def test_a_named_export_archives_a_named_cohort_that_came_out_empty(snapshot, tmp_path):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     _drop_cohort(snapshot, "PROJA_02")
     ox.export(snapshot, out, cohorts=["PROJA_02"])
@@ -211,7 +212,7 @@ def test_a_named_export_archives_a_named_cohort_that_came_out_empty(snapshot, tm
 
 def test_an_empty_reach_table_archives_nothing(snapshot, tmp_path):
     """An empty reach table is a broken snapshot, not a lab with no reaches."""
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     rd = pd.read_parquet(snapshot / "reach_data.parquet")
     rd.iloc[0:0].to_parquet(snapshot / "reach_data.parquet", index=False)
@@ -221,7 +222,7 @@ def test_an_empty_reach_table_archives_nothing(snapshot, tmp_path):
 
 
 def test_a_cohort_whose_build_failed_keeps_its_files(snapshot, tmp_path, monkeypatch):
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     real = ox.build_cohort
 
@@ -241,7 +242,7 @@ def test_a_stale_cohort_file_held_open_does_not_stop_the_other_projects(snapshot
     would otherwise raise out of the export, and then no project's combined file, no
     dictionary and no manifest entry was written that night."""
     import pathlib
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     ox.export(snapshot, out)
     _drop_cohort(snapshot, "PROJA_02")
     _drop_cohort(snapshot, "PROJAB_01")
@@ -275,7 +276,7 @@ def test_the_archive_note_is_not_repeated_on_nights_nothing_moved(snapshot, tmp_
     night repeats the notes saved with the last full run. A note that files
     were moved must not be one of them: on the skipped night nothing moved."""
     from mousedb.exporters import current
-    out = tmp_path / "exports" / "current"
+    out = all_cohorts_dir(tmp_path)
     sig = {"inputs": 1}
     monkeypatch.setattr(current, "odc_reaches_signature", lambda snap: dict(sig))
 

@@ -1,6 +1,6 @@
 """A snapshot run whose exports failed, or came out incomplete, fails the task.
 
-WHY: the nightly snapshot job is what keeps exports/current up to date. When
+WHY: the nightly snapshot job is what keeps exports/Behavior/All_Cohorts up to date. When
 rewriting the exports failed it printed "[warn] current exports not refreshed"
 and exited 0, and an incomplete export (MANIFEST.json complete=False) exited 0
 too -- the task looked healthy while people kept reading old files, and the
